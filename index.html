@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PKB — Local Pokémon Battle Builder</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Local 2-player battle prototype</p>
+          <h1>PKB</h1>
+          <p class="hero-copy">
+            Build two custom teams, use the uploaded animated sprites and icons,
+            then play a pass-and-play battle directly in the browser.
+          </p>
+        </div>
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="meta-label">Mode</span>
+            <strong id="hero-mode-label">Singles · 3 Pokémon</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">Engine</span>
+            <strong>Pokémon Showdown simulator runtime</strong>
+          </div>
+        </div>
+      </header>
+
+      <main id="app" class="app-grid">
+        <section class="panel status-panel">
+          <div class="panel-header">
+            <h2>Runtime</h2>
+            <button id="reset-storage-btn" class="ghost-btn" type="button">Reset saved data</button>
+          </div>
+          <div id="runtime-status" class="runtime-status loading">
+            Loading simulator runtime, dex data, and uploaded assets…
+          </div>
+          <div id="runtime-notes" class="runtime-notes"></div>
+        </section>
+
+        <section class="panel setup-panel">
+          <div class="panel-header">
+            <h2>Setup</h2>
+            <div class="inline-actions">
+              <button id="mode-singles-btn" class="seg-btn active" type="button">Singles</button>
+              <button id="mode-doubles-btn" class="seg-btn" type="button">Doubles</button>
+            </div>
+          </div>
+
+          <div class="name-row">
+            <label>
+              <span>Player 1 name</span>
+              <input id="player1-name" type="text" maxlength="24" value="Player 1" />
+            </label>
+            <label>
+              <span>Player 2 name</span>
+              <input id="player2-name" type="text" maxlength="24" value="Player 2" />
+            </label>
+          </div>
+
+          <div class="builder-layout">
+            <aside class="team-sidebar">
+              <div class="team-sidebar-header">
+                <h3>Roster</h3>
+                <p id="team-size-note">Each player builds 3 Pokémon.</p>
+              </div>
+              <div class="roster-columns">
+                <div>
+                  <h4 id="roster-p1-name">Player 1</h4>
+                  <div id="roster-p1" class="roster-list"></div>
+                </div>
+                <div>
+                  <h4 id="roster-p2-name">Player 2</h4>
+                  <div id="roster-p2" class="roster-list"></div>
+                </div>
+              </div>
+            </aside>
+
+            <section class="builder-main">
+              <div class="editor-toolbar">
+                <div>
+                  <h3 id="editor-title">Pokémon editor</h3>
+                  <p id="editor-subtitle">Choose a slot from the roster to begin.</p>
+                </div>
+                <div class="inline-actions">
+                  <button id="copy-prev-btn" class="ghost-btn" type="button">Copy previous slot</button>
+                  <button id="randomize-slot-btn" class="ghost-btn" type="button">Randomize slot</button>
+                </div>
+              </div>
+
+              <div class="editor-grid">
+                <div class="preview-card">
+                  <div class="preview-stage">
+                    <div id="editor-sprite" class="sprite-shell large"></div>
+                  </div>
+                  <div class="preview-meta">
+                    <div id="editor-species-name" class="preview-species">No species selected</div>
+                    <div id="editor-type-row" class="type-row"></div>
+                    <div id="editor-flags" class="flag-row"></div>
+                  </div>
+                </div>
+
+                <div class="editor-fields">
+                  <div class="form-grid two-col">
+                    <label>
+                      <span>Species</span>
+                      <input id="species-input" list="species-list" autocomplete="off" />
+                    </label>
+                    <label>
+                      <span>Nickname</span>
+                      <input id="nickname-input" type="text" maxlength="24" />
+                    </label>
+                    <label>
+                      <span>Item</span>
+                      <div class="compound-input">
+                        <input id="item-input" list="item-list" autocomplete="off" />
+                        <div id="item-icon" class="item-icon"></div>
+                      </div>
+                    </label>
+                    <label>
+                      <span>Ability</span>
+                      <select id="ability-select"></select>
+                    </label>
+                    <label>
+                      <span>Nature</span>
+                      <select id="nature-select"></select>
+                    </label>
+                    <label>
+                      <span>Gender</span>
+                      <select id="gender-select">
+                        <option value="">Auto</option>
+                        <option value="M">Male</option>
+                        <option value="F">Female</option>
+                        <option value="N">Genderless</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Level</span>
+                      <input id="level-input" type="number" min="1" max="100" value="100" />
+                    </label>
+                    <label>
+                      <span>Tera type</span>
+                      <select id="tera-select"></select>
+                    </label>
+                  </div>
+
+                  <div class="checkbox-row">
+                    <label class="check-pill"><input id="shiny-checkbox" type="checkbox" /> <span>Shiny</span></label>
+                  </div>
+
+                  <section class="moves-section">
+                    <div class="section-head">
+                      <h4>Moves</h4>
+                      <span id="moves-note" class="small-note">Pick exactly four moves.</span>
+                    </div>
+                    <div class="form-grid two-col">
+                      <label><span>Move 1</span><input id="move1-input" list="move-list" autocomplete="off" /></label>
+                      <label><span>Move 2</span><input id="move2-input" list="move-list" autocomplete="off" /></label>
+                      <label><span>Move 3</span><input id="move3-input" list="move-list" autocomplete="off" /></label>
+                      <label><span>Move 4</span><input id="move4-input" list="move-list" autocomplete="off" /></label>
+                    </div>
+                  </section>
+
+                  <section class="stats-section">
+                    <div class="section-head">
+                      <h4>EVs</h4>
+                      <span id="ev-total" class="small-note">Total: 0 / 510</span>
+                    </div>
+                    <div class="stat-grid" id="ev-grid"></div>
+                  </section>
+
+                  <section class="stats-section">
+                    <div class="section-head">
+                      <h4>IVs</h4>
+                      <span class="small-note">Each stat must stay between 0 and 31.</span>
+                    </div>
+                    <div class="stat-grid" id="iv-grid"></div>
+                  </section>
+                </div>
+              </div>
+
+              <div id="builder-errors" class="error-box hidden"></div>
+
+              <div class="builder-footer">
+                <div id="validation-summary" class="validation-summary">Finish both teams to unlock battle start.</div>
+                <div class="inline-actions">
+                  <button id="export-teams-btn" class="ghost-btn" type="button">Export teams</button>
+                  <button id="start-battle-btn" class="primary-btn" type="button" disabled>Start battle</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel battle-panel hidden" id="battle-panel">
+          <div class="panel-header">
+            <h2>Battle</h2>
+            <div class="inline-actions">
+              <button id="back-to-builder-btn" class="ghost-btn" type="button">Back to builder</button>
+              <button id="restart-battle-btn" class="ghost-btn" type="button">Restart battle</button>
+            </div>
+          </div>
+
+          <div class="battle-layout">
+            <div class="battle-main">
+              <div class="battle-field">
+                <div class="side-card enemy">
+                  <div class="side-header">
+                    <h3 id="battle-p2-name">Player 2</h3>
+                    <span id="battle-p2-turn" class="turn-chip">Waiting</span>
+                  </div>
+                  <div id="battle-side-p2" class="side-sprite-row"></div>
+                  <div id="battle-team-p2" class="battle-team-grid"></div>
+                </div>
+
+                <div class="arena-log-panel">
+                  <div class="arena-center">
+                    <div class="arena-backdrop"></div>
+                  </div>
+                  <div class="battle-turn-banner">Turn <span id="turn-number">0</span></div>
+                </div>
+
+                <div class="side-card ally">
+                  <div class="side-header">
+                    <h3 id="battle-p1-name">Player 1</h3>
+                    <span id="battle-p1-turn" class="turn-chip">Waiting</span>
+                  </div>
+                  <div id="battle-side-p1" class="side-sprite-row"></div>
+                  <div id="battle-team-p1" class="battle-team-grid"></div>
+                </div>
+              </div>
+
+              <div class="choice-grid">
+                <div class="choice-panel">
+                  <div class="choice-head">
+                    <h3 id="choice-p1-title">Player 1 choice</h3>
+                    <span id="choice-p1-status" class="small-note">No request yet</span>
+                  </div>
+                  <div id="choice-p1" class="choice-body"></div>
+                </div>
+                <div class="choice-panel">
+                  <div class="choice-head">
+                    <h3 id="choice-p2-title">Player 2 choice</h3>
+                    <span id="choice-p2-status" class="small-note">No request yet</span>
+                  </div>
+                  <div id="choice-p2" class="choice-body"></div>
+                </div>
+              </div>
+            </div>
+
+            <aside class="battle-sidebar">
+              <div class="battle-sidebar-card">
+                <div class="panel-header compact">
+                  <h3>Battle log</h3>
+                  <button id="clear-log-btn" class="ghost-btn small" type="button">Clear</button>
+                </div>
+                <div id="battle-log" class="battle-log"></div>
+              </div>
+              <div class="battle-sidebar-card">
+                <div class="panel-header compact">
+                  <h3>Current selections</h3>
+                </div>
+                <div id="pending-choices" class="pending-choices"></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <datalist id="species-list"></datalist>
+    <datalist id="item-list"></datalist>
+    <datalist id="move-list"></datalist>
+
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
