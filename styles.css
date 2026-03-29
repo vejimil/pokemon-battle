@@ -469,6 +469,30 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   align-items: center;
   justify-content: center;
 }
+.battle-sprite-shell {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+.battle-sprite-shell.dynamaxed .sprite-shell.large {
+  transform: scale(1.16);
+}
+.battle-sprite-shell.gigantamaxed .sprite-shell.large {
+  filter: drop-shadow(0 0 12px rgba(244, 114, 182, 0.35));
+}
+.battle-gimmick-badge,
+.battle-inline-flags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+.battle-inline-flags {
+  margin-top: 4px;
+  justify-content: flex-start;
+}
 .side-card.enemy .sprite-shell.large { transform: scaleX(1); }
 .side-card.ally .sprite-shell.large { transform: scaleX(1); }
 .battle-team-grid {

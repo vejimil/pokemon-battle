@@ -31,7 +31,7 @@ const commonItems = [
   'Silver Powder','Spell Tag','Sharp Beak','Twisted Spoon','Hard Stone','Silk Scarf','Metal Coat','Black Sludge'
 ];
 const implementedAbilities = new Set(['intimidate','levitate','technician','adaptability','multiscale','flash-fire']);
-const implementedItems = new Set(['leftovers','life-orb','choice-band','choice-specs','choice-scarf','focus-sash','assault-vest','sitrus-berry','rocky-helmet','expert-belt','lum-berry','eviolite','clear-amulet','scope-lens','muscle-band','wise-glasses','mystic-water','charcoal','miracle-seed','magnet','black-glasses','never-melt-ice','soft-sand','dragon-fang','pixie-plate','poison-barb','silver-powder','spell-tag','sharp-beak','twisted-spoon','hard-stone','silk-scarf','metal-coat','black-sludge']);
+const implementedItems = new Set(['leftovers','lifeorb','choiceband','choicespecs','choicescarf','focussash','assaultvest','sitrusberry','rockyhelmet','expertbelt','lumberry','eviolite','clearamulet','scopelens','muscleband','wiseglasses','mysticwater','charcoal','miracleseed','magnet','blackglasses','nevermeltice','softsand','dragonfang','pixieplate','poisonbarb','silverpowder','spelltag','sharpbeak','twistedspoon','hardstone','silkscarf','metalcoat','blacksludge']);
 const VALIDATION_PROFILES = {
   open: {
     id: 'open',
@@ -94,6 +94,7 @@ const typeChart = LOCAL_TYPE_CHART;
 const moveNameCache = [];
 const speciesDataCache = new Map();
 const moveDataCache = new Map();
+const itemDataCache = new Map();
 const imageInfoCache = new Map();
 
 const FORM_ASSET_OVERRIDES = Object.freeze({
@@ -112,6 +113,53 @@ const FORM_ASSET_OVERRIDES = Object.freeze({
   'Zygarde-Mega': 'ZYGARDE_5',
 });
 const EXPLICIT_ONLY_FORM_FAMILIES = new Set(['EEVEE', 'GRENINJA', 'PIKACHU']);
+
+const MAX_MOVE_NAMES = Object.freeze({
+  normal: 'Max Strike',
+  fighting: 'Max Knuckle',
+  flying: 'Max Airstream',
+  poison: 'Max Ooze',
+  ground: 'Max Quake',
+  rock: 'Max Rockfall',
+  bug: 'Max Flutterby',
+  ghost: 'Max Phantasm',
+  steel: 'Max Steelspike',
+  fire: 'Max Flare',
+  water: 'Max Geyser',
+  grass: 'Max Overgrowth',
+  electric: 'Max Lightning',
+  psychic: 'Max Mindstorm',
+  ice: 'Max Hailstorm',
+  dragon: 'Max Wyrmwind',
+  dark: 'Max Darkness',
+  fairy: 'Max Starfall',
+  stellar: 'Max Strike',
+});
+const GENERIC_Z_MOVE_NAMES = Object.freeze({
+  normal: 'Breakneck Blitz',
+  fighting: 'All-Out Pummeling',
+  flying: 'Supersonic Skystrike',
+  poison: 'Acid Downpour',
+  ground: 'Tectonic Rage',
+  rock: 'Continental Crush',
+  bug: 'Savage Spin-Out',
+  ghost: 'Never-Ending Nightmare',
+  steel: 'Corkscrew Crash',
+  fire: 'Inferno Overdrive',
+  water: 'Hydro Vortex',
+  grass: 'Bloom Doom',
+  electric: 'Gigavolt Havoc',
+  psychic: 'Shattered Psyche',
+  ice: 'Subzero Slammer',
+  dragon: 'Devastating Drake',
+  dark: 'Black Hole Eclipse',
+  fairy: 'Twinkle Tackle',
+  stellar: 'Breakneck Blitz',
+});
+const DYNAMAX_BANNED_SPECIES = new Set(['zacian', 'zamazenta', 'eternatus']);
+const TERA_LOW_POWER_EXEMPT_MOVES = new Set([
+  'waterspout','eruption','electroball','gyroball','heatcrash','heavyslam','grassknot','lowkick','flail','reversal','wringout','crushgrip','storedpower','powertrip','magnitude','naturalgift','present','spitup','trumpcard','weatherball','terrainpulse','risingvoltage','dragonenergy'
+]);
 
 function normalizeAssetFamilyKey(name) {
   return String(name || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
@@ -430,6 +478,161 @@ function applyBattleFormChange(mon, speciesData, spriteId = '') {
   mon.hp = Math.max(1, Math.min(mon.maxHp, Math.floor(mon.maxHp * hpRatio)));
   mon.spriteAutoId = spriteId || getAutoSpriteIdForSpecies(speciesData.name, mon.gender, mon.baseSpecies);
   mon.spriteId = mon.spriteAutoId;
+}
+function preserveHpRatio(mon, nextMaxHp, {allowZero = false} = {}) {
+  if (!mon) return;
+  const ratio = mon.maxHp > 0 ? mon.hp / mon.maxHp : 1;
+  mon.maxHp = Math.max(1, Math.floor(nextMaxHp || 1));
+  if (allowZero && mon.hp <= 0) {
+    mon.hp = 0;
+    return;
+  }
+  mon.hp = Math.max(1, Math.min(mon.maxHp, Math.round(mon.maxHp * ratio)));
+}
+function findResolvedFormAsset(baseSpeciesName, formSuffix) {
+  const family = getFamilyForSpecies(baseSpeciesName);
+  if (!family) return null;
+  const targetId = toId(`${baseSpeciesName}-${formSuffix}`);
+  return family.formChoices.find(choice => toId(choice.speciesName) === targetId && choice.assetId) || null;
+}
+function getGigantamaxAssetId(mon) {
+  const resolved = findResolvedFormAsset(mon?.baseSpecies || mon?.species, 'Gmax');
+  return resolved?.assetId || '';
+}
+function hasStabType(mon, moveType) {
+  return (mon?.originalTypes || []).includes(moveType) || (mon?.types || []).includes(moveType);
+}
+function getStabMultiplier(mon, moveType) {
+  if (!moveType || !mon) return 1;
+  const abilityId = slugify(mon.ability);
+  const teraType = mon.terastallized ? toId(mon.teraType) : '';
+  const originalTypes = mon.originalTypes || [];
+  const currentTypes = mon.types || [];
+  if (!teraType) {
+    if (!currentTypes.includes(moveType)) return 1;
+    return abilityId === 'adaptability' ? 2 : 1.5;
+  }
+  const matchesOriginal = originalTypes.includes(moveType);
+  const matchesTera = teraType === moveType;
+  if (matchesOriginal && matchesTera) return abilityId === 'adaptability' ? 2.25 : 2;
+  if (matchesTera) return abilityId === 'adaptability' ? 2 : 1.5;
+  if (matchesOriginal) return abilityId === 'adaptability' ? 2 : 1.5;
+  return 1;
+}
+function teraPowerBoostApplies(mon, move) {
+  if (!mon?.terastallized || !move?.power || move.power >= 60) return false;
+  if (move.priority > 0) return false;
+  if ((move.maxHits || 1) > 1) return false;
+  return !TERA_LOW_POWER_EXEMPT_MOVES.has(toId(move.baseMoveName || move.name));
+}
+function getBattleMoveType(mon, move) {
+  if (toId(move?.baseMoveName || move?.name) === 'terablast' && mon?.terastallized && mon.teraType) return toId(mon.teraType);
+  return toId(move?.type);
+}
+function getBattleMoveCategory(mon, move) {
+  if (toId(move?.baseMoveName || move?.name) === 'terablast' && mon?.terastallized) {
+    return getModifiedStat(mon, 'atk') > getModifiedStat(mon, 'spa') ? 'physical' : 'special';
+  }
+  return move?.category || 'status';
+}
+function getDefaultZMovePower(basePower) {
+  if (basePower >= 140) return 200;
+  if (basePower >= 130) return 195;
+  if (basePower >= 120) return 190;
+  if (basePower >= 110) return 185;
+  if (basePower >= 100) return 180;
+  if (basePower >= 90) return 175;
+  if (basePower >= 80) return 160;
+  if (basePower >= 70) return 140;
+  if (basePower >= 60) return 120;
+  return 100;
+}
+function getDefaultMaxMovePower(move) {
+  if (!move || move.category === 'status') return 0;
+  if (move.maxBasePower) return move.maxBasePower;
+  const bp = move.power || 0;
+  const lighterTypes = new Set(['fighting', 'poison']);
+  const type = toId(move.type);
+  if (bp >= 150) return lighterTypes.has(type) ? 100 : 150;
+  if (bp >= 110) return lighterTypes.has(type) ? 95 : 140;
+  if (bp >= 75) return lighterTypes.has(type) ? 90 : 130;
+  if (bp >= 65) return lighterTypes.has(type) ? 85 : 120;
+  if (bp >= 55) return lighterTypes.has(type) ? 80 : 110;
+  if (bp >= 45) return lighterTypes.has(type) ? 75 : 100;
+  return lighterTypes.has(type) ? 70 : 90;
+}
+function getMaxMoveName(mon, move) {
+  if (!move || move.category === 'status') return 'Max Guard';
+  if (mon?.gmaxMove && mon?.gigantamaxed) return mon.gmaxMove;
+  return MAX_MOVE_NAMES[toId(move.type)] || 'Max Strike';
+}
+function canDynamax(mon, side) {
+  if (!mon || mon.fainted || mon.dynamaxed) return false;
+  if (side?.dynamaxUsed) return false;
+  if (DYNAMAX_BANNED_SPECIES.has(toId(mon.baseSpecies || mon.species))) return false;
+  return true;
+}
+function applyDynamax(mon) {
+  if (!mon || mon.dynamaxed) return;
+  mon.dynamaxed = true;
+  mon.dynamaxTurns = 3;
+  mon.gigantamaxed = Boolean(mon.gmaxMove && getGigantamaxAssetId(mon));
+  mon.preDynamaxSpriteId = mon.spriteId;
+  const gmaxAssetId = mon.gigantamaxed ? getGigantamaxAssetId(mon) : '';
+  preserveHpRatio(mon, mon.baseMaxHp * 2);
+  if (gmaxAssetId) {
+    mon.spriteAutoId = gmaxAssetId;
+    mon.spriteId = gmaxAssetId;
+  }
+}
+function clearDynamax(mon) {
+  if (!mon?.dynamaxed) return;
+  mon.dynamaxed = false;
+  mon.dynamaxTurns = 0;
+  mon.gigantamaxed = false;
+  preserveHpRatio(mon, mon.baseMaxHp, {allowZero: true});
+  if (mon.preDynamaxSpriteId) {
+    mon.spriteAutoId = mon.preDynamaxSpriteId;
+    mon.spriteId = mon.preDynamaxSpriteId;
+  }
+  mon.preDynamaxSpriteId = '';
+}
+function getMaxMoveSecondaryEffect(moveType) {
+  const type = toId(moveType);
+  if (type === 'fighting') return {kind: 'self-boost', stat: 'atk', amount: 1};
+  if (type === 'poison') return {kind: 'self-boost', stat: 'spa', amount: 1};
+  if (type === 'flying') return {kind: 'self-boost', stat: 'spe', amount: 1};
+  if (type === 'ground') return {kind: 'self-boost', stat: 'spd', amount: 1};
+  if (type === 'steel') return {kind: 'self-boost', stat: 'def', amount: 1};
+  if (type === 'bug') return {kind: 'foe-drop', stat: 'spa', amount: -1};
+  if (type === 'ghost') return {kind: 'foe-drop', stat: 'def', amount: -1};
+  if (type === 'dark') return {kind: 'foe-drop', stat: 'spd', amount: -1};
+  if (type === 'dragon') return {kind: 'foe-drop', stat: 'atk', amount: -1};
+  if (type === 'normal') return {kind: 'foe-drop', stat: 'spe', amount: -1};
+  return null;
+}
+function previewMoveForUi(mon, move) {
+  if (!move) return null;
+  const type = getBattleMoveType(mon, move) || move.type;
+  const category = getBattleMoveCategory(mon, move) || move.category;
+  let power = move.power || 0;
+  let name = move.name;
+  if (mon?.dynamaxed) {
+    name = getMaxMoveName(mon, move);
+    power = getDefaultMaxMovePower(move);
+  }
+  if (mon?.terastallized && teraPowerBoostApplies(mon, {...move, type})) power = Math.max(power, 60);
+  return {name, type, category, power, accuracy: mon?.dynamaxed && move.category !== 'status' ? 100 : move.accuracy};
+}
+function canUseZMoveWithMove(mon, side, move, item) {
+  if (!mon || !side || !move || !item) return false;
+  if (side.zUsed || mon.fainted || mon.dynamaxed || mon.megaUsed) return false;
+  if (move.isZ || move.isMax) return false;
+  if (move.category === 'status' && !item.zMove) return false;
+  if (item.itemUser?.length && !item.itemUser.some(name => toId(name) === toId(mon.baseSpecies || mon.species) || toId(name) === toId(mon.species))) return false;
+  if (item.zMoveFrom && toId(item.zMoveFrom) !== toId(move.name)) return false;
+  if (item.zMoveType && toId(item.zMoveType) !== toId(getBattleMoveType(mon, move))) return false;
+  return Boolean(item.zMove || item.zMoveType || item.zMoveFrom);
 }
 
 const state = {
@@ -950,6 +1153,7 @@ async function getSpeciesData(speciesName) {
     gender: species.gender || '',
     genderRatio: species.genderRatio ? {...species.genderRatio} : null,
     eggGroups: Array.isArray(species.eggGroups) ? [...species.eggGroups] : [],
+    canGigantamax: species.canGigantamax || '',
     abilityMap: {...(species.abilities || {})},
     learnsetLineage: state.dex.species.getLearnsetLineage(species.id).map(entry => ({
       ...entry,
@@ -995,9 +1199,32 @@ async function getMoveData(moveName) {
     isNonstandard: move.isNonstandard ?? null,
     isZ: Boolean(move.isZ),
     isMax: Boolean(move.isMax),
+    zBasePower: move.zMove?.basePower || 0,
+    zBoosts: move.zMove?.boost ? {...move.zMove.boost} : {},
+    zEffect: move.zMove?.effect || '',
+    maxBasePower: move.maxMove?.basePower || 0,
     flags: {...(move.flags || {})},
   };
   moveDataCache.set(key, result);
+  return result;
+}
+async function getItemData(itemName) {
+  const key = slugify(itemName);
+  if (!key) throw new Error('Item is blank');
+  if (itemDataCache.has(key)) return itemDataCache.get(key);
+  if (!state.dex) throw new Error('Local Dex failed to load.');
+  const item = state.dex.items.get(itemName);
+  if (!item?.exists) throw new Error(`Item not found in local data: ${itemName}`);
+  const result = {
+    name: item.name,
+    apiName: item.id,
+    zMove: item.zMove,
+    zMoveType: item.zMoveType ? String(item.zMoveType).toLowerCase() : '',
+    zMoveFrom: item.zMoveFrom || '',
+    itemUser: Array.isArray(item.itemUser) ? [...item.itemUser] : [],
+    megaStone: item.megaStone ? {...item.megaStone} : null,
+  };
+  itemDataCache.set(key, result);
   return result;
 }
 function joinReadableList(values, displayFn = (value) => value) {
@@ -2006,9 +2233,11 @@ function buildBattleMon(mon, player, slot) {
     ability: mon.ability,
     teraType: mon.teraType,
     moves: deepClone(mon.moves),
+    baseMoves: deepClone(mon.moves),
     types: deepClone(mon.data.types),
     originalTypes: deepClone(mon.data.types),
     stats,
+    baseMaxHp: stats.hp,
     maxHp: stats.hp,
     hp: stats.hp,
     boosts: {atk:0,def:0,spa:0,spd:0,spe:0},
@@ -2017,8 +2246,14 @@ function buildBattleMon(mon, player, slot) {
     toxicCounter: 0,
     protect: false,
     fainted: false,
+    terastallized: false,
     teraUsed: false,
+    dynamaxed: false,
+    dynamaxTurns: 0,
+    gigantamaxed: false,
+    preDynamaxSpriteId: '',
     megaUsed: isMegaSpeciesName(mon.data?.name || mon.formSpecies || mon.species),
+    gmaxMove: mon.data?.canGigantamax || '',
     volatile: {},
     originalData: mon.data,
   };
@@ -2037,6 +2272,9 @@ async function startBattle() {
       choices: {},
       mustSwitch: [],
       megaUsed: state.teams[player].some(mon => isMegaSpeciesName(mon.data?.name || mon.formSpecies || mon.species)),
+      teraUsed: false,
+      zUsed: false,
+      dynamaxUsed: false,
     })),
     log: [{text: '배틀 시작! 양쪽 팀이 전장에 나왔습니다. / Battle started. Both teams enter the field.', tone: 'accent'}],
   };
@@ -2054,7 +2292,7 @@ function applyStartOfBattleAbilities() {
         const foe = battle.players[1 - side.team[idx].player];
         foe.active.forEach(foeIdx => {
           const target = foe.team[foeIdx];
-          if (target && !target.fainted && slugify(target.item) !== 'clear-amulet') {
+          if (target && !target.fainted && slugify(target.item) !== 'clearamulet') {
             target.boosts.atk = clamp((target.boosts.atk || 0) - 1, -6, 6);
             addLog(`${mon.species}'s Intimidate lowers ${target.species}'s Attack.`, 'accent');
           }
@@ -2094,8 +2332,19 @@ function renderBattle() {
 function renderSideSprites(player, container, facing) {
   container.innerHTML = '';
   getActiveMons(player).forEach(mon => {
+    const shell = document.createElement('div');
+    shell.className = `battle-sprite-shell ${mon?.dynamaxed ? 'dynamaxed' : ''}`;
+    if (mon?.gigantamaxed) shell.classList.add('gigantamaxed');
     const holder = document.createElement('div');
-    container.appendChild(holder);
+    shell.appendChild(holder);
+    const badgeText = getBattleBadgeText(mon);
+    if (badgeText) {
+      const badge = document.createElement('div');
+      badge.className = 'battle-gimmick-badge';
+      badge.textContent = badgeText;
+      shell.appendChild(badge);
+    }
+    container.appendChild(shell);
     renderAnimatedSprite(holder, {spriteId: mon.spriteId, facing, shiny: mon.shiny, size: 'large'});
   });
 }
@@ -2111,8 +2360,9 @@ function renderBattleTeam(player, container) {
     const summary = document.createElement('div');
     summary.className = 'mon-summary';
     summary.innerHTML = `<div class="mon-name-line"><strong>${displaySpeciesName(mon.species)}</strong>${mon.status ? `<span class="status-badge">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
+      ${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}
       <div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div>
-      <div class="mon-sub">HP ${mon.hp}/${mon.maxHp}${side.active.includes(index) ? ' · 전투 중 / Active' : ''}${mon.fainted ? ' · 기절 / Fainted' : ''}</div>`;
+      <div class="mon-sub">HP ${mon.hp}/${mon.maxHp}${side.active.includes(index) ? ' · 전투 중 / Active' : ''}${mon.fainted ? ' · 기절 / Fainted' : ''}${mon.dynamaxed ? ` · ${mon.dynamaxTurns}턴 / ${mon.dynamaxTurns} turns` : ''}</div>`;
     card.appendChild(summary);
     container.appendChild(card);
   });
@@ -2148,7 +2398,7 @@ function targetOptionsFor(player, actionMonIndex, move) {
 function ensureChoiceObjects(player) {
   const side = state.battle.players[player];
   side.active.forEach(activeIndex => {
-    if (!side.choices[activeIndex]) side.choices[activeIndex] = {kind:'', move:'', target:null, switchTo:null, tera:false, mega:false};
+    if (!side.choices[activeIndex]) side.choices[activeIndex] = {kind:'', move:'', target:null, switchTo:null, tera:false, mega:false, z:false, dynamax:false};
   });
 }
 function renderChoicePanel(player, container, statusEl, titleEl) {
@@ -2157,11 +2407,15 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
   titleEl.textContent = `${side.name} 선택 / Choice`;
   container.innerHTML = '';
   const mustSwitchCount = side.active.filter(index => side.team[index]?.fainted).length;
-  statusEl.textContent = mustSwitchCount ? '기절한 전투 포켓몬의 교체 대상을 선택하세요. / Choose replacements for fainted active Pokémon.' : `행동 가능한 전투 포켓몬 ${side.active.length}마리 준비 완료. / ${side.active.length} active Pokémon ready to act.`;
+  statusEl.textContent = mustSwitchCount
+    ? '기절한 전투 포켓몬의 교체 대상을 선택하세요. / Choose replacements for fainted active Pokémon.'
+    : `행동 가능한 전투 포켓몬 ${side.active.length}마리 준비 완료. / ${side.active.length} active Pokémon ready to act.`;
+
   for (const activeIndex of side.active) {
     const mon = side.team[activeIndex];
     const section = document.createElement('div');
     section.className = 'choice-section';
+
     if (!mon || mon.fainted) {
       section.innerHTML = `<h4>교체 필요 / Replacement required</h4>`;
       const switchWrap = document.createElement('div');
@@ -2172,7 +2426,7 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
         btn.className = 'choice-btn';
         btn.innerHTML = `<strong>${displaySpeciesName(option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
         btn.addEventListener('click', () => {
-          side.choices[activeIndex] = {kind:'switch', switchTo:index};
+          side.choices[activeIndex] = {kind:'switch', switchTo:index, target:null, tera:false, mega:false, z:false, dynamax:false};
           renderBattle();
         });
         switchWrap.appendChild(btn);
@@ -2181,8 +2435,11 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
       container.appendChild(section);
       continue;
     }
+
     const choice = side.choices[activeIndex];
-    section.innerHTML = `<h4>${displaySpeciesName(mon.species)}</h4>`;
+    if (choice.z && choice.dynamax) choice.dynamax = false;
+    section.innerHTML = `<h4>${displaySpeciesName(mon.species)}</h4>${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}`;
+
     const moveButtons = document.createElement('div');
     moveButtons.className = 'choice-buttons';
     mon.moves.forEach(async (moveName) => {
@@ -2193,9 +2450,19 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
       moveButtons.appendChild(btn);
       try {
         const move = await getMoveData(moveName);
-        btn.innerHTML = `<strong>${displayMoveName(move.name)}</strong><small>${displayType(move.type)} · ${move.category}${move.power ? ` · ${move.power} BP` : ''}${move.accuracy ? ` · ${move.accuracy}%` : ''}</small>`;
+        const preview = previewMoveForUi(mon, move);
+        btn.innerHTML = `<strong>${displayMoveName(preview?.name || move.name)}</strong><small>${displayType(preview?.type || move.type)} · ${preview?.category || move.category}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''}</small>`;
         btn.addEventListener('click', () => {
-          side.choices[activeIndex] = {kind:'move', move: move.name, target: null, tera: choice.tera || false, mega: choice.mega || false};
+          side.choices[activeIndex] = {
+            kind:'move',
+            move: move.name,
+            target: null,
+            switchTo:null,
+            tera: choice.tera || false,
+            mega: choice.mega || false,
+            z: choice.z || false,
+            dynamax: choice.dynamax || false,
+          };
           renderBattle();
         });
       } catch (error) {
@@ -2206,35 +2473,87 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
 
     const toggles = document.createElement('div');
     toggles.className = 'toggle-row';
+
     const teraBtn = document.createElement('button');
     teraBtn.type = 'button';
     teraBtn.className = `toggle-pill ${choice.tera ? 'active' : ''}`;
     teraBtn.textContent = `테라스탈 / Terastallize (${displayType(mon.teraType)})`;
-    teraBtn.disabled = mon.teraUsed;
+    teraBtn.disabled = mon.teraUsed || (side.teraUsed && !choice.tera);
     teraBtn.addEventListener('click', () => {
       choice.tera = !choice.tera;
       renderBattle();
     });
     toggles.appendChild(teraBtn);
+
     const megaOption = getMegaCandidateForMon(mon);
     if (megaOption && !mon.megaUsed) {
       const megaBtn = document.createElement('button');
       megaBtn.type = 'button';
       megaBtn.className = `toggle-pill ${choice.mega ? 'active' : ''}`;
-      megaBtn.textContent = `메가진화 / Mega Evolution`;
+      megaBtn.textContent = '메가진화 / Mega Evolution';
       megaBtn.disabled = Boolean(side.megaUsed) && !choice.mega;
       megaBtn.addEventListener('click', () => {
         choice.mega = !choice.mega;
+        if (choice.mega) choice.z = false;
         renderBattle();
       });
       toggles.appendChild(megaBtn);
     }
+
+    if (mon.dynamaxed) {
+      const dynaState = document.createElement('span');
+      dynaState.className = 'toggle-pill active';
+      dynaState.textContent = `다이맥스 유지 중 / Dynamax (${mon.dynamaxTurns})`;
+      toggles.appendChild(dynaState);
+    } else if (canDynamax(mon, side)) {
+      const dynaBtn = document.createElement('button');
+      dynaBtn.type = 'button';
+      dynaBtn.className = `toggle-pill ${choice.dynamax ? 'active' : ''}`;
+      dynaBtn.textContent = '다이맥스 / Dynamax';
+      dynaBtn.addEventListener('click', () => {
+        choice.dynamax = !choice.dynamax;
+        if (choice.dynamax) choice.z = false;
+        renderBattle();
+      });
+      toggles.appendChild(dynaBtn);
+    }
+
+    if (choice.kind === 'move' && choice.move) {
+      const zBtn = document.createElement('button');
+      zBtn.type = 'button';
+      zBtn.className = `toggle-pill ${choice.z ? 'active' : ''}`;
+      zBtn.textContent = 'Z기술 / Z-Move';
+      zBtn.disabled = true;
+      toggles.appendChild(zBtn);
+      Promise.all([getMoveData(choice.move), getItemData(mon.item).catch(() => null)]).then(([move, item]) => {
+        if (!container.isConnected || !zBtn.isConnected) return;
+        const valid = item && canUseZMoveWithMove(mon, side, move, item);
+        if (!valid) {
+          zBtn.remove();
+          if (choice.z) {
+            choice.z = false;
+            renderBattle();
+          }
+          return;
+        }
+        const zName = typeof item.zMove === 'string' ? item.zMove : (move.category === 'status' ? `Z-${move.name}` : (GENERIC_Z_MOVE_NAMES[getBattleMoveType(mon, move)] || 'Z-Move'));
+        zBtn.disabled = Boolean(side.zUsed) && !choice.z;
+        zBtn.className = `toggle-pill ${choice.z ? 'active' : ''}`;
+        zBtn.textContent = `Z기술 / Z-Move (${displayMoveName(zName)})`;
+        zBtn.onclick = () => {
+          choice.z = !choice.z;
+          if (choice.z) choice.dynamax = false;
+          renderBattle();
+        };
+      });
+    }
+
     const switchBtn = document.createElement('button');
     switchBtn.type = 'button';
     switchBtn.className = 'toggle-pill';
     switchBtn.textContent = '교체 / Switch';
     switchBtn.addEventListener('click', () => {
-      side.choices[activeIndex] = {kind:'switch', switchTo:null};
+      side.choices[activeIndex] = {kind:'switch', switchTo:null, target:null, tera:false, mega:false, z:false, dynamax:false};
       renderBattle();
     });
     toggles.appendChild(switchBtn);
@@ -2278,7 +2597,7 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
         btn.className = `choice-btn ${choice.switchTo === index ? 'selected' : ''}`;
         btn.innerHTML = `<strong>${displaySpeciesName(option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
         btn.addEventListener('click', () => {
-          side.choices[activeIndex] = {kind:'switch', switchTo:index};
+          side.choices[activeIndex] = {kind:'switch', switchTo:index, target:null, tera:false, mega:false, z:false, dynamax:false};
           renderBattle();
         });
         switchWrap.appendChild(btn);
@@ -2321,6 +2640,8 @@ function renderPendingChoices() {
       if (choice?.kind === 'move') text = choice.target ? `${displayMoveName(choice.move)} → ${displaySpeciesName(battle.players[choice.target.player].team[choice.target.slot].species)}` : displayMoveName(choice.move);
       if (choice?.kind === 'move' && choice?.mega) text += ' · 메가진화 / Mega';
       if (choice?.kind === 'move' && choice?.tera) text += ' · 테라 / Tera';
+      if (choice?.kind === 'move' && choice?.z) text += ' · Z';
+      if (choice?.kind === 'move' && choice?.dynamax) text += ' · 다이맥스 / Dynamax';
       rows.push(`<div class="pending-card"><strong>${mon ? displaySpeciesName(mon.species) : '빈 슬롯 / Empty slot'}</strong>${text}</div>`);
     });
   });
@@ -2336,19 +2657,29 @@ async function resolveTurn() {
       if (!choice) continue;
       if (choice.kind === 'switch') {
         queue.push({priority: 100, speed: 0, player, activeIndex, mon, choice});
-      } else if (choice.kind === 'move') {
-        const move = await getMoveData(choice.move);
-        const priority = move.priority || 0;
-        const speed = mon && !mon.fainted ? getModifiedStat(mon, 'spe') : 0;
-        queue.push({priority, speed, player, activeIndex, mon, choice, move});
+        continue;
       }
+      if (choice.kind !== 'move' || !mon || mon.fainted) continue;
+      const move = await getMoveData(choice.move);
+      let speed = mon && !mon.fainted ? getModifiedStat(mon, 'spe') : 0;
+      if (choice.mega && !mon.megaUsed && !side.megaUsed) {
+        const megaCandidate = getMegaCandidateForMon(mon);
+        if (megaCandidate) {
+          const megaData = await getSpeciesData(megaCandidate.speciesName).catch(() => null);
+          const projectedStats = megaData ? calcStatsForSpeciesData(mon, megaData) : null;
+          if (projectedStats?.spe) speed = Math.max(1, Math.floor(projectedStats.spe * statStageMultiplier(mon.boosts.spe || 0)));
+        }
+      }
+            let priority = move.priority || 0;
+      if (choice.dynamax && move.category === 'status') priority = 4;
+      queue.push({priority, speed, player, activeIndex, mon, choice, move});
     }
   }
   queue.sort((a, b) => b.priority - a.priority || b.speed - a.speed || Math.random() - 0.5);
   for (const action of queue) {
     if (battle.winner) break;
     if (action.choice.kind === 'switch') performSwitch(action.player, action.activeIndex, action.choice.switchTo);
-    if (action.choice.kind === 'move') await performMove(action);
+    else if (action.choice.kind === 'move') await performMove(action);
     fillFaintedActives();
     determineWinner();
   }
@@ -2366,19 +2697,258 @@ function performSwitch(player, activeIndex, targetIndex) {
   if (!incoming || incoming.fainted) return;
   const leaving = side.team[activeIndex];
   if (leaving) {
+    if (leaving.dynamaxed) clearDynamax(leaving);
     leaving.boosts = {atk:0,def:0,spa:0,spd:0,spe:0};
     leaving.protect = false;
   }
   side.active[currentPosition] = targetIndex;
   addLog(`${side.name} 측은 ${leaving ? displaySpeciesName(leaving.species) : '포켓몬 / a Pokémon'}를 회수하고 ${displaySpeciesName(incoming.species)}를 내보냈다. / ${side.name} withdrew ${leaving?.species || 'a Pokémon'} and sent out ${incoming.species}.`, 'accent');
-  if (slugify(incoming.ability) === 'intimidate') {
+  triggerSwitchInEffects(player, incoming);
+}
+function triggerSwitchInEffects(player, mon) {
+  if (!mon || mon.fainted) return;
+  if (slugify(mon.ability) === 'intimidate') {
     state.battle.players[1-player].active.forEach(idx => {
       const target = state.battle.players[1-player].team[idx];
-      if (target && !target.fainted && slugify(target.item) !== 'clear-amulet') {
+      if (target && !target.fainted && slugify(target.item) !== 'clearamulet') {
         target.boosts.atk = clamp((target.boosts.atk || 0) - 1, -6, 6);
-        addLog(`${displaySpeciesName(incoming.species)}의 위협 / Intimidate! ${displaySpeciesName(target.species)}의 공격이 떨어졌다. / ${incoming.species}'s Intimidate lowers ${target.species}'s Attack.`, 'accent');
+        addLog(`${displaySpeciesName(mon.species)}의 위협 / Intimidate! ${displaySpeciesName(target.species)}의 공격이 떨어졌다. / ${mon.species}'s Intimidate lowers ${target.species}'s Attack.`, 'accent');
       }
     });
+  }
+}
+function rollHitCount(move) {
+  const minHits = move?.minHits || 1;
+  const maxHits = move?.maxHits || 1;
+  if (maxHits <= minHits) return Math.max(1, minHits);
+  return minHits + Math.floor(Math.random() * (maxHits - minHits + 1));
+}
+function applyBoost(target, stat, amount, text) {
+  if (!target?.boosts || !(stat in target.boosts)) return;
+  target.boosts[stat] = clamp((target.boosts[stat] || 0) + amount, -6, 6);
+  if (text) addLog(text);
+}
+function applyZStatusBonus(user, move) {
+  const boosts = move?.zBoosts || {};
+  for (const [stat, amount] of Object.entries(boosts)) {
+    if (stat in (user?.boosts || {})) user.boosts[stat] = clamp((user.boosts[stat] || 0) + amount, -6, 6);
+  }
+  if (Object.keys(boosts).length) addLog(`${displaySpeciesName(user.species)}이(가) Z파워로 능력치 보너스를 얻었다. / ${user.species} gained a Z-Power stat bonus.`);
+  if (move?.zEffect === 'heal') {
+    user.hp = user.maxHp;
+    addLog(`${displaySpeciesName(user.species)}의 HP가 가득 회복되었다. / ${user.species} restored all of its HP.`);
+  }
+  if (move?.zEffect === 'clearnegativeboost') {
+    Object.keys(user.boosts).forEach(stat => {
+      if (user.boosts[stat] < 0) user.boosts[stat] = 0;
+    });
+    addLog(`${displaySpeciesName(user.species)}의 낮아진 능력치가 초기화되었다. / ${user.species}'s lowered stats were reset.`);
+  }
+}
+function applyMaxMoveBonus(user, targets, move) {
+  const effect = getMaxMoveSecondaryEffect(move?.type);
+  if (!effect) return;
+  if (effect.kind === 'self-boost') {
+    applyBoost(user, effect.stat, effect.amount, `${displaySpeciesName(user.species)}의 ${statLabels[effect.stat] || effect.stat}이(가) 올랐다. / ${user.species}'s ${effect.stat.toUpperCase()} rose.`);
+    return;
+  }
+  for (const target of targets) {
+    if (!target || target.fainted) continue;
+    applyBoost(target, effect.stat, effect.amount, `${displaySpeciesName(target.species)}의 ${statLabels[effect.stat] || effect.stat}이(가) 떨어졌다. / ${target.species}'s ${effect.stat.toUpperCase()} fell.`);
+  }
+}
+async function buildResolvedMove(mon, side, choice, baseMove) {
+  const runtimeMove = {
+    ...baseMove,
+    baseMoveName: baseMove.name,
+    name: baseMove.name,
+    type: getBattleMoveType(mon, baseMove) || baseMove.type,
+    category: getBattleMoveCategory(mon, baseMove) || baseMove.category,
+    power: baseMove.power || 0,
+    accuracy: baseMove.accuracy || 100,
+    useZ: false,
+    useMax: false,
+    partialProtect: false,
+    bypassAccuracy: false,
+  };
+  if (mon?.terastallized && teraPowerBoostApplies(mon, runtimeMove)) runtimeMove.power = Math.max(runtimeMove.power, 60);
+  if (mon?.dynamaxed || choice?.dynamax) {
+    runtimeMove.useMax = true;
+    runtimeMove.name = getMaxMoveName(mon, baseMove);
+    runtimeMove.type = getBattleMoveType(mon, baseMove) || baseMove.type;
+    runtimeMove.category = baseMove.category === 'status' ? 'status' : getBattleMoveCategory(mon, baseMove);
+    runtimeMove.power = getDefaultMaxMovePower(baseMove);
+    runtimeMove.accuracy = 100;
+    runtimeMove.priority = baseMove.category === 'status' ? 4 : baseMove.priority;
+    runtimeMove.target = baseMove.category === 'status' ? 'self' : baseMove.target;
+    runtimeMove.drain = 0;
+    runtimeMove.ailment = 'none';
+    runtimeMove.ailmentChance = 0;
+    runtimeMove.statChanges = [];
+    runtimeMove.statChance = 0;
+    runtimeMove.minHits = 1;
+    runtimeMove.maxHits = 1;
+    return runtimeMove;
+  }
+  if (choice?.z) {
+    const item = await getItemData(mon.item).catch(() => null);
+    if (item && canUseZMoveWithMove(mon, side, baseMove, item)) {
+      runtimeMove.useZ = true;
+      runtimeMove.name = typeof item.zMove === 'string' ? item.zMove : (baseMove.category === 'status' ? `Z-${baseMove.name}` : (GENERIC_Z_MOVE_NAMES[runtimeMove.type] || 'Z-Move'));
+      runtimeMove.partialProtect = baseMove.category !== 'status';
+      runtimeMove.bypassAccuracy = baseMove.category !== 'status';
+      if (baseMove.category !== 'status') {
+        runtimeMove.power = baseMove.zBasePower || getDefaultZMovePower(baseMove.power || 0);
+        runtimeMove.accuracy = 100;
+        runtimeMove.drain = 0;
+        runtimeMove.ailment = 'none';
+        runtimeMove.ailmentChance = 0;
+        runtimeMove.statChanges = [];
+        runtimeMove.statChance = 0;
+        runtimeMove.minHits = 1;
+        runtimeMove.maxHits = 1;
+      }
+    }
+  }
+  return runtimeMove;
+}
+async function performMove(action) {
+  const {player, mon, choice, move: baseMove} = action;
+  if (!mon || mon.fainted) return;
+  const side = state.battle.players[player];
+  const currentIndex = side.active.find(idx => side.team[idx].id === mon.id) ?? action.activeIndex;
+  const currentMon = side.team[currentIndex];
+  if (!currentMon || currentMon.fainted) return;
+
+  const check = canMove(currentMon);
+  if (!check.ok) {
+    addLog(check.reason);
+    return;
+  }
+  if (check.wake) addLog(`${displaySpeciesName(currentMon.species)}은(는) 잠에서 깼다! / ${currentMon.species} woke up!`);
+
+  if (choice.mega && !currentMon.megaUsed && !side.megaUsed) {
+    const megaCandidate = getMegaCandidateForMon(currentMon);
+    if (megaCandidate) {
+      const megaData = await getSpeciesData(megaCandidate.speciesName).catch(() => null);
+      if (megaData) {
+        const beforeName = currentMon.species;
+        applyBattleFormChange(currentMon, megaData, megaCandidate.assetId);
+        currentMon.megaUsed = true;
+        side.megaUsed = true;
+        addLog(`${displaySpeciesName(beforeName)}이(가) 메가진화했다! / ${beforeName} Mega Evolved into ${megaData.name}!`, 'accent');
+      }
+    }
+  }
+  if (choice.tera && !currentMon.teraUsed && !side.teraUsed) {
+    currentMon.types = [currentMon.teraType];
+    currentMon.terastallized = true;
+    currentMon.teraUsed = true;
+    side.teraUsed = true;
+    addLog(`${displaySpeciesName(currentMon.species)}이(가) ${displayType(currentMon.teraType)} 테라스탈했다! / ${currentMon.species} Terastallized into ${titleCase(currentMon.teraType)}-type!`, 'accent');
+  }
+  if (choice.dynamax && canDynamax(currentMon, side)) {
+    applyDynamax(currentMon);
+    side.dynamaxUsed = true;
+    addLog(`${displaySpeciesName(currentMon.species)}이(가) ${currentMon.gigantamaxed ? '거다이맥스 / Gigantamax' : '다이맥스 / Dynamax'}했다! / ${currentMon.species} ${currentMon.gigantamaxed ? 'Gigantamaxed' : 'Dynamaxed'}!`, 'accent');
+  }
+
+  const move = await buildResolvedMove(currentMon, side, choice, baseMove);
+  if (move.useZ) side.zUsed = true;
+  const targets = resolveTargets(player, currentIndex, choice, move);
+  if (!targets.length) {
+    addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}! 그러나 맞힐 대상이 없었다. / ${currentMon.species} used ${move.name}, but there was no valid target.`);
+    return;
+  }
+
+  addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}! / ${currentMon.species} used ${move.name}.`, 'accent');
+  if (['protect','detect'].includes(slugify(move.baseMoveName || move.name)) || slugify(move.name) === 'maxguard') {
+    currentMon.protect = true;
+    addLog(`${displaySpeciesName(currentMon.species)}은(는) 이번 턴 보호 상태다. / ${currentMon.species} is protected this turn.`);
+    if (move.useZ && move.category === 'status') applyZStatusBonus(currentMon, move);
+    return;
+  }
+  if (move.category === 'status') {
+    applyStatusMove(currentMon, targets, move);
+    if (move.useZ) applyZStatusBonus(currentMon, move);
+    return;
+  }
+
+  const aliveTargets = [];
+  for (const target of targets) {
+    if (!target || target.fainted) continue;
+    if (target.protect && player !== target.player) {
+      if (!move.partialProtect) {
+        addLog(`${displaySpeciesName(target.species)}은(는) 자신을 보호했다. / ${target.species} protected itself.`);
+        continue;
+      }
+    }
+    const accuracy = move.accuracy || 100;
+    if (!move.bypassAccuracy && Math.random() * 100 >= accuracy) {
+      addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}는 ${displaySpeciesName(target.species)}에게 빗나갔다. / ${currentMon.species}'s ${move.name} missed ${target.species}.`);
+      continue;
+    }
+    const hits = rollHitCount(move);
+    let totalDamage = 0;
+    let lastDamageInfo = null;
+    for (let hit = 0; hit < hits; hit += 1) {
+      if (target.hp <= 0) break;
+      const damageInfo = computeDamage(currentMon, target, move, targets.length > 1);
+      let damage = damageInfo.damage;
+      if (slugify(target.ability) === 'multiscale' && target.hp === target.maxHp) damage = Math.floor(damage * 0.5);
+      if (slugify(target.ability) === 'flashfire' && getBattleMoveType(currentMon, move) === 'fire') {
+        addLog(`${displaySpeciesName(target.species)}의 타오르는불꽃 / Flash Fire가 공격을 흡수했다. / ${target.species}'s Flash Fire absorbed the attack.`);
+        target.volatile.flashFire = true;
+        damage = 0;
+        break;
+      }
+      if (slugify(target.ability) === 'levitate' && getBattleMoveType(currentMon, move) === 'ground') {
+        addLog(`${displaySpeciesName(target.species)}은(는) 부유 / Levitate 덕분에 땅 타입 기술을 피했다. / ${target.species} avoided the Ground-type move thanks to Levitate.`);
+        damage = 0;
+        break;
+      }
+      if (slugify(target.item) === 'focussash' && target.hp === target.maxHp && damage >= target.hp) {
+        damage = target.hp - 1;
+        addLog(`${displaySpeciesName(target.species)}은(는) 기합의띠 / Focus Sash로 버텼다! / ${target.species} endured with Focus Sash!`, 'accent');
+      }
+      if (target.protect && move.partialProtect) damage = Math.max(1, Math.floor(damage * 0.25));
+      target.hp = Math.max(0, target.hp - Math.max(1, damage));
+      totalDamage += Math.max(1, damage);
+      lastDamageInfo = damageInfo;
+      if (damageInfo.crit) addLog('급소에 맞았다! / A critical hit!');
+      if (move.drain) {
+        const heal = Math.max(1, Math.floor(damage * (move.drain / 100)));
+        currentMon.hp = Math.min(currentMon.maxHp, currentMon.hp + heal);
+        addLog(`${displaySpeciesName(currentMon.species)}의 HP가 ${heal} 회복되었다. / ${currentMon.species} restored ${heal} HP.`);
+      }
+      maybeApplySecondary(currentMon, target, move);
+      if (target.hp <= 0) {
+        target.fainted = true;
+        target.hp = 0;
+        addLog(`${displaySpeciesName(target.species)}은(는) 쓰러졌다. / ${target.species} fainted.`, 'win');
+        break;
+      }
+    }
+    if (totalDamage > 0) {
+      addLog(`${displaySpeciesName(target.species)}의 HP가 ${totalDamage}만큼 줄었다${lastDamageInfo?.effectivenessText ? ` (${lastDamageInfo.effectivenessText})` : ''}. / ${target.species} lost ${totalDamage} HP${lastDamageInfo?.effectivenessText ? ` (${lastDamageInfo.effectivenessText})` : ''}.`);
+      aliveTargets.push(target);
+    }
+    if (slugify(currentMon.item) === 'lifeorb' && totalDamage > 0) {
+      const recoil = Math.max(1, Math.floor(currentMon.baseMaxHp / 10));
+      currentMon.hp = Math.max(0, currentMon.hp - recoil);
+      addLog(`${displaySpeciesName(currentMon.species)}은(는) 생명의구슬 / Life Orb 반동으로 데미지를 입었다. / ${currentMon.species} was hurt by Life Orb.`);
+    }
+    if (slugify(target.item) === 'rockyhelmet' && totalDamage > 0 && move.category === 'physical') {
+      const recoil = Math.max(1, Math.floor(currentMon.baseMaxHp / 6));
+      currentMon.hp = Math.max(0, currentMon.hp - recoil);
+      addLog(`${displaySpeciesName(currentMon.species)}은(는) 울퉁불퉁멧 / Rocky Helmet 때문에 데미지를 입었다. / ${currentMon.species} was hurt by Rocky Helmet.`);
+    }
+  }
+  if (move.useMax) applyMaxMoveBonus(currentMon, aliveTargets, move);
+  if (currentMon.hp <= 0) {
+    currentMon.hp = 0;
+    currentMon.fainted = true;
+    addLog(`${displaySpeciesName(currentMon.species)}은(는) 쓰러졌다. / ${currentMon.species} fainted.`, 'win');
   }
 }
 function canMove(mon) {
@@ -2392,102 +2962,6 @@ function canMove(mon) {
   if (mon.status === 'frz' && Math.random() < 0.8) return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 얼어붙어 움직일 수 없다. / ${mon.species} is frozen solid.`};
   if (mon.status === 'par' && Math.random() < 0.25) return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 몸이 저려 움직일 수 없다. / ${mon.species} is fully paralyzed.`};
   return {ok:true};
-}
-async function performMove(action) {
-  const {player, mon, choice, move} = action;
-  if (!mon || mon.fainted) return;
-  const side = state.battle.players[player];
-  const currentMon = side.team[side.active.find(idx => side.team[idx].id === mon.id) ?? action.activeIndex];
-  if (!currentMon || currentMon.fainted) return;
-  const check = canMove(currentMon);
-  if (!check.ok) {
-    addLog(check.reason);
-    return;
-  }
-  if (choice.mega && !currentMon.megaUsed && !side.megaUsed) {
-    const megaCandidate = getMegaCandidateForMon(currentMon);
-    if (megaCandidate) {
-      const megaData = await getSpeciesData(megaCandidate.speciesName).catch(() => null);
-      if (megaData) {
-        applyBattleFormChange(currentMon, megaData, megaCandidate.assetId);
-        currentMon.megaUsed = true;
-        side.megaUsed = true;
-        addLog(`${displaySpeciesName(currentMon.baseSpecies || currentMon.species)}이(가) 메가진화했다! / ${currentMon.baseSpecies || currentMon.species} Mega Evolved into ${megaData.name}!`, 'accent');
-      }
-    }
-  }
-  if (choice.tera && !currentMon.teraUsed) {
-    currentMon.types = [currentMon.teraType];
-    currentMon.teraUsed = true;
-    addLog(`${displaySpeciesName(currentMon.species)}이(가) ${displayType(currentMon.teraType)} 테라스탈했다! / ${currentMon.species} Terastallized into ${titleCase(currentMon.teraType)}-type!`, 'accent');
-  }
-  const targets = resolveTargets(player, action.activeIndex, choice, move);
-  if (!targets.length) {
-    addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}! 그러나 맞힐 대상이 없었다. / ${currentMon.species} used ${move.name}, but there was no valid target.`);
-    return;
-  }
-  addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}! / ${currentMon.species} used ${move.name}.`, 'accent');
-  if (['protect','detect'].includes(slugify(move.name))) {
-    currentMon.protect = true;
-    addLog(`${displaySpeciesName(currentMon.species)}은(는) 이번 턴 보호 상태다. / ${currentMon.species} is protected this turn.`);
-    return;
-  }
-  if (move.category === 'status') {
-    applyStatusMove(currentMon, targets, move);
-    return;
-  }
-  for (const target of targets) {
-    if (!target || target.fainted) continue;
-    if (target.protect && player !== target.player) {
-      addLog(`${displaySpeciesName(target.species)}은(는) 자신을 보호했다. / ${target.species} protected itself.`);
-      continue;
-    }
-    const accuracy = move.accuracy || 100;
-    if (Math.random() * 100 >= accuracy) {
-      addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}는 ${displaySpeciesName(target.species)}에게 빗나갔다. / ${currentMon.species}'s ${move.name} missed ${target.species}.`);
-      continue;
-    }
-    const damageInfo = computeDamage(currentMon, target, move, targets.length > 1);
-    let damage = damageInfo.damage;
-    if (slugify(target.ability) === 'multiscale' && target.hp === target.maxHp) damage = Math.floor(damage * 0.5);
-    if (slugify(target.ability) === 'flash-fire' && move.type === 'fire') {
-      addLog(`${displaySpeciesName(target.species)}의 타오르는불꽃 / Flash Fire가 공격을 흡수했다. / ${target.species}'s Flash Fire absorbed the attack.`);
-      target.volatile.flashFire = true;
-      continue;
-    }
-    if (slugify(target.ability) === 'levitate' && move.type === 'ground') {
-      addLog(`${displaySpeciesName(target.species)}은(는) 부유 / Levitate 덕분에 땅 타입 기술을 피했다. / ${target.species} avoided the Ground-type move thanks to Levitate.`);
-      continue;
-    }
-    if (slugify(target.item) === 'focus-sash' && target.hp === target.maxHp && damage >= target.hp) {
-      damage = target.hp - 1;
-      addLog(`${displaySpeciesName(target.species)}은(는) 기합의띠 / Focus Sash로 버텼다! / ${target.species} endured with Focus Sash!`, 'accent');
-    }
-    target.hp = Math.max(0, target.hp - Math.max(1, damage));
-    addLog(`${displaySpeciesName(target.species)}의 HP가 ${damage}만큼 줄었다${damageInfo.effectivenessText ? ` (${damageInfo.effectivenessText})` : ''}. / ${target.species} lost ${damage} HP${damageInfo.effectivenessText ? ` (${damageInfo.effectivenessText})` : ''}.`);
-    if (damageInfo.crit) addLog('급소에 맞았다! / A critical hit!');
-    if (move.drain) {
-      const heal = Math.max(1, Math.floor(damage * (move.drain / 100)));
-      currentMon.hp = Math.min(currentMon.maxHp, currentMon.hp + heal);
-      addLog(`${displaySpeciesName(currentMon.species)}의 HP가 ${heal} 회복되었다. / ${currentMon.species} restored ${heal} HP.`);
-    }
-    if (slugify(currentMon.item) === 'life-orb') {
-      const recoil = Math.max(1, Math.floor(currentMon.maxHp / 10));
-      currentMon.hp = Math.max(0, currentMon.hp - recoil);
-      addLog(`${displaySpeciesName(currentMon.species)}은(는) 생명의구슬 / Life Orb 반동으로 데미지를 입었다. / ${currentMon.species} was hurt by Life Orb.`);
-    }
-    if (slugify(target.item) === 'rocky-helmet' && move.category === 'physical') {
-      const recoil = Math.max(1, Math.floor(currentMon.maxHp / 6));
-      currentMon.hp = Math.max(0, currentMon.hp - recoil);
-      addLog(`${displaySpeciesName(currentMon.species)}은(는) 울퉁불퉁멧 / Rocky Helmet 때문에 데미지를 입었다. / ${currentMon.species} was hurt by Rocky Helmet.`);
-    }
-    maybeApplySecondary(currentMon, target, move);
-    if (target.hp <= 0) {
-      target.fainted = true;
-      target.hp = 0;
-      addLog(`${displaySpeciesName(target.species)}은(는) 쓰러졌다. / ${target.species} fainted.`, 'win');
-    }
-  }
 }
 function resolveTargets(player, activeIndex, choice, move) {
   const battle = state.battle;
@@ -2506,7 +2980,8 @@ function resolveTargets(player, activeIndex, choice, move) {
 }
 function applyStatusMove(user, targets, move) {
   if (move.healing) {
-    const heal = Math.max(1, Math.floor(user.maxHp * (move.healing / 100)));
+    const healBase = user.baseMaxHp || user.maxHp;
+    const heal = Math.max(1, Math.floor(healBase * (move.healing / 100)));
     user.hp = Math.min(user.maxHp, user.hp + heal);
     addLog(`${displaySpeciesName(user.species)}의 HP가 ${heal} 회복되었다. / ${user.species} restored ${heal} HP.`);
   }
@@ -2554,25 +3029,25 @@ function applyAilment(target, ailment, chance) {
   addLog(`${displaySpeciesName(target.species)}은(는) ${displayStatus(status)} 상태가 되었다. / ${target.species} is now ${statusNames[status].toLowerCase()}.`);
 }
 function computeDamage(attacker, defender, move, spread = false) {
-  const physical = move.category === 'physical';
+  const category = getBattleMoveCategory(attacker, move);
+  const physical = category === 'physical';
   let atk = getModifiedStat(attacker, physical ? 'atk' : 'spa');
   let def = getModifiedStat(defender, physical ? 'def' : 'spd');
-  const moveType = move.type;
+  const moveType = getBattleMoveType(attacker, move);
   let power = move.power || 0;
-  if (slugify(attacker.ability) === 'technician' && power <= 60) power = Math.floor(power * 1.5);
+  if (slugify(attacker.ability) === 'technician' && power <= 60 && !move.useZ && !move.useMax) power = Math.floor(power * 1.5);
   if (slugify(attacker.item) === 'choiceband' && physical) atk = Math.floor(atk * 1.5);
   if (slugify(attacker.item) === 'choicespecs' && !physical) atk = Math.floor(atk * 1.5);
   if (slugify(attacker.item) === 'muscleband' && physical) power = Math.floor(power * 1.1);
   if (slugify(attacker.item) === 'wiseglasses' && !physical) power = Math.floor(power * 1.1);
   const typeBoostItems = {
-    'mysticwater':'water','charcoal':'fire','miracleseed':'grass','magnet':'electric','blackglasses':'dark','nevermeltice':'ice','softsand':'ground','dragonfang':'dragon','pixieplate':'fairy','poisonbarb':'poison','silverpowder':'bug','spelltag':'ghost','sharpbeak':'flying','twistedspoon':'psychic','hardstone':'rock','silkscarf':'normal','metalcoat':'steel'
+    mysticwater:'water', charcoal:'fire', miracleseed:'grass', magnet:'electric', blackglasses:'dark', nevermeltice:'ice', softsand:'ground', dragonfang:'dragon', pixieplate:'fairy', poisonbarb:'poison', silverpowder:'bug', spelltag:'ghost', sharpbeak:'flying', twistedspoon:'psychic', hardstone:'rock', silkscarf:'normal', metalcoat:'steel'
   };
   if (typeBoostItems[slugify(attacker.item)] === moveType) power = Math.floor(power * 1.2);
   let damage = Math.floor(Math.floor(Math.floor((2 * attacker.level / 5 + 2) * power * atk / Math.max(1, def)) / 50) + 2);
   if (physical && attacker.status === 'brn') damage = Math.floor(damage * 0.5);
-  let stab = attacker.types.includes(moveType) ? 1.5 : 1;
-  if (slugify(attacker.ability) === 'adaptability' && attacker.types.includes(moveType)) stab = 2;
-  if (slugify(attacker.ability) === 'flash-fire' && attacker.volatile.flashFire && moveType === 'fire') damage = Math.floor(damage * 1.5);
+  const stab = getStabMultiplier(attacker, moveType);
+  if (slugify(attacker.ability) === 'flashfire' && attacker.volatile.flashFire && moveType === 'fire') damage = Math.floor(damage * 1.5);
   let effectiveness = typeEffectiveness(moveType, defender);
   if (slugify(attacker.item) === 'expertbelt' && effectiveness > 1) damage = Math.floor(damage * 1.2);
   const critChance = move.critRate > 0 ? Math.min(50, 12.5 * (move.critRate + 1)) : (slugify(attacker.item) === 'scopelens' ? 12.5 : 4.167);
@@ -2598,6 +3073,7 @@ function fillFaintedActives() {
       const replacement = switchOptionsFor(player, true)[0];
       if (replacement) {
         addLog(`${side.name} 측은 ${displaySpeciesName(replacement.mon.species)}를 내보냈다. / ${side.name} sends out ${replacement.mon.species}.`, 'accent');
+        triggerSwitchInEffects(player, replacement.mon);
         return replacement.index;
       }
       return activeIndex;
@@ -2609,35 +3085,36 @@ function endOfTurn() {
   battle.players.forEach(side => {
     side.team.forEach(mon => {
       if (!mon || mon.fainted) return;
+      const hpBase = mon.baseMaxHp || mon.maxHp;
       mon.protect = false;
       if (mon.status === 'brn') {
-        const dmg = Math.max(1, Math.floor(mon.maxHp / 16));
+        const dmg = Math.max(1, Math.floor(hpBase / 16));
         mon.hp = Math.max(0, mon.hp - dmg);
         addLog(`${displaySpeciesName(mon.species)}은(는) 화상 데미지를 입었다. / ${mon.species} was hurt by its burn.`);
       }
       if (mon.status === 'psn') {
-        const dmg = Math.max(1, Math.floor(mon.maxHp / 8));
+        const dmg = Math.max(1, Math.floor(hpBase / 8));
         mon.hp = Math.max(0, mon.hp - dmg);
         addLog(`${displaySpeciesName(mon.species)}은(는) 독 데미지를 입었다. / ${mon.species} was hurt by poison.`);
       }
       if (mon.status === 'tox') {
         mon.toxicCounter = Math.max(1, mon.toxicCounter + 1);
-        const dmg = Math.max(1, Math.floor(mon.maxHp * mon.toxicCounter / 16));
+        const dmg = Math.max(1, Math.floor(hpBase * mon.toxicCounter / 16));
         mon.hp = Math.max(0, mon.hp - dmg);
         addLog(`${displaySpeciesName(mon.species)}은(는) 맹독 데미지를 입었다. / ${mon.species} was hurt by toxic poison.`);
       }
       if (slugify(mon.item) === 'leftovers' && !mon.fainted) {
-        const heal = Math.max(1, Math.floor(mon.maxHp / 16));
+        const heal = Math.max(1, Math.floor(hpBase / 16));
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
         addLog(`${displaySpeciesName(mon.species)}은(는) 먹다남은음식 / Leftovers로 HP를 조금 회복했다. / ${mon.species} restored a little HP with Leftovers.`);
       }
-      if (slugify(mon.item) === 'black-sludge' && mon.types.includes('poison')) {
-        const heal = Math.max(1, Math.floor(mon.maxHp / 16));
+      if (slugify(mon.item) === 'blacksludge' && mon.types.includes('poison')) {
+        const heal = Math.max(1, Math.floor(hpBase / 16));
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
         addLog(`${displaySpeciesName(mon.species)}은(는) 검은오물 / Black Sludge로 HP를 회복했다. / ${mon.species} restored HP with Black Sludge.`);
       }
-      if (slugify(mon.item) === 'sitrus-berry' && mon.hp > 0 && mon.hp <= mon.maxHp / 2 && !mon.volatile.usedSitrus) {
-        const heal = Math.max(1, Math.floor(mon.maxHp / 4));
+      if (slugify(mon.item) === 'sitrusberry' && mon.hp > 0 && mon.hp <= mon.maxHp / 2 && !mon.volatile.usedSitrus) {
+        const heal = Math.max(1, Math.floor(hpBase / 4));
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
         mon.volatile.usedSitrus = true;
         addLog(`${displaySpeciesName(mon.species)}은(는) 오랭열매 / Sitrus Berry로 HP를 회복했다. / ${mon.species} restored HP with Sitrus Berry.`);
@@ -2645,7 +3122,16 @@ function endOfTurn() {
       if (mon.hp <= 0) {
         mon.hp = 0;
         mon.fainted = true;
+        if (mon.dynamaxed) clearDynamax(mon);
         addLog(`${displaySpeciesName(mon.species)}은(는) 쓰러졌다. / ${mon.species} fainted.`, 'win');
+        return;
+      }
+      if (mon.dynamaxed) {
+        mon.dynamaxTurns = Math.max(0, mon.dynamaxTurns - 1);
+        if (mon.dynamaxTurns <= 0) {
+          clearDynamax(mon);
+          addLog(`${displaySpeciesName(mon.species)}의 다이맥스가 풀렸다. / ${mon.species} returned to normal size.`);
+        }
       }
     });
   });

@@ -13,7 +13,7 @@ A GitHub Pages-ready local 2-player Pokémon-style battle builder and pass-and-p
 - Stronger validator-style legality checks for nonstandard flags, form requirements, item / ability legality, Tera type, gender, team warnings, validation-profile clauses, and event-only move bundle checks
 - Animated uploaded Pokémon sprites rendered from strip-style PNGs
 - Uploaded item icons, type icons, and status overlays used locally
-- Browser battle flow with turn selection, speed/priority ordering, damage, switching, fainting, and battle log
+- Browser battle flow with singles-first turn selection, switching, speed/priority ordering, damage, status handling, fainting, winner checks, and battle log
 - Local save via `localStorage`
 
 ## Stage 4: legality / validator strengthening
@@ -98,4 +98,4 @@ The best next milestone after this build is:
 
 1. Continue deeper TeamValidator parity for exact source combinations, event constraints, and format-specific clauses
 2. Full simulator integration for battle resolution
-3. Expanded mechanic support for Mega Evolution, Z-Moves, Dynamax, and complete Terastal handling
+3. Continue deeper singles parity (weather / terrain / PP / hazards / move coverage), then extend doubles and refine Mega / Z-Move / Dynamax / Terastal edge cases
