@@ -14,6 +14,36 @@ async function requestJson(url, options = {}) {
   return data;
 }
 
+function getSideId(playerIndex) {
+  return `p${playerIndex + 1}`;
+}
+
+function getRequestActionSlots(side, request) {
+  const active = Array.isArray(side?.active) ? side.active : [];
+  if (Array.isArray(request?.forceSwitch)) {
+    return request.forceSwitch
+      .map((required, requestSlot) => (required ? (active[requestSlot] ?? requestSlot) : null))
+      .filter(slot => Number.isInteger(slot));
+  }
+  if (Array.isArray(request?.active) && request.active.length) {
+    return request.active.map((_, requestSlot) => active[requestSlot] ?? requestSlot);
+  }
+  return [];
+}
+
+function isActionableRequest(request) {
+  if (!request || request.wait || request.teamPreview) return false;
+  if (Array.isArray(request.forceSwitch) && request.forceSwitch.some(Boolean)) return true;
+  return Array.isArray(request.active) && request.active.length > 0;
+}
+
+function getPendingChoiceForSide(battle, sideId, slot) {
+  const fromPendingState = battle?.pendingChoices?.[sideId]?.[slot];
+  if (fromPendingState) return fromPendingState;
+  const numericPlayer = Number(sideId?.slice(1)) - 1;
+  return battle?.players?.[numericPlayer]?.choices?.[slot] || null;
+}
+
 export async function probeShowdownLocalServer() {
   try {
     return await requestJson('/api/engine/status', {method: 'GET'});
@@ -34,10 +64,22 @@ export async function submitShowdownLocalSinglesChoices({battleId, battle}) {
   const choices = {};
   for (const playerIndex of [0, 1]) {
     const side = battle.players[playerIndex];
-    const activeIndex = Array.isArray(side.active) ? side.active[0] : 0;
-    const choice = side.choices?.[activeIndex];
-    if (!choice) throw new Error(`Player ${playerIndex + 1} choice is missing.`);
-    choices[`p${playerIndex + 1}`] = serializeChoiceForShowdown(choice);
+    const request = side?.request || null;
+    if (!isActionableRequest(request)) continue;
+    const sideId = getSideId(playerIndex);
+    const actionSlots = getRequestActionSlots(side, request);
+    if (!actionSlots.length) {
+      throw new Error(`Player ${playerIndex + 1} has an actionable request but no active slot.`);
+    }
+    const slot = actionSlots[0];
+    const choice = getPendingChoiceForSide(battle, sideId, slot);
+    if (!choice) {
+      throw new Error(`Player ${playerIndex + 1} choice is missing.`);
+    }
+    choices[sideId] = serializeChoiceForShowdown(choice);
+  }
+  if (!Object.keys(choices).length) {
+    throw new Error('No actionable engine request is pending.');
   }
   const data = await requestJson('/api/battle/choice', {
     method: 'POST',

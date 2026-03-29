@@ -2686,7 +2686,8 @@ async function startBattle() {
   if (state.mode === 'singles' && state.showdownLocal?.available) {
     try {
       const payload = await buildShowdownBattlePayload();
-      state.battle = await startShowdownLocalSinglesBattle(payload);
+      state.battle = ensureBattleUiState(await startShowdownLocalSinglesBattle(payload));
+      clearEnginePendingChoices(state.battle);
       els.battlePanel.classList.remove('hidden');
       renderBattle();
       return;
@@ -2724,6 +2725,7 @@ async function startBattle() {
     trickRoomTurns: 0,
     log: [{text: '배틀 시작! 양쪽 팀이 전장에 나왔습니다. / Battle started. Both teams enter the field.', tone: 'accent'}],
   };
+  ensureBattleUiState(state.battle);
   applyStartOfBattleAbilities();
   els.battlePanel.classList.remove('hidden');
   renderBattle();
@@ -2828,6 +2830,355 @@ function getPendingChoiceForMon(mon) {
   const index = getChoiceIndexForMon(mon);
   if (!side || index < 0) return null;
   return side.choices?.[index] || null;
+}
+function createEmptyBattleChoice() {
+  return {kind:'', move:'', moveIndex:null, target:null, switchTo:null, tera:false, mega:false, z:false, dynamax:false};
+}
+function ensureBattleUiState(battle = state.battle) {
+  if (!battle) return null;
+  battle.pendingChoices = battle.pendingChoices || {p1: {}, p2: {}};
+  battle.pendingChoices.p1 = battle.pendingChoices.p1 || {};
+  battle.pendingChoices.p2 = battle.pendingChoices.p2 || {};
+  if (typeof battle.resolvingTurn !== 'boolean') battle.resolvingTurn = false;
+  return battle;
+}
+function getEngineSideId(player) {
+  return `p${player + 1}`;
+}
+function getEngineRequestForPlayer(player, battle = state.battle) {
+  return battle?.players?.[player]?.request || null;
+}
+function isEngineForceSwitchRequest(request) {
+  return Array.isArray(request?.forceSwitch) && request.forceSwitch.some(Boolean);
+}
+function isEngineActionableRequest(request) {
+  if (!request || request.wait || request.teamPreview) return false;
+  if (isEngineForceSwitchRequest(request)) return true;
+  return Array.isArray(request.active) && request.active.length > 0;
+}
+function getEngineActionSlots(player, battle = state.battle) {
+  const side = battle?.players?.[player];
+  const request = side?.request;
+  const active = Array.isArray(side?.active) ? side.active : [];
+  if (isEngineForceSwitchRequest(request)) {
+    return request.forceSwitch
+      .map((required, requestSlot) => (required ? (active[requestSlot] ?? requestSlot) : null))
+      .filter(slot => Number.isInteger(slot));
+  }
+  if (Array.isArray(request?.active) && request.active.length) {
+    return request.active.map((_, requestSlot) => active[requestSlot] ?? requestSlot);
+  }
+  return [];
+}
+function getEnginePendingChoice(player, slot, battle = state.battle) {
+  ensureBattleUiState(battle);
+  return battle?.pendingChoices?.[getEngineSideId(player)]?.[slot] || null;
+}
+function setEnginePendingChoice(player, slot, choice, battle = state.battle) {
+  ensureBattleUiState(battle);
+  battle.pendingChoices[getEngineSideId(player)][slot] = choice;
+}
+function clearEnginePendingChoices(battle = state.battle) {
+  if (!battle) return;
+  battle.pendingChoices = {p1: {}, p2: {}};
+}
+function getEngineDraftChoice(player, slot, battle = state.battle) {
+  return {...createEmptyBattleChoice(), ...(getEnginePendingChoice(player, slot, battle) || {})};
+}
+function getEngineMoveRequest(player, requestSlot = 0, battle = state.battle) {
+  const request = getEngineRequestForPlayer(player, battle);
+  return Array.isArray(request?.active) ? (request.active[requestSlot] || null) : null;
+}
+function canEngineSwitchNormally(player, requestSlot = 0, battle = state.battle) {
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  if (!moveRequest) return false;
+  return !moveRequest.trapped && !moveRequest.maybeTrapped;
+}
+function getEngineSwitchOptions(player, activeIndex, battle = state.battle) {
+  const side = battle?.players?.[player];
+  if (!side) return [];
+  return side.team
+    .map((mon, index) => ({mon, index}))
+    .filter(({mon, index}) => mon && !mon.fainted && !side.active.includes(index) && index !== activeIndex);
+}
+function getEngineChoiceSummary(player, slot, battle = state.battle) {
+  const choice = getEnginePendingChoice(player, slot, battle);
+  if (!choice) return '대기 중 / Pending';
+  const side = battle?.players?.[player];
+  if (choice.kind === 'switch' && Number.isInteger(choice.switchTo)) {
+    const target = side?.team?.[choice.switchTo];
+    return `교체 / Switch → ${displaySpeciesName(target?.species || '')}`;
+  }
+  if (choice.kind === 'move') {
+    const actionSlots = getEngineActionSlots(player, battle);
+    const requestSlot = Math.max(0, actionSlots.indexOf(slot));
+    const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+    const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[choice.moveIndex] : null;
+    let text = choice.z && zInfo?.move ? displayMoveName(zInfo.move) : displayMoveName(choice.move);
+    if (choice.mega) text += ' · 메가진화 / Mega';
+    if (choice.tera) text += ' · 테라 / Tera';
+    if (choice.z) text += ' · Z';
+    if (choice.dynamax) text += ' · 다이맥스 / Dynamax';
+    return text;
+  }
+  return '대기 중 / Pending';
+}
+function getEngineTurnChipState(player, battle = state.battle) {
+  if (battle?.winner) return {done: true, text: '배틀 종료 / Battle finished'};
+  const request = getEngineRequestForPlayer(player, battle);
+  if (!request) return {done: false, text: '요청 대기 / Awaiting request'};
+  if (request.wait) return {done: true, text: '대기 중 / Waiting'};
+  if (isEngineForceSwitchRequest(request)) {
+    return isPlayerReady(player)
+      ? {done: true, text: '교체 확정 / Switch locked'}
+      : {done: false, text: '교체 선택 / Choose switch'};
+  }
+  return isPlayerReady(player)
+    ? {done: true, text: '선택 완료 / Choice locked'}
+    : {done: false, text: '선택 중 / Selecting'};
+}
+function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
+  const battle = ensureBattleUiState(state.battle);
+  const side = battle.players[player];
+  const request = side.request;
+  titleEl.textContent = `${side.name} 선택 / Engine Choice`;
+  container.innerHTML = '';
+
+  if (battle.winner) {
+    statusEl.textContent = '배틀이 종료되었습니다. / The battle has ended.';
+    return;
+  }
+  if (!request) {
+    statusEl.textContent = '엔진 요청을 기다리는 중입니다. / Waiting for an engine request.';
+    return;
+  }
+  if (request.teamPreview) {
+    statusEl.textContent = '팀 프리뷰는 시작 시 자동 처리되었습니다. / Team preview was resolved automatically at battle start.';
+    return;
+  }
+  if (request.wait) {
+    statusEl.textContent = '상대의 선택 또는 교체를 기다리는 중입니다. / Waiting for the opposing side to finish its choice.';
+    const note = document.createElement('div');
+    note.className = 'small-note';
+    note.textContent = '현재 이 플레이어는 입력할 행동이 없습니다. / This side has no action to submit right now.';
+    container.appendChild(note);
+    return;
+  }
+
+  const actionSlots = getEngineActionSlots(player, battle);
+  statusEl.textContent = isEngineForceSwitchRequest(request)
+    ? '기절한 포켓몬의 교체 대상을 엔진 요청대로 선택하세요. / Choose the forced switch target required by the engine.'
+    : '이번 턴 행동은 엔진 요청과 현재 스냅샷을 기준으로 선택됩니다. / This turn is chosen directly from the engine request and current snapshot.';
+
+  actionSlots.forEach((activeIndex, requestSlot) => {
+    const mon = side.team[activeIndex];
+    const choice = getEngineDraftChoice(player, activeIndex, battle);
+    const section = document.createElement('div');
+    section.className = 'choice-section';
+    section.innerHTML = `<h4>${displaySpeciesName(mon?.species || 'Pokémon')}</h4>${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}`;
+
+    const statusHints = [];
+    if (mon?.volatile?.substituteHp > 0) statusHints.push(`대타출동 / Substitute ${mon.volatile.substituteHp} HP`);
+    if (mon?.volatile?.confusionTurns > 0) statusHints.push(`혼란 / Confusion ${mon.volatile.confusionTurns}`);
+    if (mon?.volatile?.tauntTurns > 0) statusHints.push(`도발 / Taunt ${mon.volatile.tauntTurns}`);
+    if (mon?.volatile?.encoreTurns > 0) statusHints.push(`앵콜 / Encore ${mon.volatile.encoreTurns}`);
+    if (mon?.volatile?.disable?.turns > 0) statusHints.push(`금지 / Disable → ${displayMoveName(mon.volatile.disable.moveName)} (${mon.volatile.disable.turns})`);
+    if (mon?.volatile?.tormentTurns > 0) statusHints.push(`괴롭힘 / Torment ${mon.volatile.tormentTurns}`);
+    if (mon?.volatile?.healBlockTurns > 0) statusHints.push(`회복봉인 / Heal Block ${mon.volatile.healBlockTurns}`);
+    if (statusHints.length) {
+      const forcedNote = document.createElement('div');
+      forcedNote.className = 'small-note';
+      forcedNote.style.marginTop = '8px';
+      forcedNote.textContent = statusHints.join(' · ');
+      section.appendChild(forcedNote);
+    }
+
+    if (isEngineForceSwitchRequest(request) || !mon || mon.fainted) {
+      const switchWrap = document.createElement('div');
+      switchWrap.className = 'choice-buttons';
+      getEngineSwitchOptions(player, activeIndex, battle).forEach(({mon: option, index}) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `choice-btn ${choice.kind === 'switch' && choice.switchTo === index ? 'selected' : ''}`;
+        btn.innerHTML = `<strong>${displaySpeciesName(option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
+        btn.addEventListener('click', () => {
+          setEnginePendingChoice(player, activeIndex, {
+            ...createEmptyBattleChoice(),
+            kind: 'switch',
+            switchTo: index,
+          }, battle);
+          renderBattle();
+        });
+        switchWrap.appendChild(btn);
+      });
+      if (!switchWrap.childElementCount) {
+        const empty = document.createElement('div');
+        empty.className = 'small-note';
+        empty.textContent = '교체 가능한 포켓몬이 없습니다. / No switch target is available.';
+        section.appendChild(empty);
+      } else {
+        section.appendChild(switchWrap);
+      }
+      container.appendChild(section);
+      return;
+    }
+
+    const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+    const moveButtons = document.createElement('div');
+    moveButtons.className = 'choice-buttons';
+    (moveRequest?.moves || []).forEach((moveInfo, moveIndex) => {
+      const slotInfo = mon.moveSlots?.[moveIndex] || null;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `choice-btn ${choice.kind === 'move' && choice.moveIndex === moveIndex ? 'selected' : ''}`;
+      const moveName = moveInfo?.move || slotInfo?.name || '';
+      const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? 0);
+      const maxPp = Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? 0);
+      const disabled = Boolean(moveInfo?.disabled);
+      btn.disabled = disabled || pp <= 0;
+      if (btn.disabled) btn.classList.add('disabled');
+      btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>불러오는 중… / Loading… · PP ${pp}/${maxPp}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
+      Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
+        if (!btn.isConnected) return;
+        const preview = moveData ? describeMoveForBattle(mon, moveData, choice) : null;
+        btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>${displayType(preview?.type || moveData?.type || '')} · ${preview?.category || moveData?.category || '—'}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · PP ${pp}/${maxPp}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
+      });
+      if (!btn.disabled) {
+        btn.addEventListener('click', () => {
+          const previous = getEngineDraftChoice(player, activeIndex, battle);
+          const canZMove = Array.isArray(moveRequest?.canZMove) && Boolean(moveRequest.canZMove[moveIndex]);
+          setEnginePendingChoice(player, activeIndex, {
+            ...previous,
+            kind: 'move',
+            move: moveName,
+            moveIndex,
+            switchTo: null,
+            target: null,
+            z: previous.z && canZMove,
+            mega: previous.mega && Boolean(moveRequest?.canMegaEvo),
+            tera: previous.tera && Boolean(moveRequest?.canTerastallize),
+            dynamax: previous.dynamax && Boolean(moveRequest?.canDynamax),
+          }, battle);
+          renderBattle();
+        });
+      }
+      moveButtons.appendChild(btn);
+    });
+    section.appendChild(moveButtons);
+
+    const toggles = document.createElement('div');
+    toggles.className = 'toggle-row';
+
+    if (moveRequest?.canTerastallize) {
+      const teraBtn = document.createElement('button');
+      teraBtn.type = 'button';
+      teraBtn.className = `toggle-pill ${choice.tera ? 'active' : ''}`;
+      teraBtn.textContent = `테라스탈 / Terastallize (${displayType(moveRequest.canTerastallize)})`;
+      teraBtn.addEventListener('click', () => {
+        const previous = getEngineDraftChoice(player, activeIndex, battle);
+        setEnginePendingChoice(player, activeIndex, {
+          ...previous,
+          tera: !previous.tera,
+        }, battle);
+        renderBattle();
+      });
+      toggles.appendChild(teraBtn);
+    }
+
+    if (moveRequest?.canMegaEvo) {
+      const megaBtn = document.createElement('button');
+      megaBtn.type = 'button';
+      megaBtn.className = `toggle-pill ${choice.mega ? 'active' : ''}`;
+      megaBtn.textContent = '메가진화 / Mega Evolution';
+      megaBtn.addEventListener('click', () => {
+        const previous = getEngineDraftChoice(player, activeIndex, battle);
+        setEnginePendingChoice(player, activeIndex, {
+          ...previous,
+          mega: !previous.mega,
+        }, battle);
+        renderBattle();
+      });
+      toggles.appendChild(megaBtn);
+    }
+
+    if (moveRequest?.canDynamax) {
+      const dynaBtn = document.createElement('button');
+      dynaBtn.type = 'button';
+      dynaBtn.className = `toggle-pill ${choice.dynamax ? 'active' : ''}`;
+      dynaBtn.textContent = '다이맥스 / Dynamax';
+      dynaBtn.addEventListener('click', () => {
+        const previous = getEngineDraftChoice(player, activeIndex, battle);
+        setEnginePendingChoice(player, activeIndex, {
+          ...previous,
+          dynamax: !previous.dynamax,
+          z: previous.z && previous.dynamax ? false : previous.z,
+        }, battle);
+        renderBattle();
+      });
+      toggles.appendChild(dynaBtn);
+    }
+
+    if (choice.kind === 'move' && Number.isInteger(choice.moveIndex)) {
+      const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[choice.moveIndex] : null;
+      if (zInfo) {
+        const zBtn = document.createElement('button');
+        zBtn.type = 'button';
+        zBtn.className = `toggle-pill ${choice.z ? 'active' : ''}`;
+        zBtn.textContent = `Z기술 / Z-Move (${displayMoveName(zInfo.move || 'Z-Move')})`;
+        zBtn.addEventListener('click', () => {
+          const previous = getEngineDraftChoice(player, activeIndex, battle);
+          setEnginePendingChoice(player, activeIndex, {
+            ...previous,
+            z: !previous.z,
+            dynamax: previous.dynamax && previous.z ? false : previous.dynamax,
+          }, battle);
+          renderBattle();
+        });
+        toggles.appendChild(zBtn);
+      }
+    }
+
+    const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
+    const switchBtn = document.createElement('button');
+    switchBtn.type = 'button';
+    switchBtn.className = 'toggle-pill';
+    switchBtn.textContent = '교체 / Switch';
+    switchBtn.disabled = !canSwitch;
+    switchBtn.addEventListener('click', () => {
+      const previous = getEngineDraftChoice(player, activeIndex, battle);
+      setEnginePendingChoice(player, activeIndex, {
+        ...createEmptyBattleChoice(),
+        kind: 'switch',
+        switchTo: Number.isInteger(previous.switchTo) ? previous.switchTo : null,
+      }, battle);
+      renderBattle();
+    });
+    toggles.appendChild(switchBtn);
+    section.appendChild(toggles);
+
+    if (choice.kind === 'switch') {
+      const switchWrap = document.createElement('div');
+      switchWrap.className = 'choice-buttons';
+      getEngineSwitchOptions(player, activeIndex, battle).forEach(({mon: option, index}) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `choice-btn ${choice.switchTo === index ? 'selected' : ''}`;
+        btn.innerHTML = `<strong>${displaySpeciesName(option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
+        btn.addEventListener('click', () => {
+          setEnginePendingChoice(player, activeIndex, {
+            ...createEmptyBattleChoice(),
+            kind: 'switch',
+            switchTo: index,
+          }, battle);
+          renderBattle();
+        });
+        switchWrap.appendChild(btn);
+      });
+      section.appendChild(switchWrap);
+    }
+
+    container.appendChild(section);
+  });
 }
 function isSpeciesLockedItem(mon, item) {
   if (!mon || !item) return false;
@@ -3201,7 +3552,7 @@ function getBattleBadgeText(mon) {
 }
 
 function renderBattle() {
-  const battle = state.battle;
+  const battle = ensureBattleUiState(state.battle);
   if (!battle) return;
   els.turnNumber.textContent = battle.turn;
   els.battleP1Name.textContent = battle.players[0].name;
@@ -3212,16 +3563,24 @@ function renderBattle() {
   renderBattleTeam(1, els.battleTeamP2);
   renderChoicePanel(0, els.choiceP1, els.choiceP1Status, els.choiceP1Title);
   renderChoicePanel(1, els.choiceP2, els.choiceP2Status, els.choiceP2Title);
-  els.battleLog.innerHTML = battle.log.map(line => `<div class="log-line ${line.tone || ''}">${line.text}</div>`).join('\n');
+  els.battleLog.innerHTML = battle.log.map(line => `<div class="log-line ${line.tone || ''}">${line.text}</div>`).join('
+');
   renderPendingChoices();
   renderBattleFieldStatus();
   const allSet = [0,1].every(player => isPlayerReady(player));
-  els.battleP1Turn.className = `turn-chip ${isPlayerReady(0) ? 'done' : 'wait'}`;
-  els.battleP2Turn.className = `turn-chip ${isPlayerReady(1) ? 'done' : 'wait'}`;
-  els.battleP1Turn.textContent = isPlayerReady(0) ? '선택 완료 / Choice locked' : '선택 중 / Selecting';
-  els.battleP2Turn.textContent = isPlayerReady(1) ? '선택 완료 / Choice locked' : '선택 중 / Selecting';
-  if (allSet && !battle.winner) resolveTurn();
+  const p1Chip = isShowdownLocalBattle(battle)
+    ? getEngineTurnChipState(0, battle)
+    : {done: isPlayerReady(0), text: isPlayerReady(0) ? '선택 완료 / Choice locked' : '선택 중 / Selecting'};
+  const p2Chip = isShowdownLocalBattle(battle)
+    ? getEngineTurnChipState(1, battle)
+    : {done: isPlayerReady(1), text: isPlayerReady(1) ? '선택 완료 / Choice locked' : '선택 중 / Selecting'};
+  els.battleP1Turn.className = `turn-chip ${p1Chip.done ? 'done' : 'wait'}`;
+  els.battleP2Turn.className = `turn-chip ${p2Chip.done ? 'done' : 'wait'}`;
+  els.battleP1Turn.textContent = p1Chip.text;
+  els.battleP2Turn.textContent = p2Chip.text;
+  if (allSet && !battle.winner && !battle.resolvingTurn) resolveTurn();
 }
+
 function renderSideSprites(player, container, facing) {
   container.innerHTML = '';
   getActiveMons(player).forEach(mon => {
@@ -3295,6 +3654,10 @@ function ensureChoiceObjects(player) {
   });
 }
 function renderChoicePanel(player, container, statusEl, titleEl) {
+  if (isShowdownLocalBattle(state.battle)) {
+    renderEngineSinglesChoicePanel(player, container, statusEl, titleEl);
+    return;
+  }
   const side = state.battle.players[player];
   ensureChoiceObjects(player);
   titleEl.textContent = `${side.name} 선택 / Choice`;
@@ -3571,6 +3934,16 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
   }
 }
 function isChoiceComplete(player, activeIndex) {
+  if (isShowdownLocalBattle(state.battle)) {
+    const request = getEngineRequestForPlayer(player);
+    if (!isEngineActionableRequest(request)) return true;
+    const choice = getEnginePendingChoice(player, activeIndex);
+    if (!choice) return false;
+    if (isEngineForceSwitchRequest(request)) return choice.kind === 'switch' && Number.isInteger(choice.switchTo);
+    if (choice.kind === 'switch') return Number.isInteger(choice.switchTo);
+    if (choice.kind === 'move') return Number.isInteger(choice.moveIndex);
+    return false;
+  }
   const side = state.battle.players[player];
   const mon = side.team[activeIndex];
   const choice = side.choices[activeIndex];
@@ -3587,11 +3960,42 @@ function isChoiceComplete(player, activeIndex) {
   return false;
 }
 function isPlayerReady(player) {
+  if (isShowdownLocalBattle(state.battle)) {
+    const request = getEngineRequestForPlayer(player);
+    if (!isEngineActionableRequest(request)) return true;
+    return getEngineActionSlots(player).every(activeIndex => isChoiceComplete(player, activeIndex));
+  }
   const side = state.battle.players[player];
   return side.active.every(activeIndex => isChoiceComplete(player, activeIndex));
 }
 function renderPendingChoices() {
   const battle = state.battle;
+  if (isShowdownLocalBattle(battle)) {
+    const rows = [];
+    battle.players.forEach((side, player) => {
+      const request = getEngineRequestForPlayer(player, battle);
+      if (!request) {
+        rows.push(`<div class="pending-card"><strong>${side.name}</strong>엔진 요청 대기 중 / Awaiting engine request</div>`);
+        return;
+      }
+      if (request.wait) {
+        rows.push(`<div class="pending-card"><strong>${side.name}</strong>상대 행동 대기 중 / Waiting for the other side</div>`);
+        return;
+      }
+      const actionSlots = getEngineActionSlots(player, battle);
+      if (!actionSlots.length) {
+        rows.push(`<div class="pending-card"><strong>${side.name}</strong>현재 제출할 행동 없음 / No action to submit</div>`);
+        return;
+      }
+      actionSlots.forEach(activeIndex => {
+        const mon = side.team[activeIndex];
+        rows.push(`<div class="pending-card"><strong>${mon ? displaySpeciesName(mon.species) : side.name}</strong>${getEngineChoiceSummary(player, activeIndex, battle)}</div>`);
+      });
+    });
+    els.pendingChoices.innerHTML = rows.join('
+');
+    return;
+  }
   const rows = [];
   battle.players.forEach((side, player) => {
     side.active.forEach(activeIndex => {
@@ -3607,19 +4011,24 @@ function renderPendingChoices() {
       rows.push(`<div class="pending-card"><strong>${mon ? displaySpeciesName(mon.species) : '빈 슬롯 / Empty slot'}</strong>${text}</div>`);
     });
   });
-  els.pendingChoices.innerHTML = rows.join('\n');
+  els.pendingChoices.innerHTML = rows.join('
+');
 }
 async function resolveTurn() {
-  const battle = state.battle;
+  const battle = ensureBattleUiState(state.battle);
+  if (!battle || battle.resolvingTurn) return;
+  battle.resolvingTurn = true;
   if (isShowdownLocalBattle(battle)) {
     try {
-      state.battle = await submitShowdownLocalSinglesChoices({battleId: battle.id, battle});
+      state.battle = ensureBattleUiState(await submitShowdownLocalSinglesChoices({battleId: battle.id, battle}));
+      clearEnginePendingChoices(state.battle);
       renderBattle();
     } catch (error) {
       console.error('Failed to resolve Showdown-local singles turn', error);
       if (state.battle?.log) {
         state.battle.log.unshift({text: `엔진 턴 처리 실패 / Engine turn resolution failed: ${error.message}`, tone: 'accent'});
       }
+      if (battle === state.battle) battle.resolvingTurn = false;
       renderBattle();
     }
     return;
@@ -3677,6 +4086,7 @@ async function resolveTurn() {
   determineWinner();
   battle.players.forEach(side => side.choices = {});
   battle.turn += 1;
+  battle.resolvingTurn = false;
   renderBattle();
 }
 function performSwitch(player, activeIndex, targetIndex) {
@@ -4871,7 +5281,7 @@ async function bootstrap() {
   showRuntime(
     '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets, localized battle data, and form-aware sprite resolution are connected.',
     'ready',
-    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${showdownStatusNote}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고뿐 아니라, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, event-only move bundle checks, and profile-based Species Clause / Item Clause / level-50 enforcement. 이번 단계의 마이그레이션에서는 싱글 배틀 흐름을 로컬 Showdown-family Node 코어에 연결했으며, 현재 UI / 팀 빌더 / 로컬화 / 스프라이트 매핑 구조는 유지합니다. / This migration step connects the singles battle flow to a local Showdown-family Node core while preserving the current UI, builder, localization, and sprite-mapping structure.`
+    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${showdownStatusNote}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고뿐 아니라, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, event-only move bundle checks, and profile-based Species Clause / Item Clause / level-50 enforcement. 이번 단계의 마이그레이션에서는 싱글 배틀 UI를 로컬 Showdown-family Node 코어의 request / snapshot 흐름 우선으로 재구성했으며, 현재 UI / 팀 빌더 / 로컬화 / 스프라이트 매핑 구조는 최대한 유지합니다. / This migration step makes the singles battle UI follow the local Showdown-family Node core through request-first and snapshot-driven flow while preserving the current UI, builder, localization, and sprite-mapping structure as much as possible.`
   );
 }
 
