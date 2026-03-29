@@ -1,0 +1,99 @@
+[Stage 8] Singles stability expansion (weather / terrain / entry hazards / PP / Struggle / protect precision / move-effect coverage)
+
+이번 단계에서 한 일
+1. 싱글 배틀용 필드 상태를 추가했다.
+   - battle.weather / weatherTurns
+   - battle.terrain / terrainTurns
+   - 각 side에 hazards 상태
+     - stealthRock
+     - spikes
+     - toxicSpikes
+     - stickyWeb
+   - 전투 화면 중앙에 현재 weather / terrain / 양쪽 hazard 상태를 표시하도록 UI를 보강했다.
+
+2. PP / Struggle를 전투 런타임에 연결했다.
+   - 각 배틀 포켓몬이 moveSlots를 별도로 가진다.
+   - 각 기술은 전투 시작 시 max PP / current PP를 가진다.
+   - 선택 UI에서 각 기술의 PP를 직접 보여준다.
+   - PP가 0인 기술은 선택 불가다.
+   - 남은 PP가 전부 0이면 Struggle 버튼이 열리고, 실제 전투에서도 Struggle이 사용된다.
+   - Struggle 반동도 전투 로직에 연결했다.
+
+3. Protect 계열의 성공 판정을 더 정밀하게 만들었다.
+   - Protect / Detect / Max Guard 및 보호 계열 move id를 보호 기술군으로 처리한다.
+   - 연속 사용 시 성공률이 1 -> 1/3 -> 1/9 식으로 감소한다.
+   - 교체하거나 다른 행동을 하면 protect chain이 리셋된다.
+   - Protect는 move.flags.protect 기준으로 더 정확하게 막도록 바꿨다.
+   - 기존처럼 “모든 상대 기술을 일괄 차단”하지 않게 조정했다.
+
+4. weather / terrain의 핵심 전투 영향을 singles runtime에 연결했다.
+   - Rain / Sun의 불·물 화력 보정
+   - Sand의 Rock 특방 보정
+   - Snow의 Ice 방어 보정
+   - Sand residual damage
+   - Grassy Terrain end-of-turn 회복
+   - Electric / Grassy / Psychic Terrain의 타입 화력 보정
+   - Misty Terrain의 Dragon 반감
+   - Psychic Terrain의 priority 차단
+   - Electric Terrain의 sleep 차단
+   - Misty Terrain의 major status 차단
+
+5. move coverage를 확대했다.
+   - Weather Ball: 날씨에 따라 타입 / 위력 변경
+   - Terrain Pulse: terrain + grounded 조건에서 타입 / 위력 변경
+   - Thunder / Hurricane / Blizzard 정확도 보정
+   - Solar Beam / Solar Blade weather 약화 반영
+   - Rising Voltage / Expanding Force / Earthquake·Bulldoze·Magnitude + terrain 상호작용 보강
+   - damaging self-effects 연결
+     - 예: Close Combat / Draco Meteor류 self boost-drop 처리 기반 추가
+   - recoil move 기반 추가
+   - forceSwitch 기반 추가
+   - Rapid Spin의 hazard 제거 + Speed 상승
+   - Defog의 hazard 제거 + terrain 제거
+
+6. entry hazards를 실제 switch-in 타이밍에 연결했다.
+   - switching / forced switch / faint replacement 시 switch-in hazard 처리
+   - Stealth Rock 데미지
+   - Spikes 레이어별 데미지
+   - Toxic Spikes 독 / 맹독
+   - Poison 타입의 Toxic Spikes 흡수
+   - Sticky Web Speed 하락
+   - Heavy-Duty Boots 무시 처리
+
+7. 추가 면역 / 예외 처리도 보강했다.
+   - Air Balloon의 Ground 면역 + 피격 시 풍선 파괴
+   - Protect와 Psychic Terrain 우선도 차단을 함께 고려
+   - status immunity를 terrain과 타입 둘 다 반영
+
+이번 단계에서 조심한 점
+- 에셋 파일명 규칙은 건드리지 않았다.
+- 여전히 Stage 6의 resolved asset mapping만 사용한다.
+- _mega / _gmax 같은 이름을 새로 가정하지 않았다.
+- 이번 단계는 battle runtime 쪽 보강 중심이며, asset mapping 로직은 유지했다.
+
+이번 단계의 현재 한계
+- 아직 완전한 Showdown simulator parity는 아니다.
+- weather / terrain / hazards는 핵심 흐름 위주이며, 모든 기술/특성/아이템 조합을 완전히 커버하지는 않는다.
+- choice lock / encore / taunt / trick room / substitute / redirection / pursuit / encore-like lock은 아직 미구현이다.
+- doubles용 spread / ally interaction / redirection / targeting 예외는 아직 본격 확장 전이다.
+- 특수 폼 변화(Aegislash, Mimikyu, Wishiwashi, Morpeko 등)는 아직 다음 단계가 더 적합하다.
+
+다음 단계 추천
+1. singles 추가 안정화 마무리
+   - choice lock
+   - encore / taunt / substitute
+   - trick room / tailwind / screens
+   - forced switch / redirection / more immunity edge cases
+   - 더 많은 move / ability / item trigger coverage
+
+2. doubles 확장
+   - 2체 타겟팅
+   - spread move 보정 정밀화
+   - ally-target / ally-side interaction
+   - double-specific choice UI / replacement flow
+
+3. 특수 전투 중 폼 변화 강화
+   - Aegislash stance
+   - Mimikyu busted
+   - Wishiwashi schooling
+   - Ogerpon / Terapagos / Morpeko / Darmanitan / Zen / 기타 runtime form changes

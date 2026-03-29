@@ -11,6 +11,8 @@ Included:
 - ROOT_CAUSE_AND_STAGE4B_FIX.txt
 - ROOT_CAUSE_AND_STAGE5.txt
 - ROOT_CAUSE_AND_STAGE6.txt
+- ROOT_CAUSE_AND_STAGE7.txt
+- ROOT_CAUSE_AND_STAGE8.txt
 - index.html
 - styles.css
 - src/app.js
@@ -23,6 +25,8 @@ Included:
 Not included:
 - assets/
 - src/app.js.bak
+- index.html.bak
+- styles.css.bak
 
 How to use:
 1. Extract this ZIP.
