@@ -103,7 +103,7 @@ function toId(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 function titleCase(text) {
-  return String(text || '').split(/[-\s]+/).filter(Boolean).map(part => part[0]?.toUpperCase() + part.slice(1)).join(' ');
+  return String(text || '').split(/[-\s]+/).filter(Boolean).map(part => part[0]?.toUpperCase() + part.slice(1)).join('\n');
 }
 function humanizeSpriteId(id) {
   return String(id)
@@ -234,7 +234,7 @@ function setDatalistOptions(el, choices) {
     const value = choice.display || choice.english || '';
     const label = choice.english && choice.display !== choice.english ? choice.english : '';
     return `<option value="${value}"${label ? ` label="${label}"` : ''}></option>`;
-  }).join('');
+  }).join('\n');
 }
 function getCurrentMoveChoices(mon = getSelectedMon()) {
   if (!mon?.data?.learnset?.length || !state.dex) return [];
@@ -894,8 +894,8 @@ function buildStaticLists() {
   setDatalistOptions(els.itemList, state.itemChoices);
   state.allMoveChoices = moveNameCache.map(name => makeChoice('moves', name));
   setDatalistOptions(els.moveList, state.allMoveChoices);
-  els.natureSelect.innerHTML = natureOrder.map(name => `<option value="${name}">${displayNatureName(name)}</option>`).join('');
-  els.teraSelect.innerHTML = TYPES.map(type => `<option value="${type}">${displayType(type)}</option>`).join('');
+  els.natureSelect.innerHTML = natureOrder.map(name => `<option value="${name}">${displayNatureName(name)}</option>`).join('\n');
+  els.teraSelect.innerHTML = TYPES.map(type => `<option value="${type}">${displayType(type)}</option>`).join('\n');
 }
 function renderItemIcon(itemName) {
   if (!els.itemIcon) return;
@@ -923,7 +923,7 @@ function renderEditorFlags(mon) {
   if (mon.gender === 'N') flags.push(displayGender('N'));
   flags.push(`레벨 / Level ${mon.level || 100}`);
   if (mon.teraType) flags.push(`테라 / Tera ${displayType(mon.teraType)}`);
-  els.editorFlags.innerHTML = flags.map(flag => `<span class="flag-chip">${flag}</span>`).join('');
+  els.editorFlags.innerHTML = flags.map(flag => `<span class="flag-chip">${flag}</span>`).join('\n');
 }
 function createStatInputs(gridEl, prefix, values, onChange) {
   gridEl.innerHTML = '';
@@ -1214,8 +1214,7 @@ async function renderValidation() {
   state.builderWarnings = Array.from(new Set(allWarnings));
   if (allErrors.length) {
     els.builderErrors.classList.remove('hidden');
-    els.builderErrors.textContent = allErrors.join('
-');
+    els.builderErrors.textContent = allErrors.join('\n');
     els.validationSummary.textContent = `배틀 시작 전 해결할 문제 ${allErrors.length}개가 남아 있습니다. / ${allErrors.length} issue${allErrors.length === 1 ? '' : 's'} remaining before battle can start.${state.builderWarnings.length ? ` 경고 / warning ${state.builderWarnings.length}개도 함께 확인하세요. / ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} also noted.` : ''}`;
     els.startBattleBtn.disabled = true;
   } else {
@@ -1230,8 +1229,7 @@ async function renderValidation() {
   if (els.builderWarnings) {
     if (state.builderWarnings.length) {
       els.builderWarnings.classList.remove('hidden');
-      els.builderWarnings.textContent = state.builderWarnings.join('
-');
+      els.builderWarnings.textContent = state.builderWarnings.join('\n');
     } else {
       els.builderWarnings.classList.add('hidden');
       els.builderWarnings.textContent = '';
@@ -1402,11 +1400,9 @@ function wireEditorEvents() {
         ...mon.moves.map(move => `- ${displayMoveName(move)}`),
         '',
       ];
-      return rows.join('
-');
+      return rows.join('\n');
     }));
-    navigator.clipboard.writeText(lines.join('
-'));
+    navigator.clipboard.writeText(lines.join('\n'));
     els.validationSummary.textContent = '팀을 클립보드로 복사했습니다. / Teams exported to your clipboard.';
   });
   els.resetStorageBtn.addEventListener('click', () => {
@@ -1512,7 +1508,7 @@ function renderBattle() {
   renderBattleTeam(1, els.battleTeamP2);
   renderChoicePanel(0, els.choiceP1, els.choiceP1Status, els.choiceP1Title);
   renderChoicePanel(1, els.choiceP2, els.choiceP2Status, els.choiceP2Title);
-  els.battleLog.innerHTML = battle.log.map(line => `<div class="log-line ${line.tone || ''}">${line.text}</div>`).join('');
+  els.battleLog.innerHTML = battle.log.map(line => `<div class="log-line ${line.tone || ''}">${line.text}</div>`).join('\n');
   renderPendingChoices();
   const allSet = [0,1].every(player => isPlayerReady(player));
   els.battleP1Turn.className = `turn-chip ${isPlayerReady(0) ? 'done' : 'wait'}`;
@@ -1739,7 +1735,7 @@ function renderPendingChoices() {
       rows.push(`<div class="pending-card"><strong>${mon ? displaySpeciesName(mon.species) : '빈 슬롯 / Empty slot'}</strong>${text}</div>`);
     });
   });
-  els.pendingChoices.innerHTML = rows.join('');
+  els.pendingChoices.innerHTML = rows.join('\n');
 }
 async function resolveTurn() {
   const battle = state.battle;

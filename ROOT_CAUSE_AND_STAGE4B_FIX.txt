@@ -1,0 +1,12 @@
+Stage 4B fix
+
+Issue found:
+- Browser parse error: Uncaught SyntaxError: Invalid or unexpected token at app.js line ~1217.
+- Cause: a few join("\\n")-style string literals were accidentally written as broken multi-line string tokens during patching, which stopped app.js from parsing.
+
+What was fixed:
+- Repaired the broken newline join expressions in src/app.js.
+- Re-ran syntax checks on app.js and the other project JS files.
+
+Notes:
+- Initial load can still feel a bit heavy because the project imports large local data files, especially learnsets.js. That is expected, but the previous hard failure was the syntax bug above.
