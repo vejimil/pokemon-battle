@@ -38,10 +38,7 @@ function isActionableRequest(request) {
 }
 
 function getPendingChoiceForSide(battle, sideId, slot) {
-  const fromPendingState = battle?.pendingChoices?.[sideId]?.[slot];
-  if (fromPendingState) return fromPendingState;
-  const numericPlayer = Number(sideId?.slice(1)) - 1;
-  return battle?.players?.[numericPlayer]?.choices?.[slot] || null;
+  return battle?.pendingChoices?.[sideId]?.[slot] || null;
 }
 
 export async function probeShowdownLocalServer() {

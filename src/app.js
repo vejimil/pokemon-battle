@@ -2679,29 +2679,12 @@ async function buildBattleMon(mon, player, slot) {
     originalData: mon.data,
   };
 }
-async function startBattle() {
-  await renderValidation();
-  if (state.builderErrors.length) return;
-
-  if (state.mode === 'singles' && state.showdownLocal?.available) {
-    try {
-      const payload = await buildShowdownBattlePayload();
-      state.battle = ensureBattleUiState(await startShowdownLocalSinglesBattle(payload));
-      clearEnginePendingChoices(state.battle);
-      els.battlePanel.classList.remove('hidden');
-      renderBattle();
-      return;
-    } catch (error) {
-      console.error('Local Showdown singles engine failed, falling back to custom runtime.', error);
-      showRuntime(
-        '로컬 Showdown 싱글 엔진 연결에 실패해 커스텀 런타임으로 되돌립니다. / Failed to use the local Showdown singles engine, falling back to the custom runtime.',
-        'error',
-        `Engine error: ${error.message}`
-      );
-    }
-  }
-
-  state.battle = {
+async function startEngineAuthoritativeSinglesBattle() {
+  const payload = await buildShowdownBattlePayload();
+  return adoptEngineBattleSnapshot(await startShowdownLocalSinglesBattle(payload));
+}
+async function startCustomRuntimeBattle() {
+  const battle = {
     mode: state.mode,
     turn: 1,
     winner: null,
@@ -2725,8 +2708,44 @@ async function startBattle() {
     trickRoomTurns: 0,
     log: [{text: '배틀 시작! 양쪽 팀이 전장에 나왔습니다. / Battle started. Both teams enter the field.', tone: 'accent'}],
   };
-  ensureBattleUiState(state.battle);
+  state.battle = battle;
+  ensureBattleUiState(battle);
   applyStartOfBattleAbilities();
+  return battle;
+}
+function adoptEngineBattleSnapshot(snapshot) {
+  const battle = ensureBattleUiState(snapshot);
+  if (!battle) return null;
+  battle.players?.forEach(side => {
+    side.choices = {};
+    side.mustSwitch = [];
+  });
+  clearEnginePendingChoices(battle);
+  battle.resolvingTurn = false;
+  battle.sourceOfTruth = 'engine';
+  return battle;
+}
+async function startBattle() {
+  await renderValidation();
+  if (state.builderErrors.length) return;
+
+  if (state.mode === 'singles' && state.showdownLocal?.available) {
+    try {
+      state.battle = await startEngineAuthoritativeSinglesBattle();
+      els.battlePanel.classList.remove('hidden');
+      renderBattle();
+      return;
+    } catch (error) {
+      console.error('Local Showdown singles engine failed, falling back to custom runtime.', error);
+      showRuntime(
+        '로컬 Showdown 싱글 엔진 연결에 실패해 커스텀 런타임으로 되돌립니다. / Failed to use the local Showdown singles engine, falling back to the custom runtime.',
+        'error',
+        `Engine error: ${error.message}`
+      );
+    }
+  }
+
+  state.battle = await startCustomRuntimeBattle();
   els.battlePanel.classList.remove('hidden');
   renderBattle();
 }
@@ -2878,16 +2897,84 @@ function setEnginePendingChoice(player, slot, choice, battle = state.battle) {
   ensureBattleUiState(battle);
   battle.pendingChoices[getEngineSideId(player)][slot] = choice;
 }
+function clearEnginePendingChoice(player, slot, battle = state.battle) {
+  if (!battle?.pendingChoices?.[getEngineSideId(player)]) return;
+  delete battle.pendingChoices[getEngineSideId(player)][slot];
+}
 function clearEnginePendingChoices(battle = state.battle) {
   if (!battle) return;
   battle.pendingChoices = {p1: {}, p2: {}};
 }
-function getEngineDraftChoice(player, slot, battle = state.battle) {
-  return {...createEmptyBattleChoice(), ...(getEnginePendingChoice(player, slot, battle) || {})};
+function getEngineRequestSlotForActiveIndex(player, activeIndex, battle = state.battle) {
+  return getEngineActionSlots(player, battle).indexOf(activeIndex);
 }
 function getEngineMoveRequest(player, requestSlot = 0, battle = state.battle) {
   const request = getEngineRequestForPlayer(player, battle);
   return Array.isArray(request?.active) ? (request.active[requestSlot] || null) : null;
+}
+function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
+  const rawChoice = getEnginePendingChoice(player, slot, battle);
+  if (!rawChoice?.kind) return createEmptyBattleChoice();
+  const request = getEngineRequestForPlayer(player, battle);
+  const requestSlot = getEngineRequestSlotForActiveIndex(player, slot, battle);
+  if (!isEngineActionableRequest(request) || requestSlot < 0) {
+    clearEnginePendingChoice(player, slot, battle);
+    return createEmptyBattleChoice();
+  }
+
+  const switchOptions = getEngineSwitchOptions(player, slot, battle);
+  const hasSwitchTarget = Number.isInteger(rawChoice.switchTo) && switchOptions.some(({index}) => index === rawChoice.switchTo);
+  if (isEngineForceSwitchRequest(request)) {
+    if (!hasSwitchTarget || rawChoice.kind !== 'switch') {
+      clearEnginePendingChoice(player, slot, battle);
+      return createEmptyBattleChoice();
+    }
+    const sanitized = {...createEmptyBattleChoice(), kind: 'switch', switchTo: rawChoice.switchTo};
+    setEnginePendingChoice(player, slot, sanitized, battle);
+    return sanitized;
+  }
+
+  if (rawChoice.kind === 'switch') {
+    if (!canEngineSwitchNormally(player, requestSlot, battle) || !hasSwitchTarget) {
+      clearEnginePendingChoice(player, slot, battle);
+      return createEmptyBattleChoice();
+    }
+    const sanitized = {...createEmptyBattleChoice(), kind: 'switch', switchTo: rawChoice.switchTo};
+    setEnginePendingChoice(player, slot, sanitized, battle);
+    return sanitized;
+  }
+
+  if (rawChoice.kind !== 'move' || !Number.isInteger(rawChoice.moveIndex)) {
+    clearEnginePendingChoice(player, slot, battle);
+    return createEmptyBattleChoice();
+  }
+
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  const moveInfo = Array.isArray(moveRequest?.moves) ? (moveRequest.moves[rawChoice.moveIndex] || null) : null;
+  const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[rawChoice.moveIndex] : null;
+  const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : 0;
+  if (!moveInfo || moveInfo.disabled || pp <= 0) {
+    clearEnginePendingChoice(player, slot, battle);
+    return createEmptyBattleChoice();
+  }
+
+  const sanitized = {
+    ...createEmptyBattleChoice(),
+    kind: 'move',
+    move: moveInfo.move || rawChoice.move || '',
+    moveIndex: rawChoice.moveIndex,
+    target: rawChoice.target || null,
+    mega: Boolean(rawChoice.mega && moveRequest?.canMegaEvo),
+    tera: Boolean(rawChoice.tera && moveRequest?.canTerastallize),
+    z: Boolean(rawChoice.z && zInfo),
+    dynamax: Boolean(rawChoice.dynamax && moveRequest?.canDynamax),
+  };
+  if (sanitized.z && sanitized.dynamax) sanitized.dynamax = false;
+  setEnginePendingChoice(player, slot, sanitized, battle);
+  return sanitized;
+}
+function getEngineDraftChoice(player, slot, battle = state.battle) {
+  return normalizeEnginePendingChoice(player, slot, battle);
 }
 function canEngineSwitchNormally(player, requestSlot = 0, battle = state.battle) {
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
@@ -2902,16 +2989,15 @@ function getEngineSwitchOptions(player, activeIndex, battle = state.battle) {
     .filter(({mon, index}) => mon && !mon.fainted && !side.active.includes(index) && index !== activeIndex);
 }
 function getEngineChoiceSummary(player, slot, battle = state.battle) {
-  const choice = getEnginePendingChoice(player, slot, battle);
-  if (!choice) return '대기 중 / Pending';
+  const choice = normalizeEnginePendingChoice(player, slot, battle);
+  if (!choice?.kind) return '대기 중 / Pending';
   const side = battle?.players?.[player];
   if (choice.kind === 'switch' && Number.isInteger(choice.switchTo)) {
     const target = side?.team?.[choice.switchTo];
     return `교체 / Switch → ${displaySpeciesName(target?.species || '')}`;
   }
   if (choice.kind === 'move') {
-    const actionSlots = getEngineActionSlots(player, battle);
-    const requestSlot = Math.max(0, actionSlots.indexOf(slot));
+    const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, slot, battle));
     const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
     const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[choice.moveIndex] : null;
     let text = choice.z && zInfo?.move ? displayMoveName(zInfo.move) : displayMoveName(choice.move);
@@ -2922,6 +3008,23 @@ function getEngineChoiceSummary(player, slot, battle = state.battle) {
     return text;
   }
   return '대기 중 / Pending';
+}
+function getEnginePlayersNeedingAction(battle = state.battle) {
+  return [0, 1].filter(player => isEngineActionableRequest(getEngineRequestForPlayer(player, battle)));
+}
+function canAutoResolveEngineTurn(battle = state.battle) {
+  if (!isShowdownLocalBattle(battle) || battle?.winner || battle?.resolvingTurn) return false;
+  const players = battle?.players || [];
+  if (!players.length) return false;
+  let actionableCount = 0;
+  for (let player = 0; player < players.length; player += 1) {
+    const request = getEngineRequestForPlayer(player, battle);
+    if (!request) return false;
+    if (!isEngineActionableRequest(request)) continue;
+    actionableCount += 1;
+    if (!isPlayerReady(player)) return false;
+  }
+  return actionableCount > 0;
 }
 function getEngineTurnChipState(player, battle = state.battle) {
   if (battle?.winner) return {done: true, text: '배틀 종료 / Battle finished'};
@@ -3563,11 +3666,12 @@ function renderBattle() {
   renderBattleTeam(1, els.battleTeamP2);
   renderChoicePanel(0, els.choiceP1, els.choiceP1Status, els.choiceP1Title);
   renderChoicePanel(1, els.choiceP2, els.choiceP2Status, els.choiceP2Title);
-  els.battleLog.innerHTML = battle.log.map(line => `<div class="log-line ${line.tone || ''}">${line.text}</div>`).join('
-');
+  els.battleLog.innerHTML = battle.log.map(line => `<div class="log-line ${line.tone || ''}">${line.text}</div>`).join('');
   renderPendingChoices();
   renderBattleFieldStatus();
-  const allSet = [0,1].every(player => isPlayerReady(player));
+  const allSet = isShowdownLocalBattle(battle)
+    ? canAutoResolveEngineTurn(battle)
+    : [0,1].every(player => isPlayerReady(player));
   const p1Chip = isShowdownLocalBattle(battle)
     ? getEngineTurnChipState(0, battle)
     : {done: isPlayerReady(0), text: isPlayerReady(0) ? '선택 완료 / Choice locked' : '선택 중 / Selecting'};
@@ -3937,8 +4041,8 @@ function isChoiceComplete(player, activeIndex) {
   if (isShowdownLocalBattle(state.battle)) {
     const request = getEngineRequestForPlayer(player);
     if (!isEngineActionableRequest(request)) return true;
-    const choice = getEnginePendingChoice(player, activeIndex);
-    if (!choice) return false;
+    const choice = normalizeEnginePendingChoice(player, activeIndex);
+    if (!choice?.kind) return false;
     if (isEngineForceSwitchRequest(request)) return choice.kind === 'switch' && Number.isInteger(choice.switchTo);
     if (choice.kind === 'switch') return Number.isInteger(choice.switchTo);
     if (choice.kind === 'move') return Number.isInteger(choice.moveIndex);
@@ -3992,8 +4096,7 @@ function renderPendingChoices() {
         rows.push(`<div class="pending-card"><strong>${mon ? displaySpeciesName(mon.species) : side.name}</strong>${getEngineChoiceSummary(player, activeIndex, battle)}</div>`);
       });
     });
-    els.pendingChoices.innerHTML = rows.join('
-');
+    els.pendingChoices.innerHTML = rows.join('');
     return;
   }
   const rows = [];
@@ -4011,8 +4114,7 @@ function renderPendingChoices() {
       rows.push(`<div class="pending-card"><strong>${mon ? displaySpeciesName(mon.species) : '빈 슬롯 / Empty slot'}</strong>${text}</div>`);
     });
   });
-  els.pendingChoices.innerHTML = rows.join('
-');
+  els.pendingChoices.innerHTML = rows.join('');
 }
 async function resolveTurn() {
   const battle = ensureBattleUiState(state.battle);
@@ -4020,8 +4122,7 @@ async function resolveTurn() {
   battle.resolvingTurn = true;
   if (isShowdownLocalBattle(battle)) {
     try {
-      state.battle = ensureBattleUiState(await submitShowdownLocalSinglesChoices({battleId: battle.id, battle}));
-      clearEnginePendingChoices(state.battle);
+      state.battle = adoptEngineBattleSnapshot(await submitShowdownLocalSinglesChoices({battleId: battle.id, battle}));
       renderBattle();
     } catch (error) {
       console.error('Failed to resolve Showdown-local singles turn', error);
