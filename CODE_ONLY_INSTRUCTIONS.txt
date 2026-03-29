@@ -1,0 +1,19 @@
+This ZIP is code-only.
+
+Included:
+- .nojekyll
+- README.md
+- ROOT_CAUSE_AND_STAGE2.txt
+- index.html
+- styles.css
+- src/app.js
+- src/showdown-dex.js
+
+Not included:
+- assets/
+
+How to use:
+1. Extract this ZIP.
+2. Copy these files into your existing project root.
+3. Keep your current assets/ folder exactly as it is.
+4. Replace files when prompted.

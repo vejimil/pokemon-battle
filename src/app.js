@@ -1,5 +1,22 @@
+import {loadShowdownDex} from './showdown-dex.js';
+
 const STORAGE_KEY = 'pkb-static-state-v1';
 const POKEAPI = 'https://pokeapi.co/api/v2';
+const SHOWDOWN_TARGET_HINTS = {
+  normal: 'single-opponent',
+  adjacentFoe: 'single-opponent',
+  adjacentAlly: 'ally',
+  adjacentAllyOrSelf: 'ally-or-self',
+  allySide: 'ally-side',
+  foeSide: 'opponent-side',
+  allAdjacent: 'all-other-pokemon',
+  allAdjacentFoes: 'all-opponents',
+  all: 'all-pokemon',
+  scripted: 'single-opponent',
+  randomNormal: 'single-opponent',
+  self: 'self',
+  any: 'single-opponent',
+};
 const statOrder = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 const statLabels = {hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe'};
 const statusNames = {brn: 'Burn', par: 'Paralysis', psn: 'Poison', tox: 'Toxic', slp: 'Sleep', frz: 'Freeze'};
@@ -72,6 +89,10 @@ const imageInfoCache = new Map();
 
 const state = {
   runtimeReady: false,
+  dex: null,
+  dexSource: '',
+  dexVersion: '',
+  dataProvider: 'PokéAPI fallback',
   mode: 'singles',
   teamSize: 3,
   manifest: null,
@@ -110,6 +131,45 @@ function humanizeSpriteId(id) {
     .replace(/_/g, ' ')
     .toLowerCase()
     .replace(/\b\w/g, c => c.toUpperCase());
+}
+function dataSourceLabel() {
+  return state.dex ? `Showdown Dex ${state.dexVersion || ''}`.trim() : state.dataProvider;
+}
+function isDexSupported(entry) {
+  return Boolean(entry?.exists) && !entry?.isNonstandard && !entry?.tier?.includes?.('Unreleased');
+}
+function getDexSpeciesEntry(name) {
+  if (!state.dex) return null;
+  const species = state.dex.species.get(name);
+  return species?.exists ? species : null;
+}
+function getFullLearnsetIds(speciesName) {
+  if (!state.dex) return [];
+  const species = state.dex.species.get(speciesName);
+  if (!species?.exists || !state.dex.species.getFullLearnset) return [];
+  const learnset = state.dex.species.getFullLearnset(species.id);
+  if (Array.isArray(learnset)) return learnset.map(toId);
+  if (learnset && typeof learnset === 'object') return Object.keys(learnset).map(toId);
+  return [];
+}
+function formatTargetFromDex(target) {
+  return SHOWDOWN_TARGET_HINTS[target] || 'single-opponent';
+}
+function extractSecondaryAilment(move) {
+  const pool = [move.secondary, ...(Array.isArray(move.secondaries) ? move.secondaries : [])].filter(Boolean);
+  for (const entry of pool) {
+    if (entry.status) return {ailment: entry.status, chance: entry.chance || 100};
+  }
+  if (move.status) return {ailment: move.status, chance: 100};
+  return {ailment: '', chance: 0};
+}
+function extractSecondaryBoosts(move) {
+  const pool = [move.secondary, ...(Array.isArray(move.secondaries) ? move.secondaries : [])].filter(Boolean);
+  for (const entry of pool) {
+    if (entry.boosts) return {boosts: entry.boosts, chance: entry.chance || 100};
+  }
+  if (move.boosts) return {boosts: move.boosts, chance: 100};
+  return {boosts: null, chance: 0};
 }
 function formatPokemonDisplayName(name) {
   return String(name || '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -287,13 +347,57 @@ async function detectAssetBases() {
     }
   }
 }
+async function loadDataProvider() {
+  try {
+    const runtime = await loadShowdownDex();
+    state.dex = runtime.Dex.mod ? runtime.Dex.mod('gen9') : runtime.Dex;
+    state.dexSource = runtime.source;
+    state.dexVersion = runtime.version;
+    state.dataProvider = 'Showdown Dex';
+    return;
+  } catch (error) {
+    console.warn('Failed to load Showdown Dex runtime, falling back to PokéAPI', error);
+    state.dex = null;
+    state.dexSource = '';
+    state.dexVersion = '';
+    state.dataProvider = 'PokéAPI fallback';
+  }
+}
 async function loadMoveNames() {
+  if (state.dex) {
+    const names = state.dex.moves.all()
+      .filter(move => isDexSupported(move) && !move.isZ && !move.isMax)
+      .map(move => move.name)
+      .sort((a, b) => a.localeCompare(b));
+    moveNameCache.splice(0, moveNameCache.length, ...names);
+    return;
+  }
   const data = await fetchJson(`${POKEAPI}/move?limit=2000`);
   moveNameCache.splice(0, moveNameCache.length, ...data.results.map(entry => formatPokemonDisplayName(entry.name)));
 }
 async function getSpeciesData(speciesName) {
   const key = slugify(speciesName);
   if (speciesDataCache.has(key)) return speciesDataCache.get(key);
+
+  if (state.dex) {
+    const species = state.dex.species.get(speciesName);
+    if (!species?.exists) throw new Error(`Species not found in Dex: ${speciesName}`);
+    const abilityNames = Object.values(species.abilities || {}).filter(Boolean);
+    const data = {
+      id: species.num || 0,
+      name: species.name,
+      apiName: species.id,
+      types: [...(species.types || [])].map(type => type.toLowerCase()),
+      abilities: abilityNames,
+      stats: {...species.baseStats},
+      weight: species.weightkg || 0,
+      evolves: Boolean(species.evos?.length),
+      learnset: getFullLearnsetIds(species.id),
+    };
+    speciesDataCache.set(key, data);
+    return data;
+  }
+
   const pokemon = await fetchJson(`${POKEAPI}/pokemon/${key}`);
   const species = await fetchJson(pokemon.species.url);
   const evo = species.evolves_from_species?.name || null;
@@ -320,6 +424,39 @@ async function getMoveData(moveName) {
   const key = slugify(moveName);
   if (!key) throw new Error('Move is blank');
   if (moveDataCache.has(key)) return moveDataCache.get(key);
+
+  if (state.dex) {
+    const move = state.dex.moves.get(moveName);
+    if (!move?.exists) throw new Error(`Move not found in Dex: ${moveName}`);
+    const secondaryStatus = extractSecondaryAilment(move);
+    const secondaryBoosts = extractSecondaryBoosts(move);
+    const result = {
+      name: move.name,
+      apiName: move.id,
+      power: move.basePower || 0,
+      accuracy: move.accuracy === true ? 100 : (move.accuracy || 100),
+      pp: move.pp || 0,
+      priority: move.priority || 0,
+      type: String(move.type || '').toLowerCase(),
+      category: String(move.category || '').toLowerCase(),
+      target: formatTargetFromDex(move.target),
+      critRate: move.critRatio ? Math.max(0, Number(move.critRatio) - 1) : 0,
+      drain: Array.isArray(move.drain) ? Math.round((move.drain[0] / move.drain[1]) * 100) : 0,
+      healing: Array.isArray(move.heal) ? Math.round((move.heal[0] / move.heal[1]) * 100) : 0,
+      minHits: Array.isArray(move.multihit) ? move.multihit[0] : (move.multihit || 1),
+      maxHits: Array.isArray(move.multihit) ? move.multihit[1] : (move.multihit || 1),
+      ailment: secondaryStatus.ailment,
+      ailmentChance: secondaryStatus.chance,
+      flinchChance: move.secondary?.volatileStatus === 'flinch' ? (move.secondary?.chance || 100) : 0,
+      statChance: secondaryBoosts.chance,
+      statChanges: Object.entries(secondaryBoosts.boosts || move.boosts || {}).map(([stat, change]) => ({stat, change})),
+      effectChance: move.secondary?.chance || move.secondaries?.[0]?.chance || 0,
+      metaCategory: move.category === 'Status' ? 'status' : '',
+    };
+    moveDataCache.set(key, result);
+    return result;
+  }
+
   const data = await fetchJson(`${POKEAPI}/move/${key}`);
   const result = {
     name: formatPokemonDisplayName(data.name),
@@ -519,7 +656,10 @@ function bindElements() {
 }
 function buildStaticLists() {
   els.speciesList.innerHTML = state.speciesChoices.map(entry => `<option value="${entry.label}"></option>`).join('');
-  const allItems = Array.from(new Set([...commonItems, ...(state.manifest.items || []).map(humanizeSpriteId)])).sort();
+  const dexItems = state.dex
+    ? state.dex.items.all().filter(item => isDexSupported(item)).map(item => item.name)
+    : [];
+  const allItems = Array.from(new Set([...commonItems, ...dexItems, ...(state.manifest.items || []).map(humanizeSpriteId)])).sort((a, b) => a.localeCompare(b));
   els.itemList.innerHTML = allItems.map(item => `<option value="${item}"></option>`).join('');
   els.moveList.innerHTML = moveNameCache.map(name => `<option value="${name}"></option>`).join('');
   els.natureSelect.innerHTML = natureOrder.map(name => `<option value="${name}">${name}</option>`).join('');
@@ -629,14 +769,14 @@ async function hydrateSelectedSpecies() {
     mon.spriteId = '';
     mon.ability = '';
     if (!mon.teraType) mon.teraType = 'normal';
-    if (els.speciesStatus) els.speciesStatus.textContent = mon.species ? 'No uploaded sprite matched that species name.' : 'Choose a species to load PokéAPI data.';
+    if (els.speciesStatus) els.speciesStatus.textContent = mon.species ? 'No uploaded sprite matched that species name.' : `Choose a species to load ${dataSourceLabel()} data.`;
     saveState();
     renderAll();
     return;
   }
   mon.spriteId = spriteId;
   mon.displaySpecies = humanizeSpriteId(spriteId);
-  if (els.speciesStatus) els.speciesStatus.textContent = 'Loading species data…';
+  if (els.speciesStatus) els.speciesStatus.textContent = `Loading species data from ${dataSourceLabel()}…`;
   try {
     const data = await getSpeciesData(mon.displaySpecies);
     mon.data = data;
@@ -645,7 +785,7 @@ async function hydrateSelectedSpecies() {
     if (els.speciesStatus) els.speciesStatus.textContent = `${data.name} loaded · ${data.types.map(titleCase).join(' / ')}`;
   } catch (error) {
     mon.data = null;
-    if (els.speciesStatus) els.speciesStatus.textContent = 'Species data could not be loaded from PokéAPI.';
+    if (els.speciesStatus) els.speciesStatus.textContent = `Species data could not be loaded from ${dataSourceLabel()}.`;
   }
   saveState();
   renderAll();
@@ -671,9 +811,9 @@ function renderEditor() {
   renderItemIcon(mon.item);
   if (els.speciesStatus) {
     if (mon.data?.types?.length) els.speciesStatus.textContent = `${mon.data.name} loaded · ${mon.data.types.map(titleCase).join(' / ')}`;
-    else if (mon.spriteId) els.speciesStatus.textContent = 'Species data could not be loaded from PokéAPI.';
+    else if (mon.spriteId) els.speciesStatus.textContent = `Species data could not be loaded from ${dataSourceLabel()}.`;
     else if (mon.species || mon.displaySpecies) els.speciesStatus.textContent = 'No uploaded sprite matched that species name.';
-    else els.speciesStatus.textContent = 'Choose a species to load PokéAPI data.';
+    else els.speciesStatus.textContent = `Choose a species to load ${dataSourceLabel()} data.`;
   }
   els.editorAbilityNote.textContent = mon.ability ? implementedAbilityNote(mon.ability) : 'Select a species to load its ability list.';
   els.editorAbilityEffect.textContent = implementedItemNote(mon.item);
@@ -697,27 +837,60 @@ function renderEditor() {
 }
 async function validateMon(mon, playerIndex, slotIndex) {
   const errors = [];
-  if (!mon.displaySpecies && !mon.species) errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: choose a Pokémon.`);
-  if (!mon.spriteId) errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: species must match an available uploaded sprite.`);
-  if (!mon.data) errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: species data is still missing.`);
+  const prefix = `${state.playerNames[playerIndex]} slot ${slotIndex + 1}`;
+  if (!mon.displaySpecies && !mon.species) errors.push(`${prefix}: choose a Pokémon.`);
+  if (!mon.spriteId) errors.push(`${prefix}: species must match an available uploaded sprite.`);
+  if (!mon.data) errors.push(`${prefix}: species data is still missing.`);
   const evTotal = Object.values(mon.evs).reduce((sum, value) => sum + Number(value || 0), 0);
-  if (evTotal > 510) errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: EV total exceeds 510.`);
+  if (evTotal > 510) errors.push(`${prefix}: EV total exceeds 510.`);
   for (const stat of statOrder) {
-    if ((mon.evs[stat] ?? 0) > 252) errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: ${statLabels[stat]} EV exceeds 252.`);
-    if ((mon.ivs[stat] ?? 31) > 31 || (mon.ivs[stat] ?? 31) < 0) errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: ${statLabels[stat]} IV must stay between 0 and 31.`);
+    if ((mon.evs[stat] ?? 0) > 252) errors.push(`${prefix}: ${statLabels[stat]} EV exceeds 252.`);
+    if ((mon.ivs[stat] ?? 31) > 31 || (mon.ivs[stat] ?? 31) < 0) errors.push(`${prefix}: ${statLabels[stat]} IV must stay between 0 and 31.`);
   }
-  if (mon.level < 1 || mon.level > 100) errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: level must stay between 1 and 100.`);
-  if (!mon.ability) errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: choose an ability.`);
-  if (mon.moves.filter(Boolean).length !== 4) errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: pick exactly four moves.`);
-  for (const move of mon.moves.filter(Boolean)) {
+  if (mon.level < 1 || mon.level > 100) errors.push(`${prefix}: level must stay between 1 and 100.`);
+  if (!mon.ability) errors.push(`${prefix}: choose an ability.`);
+  if (mon.data?.abilities?.length && mon.ability && !mon.data.abilities.includes(mon.ability)) errors.push(`${prefix}: ${mon.ability} is not a valid ability for ${mon.data.name}.`);
+  if (state.dex && mon.item) {
+    const item = state.dex.items.get(mon.item);
+    if (!item?.exists) errors.push(`${prefix}: ${mon.item} is not a valid item.`);
+  }
+  const chosenMoves = mon.moves.filter(Boolean);
+  if (chosenMoves.length !== 4) errors.push(`${prefix}: pick exactly four moves.`);
+  const moveIds = chosenMoves.map(toId);
+  if (new Set(moveIds).size !== moveIds.length) errors.push(`${prefix}: duplicate moves are not allowed.`);
+  const learnsetIds = new Set(mon.data?.learnset || []);
+  for (const move of chosenMoves) {
     try {
-      await getMoveData(move);
+      const loadedMove = await getMoveData(move);
+      if (state.dex && learnsetIds.size && !learnsetIds.has(toId(loadedMove.apiName || loadedMove.name))) {
+        errors.push(`${prefix}: ${loadedMove.name} is not in ${mon.data?.name || mon.displaySpecies}'s loaded learnset.`);
+      }
     } catch (error) {
-      errors.push(`${state.playerNames[playerIndex]} slot ${slotIndex + 1}: move “${move}” could not be loaded.`);
+      errors.push(`${prefix}: move “${move}” could not be loaded.`);
     }
   }
   return errors;
 }
+async function rehydrateTeams() {
+  for (const team of state.teams) {
+    for (const mon of team) {
+      if (!mon.species && !mon.displaySpecies) continue;
+      const spriteId = getBaseSpriteId(mon.species || mon.displaySpecies);
+      if (!spriteId) continue;
+      mon.spriteId = spriteId;
+      mon.displaySpecies = humanizeSpriteId(spriteId);
+      try {
+        const data = await getSpeciesData(mon.displaySpecies);
+        mon.data = data;
+        if (!mon.ability || !data.abilities.includes(mon.ability)) mon.ability = data.abilities[0] || '';
+        if (!mon.teraType) mon.teraType = data.types[0] || 'normal';
+      } catch (error) {
+        mon.data = null;
+      }
+    }
+  }
+}
+
 async function renderValidation() {
   const allErrors = [];
   for (const [playerIndex, team] of state.teams.entries()) {
@@ -1553,28 +1726,30 @@ function renderAll() {
 }
 async function bootstrap() {
   bindElements();
-  showRuntime('Loading uploaded assets, sprite manifest, and PokéAPI move list…', 'loading');
+  showRuntime('Loading uploaded assets and battle data runtime…', 'loading');
   resetTeams();
   await loadManifest();
   await detectAssetBases();
   loadSavedState();
+  await loadDataProvider();
   await loadMoveNames();
+  await rehydrateTeams();
   buildStaticLists();
   wireEditorEvents();
   wireBattleEvents();
   renderAll();
   state.runtimeReady = true;
   showRuntime(
-    'Runtime ready. Local assets and PokéAPI data are connected.',
+    'Runtime ready. Local assets and battle data are connected.',
     'ready',
-    `Pokémon sprite base: ${state.assetBase.pokemon}<br>Item icon base: ${state.assetBase.items}<br>Battle data for species and moves is still loaded from PokéAPI at runtime. The current build supports singles and doubles, animated uploaded sprites, IV/EV + nature stat calculation, turn order by priority and speed, Terastallization, and a practical subset of held-item / ability effects.`
+    `Pokémon sprite base: ${state.assetBase.pokemon}<br>Item icon base: ${state.assetBase.items}<br>Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex CDN: ${state.dexSource}` : ''}<br>The current build now loads species / moves / items / abilities from a Showdown-compatible Dex when available, restores saved teams against that Dex on startup, and validates selected moves against each species' loaded learnset. Battle resolution is still the project's custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
   );
 }
 
 bootstrap().catch(error => {
   console.error(error);
   showRuntime(
-    'Startup failed. Check the browser console and confirm that the site can reach PokéAPI.',
+    'Startup failed. Check the browser console and confirm that the site can reach the configured data runtime.',
     'error',
     `Error: ${error.message}`
   );

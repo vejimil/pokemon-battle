@@ -1,17 +1,15 @@
-404 sprite fix summary
+Current progress summary
 
-What changed
-- src/app.js now auto-detects the real sprite root and item root at startup.
-- It no longer assumes only ./assets/Pokemon will exist.
-- After detection, all sprite and item icon requests use the detected base path.
-- Runtime status now shows which base path was detected.
+Asset-path fix
+- src/app.js still auto-detects the working sprite root and item root at startup.
+- Sprite and item icon requests use the detected base path instead of one hardcoded path.
 
-Why this fixes the issue
-- The project previously hardcoded a single asset path.
-- If the serving environment ended up using a different casing/path, sprite PNGs 404ed repeatedly.
-- The new startup probe removes that assumption and uses the path that actually exists.
+Stage 2 progress now implemented
+- The app now attempts to load a Showdown-compatible Dex runtime in the browser before falling back to PokéAPI.
+- Species, move, item, and ability lookup can now come from that Dex layer.
+- Saved teams are rehydrated against the loaded data runtime on startup.
+- Validation now checks native abilities, valid items, duplicate moves, and whether selected moves appear in the species learnset provided by the loaded Dex.
 
-Stage 2 direction
-- Move species, moves, items, abilities, learnsets, and validation into a local Dex.
-- Replace ad hoc validation with a Showdown-based validator or equivalent local legality data.
-- Replace partial custom battle effects with a complete simulator layer.
+Next milestone
+- Replace the remaining custom battle resolution with a full simulator layer.
+- Add real format-based legality using TeamValidator or an equivalent Showdown-compatible validator.

@@ -12,6 +12,8 @@ A GitHub Pages-ready local 2-player Pokémon-style battle builder and pass-and-p
 - Animated uploaded Pokémon sprites rendered from strip-style PNGs
 - Uploaded item icons, type icons, and status overlays used locally
 - Browser battle flow with turn selection, speed/priority ordering, damage, switching, fainting, and battle log
+- Showdown-compatible Dex loading for local species / move / item / ability data when CDN access is available
+- Learnset-aware validation and saved-team rehydration on startup
 - Local save via `localStorage`
 
 ## Asset usage
@@ -27,9 +29,11 @@ They are extracted into `assets/` and referenced directly by the app.
 
 ## Runtime data source
 
-To keep the project static and GitHub Pages-friendly, species and move data are loaded from PokéAPI at runtime in the browser.
+The app now tries to load a Showdown-compatible Dex runtime in the browser first. When that succeeds, species, moves, abilities, items, and learnset checks come from that Dex layer.
 
-This means the deployed site should be opened with internet access.
+If the CDN runtime cannot be loaded, the project falls back to the older PokéAPI path for species and move lookups so the prototype still boots.
+
+This means the deployed site should still be opened with internet access.
 
 ## Files
 
@@ -63,6 +67,7 @@ Included:
 
 Not fully exhaustive yet:
 - Full cartridge-accurate battle simulator behavior for every move, ability, item, field effect, and edge case
+- Full Showdown TeamValidator / simulator integration for format-accurate legality and battle resolution
 - Full move animation VFX or battle sound design
 - Every advanced mechanic from every generation
 
