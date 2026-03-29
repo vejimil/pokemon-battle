@@ -9,73 +9,89 @@ A GitHub Pages-ready local 2-player Pokémon-style battle builder and pass-and-p
 - Team builder with 3 Pokémon per side in singles, 4 in doubles
 - Species lookup, move lookup, item lookup, ability selection, nature selection, IV/EV editing, level, shiny flag, and Tera type
 - Validation for common team-building constraints
+- Learnset-aware validation using vendored local data
 - Animated uploaded Pokémon sprites rendered from strip-style PNGs
 - Uploaded item icons, type icons, and status overlays used locally
 - Browser battle flow with turn selection, speed/priority ordering, damage, switching, fainting, and battle log
-- Showdown-compatible Dex loading for local species / move / item / ability data when CDN access is available
-- Learnset-aware validation and saved-team rehydration on startup
 - Local save via `localStorage`
+
+## Stage 3: full data localization
+
+This build no longer depends on PokéAPI or a live Dex CDN at runtime for core species / move / item / ability / learnset data.
+
+Vendored local data now ships inside `src/data/`:
+
+- `pokedex.js`
+- `learnsets.js`
+- `moves.js`
+- `abilities.js`
+- `items.js`
+- `aliases.js`
+- `formats-data.js`
+- `natures.js`
+- `conditions.js`
+- `rulesets.js`
+- `tags.js`
+- `typechart.js`
+
+`src/local-dex.js` wraps those vendored modules into a browser-friendly local Dex layer used by the app.
 
 ## Asset usage
 
-This project uses the uploaded assets as local static files:
+This project still expects your already-extracted local asset folders to remain present in `assets/`.
 
-- `Animated Pokemon Sprites.zip`
-- `Animated Pokemon System.zip`
-- `items.zip`
-- `types.zip`
+Typical local assets used by this build:
 
-They are extracted into `assets/` and referenced directly by the app.
+- Pokémon front / back / shiny strip sprites
+- Item icons
+- Type icons
+- Status overlays
+- `assets/manifest.json`
 
-## Runtime data source
-
-The app now tries to load a Showdown-compatible Dex runtime in the browser first. When that succeeds, species, moves, abilities, items, and learnset checks come from that Dex layer.
-
-If the CDN runtime cannot be loaded, the project falls back to the older PokéAPI path for species and move lookups so the prototype still boots.
-
-This means the deployed site should still be opened with internet access.
+This ZIP is code-only, so those asset files are **not included** here.
 
 ## Files
 
 - `index.html` — app shell
 - `styles.css` — UI styling
 - `src/app.js` — builder, validation, sprite animation, and battle logic
-- `assets/manifest.json` — generated sprite manifest
-- `assets/...` — extracted local assets
+- `src/local-dex.js` — browser-side local Dex wrapper
+- `src/data/*.js` — vendored local battle/building data modules
+- `scripts/generate-local-data.cjs` — helper script used to convert upstream source files into browser modules
 
 ## GitHub Pages deployment
 
-1. Create a new GitHub repository.
-2. Upload every file from this folder to the repository root.
-3. Commit and push.
-4. In GitHub, open **Settings → Pages**.
-5. Under **Build and deployment**, choose **Deploy from a branch**.
-6. Select the `main` branch and `/ (root)`.
-7. Save.
-8. Wait for GitHub Pages to publish the site.
+1. Keep your existing project root.
+2. Preserve your current `assets/` folder exactly as it is.
+3. Copy the files from this ZIP over your project files.
+4. Commit and push.
+5. In GitHub, open **Settings → Pages**.
+6. Under **Build and deployment**, choose **Deploy from a branch**.
+7. Select the `main` branch and `/ (root)`.
+8. Save.
+9. Wait for GitHub Pages to publish the site.
 
 ## Notes about scope
 
-This build is a polished prototype rather than a full competitive simulator.
+This build now localizes the main builder data layer, but it is still not a full competitive simulator yet.
 
-Included:
-- Team building structure close to the requested PKB flow
-- Stat calculation from IV/EV/nature/level
-- Practical turn-based battle loop
-- Singles and doubles layout
-- Animated uploaded sprites and local icon usage
+Included now:
+- Local species / moves / items / abilities / learnsets / aliases / formats data / natures / conditions / rulesets / tags / type chart loading
+- Team-building validation driven by that vendored data
+- Saved-team rehydration against the localized Dex on startup
+- Local asset rendering and browser battle prototype flow
 
-Not fully exhaustive yet:
+Still not fully exhaustive yet:
 - Full cartridge-accurate battle simulator behavior for every move, ability, item, field effect, and edge case
-- Full Showdown TeamValidator / simulator integration for format-accurate legality and battle resolution
+- Full Showdown TeamValidator integration for format-accurate legality
+- Full simulator replacement for the current custom battle runtime
 - Full move animation VFX or battle sound design
-- Every advanced mechanic from every generation
+- Every advanced mechanic from every generation integrated into battle resolution
 
-## Optional extra assets for a fuller version later
+## Optional next steps
 
-If you want a more complete presentation pass later, these would help most:
+The best next milestone after this build is:
 
-- Battle background images
-- Hit / status / KO sound effects
-- Move VFX sprite sheets
-- UI frame assets for a more authentic battle HUD
+1. Full legality layer / TeamValidator-equivalent integration
+2. Full simulator integration for battle resolution
+3. Expanded mechanic support for Mega Evolution, Z-Moves, Dynamax, and complete Terastal handling

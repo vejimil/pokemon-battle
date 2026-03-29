@@ -3,11 +3,14 @@ This ZIP is code-only.
 Included:
 - .nojekyll
 - README.md
-- ROOT_CAUSE_AND_STAGE2.txt
+- CODE_ONLY_INSTRUCTIONS.txt
+- ROOT_CAUSE_AND_STAGE3.txt
 - index.html
 - styles.css
 - src/app.js
-- src/showdown-dex.js
+- src/local-dex.js
+- src/data/*.js
+- scripts/generate-local-data.cjs
 
 Not included:
 - assets/

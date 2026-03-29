@@ -1,7 +1,6 @@
-import {loadShowdownDex} from './showdown-dex.js';
+import {loadLocalDex, LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_TYPES, LOCAL_TYPE_CHART} from './local-dex.js';
 
 const STORAGE_KEY = 'pkb-static-state-v1';
-const POKEAPI = 'https://pokeapi.co/api/v2';
 const SHOWDOWN_TARGET_HINTS = {
   normal: 'single-opponent',
   adjacentFoe: 'single-opponent',
@@ -20,20 +19,10 @@ const SHOWDOWN_TARGET_HINTS = {
 const statOrder = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 const statLabels = {hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe'};
 const statusNames = {brn: 'Burn', par: 'Paralysis', psn: 'Poison', tox: 'Toxic', slp: 'Sleep', frz: 'Freeze'};
-const typeIds = {
-  normal: 1, fighting: 2, flying: 3, poison: 4, ground: 5, rock: 6,
-  bug: 7, ghost: 8, steel: 9, fire: 10, water: 11, grass: 12,
-  electric: 13, psychic: 14, ice: 15, dragon: 16, dark: 17, fairy: 18,
-};
-const TYPES = Object.keys(typeIds);
-const natureOrder = ['Hardy','Lonely','Brave','Adamant','Naughty','Bold','Docile','Relaxed','Impish','Lax','Timid','Hasty','Serious','Jolly','Naive','Modest','Mild','Quiet','Bashful','Rash','Calm','Gentle','Sassy','Careful','Quirky'];
-const natures = {
-  Hardy:{plus:null,minus:null}, Lonely:{plus:'atk',minus:'def'}, Brave:{plus:'atk',minus:'spe'}, Adamant:{plus:'atk',minus:'spa'}, Naughty:{plus:'atk',minus:'spd'},
-  Bold:{plus:'def',minus:'atk'}, Docile:{plus:null,minus:null}, Relaxed:{plus:'def',minus:'spe'}, Impish:{plus:'def',minus:'spa'}, Lax:{plus:'def',minus:'spd'},
-  Timid:{plus:'spe',minus:'atk'}, Hasty:{plus:'spe',minus:'def'}, Serious:{plus:null,minus:null}, Jolly:{plus:'spe',minus:'spa'}, Naive:{plus:'spe',minus:'spd'},
-  Modest:{plus:'spa',minus:'atk'}, Mild:{plus:'spa',minus:'def'}, Quiet:{plus:'spa',minus:'spe'}, Bashful:{plus:null,minus:null}, Rash:{plus:'spa',minus:'spd'},
-  Calm:{plus:'spd',minus:'atk'}, Gentle:{plus:'spd',minus:'def'}, Sassy:{plus:'spd',minus:'spe'}, Careful:{plus:'spd',minus:'spa'}, Quirky:{plus:null,minus:null},
-};
+const typeIds = LOCAL_TYPE_IDS;
+const TYPES = LOCAL_TYPES;
+const natureOrder = LOCAL_NATURE_ORDER;
+const natures = LOCAL_NATURES;
 const commonItems = [
   'Leftovers','Life Orb','Choice Band','Choice Specs','Choice Scarf','Focus Sash','Assault Vest','Sitrus Berry','Rocky Helmet','Expert Belt',
   'Lum Berry','Booster Energy','Heavy-Duty Boots','Air Balloon','Weakness Policy','Eviolite','Clear Amulet','Scope Lens','Muscle Band','Wise Glasses',
@@ -61,26 +50,7 @@ const targetHints = {
   'user-or-ally': 'ally-or-self',
 };
 
-const typeChart = {
-  normal:{rock:0.5,ghost:0,steel:0.5},
-  fighting:{normal:2,ice:2,rock:2,dark:2,steel:2,poison:0.5,flying:0.5,psychic:0.5,bug:0.5,fairy:0.5,ghost:0},
-  flying:{fighting:2,bug:2,grass:2,rock:0.5,steel:0.5,electric:0.5},
-  poison:{grass:2,fairy:2,poison:0.5,ground:0.5,rock:0.5,ghost:0.5,steel:0},
-  ground:{fire:2,electric:2,poison:2,rock:2,steel:2,bug:0.5,grass:0.5,flying:0},
-  rock:{fire:2,ice:2,flying:2,bug:2,fighting:0.5,ground:0.5,steel:0.5},
-  bug:{grass:2,psychic:2,dark:2,fighting:0.5,flying:0.5,poison:0.5,ghost:0.5,steel:0.5,fire:0.5,fairy:0.5},
-  ghost:{psychic:2,ghost:2,dark:0.5,normal:0},
-  steel:{ice:2,rock:2,fairy:2,steel:0.5,fire:0.5,water:0.5,electric:0.5},
-  fire:{grass:2,ice:2,bug:2,steel:2,fire:0.5,water:0.5,rock:0.5,dragon:0.5},
-  water:{fire:2,ground:2,rock:2,water:0.5,grass:0.5,dragon:0.5},
-  grass:{water:2,ground:2,rock:2,fire:0.5,grass:0.5,poison:0.5,flying:0.5,bug:0.5,dragon:0.5,steel:0.5},
-  electric:{water:2,flying:2,electric:0.5,grass:0.5,dragon:0.5,ground:0},
-  psychic:{fighting:2,poison:2,psychic:0.5,steel:0.5,dark:0},
-  ice:{grass:2,ground:2,flying:2,dragon:2,fire:0.5,water:0.5,ice:0.5,steel:0.5},
-  dragon:{dragon:2,steel:0.5,fairy:0},
-  dark:{psychic:2,ghost:2,fighting:0.5,dark:0.5,fairy:0.5},
-  fairy:{fighting:2,dragon:2,dark:2,fire:0.5,poison:0.5,steel:0.5},
-};
+const typeChart = LOCAL_TYPE_CHART;
 
 const moveNameCache = [];
 const speciesDataCache = new Map();
@@ -92,7 +62,7 @@ const state = {
   dex: null,
   dexSource: '',
   dexVersion: '',
-  dataProvider: 'PokéAPI fallback',
+  dataProvider: 'Local Showdown data',
   mode: 'singles',
   teamSize: 3,
   manifest: null,
@@ -133,7 +103,7 @@ function humanizeSpriteId(id) {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 function dataSourceLabel() {
-  return state.dex ? `Showdown Dex ${state.dexVersion || ''}`.trim() : state.dataProvider;
+  return state.dex ? `Local Dex ${state.dexVersion || ''}`.trim() : state.dataProvider;
 }
 function isDexSupported(entry) {
   return Boolean(entry?.exists) && !entry?.isNonstandard && !entry?.tier?.includes?.('Unreleased');
@@ -348,74 +318,39 @@ async function detectAssetBases() {
   }
 }
 async function loadDataProvider() {
-  try {
-    const runtime = await loadShowdownDex();
-    state.dex = runtime.Dex.mod ? runtime.Dex.mod('gen9') : runtime.Dex;
-    state.dexSource = runtime.source;
-    state.dexVersion = runtime.version;
-    state.dataProvider = 'Showdown Dex';
-    return;
-  } catch (error) {
-    console.warn('Failed to load Showdown Dex runtime, falling back to PokéAPI', error);
-    state.dex = null;
-    state.dexSource = '';
-    state.dexVersion = '';
-    state.dataProvider = 'PokéAPI fallback';
-  }
+  const runtime = await loadLocalDex();
+  state.dex = runtime.Dex.mod ? runtime.Dex.mod('gen9') : runtime.Dex;
+  state.dexSource = runtime.source;
+  state.dexVersion = runtime.version;
+  state.dataProvider = 'Local Showdown data';
 }
 async function loadMoveNames() {
-  if (state.dex) {
-    const names = state.dex.moves.all()
-      .filter(move => isDexSupported(move) && !move.isZ && !move.isMax)
-      .map(move => move.name)
-      .sort((a, b) => a.localeCompare(b));
-    moveNameCache.splice(0, moveNameCache.length, ...names);
-    return;
-  }
-  const data = await fetchJson(`${POKEAPI}/move?limit=2000`);
-  moveNameCache.splice(0, moveNameCache.length, ...data.results.map(entry => formatPokemonDisplayName(entry.name)));
+  if (!state.dex) throw new Error('Local Dex failed to load.');
+  const names = state.dex.moves.all()
+    .filter(move => isDexSupported(move) && !move.isZ && !move.isMax)
+    .map(move => move.name)
+    .sort((a, b) => a.localeCompare(b));
+  moveNameCache.splice(0, moveNameCache.length, ...names);
 }
 async function getSpeciesData(speciesName) {
   const key = slugify(speciesName);
   if (speciesDataCache.has(key)) return speciesDataCache.get(key);
+  if (!state.dex) throw new Error('Local Dex failed to load.');
 
-  if (state.dex) {
-    const species = state.dex.species.get(speciesName);
-    if (!species?.exists) throw new Error(`Species not found in Dex: ${speciesName}`);
-    const abilityNames = Object.values(species.abilities || {}).filter(Boolean);
-    const data = {
-      id: species.num || 0,
-      name: species.name,
-      apiName: species.id,
-      types: [...(species.types || [])].map(type => type.toLowerCase()),
-      abilities: abilityNames,
-      stats: {...species.baseStats},
-      weight: species.weightkg || 0,
-      evolves: Boolean(species.evos?.length),
-      learnset: getFullLearnsetIds(species.id),
-    };
-    speciesDataCache.set(key, data);
-    return data;
-  }
+  const species = state.dex.species.get(speciesName);
+  if (!species?.exists) throw new Error(`Species not found in local data: ${speciesName}`);
 
-  const pokemon = await fetchJson(`${POKEAPI}/pokemon/${key}`);
-  const species = await fetchJson(pokemon.species.url);
-  const evo = species.evolves_from_species?.name || null;
-  const abilities = pokemon.abilities.map(slot => formatPokemonDisplayName(slot.ability.name));
-  const stats = {};
-  pokemon.stats.forEach(entry => {
-    const map = {hp:'hp', attack:'atk', defense:'def', 'special-attack':'spa', 'special-defense':'spd', speed:'spe'};
-    stats[map[entry.stat.name]] = entry.base_stat;
-  });
+  const abilityNames = Object.values(species.abilities || {}).filter(Boolean);
   const data = {
-    id: pokemon.id,
-    name: formatPokemonDisplayName(pokemon.name),
-    apiName: pokemon.name,
-    types: pokemon.types.sort((a,b)=>a.slot-b.slot).map(t => t.type.name),
-    abilities,
-    stats,
-    weight: pokemon.weight / 10,
-    evolves: !evo && species.evolves_from_species === null ? pokemon.species.name !== species.name : Boolean(species.evolves_from_species || species.evolves_to?.length),
+    id: species.num || 0,
+    name: species.name,
+    apiName: species.id,
+    types: [...(species.types || [])].map(type => type.toLowerCase()),
+    abilities: abilityNames,
+    stats: {...species.baseStats},
+    weight: species.weightkg || 0,
+    evolves: Boolean(species.evos?.length),
+    learnset: getFullLearnsetIds(species.id),
   };
   speciesDataCache.set(key, data);
   return data;
@@ -424,62 +359,35 @@ async function getMoveData(moveName) {
   const key = slugify(moveName);
   if (!key) throw new Error('Move is blank');
   if (moveDataCache.has(key)) return moveDataCache.get(key);
+  if (!state.dex) throw new Error('Local Dex failed to load.');
 
-  if (state.dex) {
-    const move = state.dex.moves.get(moveName);
-    if (!move?.exists) throw new Error(`Move not found in Dex: ${moveName}`);
-    const secondaryStatus = extractSecondaryAilment(move);
-    const secondaryBoosts = extractSecondaryBoosts(move);
-    const result = {
-      name: move.name,
-      apiName: move.id,
-      power: move.basePower || 0,
-      accuracy: move.accuracy === true ? 100 : (move.accuracy || 100),
-      pp: move.pp || 0,
-      priority: move.priority || 0,
-      type: String(move.type || '').toLowerCase(),
-      category: String(move.category || '').toLowerCase(),
-      target: formatTargetFromDex(move.target),
-      critRate: move.critRatio ? Math.max(0, Number(move.critRatio) - 1) : 0,
-      drain: Array.isArray(move.drain) ? Math.round((move.drain[0] / move.drain[1]) * 100) : 0,
-      healing: Array.isArray(move.heal) ? Math.round((move.heal[0] / move.heal[1]) * 100) : 0,
-      minHits: Array.isArray(move.multihit) ? move.multihit[0] : (move.multihit || 1),
-      maxHits: Array.isArray(move.multihit) ? move.multihit[1] : (move.multihit || 1),
-      ailment: secondaryStatus.ailment,
-      ailmentChance: secondaryStatus.chance,
-      flinchChance: move.secondary?.volatileStatus === 'flinch' ? (move.secondary?.chance || 100) : 0,
-      statChance: secondaryBoosts.chance,
-      statChanges: Object.entries(secondaryBoosts.boosts || move.boosts || {}).map(([stat, change]) => ({stat, change})),
-      effectChance: move.secondary?.chance || move.secondaries?.[0]?.chance || 0,
-      metaCategory: move.category === 'Status' ? 'status' : '',
-    };
-    moveDataCache.set(key, result);
-    return result;
-  }
+  const move = state.dex.moves.get(moveName);
+  if (!move?.exists) throw new Error(`Move not found in local data: ${moveName}`);
 
-  const data = await fetchJson(`${POKEAPI}/move/${key}`);
+  const secondaryStatus = extractSecondaryAilment(move);
+  const secondaryBoosts = extractSecondaryBoosts(move);
   const result = {
-    name: formatPokemonDisplayName(data.name),
-    apiName: data.name,
-    power: data.power || 0,
-    accuracy: data.accuracy || 100,
-    pp: data.pp || 0,
-    priority: data.priority || 0,
-    type: data.type.name,
-    category: data.damage_class.name,
-    target: targetHints[data.target.name] || 'single-opponent',
-    critRate: data.meta?.crit_rate || 0,
-    drain: data.meta?.drain || 0,
-    healing: data.meta?.healing || 0,
-    minHits: data.meta?.min_hits || 1,
-    maxHits: data.meta?.max_hits || 1,
-    ailment: data.meta?.ailment?.name || '',
-    ailmentChance: data.meta?.ailment_chance || 0,
-    flinchChance: data.meta?.flinch_chance || 0,
-    statChance: data.meta?.stat_chance || 0,
-    statChanges: (data.stat_changes || []).map(entry => ({stat: entry.stat.name, change: entry.change})),
-    effectChance: data.effect_chance || 0,
-    metaCategory: data.meta?.category?.name || '',
+    name: move.name,
+    apiName: move.id,
+    power: move.basePower || 0,
+    accuracy: move.accuracy === true ? 100 : (move.accuracy || 100),
+    pp: move.pp || 0,
+    priority: move.priority || 0,
+    type: String(move.type || '').toLowerCase(),
+    category: String(move.category || '').toLowerCase(),
+    target: formatTargetFromDex(move.target),
+    critRate: move.critRatio ? Math.max(0, Number(move.critRatio) - 1) : 0,
+    drain: Array.isArray(move.drain) ? Math.round((move.drain[0] / move.drain[1]) * 100) : 0,
+    healing: Array.isArray(move.heal) ? Math.round((move.heal[0] / move.heal[1]) * 100) : 0,
+    minHits: Array.isArray(move.multihit) ? move.multihit[0] : (move.multihit || 1),
+    maxHits: Array.isArray(move.multihit) ? move.multihit[1] : (move.multihit || 1),
+    ailment: secondaryStatus.ailment,
+    ailmentChance: secondaryStatus.chance,
+    flinchChance: move.secondary?.volatileStatus === 'flinch' ? (move.secondary?.chance || 100) : 0,
+    statChance: secondaryBoosts.chance,
+    statChanges: Object.entries(secondaryBoosts.boosts || move.boosts || {}).map(([stat, change]) => ({stat, change})),
+    effectChance: move.secondary?.chance || move.secondaries?.[0]?.chance || 0,
+    metaCategory: move.category === 'Status' ? 'status' : '',
   };
   moveDataCache.set(key, result);
   return result;
@@ -515,11 +423,24 @@ function typeIconPath(typeName, small = false) {
   return `./assets/types/${small ? 'small/' : ''}${idx}.png`;
 }
 function createTypePill(type) {
+  const url = typeIconPath(type, true);
+  if (!url) {
+    const span = document.createElement('span');
+    span.className = 'type-chip-text';
+    span.textContent = titleCase(type);
+    return span;
+  }
   const img = document.createElement('img');
-  img.src = typeIconPath(type, true);
+  img.src = url;
   img.alt = type;
   img.loading = 'lazy';
   img.className = 'type-chip';
+  img.onerror = () => {
+    const span = document.createElement('span');
+    span.className = 'type-chip-text';
+    span.textContent = titleCase(type);
+    img.replaceWith(span);
+  };
   return img;
 }
 async function ensureImageInfo(url) {
@@ -769,14 +690,14 @@ async function hydrateSelectedSpecies() {
     mon.spriteId = '';
     mon.ability = '';
     if (!mon.teraType) mon.teraType = 'normal';
-    if (els.speciesStatus) els.speciesStatus.textContent = mon.species ? 'No uploaded sprite matched that species name.' : `Choose a species to load ${dataSourceLabel()} data.`;
+    if (els.speciesStatus) els.speciesStatus.textContent = mon.species ? 'No uploaded sprite matched that species name.' : `Choose a species to load local battle data.`;
     saveState();
     renderAll();
     return;
   }
   mon.spriteId = spriteId;
   mon.displaySpecies = humanizeSpriteId(spriteId);
-  if (els.speciesStatus) els.speciesStatus.textContent = `Loading species data from ${dataSourceLabel()}…`;
+  if (els.speciesStatus) els.speciesStatus.textContent = `Loading species data from local battle data…`;
   try {
     const data = await getSpeciesData(mon.displaySpecies);
     mon.data = data;
@@ -785,7 +706,7 @@ async function hydrateSelectedSpecies() {
     if (els.speciesStatus) els.speciesStatus.textContent = `${data.name} loaded · ${data.types.map(titleCase).join(' / ')}`;
   } catch (error) {
     mon.data = null;
-    if (els.speciesStatus) els.speciesStatus.textContent = `Species data could not be loaded from ${dataSourceLabel()}.`;
+    if (els.speciesStatus) els.speciesStatus.textContent = `Species data could not be loaded from local battle data.`;
   }
   saveState();
   renderAll();
@@ -811,9 +732,9 @@ function renderEditor() {
   renderItemIcon(mon.item);
   if (els.speciesStatus) {
     if (mon.data?.types?.length) els.speciesStatus.textContent = `${mon.data.name} loaded · ${mon.data.types.map(titleCase).join(' / ')}`;
-    else if (mon.spriteId) els.speciesStatus.textContent = `Species data could not be loaded from ${dataSourceLabel()}.`;
+    else if (mon.spriteId) els.speciesStatus.textContent = `Species data could not be loaded from local battle data.`;
     else if (mon.species || mon.displaySpecies) els.speciesStatus.textContent = 'No uploaded sprite matched that species name.';
-    else els.speciesStatus.textContent = `Choose a species to load ${dataSourceLabel()} data.`;
+    else els.speciesStatus.textContent = `Choose a species to load local battle data.`;
   }
   els.editorAbilityNote.textContent = mon.ability ? implementedAbilityNote(mon.ability) : 'Select a species to load its ability list.';
   els.editorAbilityEffect.textContent = implementedItemNote(mon.item);
@@ -1726,7 +1647,7 @@ function renderAll() {
 }
 async function bootstrap() {
   bindElements();
-  showRuntime('Loading uploaded assets and battle data runtime…', 'loading');
+  showRuntime('Loading uploaded assets and fully localized battle data…', 'loading');
   resetTeams();
   await loadManifest();
   await detectAssetBases();
@@ -1740,16 +1661,16 @@ async function bootstrap() {
   renderAll();
   state.runtimeReady = true;
   showRuntime(
-    'Runtime ready. Local assets and battle data are connected.',
+    'Runtime ready. Local assets and localized battle data are connected.',
     'ready',
-    `Pokémon sprite base: ${state.assetBase.pokemon}<br>Item icon base: ${state.assetBase.items}<br>Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex CDN: ${state.dexSource}` : ''}<br>The current build now loads species / moves / items / abilities from a Showdown-compatible Dex when available, restores saved teams against that Dex on startup, and validates selected moves against each species' loaded learnset. Battle resolution is still the project's custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
+    `Pokémon sprite base: ${state.assetBase.pokemon}<br>Item icon base: ${state.assetBase.items}<br>Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, and validates selected moves against each species’ loaded learnset without PokéAPI or Dex CDN requests. Battle resolution is still the project’s custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
   );
 }
 
 bootstrap().catch(error => {
   console.error(error);
   showRuntime(
-    'Startup failed. Check the browser console and confirm that the site can reach the configured data runtime.',
+    'Startup failed. Check the browser console and local data modules.',
     'error',
     `Error: ${error.message}`
   );

@@ -1,0 +1,43 @@
+Current progress summary
+
+Previous foundation already present
+- Singles / doubles flow
+- Team builder UI
+- Local asset rendering
+- Custom battle runtime prototype
+
+Stage 2 bridge that was previously added
+- Initial Dex-oriented species / move / item / ability loading
+- Learnset-aware validation start
+- Saved-team rehydration logic
+
+Stage 3 now implemented: full builder-data localization
+- Runtime PokéAPI dependency removed for species / moves.
+- Runtime Dex CDN dependency removed for builder data.
+- Vendored local modules now ship for:
+  - pokedex
+  - learnsets
+  - moves
+  - abilities
+  - items
+  - aliases
+  - formats-data
+  - natures
+  - conditions
+  - rulesets
+  - tags
+  - typechart
+- src/local-dex.js now wraps those modules into a browser-side local Dex layer.
+- app startup now loads that local Dex directly.
+- Species, moves, items, abilities, natures, types, learnset checks, and supporting ruleset/tag metadata now come from localized data.
+- Saved teams are rehydrated against the localized Dex on startup.
+- Tera type UI now safely falls back to text pills when no matching local type icon exists.
+
+What this stage does not claim to finish yet
+- Full TeamValidator legality parity
+- Full simulator parity for all modern mechanics
+- Complete cartridge-accurate battle resolution for every edge case
+
+Best next milestone
+- Integrate a full legality validator.
+- Replace or deeply align the custom battle runtime with a real simulator layer.
