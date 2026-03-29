@@ -27,6 +27,7 @@ Included:
 - src/local-dex.js
 - src/showdown-dex.js
 - src/i18n-ko-data.js
+- src/i18n-ko-official.js
 - src/engine/showdown-local-bridge.js
 - src/data/*.js
 - node_modules/@pkmn/sim/* (vendored local simulator package files required for the local engine path)

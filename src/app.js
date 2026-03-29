@@ -1,5 +1,6 @@
 import {loadLocalDex, LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_TYPES, LOCAL_TYPE_CHART} from './local-dex.js';
 import {KO_NAME_MAPS} from './i18n-ko-data.js';
+import {OFFICIAL_KO_SPECIES, OFFICIAL_KO_ITEMS} from './i18n-ko-official.js';
 import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdownLocalSinglesChoices, isShowdownLocalBattle} from './engine/showdown-local-bridge.js';
 
 const STORAGE_KEY = 'pkb-static-state-v2';
@@ -222,7 +223,7 @@ const STRUGGLE_MOVE = Object.freeze({
 });
 
 function normalizeAssetFamilyKey(name) {
-  return String(name || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  return toId(name).toUpperCase();
 }
 function uniqueNames(values) {
   const out = [];
@@ -353,9 +354,17 @@ function buildAssetDex() {
       assetToSpecies.set(onlyAssetId, unresolvedFormOrder[0]);
     }
 
-    const formChoices = familySpeciesNames.map(speciesName => {
+    const allFormChoices = familySpeciesNames.map(speciesName => {
       const speciesData = state.dex.species.get(speciesName);
+      const requirementLocked = Boolean(
+        speciesData?.requiredItem
+        || speciesData?.requiredItems?.length
+        || speciesData?.requiredMove
+        || speciesData?.requiredAbility
+        || speciesData?.requiredTeraType
+      );
       const selectable = Boolean(speciesData?.exists) && !speciesData.battleOnly;
+      const selectableManual = Boolean(speciesData?.exists) && !speciesData?.battleOnly && (!requirementLocked || speciesName === baseSpeciesName);
       const assetId = speciesToAsset.get(speciesName) || '';
       const display = displaySpeciesName(speciesName);
       return {
@@ -363,10 +372,13 @@ function buildAssetDex() {
         display,
         assetId,
         selectable,
+        selectableManual,
         hasAsset: Boolean(assetId),
         battleOnly: Boolean(speciesData?.battleOnly),
+        requirementLocked,
       };
-    }).filter(choice => choice.selectable || choice.speciesName === baseSpeciesName);
+    });
+    const formChoices = allFormChoices.filter(choice => choice.selectableManual || choice.speciesName === baseSpeciesName);
 
     const assetChoices = [];
     if (assetFamily.baseExists) {
@@ -396,6 +408,7 @@ function buildAssetDex() {
       baseSpeciesName,
       assetFamily,
       formChoices,
+      allFormChoices,
       assetChoices,
       speciesToAsset,
       assetToSpecies,
@@ -449,10 +462,58 @@ function resolveSpeciesSelection(rawValue) {
   const baseSpeciesName = family?.baseSpeciesName || normalized;
   return {speciesName: baseSpeciesName, baseSpeciesName, family};
 }
+function isRequirementLockedBuilderForm(speciesData) {
+  return Boolean(
+    speciesData?.requiredItem
+    || speciesData?.requiredItems?.length
+    || speciesData?.requiredMove
+    || speciesData?.requiredAbility
+    || speciesData?.requiredTeraType
+  );
+}
+function isSelectableManualBuilderForm(speciesData, baseSpeciesName = '') {
+  if (!speciesData?.exists) return false;
+  if (speciesData.battleOnly) return false;
+  if ((speciesData.baseSpecies || speciesData.name) === speciesData.name) return true;
+  if ((speciesData.name || '') === baseSpeciesName) return true;
+  return !isRequirementLockedBuilderForm(speciesData);
+}
 function getFormChoicesForSpecies(baseSpeciesName) {
   const family = getFamilyForSpecies(baseSpeciesName);
   if (!family) return [];
-  return family.formChoices.filter(choice => choice.selectable);
+  return (family.allFormChoices || family.formChoices || []).filter(choice => {
+    const speciesData = state.dex?.species?.get(choice.speciesName);
+    return isSelectableManualBuilderForm(speciesData, family.baseSpeciesName);
+  });
+}
+function sanitizeManualFormSpecies(mon, baseSpeciesName = '') {
+  const choices = getFormChoicesForSpecies(baseSpeciesName);
+  const raw = normalizeLocalizedInput('species', mon?.manualFormSpecies || mon?.formSpecies || mon?.species || baseSpeciesName, state.allSpeciesChoices || state.speciesChoices || []);
+  const matched = choices.find(choice => toId(choice.speciesName) === toId(raw));
+  return matched?.speciesName || baseSpeciesName;
+}
+function matchesAutomaticFormRequirements(speciesData, mon) {
+  if (!speciesData?.exists) return false;
+  const requiredItems = [speciesData.requiredItem, ...(speciesData.requiredItems || [])].filter(Boolean);
+  const hasItemRequirement = requiredItems.length > 0;
+  const hasMoveRequirement = Boolean(speciesData.requiredMove);
+  const hasAbilityRequirement = Boolean(speciesData.requiredAbility);
+  const hasTeraRequirement = Boolean(speciesData.requiredTeraType);
+  if (!hasItemRequirement && !hasMoveRequirement && !hasAbilityRequirement && !hasTeraRequirement) return false;
+  if (speciesData.battleOnly && !hasItemRequirement) return false;
+  if (hasItemRequirement && !requiredItems.some(item => toId(item) === toId(mon?.item))) return false;
+  if (hasMoveRequirement && !(mon?.moves || []).some(move => toId(move) === toId(speciesData.requiredMove))) return false;
+  if (hasAbilityRequirement && toId(mon?.ability) !== toId(speciesData.requiredAbility)) return false;
+  if (hasTeraRequirement && toId(mon?.teraType) !== toId(speciesData.requiredTeraType)) return false;
+  return true;
+}
+function resolveAutomaticBuilderSpecies(mon, manualSpecies = '') {
+  const family = getFamilyForSpecies(manualSpecies || mon?.baseSpecies || mon?.species || '');
+  if (!family || !state.dex) return manualSpecies || mon?.baseSpecies || '';
+  const candidates = (family.allFormChoices || family.formChoices || [])
+    .map(choice => state.dex.species.get(choice.speciesName))
+    .filter(speciesData => speciesData?.exists && matchesAutomaticFormRequirements(speciesData, mon));
+  return candidates[0]?.name || manualSpecies || family.baseSpeciesName;
 }
 function getAutoSpriteIdForSpecies(speciesName, gender = '', baseSpeciesName = '') {
   const family = getFamilyForSpecies(speciesName || baseSpeciesName);
@@ -466,40 +527,35 @@ function getAutoSpriteIdForSpecies(speciesName, gender = '', baseSpeciesName = '
   return assetId || '';
 }
 function syncMonSprite(mon) {
-  const family = getFamilyForSpecies(mon.formSpecies || mon.species || mon.baseSpecies);
-  const familyAssetIds = family?.assetChoices?.map(choice => choice.id) || [];
-  const autoId = getAutoSpriteIdForSpecies(mon.formSpecies || mon.species, mon.gender, mon.baseSpecies);
-  if (mon.spriteOverrideId && !familyAssetIds.includes(mon.spriteOverrideId)) mon.spriteOverrideId = '';
+  const autoId = getAutoSpriteIdForSpecies(mon.formSpecies || mon.species || mon.manualFormSpecies || mon.baseSpecies, mon.gender, mon.baseSpecies);
+  mon.spriteOverrideId = '';
   mon.spriteAutoId = autoId;
-  mon.spriteId = mon.spriteOverrideId || autoId || '';
+  mon.spriteId = autoId || '';
 }
 function renderFormSelectors(mon) {
-  if (!els.formeSelect || !els.spriteVariantSelect) return;
-  const family = getFamilyForSpecies(mon.formSpecies || mon.species || mon.baseSpecies);
-  const formChoices = family ? family.formChoices.filter(choice => choice.selectable) : [];
+  if (!els.formeSelect) return;
+  const family = getFamilyForSpecies(mon.manualFormSpecies || mon.baseSpecies || mon.formSpecies || mon.species);
+  const formChoices = family ? getFormChoicesForSpecies(family.baseSpeciesName) : [];
   els.formeSelect.innerHTML = formChoices.length
     ? formChoices.map(choice => `<option value="${choice.speciesName}">${choice.display}${choice.hasAsset ? '' : ' · 에셋 없음 / no sprite'}</option>`).join('\n')
     : '<option value="">기본 폼만 사용 / Base form only</option>';
   els.formeSelect.disabled = !formChoices.length;
-  const selectedForm = formChoices.find(choice => toId(choice.speciesName) === toId(mon.formSpecies || mon.species))
-    ? formChoices.find(choice => toId(choice.speciesName) === toId(mon.formSpecies || mon.species)).speciesName
+  const selectedForm = formChoices.find(choice => toId(choice.speciesName) === toId(mon.manualFormSpecies || mon.baseSpecies || mon.species))
+    ? formChoices.find(choice => toId(choice.speciesName) === toId(mon.manualFormSpecies || mon.baseSpecies || mon.species)).speciesName
     : (formChoices[0]?.speciesName || '');
   if (selectedForm) els.formeSelect.value = selectedForm;
   else if (!formChoices.length) els.formeSelect.value = '';
-
-  const autoLabel = mon.spriteAutoId
-    ? `자동 / Auto (${displaySpeciesName(family?.assetToSpecies?.get(mon.spriteAutoId) || mon.formSpecies || mon.species || family?.baseSpeciesName || '')} · ${mon.spriteAutoId})`
-    : '자동 / Auto';
-  const assetOptions = family ? [{id: '', display: autoLabel}, ...family.assetChoices] : [{id: '', display: '자동 / Auto'}];
-  els.spriteVariantSelect.innerHTML = assetOptions.map(choice => `<option value="${choice.id}">${choice.display}</option>`).join('\n');
-  els.spriteVariantSelect.disabled = !family;
-  els.spriteVariantSelect.value = mon.spriteOverrideId || '';
 }
 function applySpeciesSelection(mon, speciesName) {
   const resolved = resolveSpeciesSelection(speciesName);
-  mon.baseSpecies = resolved.baseSpeciesName || speciesName || '';
-  mon.formSpecies = resolved.speciesName || speciesName || '';
+  const nextBaseSpecies = resolved.baseSpeciesName || speciesName || '';
+  const nextManualSpecies = sanitizeManualFormSpecies({manualFormSpecies: resolved.speciesName || speciesName || nextBaseSpecies}, nextBaseSpecies);
+  mon.baseSpecies = nextBaseSpecies;
+  mon.manualFormSpecies = nextManualSpecies;
+  mon.formSpecies = nextManualSpecies || nextBaseSpecies;
   mon.species = mon.formSpecies || mon.baseSpecies;
+  mon.displaySpecies = mon.formSpecies || mon.baseSpecies;
+  mon.spriteOverrideId = '';
 }
 function isMegaSpeciesName(speciesName = '') {
   return /-mega/i.test(speciesName);
@@ -1028,8 +1084,80 @@ const statusLabels = {
   slp: '잠듦 / Sleep',
   frz: '얼음 / Freeze',
 };
+const LOCALIZED_NAME_MAPS = {
+  ...KO_NAME_MAPS,
+  species: {
+    ...(KO_NAME_MAPS?.species || {}),
+    ...OFFICIAL_KO_SPECIES,
+  },
+  items: {
+    ...(KO_NAME_MAPS?.items || {}),
+    ...Object.fromEntries(Object.entries(OFFICIAL_KO_ITEMS || {}).filter(([, value]) => value)),
+  },
+};
+const FORM_SUFFIX_TRANSLATIONS = {
+  Alola: '알로라',
+  Galar: '가라르',
+  Hisui: '히스이',
+  Paldea: '팔데아',
+  Mega: '메가',
+  'Mega-X': '메가X',
+  'Mega-Y': '메가Y',
+  Primal: '원시',
+  Origin: '오리진',
+  Altered: '어나더',
+  Therian: '영물',
+  Incarnate: '화신',
+  Attack: '어택',
+  Defense: '디펜스',
+  Speed: '스피드',
+  Black: '블랙',
+  White: '화이트',
+  Resolute: '각오의모습',
+  Pirouette: '스텝폼',
+  Blade: '블레이드폼',
+  Shield: '실드폼',
+  Complete: '퍼펙트폼',
+  '10%': '10%폼',
+  '50%': '50%폼',
+  Ash: '지우개굴닌자',
+  School: '군집의모습',
+  Solo: '단독의모습',
+  Busted: '들킨모습',
+  Disguised: '평상시의모습',
+  Dusk: '황혼',
+  Midnight: '한밤중',
+  Midday: '한낮',
+  Rapid: '날쌘모습',
+  RapidStrike: '연격의태세',
+  'Rapid-Strike': '연격의태세',
+  SingleStrike: '일격의태세',
+  'Single-Strike': '일격의태세',
+  Crowned: '왕의 모습',
+  Hero: '히어로',
+  Zero: '영웅',
+  Ordinary: '보통의모습',
+  Aria: '보이스폼',
+  Zen: '달마모드',
+  Hangry: '배고픈모습',
+  Noice: '나이스페이스',
+  Ice: '백마탄모습',
+  Shadow: '흑마탄모습',
+  DuskMane: '황혼의갈기',
+  'Dusk-Mane': '황혼의갈기',
+  DawnWings: '새벽의날개',
+  'Dawn-Wings': '새벽의날개',
+  Ultra: '울트라',
+  Gmax: '거다이맥스',
+  Bloodmoon: '진홍빛보름달',
+  Wellspring: '우물',
+  Hearthflame: '화덕',
+  Cornerstone: '주춧돌',
+  Teal: '벽록',
+  Stellar: '스텔라',
+};
 const reverseNameMaps = Object.fromEntries(
-  Object.entries(KO_NAME_MAPS).map(([kind, map]) => {
+  Object.entries(LOCALIZED_NAME_MAPS).map(([kind, map]) => {
     const reverse = new Map();
     for (const [english, korean] of Object.entries(map || {})) {
       const candidates = [
@@ -1050,9 +1178,43 @@ function bilingualLabel(korean, english) {
   if (!korean || korean === english) return english || korean || '';
   return `${korean} / ${english}`;
 }
+function hasHangul(text) {
+  return /[가-힣]/.test(String(text || ''));
+}
+function isSuspiciousLocalization(english, localized) {
+  if (!localized) return true;
+  if (toId(localized) === toId(english)) return true;
+  if (!hasHangul(localized) && !/[♀♂]/.test(String(localized || ''))) return true;
+  return false;
+}
+function translateFormSuffix(suffix = '') {
+  if (!suffix) return '';
+  const exact = FORM_SUFFIX_TRANSLATIONS[suffix];
+  if (exact) return exact;
+  const compact = suffix.replace(/[^A-Za-z0-9%]+/g, '');
+  if (FORM_SUFFIX_TRANSLATIONS[compact]) return FORM_SUFFIX_TRANSLATIONS[compact];
+  return suffix.replace(/-/g, ' ');
+}
+function getLocalizedSpeciesFallback(english) {
+  if (!english) return '';
+  const speciesData = state.dex?.species?.get?.(english);
+  const baseEnglish = speciesData?.exists ? (speciesData.baseSpecies || speciesData.name) : String(english).split('-')[0];
+  const baseKorean = LOCALIZED_NAME_MAPS?.species?.[baseEnglish] || KO_NAME_MAPS?.species?.[baseEnglish] || baseEnglish;
+  const forme = speciesData?.forme || (String(english).includes('-') ? String(english).split('-').slice(1).join('-') : '');
+  if (!forme) return baseKorean;
+  const translated = translateFormSuffix(forme);
+  if (['Alola', 'Galar', 'Hisui', 'Paldea'].includes(forme)) return `${translated} ${baseKorean}`;
+  if (forme === 'Mega') return `메가${baseKorean}`;
+  if (forme === 'Mega-X' || forme === 'Mega-Y') return `${translated}${baseKorean}`;
+  if (forme === 'Gmax') return `${translated} ${baseKorean}`;
+  return `${baseKorean} (${translated})`;
+}
 function getLocalizedName(kind, english) {
   if (!english) return '';
-  return KO_NAME_MAPS?.[kind]?.[english] || english;
+  const localized = LOCALIZED_NAME_MAPS?.[kind]?.[english] || KO_NAME_MAPS?.[kind]?.[english] || '';
+  if (kind === 'species' && isSuspiciousLocalization(english, localized)) return getLocalizedSpeciesFallback(english) || english;
+  if (kind === 'items' && isSuspiciousLocalization(english, localized)) return localized || english;
+  return localized || english;
 }
 function displayEntity(kind, english) {
   if (!english) return '';
@@ -1096,6 +1258,21 @@ function normalizeLocalizedInput(kind, value, fallbackChoices = []) {
     if (toId(choice.english || choice.label || choice.name) === toId(raw)) return choice.english || choice.label || choice.name;
     if (toId(choice.display) === toId(raw)) return choice.english || choice.label || choice.name;
     if (toId(choice.korean) === toId(raw)) return choice.english || choice.label || choice.name;
+  }
+  return raw;
+}
+function normalizeBuilderSpeciesInput(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const choices = state.speciesChoices || [];
+  const split = raw.split('/').map(part => part.trim()).filter(Boolean);
+  const candidates = split.length ? split : [raw];
+  for (const piece of candidates) {
+    for (const choice of choices) {
+      if (toId(choice.english) === toId(piece) || toId(choice.display) === toId(piece) || toId(choice.korean) === toId(piece)) {
+        return choice.english;
+      }
+    }
   }
   return raw;
 }
@@ -1244,7 +1421,7 @@ function deepClone(obj) {
 }
 function createEmptyMon() {
   return {
-    species: '', baseSpecies: '', formSpecies: '', displaySpecies: '', spriteId: '', spriteAutoId: '', spriteOverrideId: '', shiny: false, level: 100,
+    species: '', baseSpecies: '', manualFormSpecies: '', formSpecies: '', displaySpecies: '', spriteId: '', spriteAutoId: '', spriteOverrideId: '', shiny: false, level: 100,
     nickname: '', gender: '',
     nature: 'Jolly', item: 'Leftovers', ability: '', teraType: 'normal',
     moves: ['', '', '', ''],
@@ -2070,12 +2247,13 @@ function implementedItemNote(name) {
 }
 async function hydrateSelectedSpecies() {
   const mon = getSelectedMon();
-  const rawSelection = mon.formSpecies || mon.species || mon.baseSpecies || mon.displaySpecies;
+  const rawSelection = mon.manualFormSpecies || mon.formSpecies || mon.species || mon.baseSpecies || mon.displaySpecies;
   const resolved = resolveSpeciesSelection(rawSelection);
   if (!resolved.baseSpeciesName) {
     mon.data = null;
     mon.displaySpecies = mon.species || '';
     mon.baseSpecies = '';
+    mon.manualFormSpecies = '';
     mon.formSpecies = '';
     mon.spriteId = '';
     mon.spriteAutoId = '';
@@ -2092,7 +2270,8 @@ async function hydrateSelectedSpecies() {
   }
 
   mon.baseSpecies = resolved.baseSpeciesName;
-  mon.formSpecies = resolved.speciesName || resolved.baseSpeciesName;
+  mon.manualFormSpecies = sanitizeManualFormSpecies(mon, resolved.baseSpeciesName);
+  mon.formSpecies = resolveAutomaticBuilderSpecies(mon, mon.manualFormSpecies || resolved.baseSpeciesName) || mon.manualFormSpecies || resolved.baseSpeciesName;
   mon.species = mon.formSpecies;
   if (els.speciesStatus) els.speciesStatus.textContent = '로컬 전투 데이터에서 포켓몬 정보를 불러오는 중… / Loading species data from local battle data…';
   try {
@@ -2100,7 +2279,8 @@ async function hydrateSelectedSpecies() {
     mon.data = data;
     mon.species = data.name;
     mon.formSpecies = data.name;
-    mon.baseSpecies = data.baseSpecies || data.name;
+    mon.baseSpecies = data.baseSpecies || resolved.baseSpeciesName || data.name;
+    mon.manualFormSpecies = sanitizeManualFormSpecies(mon, mon.baseSpecies);
     mon.displaySpecies = data.name;
     if (!mon.ability || !data.abilities.includes(mon.ability)) mon.ability = data.abilities[0] || '';
     if (!mon.teraType) mon.teraType = data.types[0] || 'normal';
@@ -2108,7 +2288,10 @@ async function hydrateSelectedSpecies() {
     syncMonSprite(mon);
     if (els.speciesStatus) {
       const spriteNote = mon.spriteId ? ` · 스프라이트 / sprite ${mon.spriteId}` : ' · 스프라이트 없음 / no sprite mapped';
-      els.speciesStatus.textContent = `${displaySpeciesName(data.name)} 불러옴 · ${data.types.map(displayType).join(' · ')}${spriteNote}`;
+      const formNote = mon.manualFormSpecies && toId(mon.manualFormSpecies) !== toId(mon.formSpecies)
+        ? ` · 자동 폼 / auto form ${displaySpeciesName(mon.formSpecies)}`
+        : '';
+      els.speciesStatus.textContent = `${displaySpeciesName(data.name)} 불러옴 · ${data.types.map(displayType).join(' · ')}${spriteNote}${formNote}`;
     }
   } catch (error) {
     mon.data = null;
@@ -2125,7 +2308,7 @@ function renderEditor() {
   rebuildMoveDatalist(mon);
   const displayName = mon.nickname?.trim() || displaySpeciesName(mon.displaySpecies || mon.species) || '포켓몬 미선택 / No species selected';
   els.editorTitle.textContent = `${state.playerNames[state.selected.player]} · 슬롯 / Slot ${state.selected.slot + 1}`;
-  els.editorSubtitle.textContent = '포켓몬, 폼, 스프라이트, 기술, 능력치, 지닌 도구, 성격, 특성, 테라 타입을 설정하세요. / Set species, forme, sprite, moves, stats, item, nature, ability, and tera type.';
+  els.editorSubtitle.textContent = '포켓몬, 사전 선택 폼, 기술, 능력치, 지닌 도구, 성격, 특성, 테라 타입을 설정하세요. / Set species, pre-battle forme, moves, stats, item, nature, ability, and tera type.';
   els.speciesInput.value = displaySpeciesName(mon.baseSpecies || mon.species || '');
   if (els.nicknameInput) els.nicknameInput.value = mon.nickname || '';
   els.itemInput.value = displayItemName(mon.item || '');
@@ -2143,7 +2326,12 @@ function renderEditor() {
   syncMonSprite(mon);
   renderFormSelectors(mon);
   if (els.speciesStatus) {
-    if (mon.data?.types?.length) els.speciesStatus.textContent = `${displaySpeciesName(mon.data.name)} 불러옴 · ${mon.data.types.map(displayType).join(' · ')}${mon.spriteId ? ` · 스프라이트 / sprite ${mon.spriteId}` : ''}`;
+    if (mon.data?.types?.length) {
+      const formNote = mon.manualFormSpecies && toId(mon.manualFormSpecies) !== toId(mon.formSpecies)
+        ? ` · 자동 폼 / auto form ${displaySpeciesName(mon.formSpecies)}`
+        : '';
+      els.speciesStatus.textContent = `${displaySpeciesName(mon.data.name)} 불러옴 · ${mon.data.types.map(displayType).join(' · ')}${mon.spriteId ? ` · 스프라이트 / sprite ${mon.spriteId}` : ''}${formNote}`;
+    }
     else if (mon.spriteId) els.speciesStatus.textContent = '로컬 전투 데이터에서 포켓몬 정보를 불러오지 못했습니다. / Species data could not be loaded from local battle data.';
     else if (mon.species || mon.displaySpecies) els.speciesStatus.textContent = '업로드된 스프라이트와 일치하는 포켓몬이 없습니다. / No uploaded sprite matched that species name.';
     else els.speciesStatus.textContent = '포켓몬을 선택하면 로컬 전투 데이터를 불러옵니다. / Choose a species to load local battle data.';
@@ -2275,16 +2463,19 @@ async function rehydrateTeams() {
   for (const team of state.teams) {
     for (const mon of team) {
       if (!mon.species && !mon.displaySpecies && !mon.baseSpecies) continue;
-      const source = mon.formSpecies || mon.species || mon.baseSpecies || mon.displaySpecies;
+      const source = mon.manualFormSpecies || mon.formSpecies || mon.species || mon.baseSpecies || mon.displaySpecies;
       const resolved = resolveSpeciesSelection(source);
       if (!resolved.baseSpeciesName) continue;
       mon.baseSpecies = resolved.baseSpeciesName;
-      mon.formSpecies = resolved.speciesName || resolved.baseSpeciesName;
+      mon.manualFormSpecies = sanitizeManualFormSpecies(mon, resolved.baseSpeciesName);
+      mon.formSpecies = resolveAutomaticBuilderSpecies(mon, mon.manualFormSpecies || resolved.baseSpeciesName) || mon.manualFormSpecies || resolved.baseSpeciesName;
       mon.species = mon.formSpecies;
       try {
         const data = await getSpeciesData(mon.formSpecies);
         mon.data = data;
         mon.displaySpecies = data.name;
+        mon.baseSpecies = data.baseSpecies || mon.baseSpecies || data.name;
+        mon.manualFormSpecies = sanitizeManualFormSpecies(mon, mon.baseSpecies);
         if (!mon.ability || !data.abilities.includes(mon.ability)) mon.ability = data.abilities[0] || '';
         if (!mon.teraType) mon.teraType = data.types[0] || 'normal';
       } catch (error) {
@@ -2358,7 +2549,7 @@ function wireEditorEvents() {
   els.player2Name.addEventListener('input', syncPlayerNames);
   els.speciesInput.addEventListener('change', async () => {
     const mon = getSelectedMon();
-    applySpeciesSelection(mon, els.speciesInput.value.trim());
+    applySpeciesSelection(mon, normalizeBuilderSpeciesInput(els.speciesInput.value.trim()));
     mon.displaySpecies = mon.formSpecies || mon.species;
     mon.spriteOverrideId = '';
     await hydrateSelectedSpecies();
@@ -2368,19 +2559,12 @@ function wireEditorEvents() {
     const mon = getSelectedMon();
     const nextForm = els.formeSelect.value || mon.baseSpecies || mon.species;
     if (!nextForm) return;
+    mon.manualFormSpecies = nextForm;
     mon.formSpecies = nextForm;
     mon.species = nextForm;
     mon.spriteOverrideId = '';
     await hydrateSelectedSpecies();
     await renderValidation();
-  });
-  els.spriteVariantSelect?.addEventListener('change', () => {
-    const mon = getSelectedMon();
-    mon.spriteOverrideId = els.spriteVariantSelect.value || '';
-    syncMonSprite(mon);
-    renderEditor();
-    renderRoster();
-    saveState();
   });
   els.browseSpeciesBtn?.addEventListener('click', () => showPicker('species'));
   els.nicknameInput?.addEventListener('input', () => {
@@ -2390,12 +2574,11 @@ function wireEditorEvents() {
     renderRoster();
     saveState();
   });
-  els.abilitySelect.addEventListener('change', () => {
+  els.abilitySelect.addEventListener('change', async () => {
     const mon = getSelectedMon();
     mon.ability = els.abilitySelect.value;
-    renderEditor();
-    saveState();
-    renderValidation();
+    await hydrateSelectedSpecies();
+    await renderValidation();
   });
   els.natureSelect.addEventListener('change', () => {
     const mon = getSelectedMon();
@@ -2411,12 +2594,11 @@ function wireEditorEvents() {
     saveState();
     renderValidation();
   });
-  els.itemInput.addEventListener('change', () => {
+  els.itemInput.addEventListener('change', async () => {
     const mon = getSelectedMon();
     mon.item = normalizeLocalizedInput('items', els.itemInput.value.trim(), state.itemChoices || []) || els.itemInput.value.trim();
-    renderEditor();
-    saveState();
-    renderValidation();
+    await hydrateSelectedSpecies();
+    await renderValidation();
   });
   els.levelInput.addEventListener('input', () => {
     const mon = getSelectedMon();
@@ -2425,12 +2607,11 @@ function wireEditorEvents() {
     saveState();
     renderValidation();
   });
-  els.teraSelect.addEventListener('change', () => {
+  els.teraSelect.addEventListener('change', async () => {
     const mon = getSelectedMon();
     mon.teraType = els.teraSelect.value;
-    renderEditor();
-    saveState();
-    renderValidation();
+    await hydrateSelectedSpecies();
+    await renderValidation();
   });
   els.shinyCheckbox.addEventListener('change', () => {
     const mon = getSelectedMon();
@@ -2444,8 +2625,7 @@ function wireEditorEvents() {
       const mon = getSelectedMon();
       const moveChoices = [...getCurrentMoveChoices(mon), ...(state.allMoveChoices || [])];
       mon.moves[idx] = normalizeLocalizedInput('moves', input.value.trim(), moveChoices) || input.value.trim();
-      saveState();
-      renderEditor();
+      await hydrateSelectedSpecies();
       await renderValidation();
     });
   });
