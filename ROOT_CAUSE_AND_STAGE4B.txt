@@ -1,0 +1,12 @@
+Stage 4B / UI + localization upgrade
+
+What changed:
+- Random slot generation now picks moves from the selected Pokémon's loaded learnset only.
+- Added bilingual Korean/English display helpers for Pokémon, moves, items, abilities, natures, types, genders, and common UI strings.
+- Added a generated i18n-ko-data.js mapping file for UI localization.
+- Slot editor now supports browsing/selecting from a full Pokémon list and a per-Pokémon learnable move picker, in addition to direct typing.
+- Validation messages and major battle-side UI/log text were converted to bilingual Korean/English text.
+
+Notes:
+- Filenames and internal identifiers remain in English. UI labels are bilingual only.
+- Korean name coverage depends on the available localization source; missing modern names fall back to English automatically.

@@ -1,4 +1,5 @@
 import {loadLocalDex, LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_TYPES, LOCAL_TYPE_CHART} from './local-dex.js';
+import {KO_NAME_MAPS} from './i18n-ko-data.js';
 
 const STORAGE_KEY = 'pkb-static-state-v1';
 const SHOWDOWN_TARGET_HINTS = {
@@ -80,6 +81,8 @@ const state = {
   selected: {player: 0, slot: 0},
   builderErrors: [],
   builderWarnings: [],
+  currentMoveChoices: [],
+  picker: {mode: '', moveIndex: null, options: []},
   battle: null,
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
 };
@@ -110,6 +113,201 @@ function humanizeSpriteId(id) {
     .replace(/_/g, ' ')
     .toLowerCase()
     .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+const typeLabels = {
+  normal: '노말 / Normal',
+  fighting: '격투 / Fighting',
+  flying: '비행 / Flying',
+  poison: '독 / Poison',
+  ground: '땅 / Ground',
+  rock: '바위 / Rock',
+  bug: '벌레 / Bug',
+  ghost: '고스트 / Ghost',
+  steel: '강철 / Steel',
+  fire: '불꽃 / Fire',
+  water: '물 / Water',
+  grass: '풀 / Grass',
+  electric: '전기 / Electric',
+  psychic: '에스퍼 / Psychic',
+  ice: '얼음 / Ice',
+  dragon: '드래곤 / Dragon',
+  dark: '악 / Dark',
+  fairy: '페어리 / Fairy',
+  stellar: '스텔라 / Stellar',
+};
+const genderLabels = {
+  '': '자동 / Auto',
+  M: '수컷 / Male',
+  F: '암컷 / Female',
+  N: '무성 / Genderless',
+};
+const statusLabels = {
+  brn: '화상 / Burn',
+  par: '마비 / Paralysis',
+  psn: '독 / Poison',
+  tox: '맹독 / Toxic',
+  slp: '잠듦 / Sleep',
+  frz: '얼음 / Freeze',
+};
+const reverseNameMaps = Object.fromEntries(
+  Object.entries(KO_NAME_MAPS).map(([kind, map]) => {
+    const reverse = new Map();
+    for (const [english, korean] of Object.entries(map || {})) {
+      const candidates = [
+        english,
+        korean,
+        `${korean} / ${english}`,
+        `${english} / ${korean}`,
+      ];
+      for (const candidate of candidates) {
+        const id = toId(candidate);
+        if (id) reverse.set(id, english);
+      }
+    }
+    return [kind, reverse];
+  })
+);
+function bilingualLabel(korean, english) {
+  if (!korean || korean === english) return english || korean || '';
+  return `${korean} / ${english}`;
+}
+function getLocalizedName(kind, english) {
+  if (!english) return '';
+  return KO_NAME_MAPS?.[kind]?.[english] || english;
+}
+function displayEntity(kind, english) {
+  if (!english) return '';
+  return bilingualLabel(getLocalizedName(kind, english), english);
+}
+function displayType(typeName) {
+  return typeLabels[typeName] || bilingualLabel(titleCase(typeName), titleCase(typeName));
+}
+function displayGender(gender) {
+  return genderLabels[gender ?? ''] || gender || genderLabels[''];
+}
+function displayStatus(status) {
+  return statusLabels[status] || statusNames[status] || status;
+}
+function displaySpeciesName(name) {
+  return displayEntity('species', name);
+}
+function displayMoveName(name) {
+  return displayEntity('moves', name);
+}
+function displayItemName(name) {
+  return displayEntity('items', name);
+}
+function displayAbilityName(name) {
+  return displayEntity('abilities', name);
+}
+function displayNatureName(name) {
+  return displayEntity('natures', name);
+}
+function normalizeLocalizedInput(kind, value, fallbackChoices = []) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const direct = reverseNameMaps[kind]?.get(toId(raw));
+  if (direct) return direct;
+  const split = raw.split('/').map(part => part.trim()).filter(Boolean);
+  for (const piece of split) {
+    const fromSplit = reverseNameMaps[kind]?.get(toId(piece));
+    if (fromSplit) return fromSplit;
+  }
+  for (const choice of fallbackChoices) {
+    if (toId(choice.english || choice.label || choice.name) === toId(raw)) return choice.english || choice.label || choice.name;
+    if (toId(choice.display) === toId(raw)) return choice.english || choice.label || choice.name;
+    if (toId(choice.korean) === toId(raw)) return choice.english || choice.label || choice.name;
+  }
+  return raw;
+}
+function makeChoice(kind, english, extra = {}) {
+  return {
+    english,
+    korean: getLocalizedName(kind, english),
+    display: displayEntity(kind, english),
+    ...extra,
+  };
+}
+function setDatalistOptions(el, choices) {
+  el.innerHTML = (choices || []).map(choice => {
+    const value = choice.display || choice.english || '';
+    const label = choice.english && choice.display !== choice.english ? choice.english : '';
+    return `<option value="${value}"${label ? ` label="${label}"` : ''}></option>`;
+  }).join('');
+}
+function getCurrentMoveChoices(mon = getSelectedMon()) {
+  if (!mon?.data?.learnset?.length || !state.dex) return [];
+  const out = [];
+  const seen = new Set();
+  for (const moveId of mon.data.learnset) {
+    const move = state.dex.moves.get(moveId);
+    if (!move?.exists || !isDexSupported(move) || move.isZ || move.isMax) continue;
+    if (seen.has(move.name)) continue;
+    seen.add(move.name);
+    out.push(makeChoice('moves', move.name));
+  }
+  return out.sort((a, b) => a.english.localeCompare(b.english));
+}
+function rebuildMoveDatalist(mon = getSelectedMon()) {
+  const choices = getCurrentMoveChoices(mon);
+  state.currentMoveChoices = choices;
+  setDatalistOptions(els.moveList, choices);
+  return choices;
+}
+function showPicker(mode, moveIndex = null) {
+  let options = [];
+  let title = '선택 / Select';
+  if (mode === 'species') {
+    options = state.speciesChoices;
+    title = '포켓몬 선택 / Choose Pokémon';
+  } else if (mode === 'move') {
+    const mon = getSelectedMon();
+    options = getCurrentMoveChoices(mon);
+    title = `기술 선택 / Choose Move ${Number.isInteger(moveIndex) ? moveIndex + 1 : ''}`.trim();
+  }
+  state.picker = {mode, moveIndex, options};
+  els.pickerTitle.textContent = title;
+  els.pickerSearch.value = '';
+  els.pickerModal.classList.remove('hidden');
+  renderPickerOptions();
+  els.pickerSearch.focus();
+}
+function hidePicker() {
+  if (!els.pickerModal) return;
+  els.pickerModal.classList.add('hidden');
+}
+function renderPickerOptions() {
+  const picker = state.picker || {options: []};
+  const query = toId(els.pickerSearch?.value || '');
+  const filtered = (picker.options || []).filter(option => {
+    if (!query) return true;
+    return [option.display, option.english, option.korean].some(value => toId(value).includes(query));
+  });
+  els.pickerList.innerHTML = '';
+  els.pickerEmpty.textContent = filtered.length ? '' : '검색 결과가 없습니다. / No results found.';
+  for (const option of filtered) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'picker-option';
+    button.innerHTML = `<strong>${option.display}</strong>${option.display !== option.english ? `<small>${option.english}</small>` : ''}`;
+    button.addEventListener('click', async () => {
+      const mon = getSelectedMon();
+      if (picker.mode === 'species') {
+        mon.species = option.english;
+        mon.displaySpecies = option.english;
+        await hydrateSelectedSpecies();
+        await renderValidation();
+      } else if (picker.mode === 'move' && Number.isInteger(picker.moveIndex)) {
+        mon.moves[picker.moveIndex] = option.english;
+        saveState();
+        renderEditor();
+        await renderValidation();
+      }
+      hidePicker();
+    });
+    els.pickerList.appendChild(button);
+  }
 }
 function dataSourceLabel() {
   return state.dex ? `Local Dex ${state.dexVersion || ''}`.trim() : state.dataProvider;
@@ -296,7 +494,10 @@ async function loadManifest() {
   const ids = Array.from(new Set(manifest.pokemon.front
     .filter(id => !/_female$/i.test(id) && !/_male$/i.test(id) && !/_\d+$/i.test(id) && id !== '000')
     .sort()));
-  state.speciesChoices = ids.map(id => ({id, label: humanizeSpriteId(id)}));
+  state.speciesChoices = ids.map(id => {
+    const english = humanizeSpriteId(id);
+    return {id, english, korean: getLocalizedName('species', english), display: displaySpeciesName(english)};
+  });
 }
 async function pathExists(url) {
   try {
@@ -429,12 +630,12 @@ async function getMoveData(moveName) {
   moveDataCache.set(key, result);
   return result;
 }
-function joinReadableList(values) {
-  const list = Array.from(new Set((values || []).filter(Boolean)));
+function joinReadableList(values, displayFn = (value) => value) {
+  const list = Array.from(new Set((values || []).filter(Boolean).map(displayFn)));
   if (!list.length) return '';
   if (list.length === 1) return list[0];
-  if (list.length === 2) return `${list[0]} or ${list[1]}`;
-  return `${list.slice(0, -1).join(', ')}, or ${list[list.length - 1]}`;
+  if (list.length === 2) return `${list[0]} 또는 / or ${list[1]}`;
+  return `${list.slice(0, -1).join(', ')}, 또는 / or ${list[list.length - 1]}`;
 }
 function matchesListedName(value, choices) {
   const id = toId(value);
@@ -452,12 +653,13 @@ function validateGenderChoice(mon, prefix, errors) {
   if (!mon.data) return;
   const chosenGender = mon.gender || '';
   const fixedGender = mon.data.gender || '';
+  const speciesLabel = displaySpeciesName(mon.data.name);
   if (fixedGender) {
-    if (chosenGender && chosenGender !== fixedGender) errors.push(`${prefix}: ${mon.data.name} must use gender ${fixedGender}.`);
+    if (chosenGender && chosenGender !== fixedGender) errors.push(`${prefix}: ${speciesLabel} 포켓몬은 ${displayGender(fixedGender)} 성별이어야 합니다. / ${mon.data.name} must use gender ${displayGender(fixedGender)}.`);
     return;
   }
-  if (chosenGender === 'N') errors.push(`${prefix}: ${mon.data.name} is not genderless.`);
-  if (chosenGender && !['M', 'F'].includes(chosenGender)) errors.push(`${prefix}: gender must be M, F, or Auto.`);
+  if (chosenGender === 'N') errors.push(`${prefix}: ${speciesLabel} 포켓몬은 무성별이 아닙니다. / ${mon.data.name} is not genderless.`);
+  if (chosenGender && !['M', 'F'].includes(chosenGender)) errors.push(`${prefix}: 성별은 자동 / Auto, 수컷 / Male, 암컷 / Female 중 하나여야 합니다. / gender must be Auto, Male, or Female.`);
 }
 function collectTeamWarnings(team, playerIndex) {
   const warnings = [];
@@ -477,23 +679,28 @@ function collectTeamWarnings(team, playerIndex) {
     }
   });
   for (const {label, slots} of speciesBuckets.values()) {
-    if (slots.length > 1) warnings.push(`${state.playerNames[playerIndex]}: duplicate species (${label}) in slots ${slots.join(', ')}. This build allows it, but many competitive formats do not.`);
+    if (slots.length > 1) warnings.push(`${state.playerNames[playerIndex]}: 같은 포켓몬 ${displaySpeciesName(label)} 이(가) 슬롯 ${slots.join(', ')}에 중복되어 있습니다. / duplicate species (${label}) in slots ${slots.join(', ')}. This build allows it, but many formats do not.`);
   }
   for (const {label, slots} of itemBuckets.values()) {
-    if (slots.length > 1) warnings.push(`${state.playerNames[playerIndex]}: duplicate held item (${label}) in slots ${slots.join(', ')}. This build allows it, but VGC-style Item Clause would not.`);
+    if (slots.length > 1) warnings.push(`${state.playerNames[playerIndex]}: 같은 지닌 도구 ${displayItemName(label)} 이(가) 슬롯 ${slots.join(', ')}에 중복되어 있습니다. / duplicate held item (${label}) in slots ${slots.join(', ')}. This build allows it, but VGC-style Item Clause would not.`);
   }
   return warnings;
 }
 
 function getBaseSpriteId(speciesInput) {
-  const guess = String(speciesInput || '').trim();
-  if (!guess) return '';
+  const guessRaw = String(speciesInput || '').trim();
+  if (!guessRaw) return '';
+  const guess = normalizeLocalizedInput('species', guessRaw, state.speciesChoices);
   const byId = state.speciesChoices.find(entry => entry.id === guess.toUpperCase());
   if (byId) return byId.id;
   const normalized = guess.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
   const direct = state.manifest.pokemon.front.includes(normalized) ? normalized : '';
   if (direct) return direct;
-  const labelMatch = state.speciesChoices.find(entry => toId(entry.label) === toId(guess));
+  const labelMatch = state.speciesChoices.find(entry =>
+    toId(entry.english) === toId(guess) ||
+    toId(entry.display) === toId(guessRaw) ||
+    toId(entry.korean) === toId(guessRaw)
+  );
   return labelMatch?.id || '';
 }
 function spritePath(spriteId, facing = 'front', shiny = false) {
@@ -667,18 +874,28 @@ function bindElements() {
     speciesList: document.getElementById('species-list'),
     itemList: document.getElementById('item-list'),
     moveList: document.getElementById('move-list'),
+    browseSpeciesBtn: document.getElementById('browse-species-btn'),
+    browseMoveBtns: [0,1,2,3].map(i => document.getElementById(`browse-move${i + 1}-btn`)),
+    pickerModal: document.getElementById('picker-modal'),
+    pickerTitle: document.getElementById('picker-title'),
+    pickerSearch: document.getElementById('picker-search'),
+    pickerList: document.getElementById('picker-list'),
+    pickerEmpty: document.getElementById('picker-empty'),
+    pickerCloseBtn: document.getElementById('picker-close-btn'),
   });
 }
 function buildStaticLists() {
-  els.speciesList.innerHTML = state.speciesChoices.map(entry => `<option value="${entry.label}"></option>`).join('');
+  setDatalistOptions(els.speciesList, state.speciesChoices);
   const dexItems = state.dex
     ? state.dex.items.all().filter(item => isDexSupported(item)).map(item => item.name)
     : [];
   const allItems = Array.from(new Set([...commonItems, ...dexItems, ...(state.manifest.items || []).map(humanizeSpriteId)])).sort((a, b) => a.localeCompare(b));
-  els.itemList.innerHTML = allItems.map(item => `<option value="${item}"></option>`).join('');
-  els.moveList.innerHTML = moveNameCache.map(name => `<option value="${name}"></option>`).join('');
-  els.natureSelect.innerHTML = natureOrder.map(name => `<option value="${name}">${name}</option>`).join('');
-  els.teraSelect.innerHTML = TYPES.map(type => `<option value="${type}">${titleCase(type)}</option>`).join('');
+  state.itemChoices = allItems.map(item => makeChoice('items', item));
+  setDatalistOptions(els.itemList, state.itemChoices);
+  state.allMoveChoices = moveNameCache.map(name => makeChoice('moves', name));
+  setDatalistOptions(els.moveList, state.allMoveChoices);
+  els.natureSelect.innerHTML = natureOrder.map(name => `<option value="${name}">${displayNatureName(name)}</option>`).join('');
+  els.teraSelect.innerHTML = TYPES.map(type => `<option value="${type}">${displayType(type)}</option>`).join('');
 }
 function renderItemIcon(itemName) {
   if (!els.itemIcon) return;
@@ -690,7 +907,7 @@ function renderItemIcon(itemName) {
   }
   const img = document.createElement('img');
   img.src = url;
-  img.alt = itemName;
+  img.alt = displayItemName(itemName);
   img.loading = 'lazy';
   img.onerror = () => {
     els.itemIcon.textContent = '—';
@@ -700,12 +917,12 @@ function renderItemIcon(itemName) {
 function renderEditorFlags(mon) {
   if (!els.editorFlags) return;
   const flags = [];
-  if (mon.shiny) flags.push('Shiny');
-  if (mon.gender === 'M') flags.push('Male');
-  if (mon.gender === 'F') flags.push('Female');
-  if (mon.gender === 'N') flags.push('Genderless');
-  flags.push(`Level ${mon.level || 100}`);
-  if (mon.teraType) flags.push(`Tera ${titleCase(mon.teraType)}`);
+  if (mon.shiny) flags.push('색이 다른 포켓몬 / Shiny');
+  if (mon.gender === 'M') flags.push(displayGender('M'));
+  if (mon.gender === 'F') flags.push(displayGender('F'));
+  if (mon.gender === 'N') flags.push(displayGender('N'));
+  flags.push(`레벨 / Level ${mon.level || 100}`);
+  if (mon.teraType) flags.push(`테라 / Tera ${displayType(mon.teraType)}`);
   els.editorFlags.innerHTML = flags.map(flag => `<span class="flag-chip">${flag}</span>`).join('');
 }
 function createStatInputs(gridEl, prefix, values, onChange) {
@@ -751,88 +968,100 @@ function renderRoster() {
       renderAnimatedSprite(sprite, {spriteId: mon.spriteId, facing: 'front', shiny: mon.shiny, size: 'small'});
       const meta = document.createElement('div');
       meta.className = 'slot-meta';
-      const species = mon.displaySpecies || `Slot ${slot + 1}`;
+      const species = displaySpeciesName(mon.data?.name || mon.displaySpecies || mon.species) || `슬롯 / Slot ${slot + 1}`;
       const moveCount = mon.moves.filter(Boolean).length;
       const title = mon.nickname?.trim() || species;
-      const subline = mon.nickname?.trim() ? `${species} · ${mon.ability || 'No ability'} · ${moveCount}/4 moves` : `${mon.ability || 'No ability'} · ${moveCount}/4 moves`;
+      const abilityLabel = mon.ability ? displayAbilityName(mon.ability) : '특성 없음 / No ability';
+      const subline = mon.nickname?.trim()
+        ? `${species} · ${abilityLabel} · 기술 / Moves ${moveCount}/4`
+        : `${abilityLabel} · 기술 / Moves ${moveCount}/4`;
       meta.innerHTML = `<div class="slot-name">${title}</div><div class="slot-sub">${subline}</div>`;
       button.appendChild(meta);
       container.appendChild(button);
     });
   });
-  els.teamSizeNote.textContent = `Each player builds ${state.teamSize} Pokémon.`;
-  els.heroModeLabel.textContent = state.mode === 'singles' ? 'Singles · 3 Pokémon' : 'Doubles · 4 Pokémon';
+  els.teamSizeNote.textContent = `각 플레이어는 포켓몬 ${state.teamSize}마리를 만든다. / Each player builds ${state.teamSize} Pokémon.`;
+  els.heroModeLabel.textContent = state.mode === 'singles' ? '싱글 / Singles · 3마리 / 3 Pokémon' : '더블 / Doubles · 4마리 / 4 Pokémon';
 }
 function implementedAbilityNote(name) {
   const id = slugify(name);
-  if (!id) return 'Select one of the Pokémon’s native abilities.';
-  if (implementedAbilities.has(id)) return `${name} is implemented in battle.`;
-  return `${name} is stored and shown in battle. Generic abilities without custom triggers do not override baseline combat rules yet.`;
+  if (!id) return '포켓몬을 선택하면 특성을 고를 수 있습니다. / Select one of the Pokémon’s native abilities.';
+  if (implementedAbilities.has(id)) return `${displayAbilityName(name)} 특성은 현재 전투에서 구현되어 있습니다. / ${name} is implemented in battle.`;
+  return `${displayAbilityName(name)} 특성은 저장되고 표시되지만, 고유 발동 로직은 아직 완전하지 않습니다. / ${name} is stored and shown in battle, but its custom triggers are not fully implemented yet.`;
 }
 function implementedItemNote(name) {
   const id = slugify(name);
-  if (!id) return 'No held item selected.';
-  if (implementedItems.has(id)) return `${name} has a battle effect in this build.`;
-  return `${name} is displayed with its icon. Unimplemented held items are cosmetic for now.`;
+  if (!id) return '지닌 도구가 없습니다. / No held item selected.';
+  if (implementedItems.has(id)) return `${displayItemName(name)} 도구는 현재 배틀 효과가 구현되어 있습니다. / ${name} has a battle effect in this build.`;
+  return `${displayItemName(name)} 도구는 아이콘과 함께 표시되지만, 배틀 효과는 아직 완전하지 않습니다. / ${name} is shown with its icon, but its battle effect is not fully implemented yet.`;
 }
 async function hydrateSelectedSpecies() {
   const mon = getSelectedMon();
+  const normalizedSpecies = normalizeLocalizedInput('species', mon.species || mon.displaySpecies, state.speciesChoices);
+  if (normalizedSpecies) mon.species = normalizedSpecies;
   const spriteId = getBaseSpriteId(mon.species || mon.displaySpecies);
   if (!spriteId) {
     mon.data = null;
     mon.displaySpecies = mon.species || '';
     mon.spriteId = '';
     mon.ability = '';
+    mon.moves = mon.moves || ['', '', '', ''];
     if (!mon.teraType) mon.teraType = 'normal';
-    if (els.speciesStatus) els.speciesStatus.textContent = mon.species ? 'No uploaded sprite matched that species name.' : `Choose a species to load local battle data.`;
+    if (els.speciesStatus) els.speciesStatus.textContent = mon.species
+      ? '업로드된 스프라이트와 일치하는 포켓몬이 없습니다. / No uploaded sprite matched that species name.'
+      : '포켓몬을 선택하면 로컬 전투 데이터를 불러옵니다. / Choose a species to load local battle data.';
     saveState();
     renderAll();
     return;
   }
   mon.spriteId = spriteId;
   mon.displaySpecies = humanizeSpriteId(spriteId);
-  if (els.speciesStatus) els.speciesStatus.textContent = `Loading species data from local battle data…`;
+  if (els.speciesStatus) els.speciesStatus.textContent = '로컬 전투 데이터에서 포켓몬 정보를 불러오는 중… / Loading species data from local battle data…';
   try {
     const data = await getSpeciesData(mon.displaySpecies);
     mon.data = data;
+    mon.species = data.name;
+    mon.displaySpecies = data.name;
     if (!mon.ability || !data.abilities.includes(mon.ability)) mon.ability = data.abilities[0] || '';
     if (!mon.teraType) mon.teraType = data.types[0] || 'normal';
-    if (els.speciesStatus) els.speciesStatus.textContent = `${data.name} loaded · ${data.types.map(titleCase).join(' / ')}`;
+    rebuildMoveDatalist(mon);
+    if (els.speciesStatus) els.speciesStatus.textContent = `${displaySpeciesName(data.name)} 불러옴 · ${data.types.map(displayType).join(' · ')}`;
   } catch (error) {
     mon.data = null;
-    if (els.speciesStatus) els.speciesStatus.textContent = `Species data could not be loaded from local battle data.`;
+    if (els.speciesStatus) els.speciesStatus.textContent = '로컬 전투 데이터에서 포켓몬 정보를 불러오지 못했습니다. / Species data could not be loaded from local battle data.';
   }
   saveState();
   renderAll();
 }
 function renderEditor() {
   const mon = getSelectedMon();
-  const displayName = mon.nickname?.trim() || mon.displaySpecies || mon.species || 'No species selected';
-  els.editorTitle.textContent = `${state.playerNames[state.selected.player]} · Slot ${state.selected.slot + 1}`;
-  els.editorSubtitle.textContent = 'Set species, moves, stats, item, nature, ability, and tera type.';
-  els.speciesInput.value = mon.displaySpecies || mon.species || '';
+  rebuildMoveDatalist(mon);
+  const displayName = mon.nickname?.trim() || displaySpeciesName(mon.displaySpecies || mon.species) || '포켓몬 미선택 / No species selected';
+  els.editorTitle.textContent = `${state.playerNames[state.selected.player]} · 슬롯 / Slot ${state.selected.slot + 1}`;
+  els.editorSubtitle.textContent = '포켓몬, 기술, 능력치, 지닌 도구, 성격, 특성, 테라 타입을 설정하세요. / Set species, moves, stats, item, nature, ability, and tera type.';
+  els.speciesInput.value = displaySpeciesName(mon.displaySpecies || mon.species || '');
   if (els.nicknameInput) els.nicknameInput.value = mon.nickname || '';
-  els.itemInput.value = mon.item || '';
+  els.itemInput.value = displayItemName(mon.item || '');
   els.levelInput.value = mon.level;
   els.natureSelect.value = mon.nature || 'Jolly';
   if (els.genderSelect) els.genderSelect.value = mon.gender || '';
   els.teraSelect.value = mon.teraType || 'normal';
   els.shinyCheckbox.checked = Boolean(mon.shiny);
-  els.moveInputs.forEach((input, idx) => input.value = mon.moves[idx] || '');
+  els.moveInputs.forEach((input, idx) => input.value = displayMoveName(mon.moves[idx] || ''));
   els.editorSpeciesName.textContent = displayName;
   els.editorTypeRow.innerHTML = '';
   (mon.data?.types || []).forEach(type => els.editorTypeRow.appendChild(createTypePill(type)));
   renderEditorFlags(mon);
   renderItemIcon(mon.item);
   if (els.speciesStatus) {
-    if (mon.data?.types?.length) els.speciesStatus.textContent = `${mon.data.name} loaded · ${mon.data.types.map(titleCase).join(' / ')}`;
-    else if (mon.spriteId) els.speciesStatus.textContent = `Species data could not be loaded from local battle data.`;
-    else if (mon.species || mon.displaySpecies) els.speciesStatus.textContent = 'No uploaded sprite matched that species name.';
-    else els.speciesStatus.textContent = `Choose a species to load local battle data.`;
+    if (mon.data?.types?.length) els.speciesStatus.textContent = `${displaySpeciesName(mon.data.name)} 불러옴 · ${mon.data.types.map(displayType).join(' · ')}`;
+    else if (mon.spriteId) els.speciesStatus.textContent = '로컬 전투 데이터에서 포켓몬 정보를 불러오지 못했습니다. / Species data could not be loaded from local battle data.';
+    else if (mon.species || mon.displaySpecies) els.speciesStatus.textContent = '업로드된 스프라이트와 일치하는 포켓몬이 없습니다. / No uploaded sprite matched that species name.';
+    else els.speciesStatus.textContent = '포켓몬을 선택하면 로컬 전투 데이터를 불러옵니다. / Choose a species to load local battle data.';
   }
-  els.editorAbilityNote.textContent = mon.ability ? implementedAbilityNote(mon.ability) : 'Select a species to load its ability list.';
+  els.editorAbilityNote.textContent = mon.ability ? implementedAbilityNote(mon.ability) : '포켓몬을 선택하면 특성 목록이 로드됩니다. / Select a species to load its ability list.';
   els.editorAbilityEffect.textContent = implementedItemNote(mon.item);
-  els.abilitySelect.innerHTML = (mon.data?.abilities || []).map(name => `<option value="${name}">${name}</option>`).join('') || '<option value="">No abilities loaded</option>';
+  els.abilitySelect.innerHTML = (mon.data?.abilities || []).map(name => `<option value="${name}">${displayAbilityName(name)}</option>`).join('') || '<option value="">특성 없음 / No abilities loaded</option>';
   els.abilitySelect.value = mon.ability || '';
   renderAnimatedSprite(els.editorSprite, {spriteId: mon.spriteId, facing: 'front', shiny: mon.shiny, size: 'large'});
   createStatInputs(els.evGrid, 'ev', mon.evs, (stat, value) => {
@@ -848,78 +1077,82 @@ function renderEditor() {
     renderValidation();
   });
   const evTotal = Object.values(mon.evs).reduce((sum, value) => sum + Number(value || 0), 0);
-  els.evTotal.textContent = `Total: ${evTotal} / 510`;
+  els.evTotal.textContent = `합계 / Total: ${evTotal} / 510`;
 }
 async function validateMon(mon, playerIndex, slotIndex) {
   const errors = [];
   const warnings = [];
-  const prefix = `${state.playerNames[playerIndex]} slot ${slotIndex + 1}`;
-  if (!mon.displaySpecies && !mon.species) errors.push(`${prefix}: choose a Pokémon.`);
-  if (!mon.spriteId) errors.push(`${prefix}: species must match an available uploaded sprite.`);
-  if (!mon.data) errors.push(`${prefix}: species data is still missing.`);
+  const prefix = `${state.playerNames[playerIndex]} 슬롯 / Slot ${slotIndex + 1}`;
+  const speciesLabel = displaySpeciesName(mon.data?.name || mon.displaySpecies || mon.species || '');
+  const itemLabel = displayItemName(mon.item || '');
+  const abilityLabel = displayAbilityName(mon.ability || '');
+
+  if (!mon.displaySpecies && !mon.species) errors.push(`${prefix}: 포켓몬을 선택하세요. / choose a Pokémon.`);
+  if (!mon.spriteId) errors.push(`${prefix}: 업로드된 스프라이트와 일치하는 포켓몬이어야 합니다. / species must match an available uploaded sprite.`);
+  if (!mon.data) errors.push(`${prefix}: 포켓몬 데이터가 아직 없습니다. / species data is still missing.`);
 
   const evTotal = Object.values(mon.evs).reduce((sum, value) => sum + Number(value || 0), 0);
-  if (evTotal > 510) errors.push(`${prefix}: EV total exceeds 510.`);
+  if (evTotal > 510) errors.push(`${prefix}: EV 총합은 510을 넘을 수 없습니다. / EV total exceeds 510.`);
   for (const stat of statOrder) {
     const ev = Number(mon.evs[stat] ?? 0);
     const iv = Number(mon.ivs[stat] ?? 31);
-    if (!Number.isInteger(ev)) errors.push(`${prefix}: ${statLabels[stat]} EV must be an integer.`);
-    if (!Number.isInteger(iv)) errors.push(`${prefix}: ${statLabels[stat]} IV must be an integer.`);
-    if (ev > 252 || ev < 0) errors.push(`${prefix}: ${statLabels[stat]} EV must stay between 0 and 252.`);
-    if (iv > 31 || iv < 0) errors.push(`${prefix}: ${statLabels[stat]} IV must stay between 0 and 31.`);
+    if (!Number.isInteger(ev)) errors.push(`${prefix}: ${statLabels[stat]} EV는 정수여야 합니다. / ${statLabels[stat]} EV must be an integer.`);
+    if (!Number.isInteger(iv)) errors.push(`${prefix}: ${statLabels[stat]} IV는 정수여야 합니다. / ${statLabels[stat]} IV must be an integer.`);
+    if (ev > 252 || ev < 0) errors.push(`${prefix}: ${statLabels[stat]} EV는 0~252 범위여야 합니다. / ${statLabels[stat]} EV must stay between 0 and 252.`);
+    if (iv > 31 || iv < 0) errors.push(`${prefix}: ${statLabels[stat]} IV는 0~31 범위여야 합니다. / ${statLabels[stat]} IV must stay between 0 and 31.`);
   }
 
-  if (!Number.isInteger(Number(mon.level || 0)) || mon.level < 1 || mon.level > 100) errors.push(`${prefix}: level must stay between 1 and 100.`);
-  if (!natures[mon.nature]) errors.push(`${prefix}: ${mon.nature || 'Blank'} is not a valid nature.`);
-  if (!TYPES.includes(toId(mon.teraType))) errors.push(`${prefix}: ${mon.teraType || 'Blank'} is not a valid Tera type.`);
+  if (!Number.isInteger(Number(mon.level || 0)) || mon.level < 1 || mon.level > 100) errors.push(`${prefix}: 레벨은 1~100 사이여야 합니다. / level must stay between 1 and 100.`);
+  if (!natures[mon.nature]) errors.push(`${prefix}: ${displayNatureName(mon.nature || 'Blank')} 성격은 유효하지 않습니다. / ${mon.nature || 'Blank'} is not a valid nature.`);
+  if (!TYPES.includes(toId(mon.teraType))) errors.push(`${prefix}: ${displayType(mon.teraType || 'Blank')} 테라 타입은 유효하지 않습니다. / ${mon.teraType || 'Blank'} is not a valid Tera type.`);
 
-  if (!mon.ability) errors.push(`${prefix}: choose an ability.`);
-  if (mon.data?.abilities?.length && mon.ability && !mon.data.abilities.includes(mon.ability)) errors.push(`${prefix}: ${mon.ability} is not a valid ability for ${mon.data.name}.`);
+  if (!mon.ability) errors.push(`${prefix}: 특성을 선택하세요. / choose an ability.`);
+  if (mon.data?.abilities?.length && mon.ability && !mon.data.abilities.includes(mon.ability)) errors.push(`${prefix}: ${abilityLabel} 특성은 ${speciesLabel}의 유효한 특성이 아닙니다. / ${mon.ability} is not a valid ability for ${mon.data.name}.`);
   validateGenderChoice(mon, prefix, errors);
 
   if (mon.data) {
     if (mon.data.isNonstandard && !isAllowedNonstandard(mon.data.isNonstandard)) {
-      errors.push(`${prefix}: ${mon.data.name} ${explainNonstandard(mon.data.isNonstandard)}`);
+      errors.push(`${prefix}: ${speciesLabel} ${explainNonstandard(mon.data.isNonstandard)}`);
     }
     if (mon.data.battleOnly) {
-      errors.push(`${prefix}: ${mon.data.name} is a battle-only form. Use ${mon.data.battleOnly} or its base form in the builder until form-change logic is added.`);
+      errors.push(`${prefix}: ${speciesLabel}은(는) 전투 중 전용 폼입니다. / ${mon.data.name} is a battle-only form. ${displaySpeciesName(mon.data.battleOnly)} 또는 기본 폼을 팀 편집기에서 사용하세요. / Use ${mon.data.battleOnly} or its base form in the builder until form-change logic is added.`);
     }
     const requiredItems = [mon.data.requiredItem, ...(mon.data.requiredItems || [])].filter(Boolean);
     if (requiredItems.length && !matchesListedName(mon.item, requiredItems)) {
-      errors.push(`${prefix}: ${mon.data.name} requires ${joinReadableList(requiredItems)}.`);
+      errors.push(`${prefix}: ${speciesLabel}은(는) ${joinReadableList(requiredItems, displayItemName)} 도구가 필요합니다. / ${mon.data.name} requires ${joinReadableList(requiredItems)}.`);
     }
     if (mon.data.requiredMove && !mon.moves.some(move => toId(move) === toId(mon.data.requiredMove))) {
-      errors.push(`${prefix}: ${mon.data.name} requires ${mon.data.requiredMove} in its moveset.`);
+      errors.push(`${prefix}: ${speciesLabel}은(는) ${displayMoveName(mon.data.requiredMove)} 기술이 필요합니다. / ${mon.data.name} requires ${mon.data.requiredMove} in its moveset.`);
     }
     if (mon.data.requiredAbility && toId(mon.ability) !== toId(mon.data.requiredAbility)) {
-      errors.push(`${prefix}: ${mon.data.name} requires the ability ${mon.data.requiredAbility}.`);
+      errors.push(`${prefix}: ${speciesLabel}은(는) ${displayAbilityName(mon.data.requiredAbility)} 특성이 필요합니다. / ${mon.data.name} requires the ability ${mon.data.requiredAbility}.`);
     }
     if (mon.data.requiredTeraType && toId(mon.teraType) !== toId(mon.data.requiredTeraType)) {
-      errors.push(`${prefix}: ${mon.data.name} requires Tera type ${titleCase(mon.data.requiredTeraType)}.`);
+      errors.push(`${prefix}: ${speciesLabel}은(는) ${displayType(mon.data.requiredTeraType)} 테라 타입이 필요합니다. / ${mon.data.name} requires Tera type ${titleCase(mon.data.requiredTeraType)}.`);
     }
     if (requiredItems.length || mon.data.requiredMove || mon.data.requiredAbility || mon.data.requiredTeraType) {
-      warnings.push(`${prefix}: ${mon.data.name} is a condition-based form. This build stores the chosen form directly and does not yet animate mid-battle transformations.`);
+      warnings.push(`${prefix}: ${speciesLabel}은(는) 조건부 폼입니다. / ${mon.data.name} is a condition-based form. 이 빌드는 선택된 폼을 직접 저장하지만 전투 중 변신 연출은 아직 없습니다. / This build stores the chosen form directly and does not yet animate mid-battle transformations.`);
     }
   }
 
   if (state.dex && mon.item) {
     const item = state.dex.items.get(mon.item);
-    if (!item?.exists) errors.push(`${prefix}: ${mon.item} is not a valid item.`);
-    else if (!isAllowedNonstandard(item.isNonstandard)) errors.push(`${prefix}: ${item.name} ${explainNonstandard(item.isNonstandard)}`);
-    else if (!implementedItems.has(slugify(item.name))) warnings.push(`${prefix}: ${item.name} is legal in the builder, but its special battle behavior is not fully implemented in the current custom runtime.`);
+    if (!item?.exists) errors.push(`${prefix}: ${itemLabel} 도구는 유효하지 않습니다. / ${mon.item} is not a valid item.`);
+    else if (!isAllowedNonstandard(item.isNonstandard)) errors.push(`${prefix}: ${displayItemName(item.name)} ${explainNonstandard(item.isNonstandard)}`);
+    else if (!implementedItems.has(slugify(item.name))) warnings.push(`${prefix}: ${displayItemName(item.name)} 도구는 빌더에서는 합법이지만 현재 전투 엔진에서 특수 효과가 완전히 구현되지 않았습니다. / ${item.name} is legal in the builder, but its special battle behavior is not fully implemented in the current custom runtime.`);
   }
 
   if (state.dex && mon.ability) {
     const ability = state.dex.abilities.get(mon.ability);
-    if (!ability?.exists) errors.push(`${prefix}: ${mon.ability} is not a valid ability.`);
-    else if (!isAllowedNonstandard(ability.isNonstandard)) errors.push(`${prefix}: ${ability.name} ${explainNonstandard(ability.isNonstandard)}`);
-    else if (!implementedAbilities.has(slugify(ability.name))) warnings.push(`${prefix}: ${ability.name} is legal in the builder, but its full triggered behavior is not implemented in the current custom runtime.`);
+    if (!ability?.exists) errors.push(`${prefix}: ${abilityLabel} 특성은 유효하지 않습니다. / ${mon.ability} is not a valid ability.`);
+    else if (!isAllowedNonstandard(ability.isNonstandard)) errors.push(`${prefix}: ${displayAbilityName(ability.name)} ${explainNonstandard(ability.isNonstandard)}`);
+    else if (!implementedAbilities.has(slugify(ability.name))) warnings.push(`${prefix}: ${displayAbilityName(ability.name)} 특성은 빌더에서는 합법이지만 현재 전투 엔진에서 발동 로직이 완전히 구현되지 않았습니다. / ${ability.name} is legal in the builder, but its full triggered behavior is not implemented in the current custom runtime.`);
   }
 
   const chosenMoves = mon.moves.filter(Boolean);
-  if (chosenMoves.length !== 4) errors.push(`${prefix}: pick exactly four moves.`);
+  if (chosenMoves.length !== 4) errors.push(`${prefix}: 기술은 정확히 4개여야 합니다. / pick exactly four moves.`);
   const moveIds = chosenMoves.map(toId);
-  if (new Set(moveIds).size !== moveIds.length) errors.push(`${prefix}: duplicate moves are not allowed.`);
+  if (new Set(moveIds).size !== moveIds.length) errors.push(`${prefix}: 중복 기술은 허용되지 않습니다. / duplicate moves are not allowed.`);
   const learnsetIds = new Set(mon.data?.learnset || []);
   const learnsetSources = mon.data?.learnsetSources || {};
   for (const move of chosenMoves) {
@@ -927,24 +1160,25 @@ async function validateMon(mon, playerIndex, slotIndex) {
       const loadedMove = await getMoveData(move);
       const moveId = toId(loadedMove.apiName || loadedMove.name);
       if (loadedMove.isZ || loadedMove.isMax) {
-        errors.push(`${prefix}: ${loadedMove.name} is battle-generated special move content and should not be selected as a base moveslot.`);
+        errors.push(`${prefix}: ${displayMoveName(loadedMove.name)} 기술은 전투 중 생성되는 특수 기술이므로 기본 기술칸에 넣을 수 없습니다. / ${loadedMove.name} is battle-generated special move content and should not be selected as a base moveslot.`);
       }
       if (!isAllowedNonstandard(loadedMove.isNonstandard)) {
-        errors.push(`${prefix}: ${loadedMove.name} ${explainNonstandard(loadedMove.isNonstandard)}`);
+        errors.push(`${prefix}: ${displayMoveName(loadedMove.name)} ${explainNonstandard(loadedMove.isNonstandard)}`);
       }
       if (state.dex && learnsetIds.size && !learnsetIds.has(moveId)) {
-        errors.push(`${prefix}: ${loadedMove.name} is not in ${mon.data?.name || mon.displaySpecies}'s loaded learnset.`);
+        errors.push(`${prefix}: ${displayMoveName(loadedMove.name)} 기술은 ${speciesLabel}의 로컬 learnset에 없습니다. / ${loadedMove.name} is not in ${mon.data?.name || mon.displaySpecies}'s loaded learnset.`);
       } else {
         const sourceInfo = summarizeLearnsetSources(learnsetSources[moveId]);
-        if (sourceInfo.eventOnly) warnings.push(`${prefix}: ${loadedMove.name} appears event-only in the loaded learnset sources. Exact event/source compatibility is not modeled yet.`);
-        else if (sourceInfo.legacyOnly) warnings.push(`${prefix}: ${loadedMove.name} only appears through older-generation learnset sources. Transfer/source compatibility is not modeled yet.`);
+        if (sourceInfo.eventOnly) warnings.push(`${prefix}: ${displayMoveName(loadedMove.name)} 기술은 로컬 learnset 기준 이벤트 전용으로 보입니다. / ${loadedMove.name} appears event-only in the loaded learnset sources. 정확한 이벤트/출처 조합 검증은 아직 구현되지 않았습니다. / Exact event/source compatibility is not modeled yet.`);
+        else if (sourceInfo.legacyOnly) warnings.push(`${prefix}: ${displayMoveName(loadedMove.name)} 기술은 구세대 출처만 확인됩니다. / ${loadedMove.name} only appears through older-generation learnset sources. 세대 이동/출처 호환성 검증은 아직 구현되지 않았습니다. / Transfer/source compatibility is not modeled yet.`);
       }
     } catch (error) {
-      errors.push(`${prefix}: move “${move}” could not be loaded.`);
+      errors.push(`${prefix}: 기술 ${displayMoveName(move)} 정보를 불러오지 못했습니다. / move “${move}” could not be loaded.`);
     }
   }
   return {errors, warnings};
 }
+
 async function rehydrateTeams() {
   for (const team of state.teams) {
     for (const mon of team) {
@@ -980,22 +1214,24 @@ async function renderValidation() {
   state.builderWarnings = Array.from(new Set(allWarnings));
   if (allErrors.length) {
     els.builderErrors.classList.remove('hidden');
-    els.builderErrors.textContent = allErrors.join('\n');
-    els.validationSummary.textContent = `${allErrors.length} issue${allErrors.length === 1 ? '' : 's'} remaining before battle can start.${state.builderWarnings.length ? ` ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} also noted.` : ''}`;
+    els.builderErrors.textContent = allErrors.join('
+');
+    els.validationSummary.textContent = `배틀 시작 전 해결할 문제 ${allErrors.length}개가 남아 있습니다. / ${allErrors.length} issue${allErrors.length === 1 ? '' : 's'} remaining before battle can start.${state.builderWarnings.length ? ` 경고 / warning ${state.builderWarnings.length}개도 함께 확인하세요. / ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} also noted.` : ''}`;
     els.startBattleBtn.disabled = true;
   } else {
     els.builderErrors.classList.add('hidden');
     els.builderErrors.textContent = '';
     els.validationSummary.textContent = state.builderWarnings.length
-      ? `Teams pass validation. ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} note advanced source/runtime limits.`
-      : 'Both teams are valid. Battle start is ready.';
+      ? `팀이 기본 검증을 통과했습니다. / Teams pass validation. 고급 출처/엔진 제한 관련 경고 ${state.builderWarnings.length}개가 있습니다. / ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} note advanced source/runtime limits.`
+      : '양쪽 팀이 유효합니다. / Both teams are valid. 배틀을 시작할 수 있습니다. / Battle start is ready.';
     els.startBattleBtn.disabled = false;
   }
 
   if (els.builderWarnings) {
     if (state.builderWarnings.length) {
       els.builderWarnings.classList.remove('hidden');
-      els.builderWarnings.textContent = state.builderWarnings.join('\n');
+      els.builderWarnings.textContent = state.builderWarnings.join('
+');
     } else {
       els.builderWarnings.classList.add('hidden');
       els.builderWarnings.textContent = '';
@@ -1019,11 +1255,13 @@ function wireEditorEvents() {
   els.player2Name.addEventListener('input', syncPlayerNames);
   els.speciesInput.addEventListener('change', async () => {
     const mon = getSelectedMon();
-    mon.species = els.speciesInput.value.trim();
+    const normalized = normalizeLocalizedInput('species', els.speciesInput.value.trim(), state.speciesChoices);
+    mon.species = normalized || els.speciesInput.value.trim();
     mon.displaySpecies = mon.species;
     await hydrateSelectedSpecies();
     await renderValidation();
   });
+  els.browseSpeciesBtn?.addEventListener('click', () => showPicker('species'));
   els.nicknameInput?.addEventListener('input', () => {
     const mon = getSelectedMon();
     mon.nickname = els.nicknameInput.value.trim();
@@ -1050,10 +1288,11 @@ function wireEditorEvents() {
     mon.gender = els.genderSelect.value;
     renderEditor();
     saveState();
+    renderValidation();
   });
-  els.itemInput.addEventListener('input', () => {
+  els.itemInput.addEventListener('change', () => {
     const mon = getSelectedMon();
-    mon.item = els.itemInput.value.trim();
+    mon.item = normalizeLocalizedInput('items', els.itemInput.value.trim(), state.itemChoices || []) || els.itemInput.value.trim();
     renderEditor();
     saveState();
     renderValidation();
@@ -1070,6 +1309,7 @@ function wireEditorEvents() {
     mon.teraType = els.teraSelect.value;
     renderEditor();
     saveState();
+    renderValidation();
   });
   els.shinyCheckbox.addEventListener('change', () => {
     const mon = getSelectedMon();
@@ -1081,10 +1321,21 @@ function wireEditorEvents() {
   els.moveInputs.forEach((input, idx) => {
     input.addEventListener('change', async () => {
       const mon = getSelectedMon();
-      mon.moves[idx] = input.value.trim();
+      const moveChoices = [...getCurrentMoveChoices(mon), ...(state.allMoveChoices || [])];
+      mon.moves[idx] = normalizeLocalizedInput('moves', input.value.trim(), moveChoices) || input.value.trim();
       saveState();
+      renderEditor();
       await renderValidation();
     });
+  });
+  els.browseMoveBtns?.forEach((btn, idx) => btn.addEventListener('click', () => showPicker('move', idx)));
+  els.pickerCloseBtn?.addEventListener('click', hidePicker);
+  els.pickerModal?.addEventListener('click', (event) => {
+    if (event.target === els.pickerModal) hidePicker();
+  });
+  els.pickerSearch?.addEventListener('input', renderPickerOptions);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !els.pickerModal?.classList.contains('hidden')) hidePicker();
   });
   els.copyPrevBtn.addEventListener('click', () => {
     if (state.selected.slot === 0) return;
@@ -1095,16 +1346,39 @@ function wireEditorEvents() {
     saveState();
   });
   els.randomizeSlotBtn.addEventListener('click', async () => {
-    const pool = ['Pikachu','Charizard','Garchomp','Dragonite','Gengar','Corviknight','Rotom','Gholdengo','Volcarona','Kingambit','Azumarill','Tyranitar','Meowscarada','Hydreigon','Mimikyu','Talonflame'];
-    const moves = ['Thunderbolt','Protect','Ice Beam','Earthquake','Shadow Ball','Flamethrower','Close Combat','U-turn','Recover','Swords Dance','Nasty Plot','Leaf Blade','Play Rough','Surf','Body Press','Dragon Dance','Roost','Will-O-Wisp','Air Slash','Iron Head','Moonblast','Draco Meteor'];
-    const items = commonItems;
     const mon = getSelectedMon();
-    mon.species = pool[Math.floor(Math.random() * pool.length)];
-    mon.item = items[Math.floor(Math.random() * items.length)];
-    mon.nature = natureOrder[Math.floor(Math.random() * natureOrder.length)];
+    const candidates = [...state.speciesChoices];
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+    const picked = candidates.find(choice => getBaseSpriteId(choice.english)) || candidates[0];
+    if (!picked) return;
+    mon.species = picked.english;
+    mon.displaySpecies = picked.english;
+    mon.item = commonItems[Math.floor(Math.random() * commonItems.length)] || '';
+    mon.nature = natureOrder[Math.floor(Math.random() * natureOrder.length)] || mon.nature;
+    mon.gender = '';
     mon.shiny = Math.random() < 0.1;
-    mon.moves = Array.from({length:4}, () => moves[Math.floor(Math.random() * moves.length)]);
+    mon.nickname = '';
+    mon.level = 100;
     await hydrateSelectedSpecies();
+    if (mon.data?.abilities?.length) {
+      mon.ability = mon.data.abilities[Math.floor(Math.random() * mon.data.abilities.length)] || mon.data.abilities[0] || '';
+    }
+    const movePool = getCurrentMoveChoices(mon).map(choice => choice.english);
+    const uniqueMoves = [];
+    const shuffledMoves = [...movePool];
+    for (let i = shuffledMoves.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffledMoves[i], shuffledMoves[j]] = [shuffledMoves[j], shuffledMoves[i]];
+    }
+    for (const moveName of shuffledMoves) {
+      if (!uniqueMoves.includes(moveName)) uniqueMoves.push(moveName);
+      if (uniqueMoves.length === 4) break;
+    }
+    mon.moves = Array.from({length: 4}, (_, idx) => uniqueMoves[idx] || '');
+    if (!mon.teraType) mon.teraType = mon.data?.types?.[0] || 'normal';
     renderEditor();
     await renderValidation();
     saveState();
@@ -1112,25 +1386,28 @@ function wireEditorEvents() {
   els.exportTeamsBtn.addEventListener('click', () => {
     const lines = state.teams.flatMap((team, player) => team.map((mon, slot) => {
       const stats = calcStats(mon);
-      const headerName = mon.nickname?.trim() ? `${mon.nickname} (${mon.displaySpecies || mon.species})` : (mon.displaySpecies || mon.species);
-      const extraTags = [mon.gender || '', mon.shiny ? 'Shiny' : ''].filter(Boolean).join(' · ');
+      const headerSpecies = displaySpeciesName(mon.displaySpecies || mon.species);
+      const headerName = mon.nickname?.trim() ? `${mon.nickname} (${headerSpecies})` : headerSpecies;
+      const extraTags = [displayGender(mon.gender || ''), mon.shiny ? '이로치 / Shiny' : ''].filter(Boolean).join(' · ');
       const rows = [
-        `${state.playerNames[player]} - Slot ${slot + 1}`,
-        `${headerName} @ ${mon.item || 'No Item'}`,
-        `Ability: ${mon.ability}`,
-        `Level: ${mon.level}${extraTags ? ` · ${extraTags}` : ''}`,
-        `Tera Type: ${titleCase(mon.teraType || 'normal')}`,
-        `${mon.nature} Nature`,
+        `${state.playerNames[player]} - 슬롯 / Slot ${slot + 1}`,
+        `${headerName} @ ${displayItemName(mon.item || 'No Item')}`,
+        `특성 / Ability: ${displayAbilityName(mon.ability)}`,
+        `레벨 / Level: ${mon.level}${extraTags ? ` · ${extraTags}` : ''}`,
+        `테라 타입 / Tera Type: ${displayType(mon.teraType || 'normal')}`,
+        `${displayNatureName(mon.nature)} 성격 / Nature`,
         `EVs: ${statOrder.map(stat => `${mon.evs[stat]} ${statLabels[stat]}`).join(' / ')}`,
         `IVs: ${statOrder.map(stat => `${mon.ivs[stat]} ${statLabels[stat]}`).join(' / ')}`,
-        `Stats: ${stats ? statOrder.map(stat => `${statLabels[stat]} ${stats[stat]}`).join(' / ') : 'pending'}`,
-        ...mon.moves.map(move => `- ${move}`),
+        `능력치 / Stats: ${stats ? statOrder.map(stat => `${statLabels[stat]} ${stats[stat]}`).join(' / ') : '계산 대기 / pending'}`,
+        ...mon.moves.map(move => `- ${displayMoveName(move)}`),
         '',
       ];
-      return rows.join('\n');
+      return rows.join('
+');
     }));
-    navigator.clipboard.writeText(lines.join('\n'));
-    els.validationSummary.textContent = 'Teams exported to your clipboard.';
+    navigator.clipboard.writeText(lines.join('
+'));
+    els.validationSummary.textContent = '팀을 클립보드로 복사했습니다. / Teams exported to your clipboard.';
   });
   els.resetStorageBtn.addEventListener('click', () => {
     localStorage.removeItem(STORAGE_KEY);
@@ -1191,7 +1468,7 @@ async function startBattle() {
       choices: {},
       mustSwitch: [],
     })),
-    log: [{text: 'Battle started. Both teams enter the field.', tone: 'accent'}],
+    log: [{text: '배틀 시작! 양쪽 팀이 전장에 나왔습니다. / Battle started. Both teams enter the field.', tone: 'accent'}],
   };
   applyStartOfBattleAbilities();
   els.battlePanel.classList.remove('hidden');
@@ -1240,8 +1517,8 @@ function renderBattle() {
   const allSet = [0,1].every(player => isPlayerReady(player));
   els.battleP1Turn.className = `turn-chip ${isPlayerReady(0) ? 'done' : 'wait'}`;
   els.battleP2Turn.className = `turn-chip ${isPlayerReady(1) ? 'done' : 'wait'}`;
-  els.battleP1Turn.textContent = isPlayerReady(0) ? 'Choice locked' : 'Selecting';
-  els.battleP2Turn.textContent = isPlayerReady(1) ? 'Choice locked' : 'Selecting';
+  els.battleP1Turn.textContent = isPlayerReady(0) ? '선택 완료 / Choice locked' : '선택 중 / Selecting';
+  els.battleP2Turn.textContent = isPlayerReady(1) ? '선택 완료 / Choice locked' : '선택 중 / Selecting';
   if (allSet && !battle.winner) resolveTurn();
 }
 function renderSideSprites(player, container, facing) {
@@ -1263,9 +1540,9 @@ function renderBattleTeam(player, container) {
     renderAnimatedSprite(sprite, {spriteId: mon.spriteId, facing:'front', shiny: mon.shiny, size:'small'});
     const summary = document.createElement('div');
     summary.className = 'mon-summary';
-    summary.innerHTML = `<div class="mon-name-line"><strong>${mon.species}</strong>${mon.status ? `<span class="status-badge">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${statusNames[mon.status] || mon.status}</span>` : ''}</div>
+    summary.innerHTML = `<div class="mon-name-line"><strong>${displaySpeciesName(mon.species)}</strong>${mon.status ? `<span class="status-badge">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
       <div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div>
-      <div class="mon-sub">HP ${mon.hp}/${mon.maxHp}${side.active.includes(index) ? ' · Active' : ''}${mon.fainted ? ' · Fainted' : ''}</div>`;
+      <div class="mon-sub">HP ${mon.hp}/${mon.maxHp}${side.active.includes(index) ? ' · 전투 중 / Active' : ''}${mon.fainted ? ' · 기절 / Fainted' : ''}</div>`;
     card.appendChild(summary);
     container.appendChild(card);
   });
@@ -1307,23 +1584,23 @@ function ensureChoiceObjects(player) {
 function renderChoicePanel(player, container, statusEl, titleEl) {
   const side = state.battle.players[player];
   ensureChoiceObjects(player);
-  titleEl.textContent = `${side.name} choice`;
+  titleEl.textContent = `${side.name} 선택 / Choice`;
   container.innerHTML = '';
   const mustSwitchCount = side.active.filter(index => side.team[index]?.fainted).length;
-  statusEl.textContent = mustSwitchCount ? 'Choose replacements for fainted active Pokémon.' : `${side.active.length} active Pokémon ready to act.`;
+  statusEl.textContent = mustSwitchCount ? '기절한 전투 포켓몬의 교체 대상을 선택하세요. / Choose replacements for fainted active Pokémon.' : `행동 가능한 전투 포켓몬 ${side.active.length}마리 준비 완료. / ${side.active.length} active Pokémon ready to act.`;
   for (const activeIndex of side.active) {
     const mon = side.team[activeIndex];
     const section = document.createElement('div');
     section.className = 'choice-section';
     if (!mon || mon.fainted) {
-      section.innerHTML = `<h4>Replacement required</h4>`;
+      section.innerHTML = `<h4>교체 필요 / Replacement required</h4>`;
       const switchWrap = document.createElement('div');
       switchWrap.className = 'choice-buttons';
       switchOptionsFor(player, true).forEach(({mon: option, index}) => {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'choice-btn';
-        btn.innerHTML = `<strong>${option.species}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
+        btn.innerHTML = `<strong>${displaySpeciesName(option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
         btn.addEventListener('click', () => {
           side.choices[activeIndex] = {kind:'switch', switchTo:index};
           renderBattle();
@@ -1335,24 +1612,24 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
       continue;
     }
     const choice = side.choices[activeIndex];
-    section.innerHTML = `<h4>${mon.species}</h4>`;
+    section.innerHTML = `<h4>${displaySpeciesName(mon.species)}</h4>`;
     const moveButtons = document.createElement('div');
     moveButtons.className = 'choice-buttons';
     mon.moves.forEach(async (moveName) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = `choice-btn ${choice.kind === 'move' && choice.move === moveName ? 'selected' : ''}`;
-      btn.innerHTML = `<strong>${moveName}</strong><small>Loading move data…</small>`;
+      btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>기술 데이터를 불러오는 중… / Loading move data…</small>`;
       moveButtons.appendChild(btn);
       try {
         const move = await getMoveData(moveName);
-        btn.innerHTML = `<strong>${move.name}</strong><small>${titleCase(move.type)} · ${move.category}${move.power ? ` · ${move.power} BP` : ''}${move.accuracy ? ` · ${move.accuracy}%` : ''}</small>`;
+        btn.innerHTML = `<strong>${displayMoveName(move.name)}</strong><small>${displayType(move.type)} · ${move.category}${move.power ? ` · ${move.power} BP` : ''}${move.accuracy ? ` · ${move.accuracy}%` : ''}</small>`;
         btn.addEventListener('click', () => {
           side.choices[activeIndex] = {kind:'move', move: move.name, target: null, tera: choice.tera || false};
           renderBattle();
         });
       } catch (error) {
-        btn.innerHTML = `<strong>${moveName}</strong><small>Unavailable</small>`;
+        btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>불러올 수 없음 / Unavailable</small>`;
       }
     });
     section.appendChild(moveButtons);
@@ -1362,7 +1639,7 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
     const teraBtn = document.createElement('button');
     teraBtn.type = 'button';
     teraBtn.className = `toggle-pill ${choice.tera ? 'active' : ''}`;
-    teraBtn.textContent = `Terastallize (${titleCase(mon.teraType)})`;
+    teraBtn.textContent = `테라스탈 / Terastallize (${displayType(mon.teraType)})`;
     teraBtn.disabled = mon.teraUsed;
     teraBtn.addEventListener('click', () => {
       choice.tera = !choice.tera;
@@ -1372,7 +1649,7 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
     const switchBtn = document.createElement('button');
     switchBtn.type = 'button';
     switchBtn.className = 'toggle-pill';
-    switchBtn.textContent = 'Switch';
+    switchBtn.textContent = '교체 / Switch';
     switchBtn.addEventListener('click', () => {
       side.choices[activeIndex] = {kind:'switch', switchTo:null};
       renderBattle();
@@ -1384,7 +1661,7 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
       const helper = document.createElement('div');
       helper.className = 'small-note';
       helper.style.marginTop = '10px';
-      helper.textContent = 'Move selected.';
+      helper.textContent = '기술 선택됨. / Move selected.';
       section.appendChild(helper);
       getMoveData(choice.move).then(move => {
         const options = targetOptionsFor(player, activeIndex, move);
@@ -1395,7 +1672,7 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = `target-btn ${choice.target?.player === option.player && choice.target?.slot === option.slot ? 'active' : ''}`;
-            btn.textContent = option.label;
+            btn.textContent = displaySpeciesName(option.label);
             btn.addEventListener('click', () => {
               side.choices[activeIndex].target = {player: option.player, slot: option.slot};
               renderBattle();
@@ -1416,7 +1693,7 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = `choice-btn ${choice.switchTo === index ? 'selected' : ''}`;
-        btn.innerHTML = `<strong>${option.species}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
+        btn.innerHTML = `<strong>${displaySpeciesName(option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
         btn.addEventListener('click', () => {
           side.choices[activeIndex] = {kind:'switch', switchTo:index};
           renderBattle();
@@ -1456,10 +1733,10 @@ function renderPendingChoices() {
     side.active.forEach(activeIndex => {
       const mon = side.team[activeIndex];
       const choice = side.choices[activeIndex];
-      let text = 'Pending';
-      if (choice?.kind === 'switch' && Number.isInteger(choice.switchTo)) text = `Switch → ${side.team[choice.switchTo].species}`;
-      if (choice?.kind === 'move') text = choice.target ? `${choice.move} → ${battle.players[choice.target.player].team[choice.target.slot].species}` : choice.move;
-      rows.push(`<div class="pending-card"><strong>${mon?.species || 'Empty slot'}</strong>${text}</div>`);
+      let text = '대기 중 / Pending';
+      if (choice?.kind === 'switch' && Number.isInteger(choice.switchTo)) text = `교체 / Switch → ${displaySpeciesName(side.team[choice.switchTo].species)}`;
+      if (choice?.kind === 'move') text = choice.target ? `${displayMoveName(choice.move)} → ${displaySpeciesName(battle.players[choice.target.player].team[choice.target.slot].species)}` : displayMoveName(choice.move);
+      rows.push(`<div class="pending-card"><strong>${mon ? displaySpeciesName(mon.species) : '빈 슬롯 / Empty slot'}</strong>${text}</div>`);
     });
   });
   els.pendingChoices.innerHTML = rows.join('');
@@ -1508,27 +1785,27 @@ function performSwitch(player, activeIndex, targetIndex) {
     leaving.protect = false;
   }
   side.active[currentPosition] = targetIndex;
-  addLog(`${side.name} withdrew ${leaving?.species || 'a Pokémon'} and sent out ${incoming.species}.`, 'accent');
+  addLog(`${side.name} 측은 ${leaving ? displaySpeciesName(leaving.species) : '포켓몬 / a Pokémon'}를 회수하고 ${displaySpeciesName(incoming.species)}를 내보냈다. / ${side.name} withdrew ${leaving?.species || 'a Pokémon'} and sent out ${incoming.species}.`, 'accent');
   if (slugify(incoming.ability) === 'intimidate') {
     state.battle.players[1-player].active.forEach(idx => {
       const target = state.battle.players[1-player].team[idx];
       if (target && !target.fainted && slugify(target.item) !== 'clear-amulet') {
         target.boosts.atk = clamp((target.boosts.atk || 0) - 1, -6, 6);
-        addLog(`${incoming.species}'s Intimidate lowers ${target.species}'s Attack.`, 'accent');
+        addLog(`${displaySpeciesName(incoming.species)}의 위협 / Intimidate! ${displaySpeciesName(target.species)}의 공격이 떨어졌다. / ${incoming.species}'s Intimidate lowers ${target.species}'s Attack.`, 'accent');
       }
     });
   }
 }
 function canMove(mon) {
-  if (!mon || mon.fainted) return {ok:false, reason:'Fainted'};
+  if (!mon || mon.fainted) return {ok:false, reason:'기절 상태입니다. / Fainted.'};
   if (mon.status === 'slp') {
     mon.sleepTurns = Math.max(0, (mon.sleepTurns || 1) - 1);
-    if (mon.sleepTurns > 0) return {ok:false, reason:`${mon.species} is asleep.`};
+    if (mon.sleepTurns > 0) return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 잠들어 있다. / ${mon.species} is asleep.`};
     mon.status = '';
     return {ok:true, wake:true};
   }
-  if (mon.status === 'frz' && Math.random() < 0.8) return {ok:false, reason:`${mon.species} is frozen solid.`};
-  if (mon.status === 'par' && Math.random() < 0.25) return {ok:false, reason:`${mon.species} is fully paralyzed.`};
+  if (mon.status === 'frz' && Math.random() < 0.8) return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 얼어붙어 움직일 수 없다. / ${mon.species} is frozen solid.`};
+  if (mon.status === 'par' && Math.random() < 0.25) return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 몸이 저려 움직일 수 없다. / ${mon.species} is fully paralyzed.`};
   return {ok:true};
 }
 async function performMove(action) {
@@ -1545,17 +1822,17 @@ async function performMove(action) {
   if (choice.tera && !currentMon.teraUsed) {
     currentMon.types = [currentMon.teraType];
     currentMon.teraUsed = true;
-    addLog(`${currentMon.species} Terastallized into ${titleCase(currentMon.teraType)}-type!`, 'accent');
+    addLog(`${displaySpeciesName(currentMon.species)}이(가) ${displayType(currentMon.teraType)} 테라스탈했다! / ${currentMon.species} Terastallized into ${titleCase(currentMon.teraType)}-type!`, 'accent');
   }
   const targets = resolveTargets(player, action.activeIndex, choice, move);
   if (!targets.length) {
-    addLog(`${currentMon.species} used ${move.name}, but there was no valid target.`);
+    addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}! 그러나 맞힐 대상이 없었다. / ${currentMon.species} used ${move.name}, but there was no valid target.`);
     return;
   }
-  addLog(`${currentMon.species} used ${move.name}.`, 'accent');
+  addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}! / ${currentMon.species} used ${move.name}.`, 'accent');
   if (['protect','detect'].includes(slugify(move.name))) {
     currentMon.protect = true;
-    addLog(`${currentMon.species} is protected this turn.`);
+    addLog(`${displaySpeciesName(currentMon.species)}은(는) 이번 턴 보호 상태다. / ${currentMon.species} is protected this turn.`);
     return;
   }
   if (move.category === 'status') {
@@ -1565,53 +1842,53 @@ async function performMove(action) {
   for (const target of targets) {
     if (!target || target.fainted) continue;
     if (target.protect && player !== target.player) {
-      addLog(`${target.species} protected itself.`);
+      addLog(`${displaySpeciesName(target.species)}은(는) 자신을 보호했다. / ${target.species} protected itself.`);
       continue;
     }
     const accuracy = move.accuracy || 100;
     if (Math.random() * 100 >= accuracy) {
-      addLog(`${currentMon.species}'s ${move.name} missed ${target.species}.`);
+      addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}는 ${displaySpeciesName(target.species)}에게 빗나갔다. / ${currentMon.species}'s ${move.name} missed ${target.species}.`);
       continue;
     }
     const damageInfo = computeDamage(currentMon, target, move, targets.length > 1);
     let damage = damageInfo.damage;
     if (slugify(target.ability) === 'multiscale' && target.hp === target.maxHp) damage = Math.floor(damage * 0.5);
     if (slugify(target.ability) === 'flash-fire' && move.type === 'fire') {
-      addLog(`${target.species}'s Flash Fire absorbed the attack.`);
+      addLog(`${displaySpeciesName(target.species)}의 타오르는불꽃 / Flash Fire가 공격을 흡수했다. / ${target.species}'s Flash Fire absorbed the attack.`);
       target.volatile.flashFire = true;
       continue;
     }
     if (slugify(target.ability) === 'levitate' && move.type === 'ground') {
-      addLog(`${target.species} avoided the Ground-type move thanks to Levitate.`);
+      addLog(`${displaySpeciesName(target.species)}은(는) 부유 / Levitate 덕분에 땅 타입 기술을 피했다. / ${target.species} avoided the Ground-type move thanks to Levitate.`);
       continue;
     }
     if (slugify(target.item) === 'focus-sash' && target.hp === target.maxHp && damage >= target.hp) {
       damage = target.hp - 1;
-      addLog(`${target.species} endured with Focus Sash!`, 'accent');
+      addLog(`${displaySpeciesName(target.species)}은(는) 기합의띠 / Focus Sash로 버텼다! / ${target.species} endured with Focus Sash!`, 'accent');
     }
     target.hp = Math.max(0, target.hp - Math.max(1, damage));
-    addLog(`${target.species} lost ${damage} HP${damageInfo.effectivenessText ? ` (${damageInfo.effectivenessText})` : ''}.`);
-    if (damageInfo.crit) addLog('A critical hit!');
+    addLog(`${displaySpeciesName(target.species)}의 HP가 ${damage}만큼 줄었다${damageInfo.effectivenessText ? ` (${damageInfo.effectivenessText})` : ''}. / ${target.species} lost ${damage} HP${damageInfo.effectivenessText ? ` (${damageInfo.effectivenessText})` : ''}.`);
+    if (damageInfo.crit) addLog('급소에 맞았다! / A critical hit!');
     if (move.drain) {
       const heal = Math.max(1, Math.floor(damage * (move.drain / 100)));
       currentMon.hp = Math.min(currentMon.maxHp, currentMon.hp + heal);
-      addLog(`${currentMon.species} restored ${heal} HP.`);
+      addLog(`${displaySpeciesName(currentMon.species)}의 HP가 ${heal} 회복되었다. / ${currentMon.species} restored ${heal} HP.`);
     }
     if (slugify(currentMon.item) === 'life-orb') {
       const recoil = Math.max(1, Math.floor(currentMon.maxHp / 10));
       currentMon.hp = Math.max(0, currentMon.hp - recoil);
-      addLog(`${currentMon.species} was hurt by Life Orb.`);
+      addLog(`${displaySpeciesName(currentMon.species)}은(는) 생명의구슬 / Life Orb 반동으로 데미지를 입었다. / ${currentMon.species} was hurt by Life Orb.`);
     }
     if (slugify(target.item) === 'rocky-helmet' && move.category === 'physical') {
       const recoil = Math.max(1, Math.floor(currentMon.maxHp / 6));
       currentMon.hp = Math.max(0, currentMon.hp - recoil);
-      addLog(`${currentMon.species} was hurt by Rocky Helmet.`);
+      addLog(`${displaySpeciesName(currentMon.species)}은(는) 울퉁불퉁멧 / Rocky Helmet 때문에 데미지를 입었다. / ${currentMon.species} was hurt by Rocky Helmet.`);
     }
     maybeApplySecondary(currentMon, target, move);
     if (target.hp <= 0) {
       target.fainted = true;
       target.hp = 0;
-      addLog(`${target.species} fainted.`, 'win');
+      addLog(`${displaySpeciesName(target.species)}은(는) 쓰러졌다. / ${target.species} fainted.`, 'win');
     }
   }
 }
@@ -1634,7 +1911,7 @@ function applyStatusMove(user, targets, move) {
   if (move.healing) {
     const heal = Math.max(1, Math.floor(user.maxHp * (move.healing / 100)));
     user.hp = Math.min(user.maxHp, user.hp + heal);
-    addLog(`${user.species} restored ${heal} HP.`);
+    addLog(`${displaySpeciesName(user.species)}의 HP가 ${heal} 회복되었다. / ${user.species} restored ${heal} HP.`);
   }
   if (move.statChanges.length) {
     const applyToSelf = ['self','self-side'].includes(move.target) || ['swagger','close-combat'].includes(slugify(move.name)) === false && move.metaCategory === 'net-good-stats';
@@ -1646,7 +1923,7 @@ function applyStatusMove(user, targets, move) {
         if (!target.boosts[stat] && target.boosts[stat] !== 0) return;
         target.boosts[stat] = clamp((target.boosts[stat] || 0) + change.change, -6, 6);
       });
-      addLog(`${target.species}'s stats changed.`);
+      addLog(`${displaySpeciesName(target.species)}의 능력치가 변했다. / ${target.species}'s stats changed.`);
     });
   }
   if (move.ailment && move.ailment !== 'none') {
@@ -1661,7 +1938,7 @@ function maybeApplySecondary(user, target, move) {
       const stat = statMap[change.stat] || change.stat;
       target.boosts[stat] = clamp((target.boosts[stat] || 0) + change.change, -6, 6);
     });
-    addLog(`${target.species}'s stats changed from the secondary effect.`);
+    addLog(`${displaySpeciesName(target.species)}의 능력치가 추가 효과로 변했다. / ${target.species}'s stats changed from the secondary effect.`);
   }
 }
 function applyAilment(target, ailment, chance) {
@@ -1677,7 +1954,7 @@ function applyAilment(target, ailment, chance) {
   target.status = status;
   if (status === 'slp') target.sleepTurns = 2 + Math.floor(Math.random() * 2);
   if (status === 'tox') target.toxicCounter = 1;
-  addLog(`${target.species} is now ${statusNames[status].toLowerCase()}.`);
+  addLog(`${displaySpeciesName(target.species)}은(는) ${displayStatus(status)} 상태가 되었다. / ${target.species} is now ${statusNames[status].toLowerCase()}.`);
 }
 function computeDamage(attacker, defender, move, spread = false) {
   const physical = move.category === 'physical';
@@ -1710,9 +1987,9 @@ function computeDamage(attacker, defender, move, spread = false) {
   let effectivenessText = '';
   if (effectiveness === 0) {
     damage = 0;
-    effectivenessText = 'No effect';
-  } else if (effectiveness >= 2) effectivenessText = 'Super effective';
-  else if (effectiveness < 1) effectivenessText = 'Not very effective';
+    effectivenessText = '효과가 없다 / No effect';
+  } else if (effectiveness >= 2) effectivenessText = '효과가 굉장했다 / Super effective';
+  else if (effectiveness < 1) effectivenessText = '효과가 별로인 듯하다 / Not very effective';
   return {damage, crit, effectivenessText};
 }
 function fillFaintedActives() {
@@ -1723,7 +2000,7 @@ function fillFaintedActives() {
       if (mon && !mon.fainted) return activeIndex;
       const replacement = switchOptionsFor(player, true)[0];
       if (replacement) {
-        addLog(`${side.name} sends out ${replacement.mon.species}.`, 'accent');
+        addLog(`${side.name} 측은 ${displaySpeciesName(replacement.mon.species)}를 내보냈다. / ${side.name} sends out ${replacement.mon.species}.`, 'accent');
         return replacement.index;
       }
       return activeIndex;
@@ -1739,39 +2016,39 @@ function endOfTurn() {
       if (mon.status === 'brn') {
         const dmg = Math.max(1, Math.floor(mon.maxHp / 16));
         mon.hp = Math.max(0, mon.hp - dmg);
-        addLog(`${mon.species} was hurt by its burn.`);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 화상 데미지를 입었다. / ${mon.species} was hurt by its burn.`);
       }
       if (mon.status === 'psn') {
         const dmg = Math.max(1, Math.floor(mon.maxHp / 8));
         mon.hp = Math.max(0, mon.hp - dmg);
-        addLog(`${mon.species} was hurt by poison.`);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 독 데미지를 입었다. / ${mon.species} was hurt by poison.`);
       }
       if (mon.status === 'tox') {
         mon.toxicCounter = Math.max(1, mon.toxicCounter + 1);
         const dmg = Math.max(1, Math.floor(mon.maxHp * mon.toxicCounter / 16));
         mon.hp = Math.max(0, mon.hp - dmg);
-        addLog(`${mon.species} was hurt by toxic poison.`);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 맹독 데미지를 입었다. / ${mon.species} was hurt by toxic poison.`);
       }
       if (slugify(mon.item) === 'leftovers' && !mon.fainted) {
         const heal = Math.max(1, Math.floor(mon.maxHp / 16));
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
-        addLog(`${mon.species} restored a little HP with Leftovers.`);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 먹다남은음식 / Leftovers로 HP를 조금 회복했다. / ${mon.species} restored a little HP with Leftovers.`);
       }
       if (slugify(mon.item) === 'black-sludge' && mon.types.includes('poison')) {
         const heal = Math.max(1, Math.floor(mon.maxHp / 16));
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
-        addLog(`${mon.species} restored HP with Black Sludge.`);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 검은오물 / Black Sludge로 HP를 회복했다. / ${mon.species} restored HP with Black Sludge.`);
       }
       if (slugify(mon.item) === 'sitrus-berry' && mon.hp > 0 && mon.hp <= mon.maxHp / 2 && !mon.volatile.usedSitrus) {
         const heal = Math.max(1, Math.floor(mon.maxHp / 4));
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
         mon.volatile.usedSitrus = true;
-        addLog(`${mon.species} restored HP with Sitrus Berry.`);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 오랭열매 / Sitrus Berry로 HP를 회복했다. / ${mon.species} restored HP with Sitrus Berry.`);
       }
       if (mon.hp <= 0) {
         mon.hp = 0;
         mon.fainted = true;
-        addLog(`${mon.species} fainted.`, 'win');
+        addLog(`${displaySpeciesName(mon.species)}은(는) 쓰러졌다. / ${mon.species} fainted.`, 'win');
       }
     });
   });
@@ -1783,12 +2060,12 @@ function determineWinner() {
   const alive = battle.players.map(side => side.team.some(mon => !mon.fainted));
   if (alive[0] && alive[1]) return;
   if (!alive[0] && !alive[1]) {
-    battle.winner = 'Draw';
-    addLog('Both teams are out of usable Pokémon. Draw game.', 'win');
+    battle.winner = '무승부 / Draw';
+    addLog('양쪽 팀 모두 싸울 수 있는 포켓몬이 없습니다. 무승부! / Both teams are out of usable Pokémon. Draw game.', 'win');
     return;
   }
   battle.winner = alive[0] ? battle.players[0].name : battle.players[1].name;
-  addLog(`${battle.winner} wins the battle!`, 'win');
+  addLog(`${battle.winner} 승리! / ${battle.winner} wins the battle!`, 'win');
 }
 function wireBattleEvents() {
   els.startBattleBtn.addEventListener('click', startBattle);
@@ -1816,7 +2093,7 @@ function renderAll() {
 }
 async function bootstrap() {
   bindElements();
-  showRuntime('Loading uploaded assets and fully localized battle data…', 'loading');
+  showRuntime('업로드한 에셋과 현지화된 전투 데이터를 불러오는 중… / Loading uploaded assets and fully localized battle data…', 'loading');
   resetTeams();
   await loadManifest();
   await detectAssetBases();
@@ -1830,16 +2107,16 @@ async function bootstrap() {
   renderAll();
   state.runtimeReady = true;
   showRuntime(
-    'Runtime ready. Local assets and localized battle data are connected.',
+    '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets and localized battle data are connected.',
     'ready',
-    `Pokémon sprite base: ${state.assetBase.pokemon}<br>Item icon base: ${state.assetBase.items}<br>Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, and team-level warnings. Battle resolution is still the project’s custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
+    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, and team-level warnings. 전투 판정은 아직 프로젝트의 커스텀 런타임을 사용하므로, 카트리지 수준의 완전한 시뮬레이터 통합은 다음 단계입니다. / Battle resolution is still the project’s custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
   );
 }
 
 bootstrap().catch(error => {
   console.error(error);
   showRuntime(
-    'Startup failed. Check the browser console and local data modules.',
+    '시작에 실패했습니다. 브라우저 콘솔과 로컬 데이터 모듈을 확인하세요. / Startup failed. Check the browser console and local data modules.',
     'error',
     `Error: ${error.message}`
   );
