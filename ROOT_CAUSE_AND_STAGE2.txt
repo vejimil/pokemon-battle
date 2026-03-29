@@ -1,0 +1,17 @@
+404 sprite fix summary
+
+What changed
+- src/app.js now auto-detects the real sprite root and item root at startup.
+- It no longer assumes only ./assets/Pokemon will exist.
+- After detection, all sprite and item icon requests use the detected base path.
+- Runtime status now shows which base path was detected.
+
+Why this fixes the issue
+- The project previously hardcoded a single asset path.
+- If the serving environment ended up using a different casing/path, sprite PNGs 404ed repeatedly.
+- The new startup probe removes that assumption and uses the path that actually exists.
+
+Stage 2 direction
+- Move species, moves, items, abilities, learnsets, and validation into a local Dex.
+- Replace ad hoc validation with a Showdown-based validator or equivalent local legality data.
+- Replace partial custom battle effects with a complete simulator layer.

@@ -81,6 +81,7 @@ const state = {
   selected: {player: 0, slot: 0},
   builderErrors: [],
   battle: null,
+  assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
 };
 
 const els = {};
@@ -252,6 +253,40 @@ async function loadManifest() {
     .sort()));
   state.speciesChoices = ids.map(id => ({id, label: humanizeSpriteId(id)}));
 }
+async function pathExists(url) {
+  try {
+    const res = await fetch(url, {method: 'HEAD', cache: 'no-store'});
+    if (res.ok) return true;
+    if (res.status === 405) {
+      const retry = await fetch(url, {cache: 'no-store'});
+      return retry.ok;
+    }
+    return false;
+  } catch (error) {
+    return false;
+  }
+}
+async function detectAssetBases() {
+  const samplePokemon = state.manifest?.pokemon?.front?.find(id => id && id !== '000') || 'GENGAR';
+  const pokemonBases = ['./assets/Pokemon', './assets/pokemon', 'assets/Pokemon', 'assets/pokemon'];
+  for (const base of pokemonBases) {
+    const probe = `${base}/Front/${samplePokemon}.png`;
+    if (await pathExists(probe)) {
+      state.assetBase.pokemon = base;
+      break;
+    }
+  }
+
+  const sampleItem = slugify((state.manifest?.items || []).find(Boolean) || 'leftovers');
+  const itemBases = ['./assets/items', 'assets/items'];
+  for (const base of itemBases) {
+    const probe = `${base}/${sampleItem}.png`;
+    if (await pathExists(probe)) {
+      state.assetBase.items = base;
+      break;
+    }
+  }
+}
 async function loadMoveNames() {
   const data = await fetchJson(`${POKEAPI}/move?limit=2000`);
   moveNameCache.splice(0, moveNameCache.length, ...data.results.map(entry => formatPokemonDisplayName(entry.name)));
@@ -327,15 +362,15 @@ function spritePath(spriteId, facing = 'front', shiny = false) {
   const folder = facing === 'back'
     ? shiny ? 'Back shiny' : 'Back'
     : shiny ? 'Front shiny' : 'Front';
-  return `./assets/Pokemon/${folder}/${spriteId}.png`;
+  return `${state.assetBase.pokemon}/${folder}/${spriteId}.png`;
 }
 function iconPath(spriteId, shiny = false) {
   const folder = shiny ? 'Icons shiny' : 'Icons';
-  return `./assets/Pokemon/${folder}/${spriteId}.png`;
+  return `${state.assetBase.pokemon}/${folder}/${spriteId}.png`;
 }
 function itemIconPath(itemName) {
   const slug = slugify(itemName);
-  return slug ? `./assets/items/${slug}.png` : '';
+  return slug ? `${state.assetBase.items}/${slug}.png` : '';
 }
 function typeIconPath(typeName, small = false) {
   const idx = typeIds[typeName];
@@ -1521,6 +1556,7 @@ async function bootstrap() {
   showRuntime('Loading uploaded assets, sprite manifest, and PokéAPI move list…', 'loading');
   resetTeams();
   await loadManifest();
+  await detectAssetBases();
   loadSavedState();
   await loadMoveNames();
   buildStaticLists();
@@ -1529,9 +1565,9 @@ async function bootstrap() {
   renderAll();
   state.runtimeReady = true;
   showRuntime(
-    'Runtime ready. The app is GitHub Pages-safe and uses your uploaded sprite, type, item, and status assets locally.',
+    'Runtime ready. Local assets and PokéAPI data are connected.',
     'ready',
-    'Battle data for species and moves is loaded from PokéAPI at runtime. The current build supports singles and doubles, animated uploaded sprites, IV/EV + nature stat calculation, turn order by priority and speed, Terastallization, and a practical subset of held-item / ability effects.'
+    `Pokémon sprite base: ${state.assetBase.pokemon}<br>Item icon base: ${state.assetBase.items}<br>Battle data for species and moves is still loaded from PokéAPI at runtime. The current build supports singles and doubles, animated uploaded sprites, IV/EV + nature stat calculation, turn order by priority and speed, Terastallization, and a practical subset of held-item / ability effects.`
   );
 }
 
