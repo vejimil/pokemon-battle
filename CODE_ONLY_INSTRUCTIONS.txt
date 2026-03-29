@@ -4,16 +4,25 @@ Included:
 - .nojekyll
 - README.md
 - CODE_ONLY_INSTRUCTIONS.txt
+- ROOT_CAUSE_AND_STAGE2.txt
 - ROOT_CAUSE_AND_STAGE3.txt
+- ROOT_CAUSE_AND_STAGE4.txt
+- ROOT_CAUSE_AND_STAGE4B.txt
+- ROOT_CAUSE_AND_STAGE4B_FIX.txt
+- ROOT_CAUSE_AND_STAGE5.txt
+- ROOT_CAUSE_AND_STAGE6.txt
 - index.html
 - styles.css
 - src/app.js
 - src/local-dex.js
+- src/showdown-dex.js
+- src/i18n-ko-data.js
 - src/data/*.js
-- scripts/generate-local-data.cjs
+- scripts/*.cjs
 
 Not included:
 - assets/
+- src/app.js.bak
 
 How to use:
 1. Extract this ZIP.

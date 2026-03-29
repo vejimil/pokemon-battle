@@ -1,0 +1,57 @@
+[Stage 6] Form-aware asset mapping + runtime form sprite integration
+
+이번 단계에서 한 일
+1. 실제 PNG 파일명 패턴을 기준으로 폼 자산 연결 로직을 강화했다.
+   - 기본형: CHARIZARD.png
+   - 일반적인 폼형: CHARIZARD_1.png, CHARIZARD_2.png
+   - 예외형: GRENINJA_2.png, GRENINJA_3.png 처럼 _1이 비어 있는 경우
+   - 성별형: PIKACHU_female.png 같은 경우
+
+2. 폼 자산 자동 연결 방식을 정교화했다.
+   - 기본적으로는 같은 family 안의 숫자 자산들을 정렬한 뒤 Dex form 순서에 맞춰 연결한다.
+   - 하지만 Eevee / Greninja / Pikachu처럼 sparse numbering 때문에 오연결 위험이 큰 family는 자동 연결을 막고, 직접 확인한 예외 테이블만 사용하게 했다.
+   - 그래서 _2, _3만 있는 예외 family가 잘못된 forme에 붙는 문제를 줄였다.
+
+3. 실제 파일을 보고 수동 예외 매핑을 넣었다.
+   - Darumaka-Galar -> DARUMAKA_2
+   - Eevee-Starter -> EEVEE_2
+   - Greninja-Ash -> GRENINJA_2
+   - Greninja-Mega -> GRENINJA_3
+   - Pichu-Spiky-eared -> PICHU_2
+   - Pikachu의 코스프레/캡/스타터 계열 -> PIKACHU_2 ~ PIKACHU_17
+   - Zygarde-10% / Complete / Mega -> ZYGARDE_1 ~ ZYGARDE_3
+
+4. UI에 폼 선택 / 자산 변형 선택을 추가했다.
+   - Species 선택 후, 같은 base species의 사용 가능한 forme를 따로 고를 수 있다.
+   - 자동 연결이 마음에 들지 않으면, 같은 family 안의 raw sprite asset을 직접 선택할 수 있다.
+
+5. 배틀 중 Mega Evolution 시 자산과 종족 데이터를 같이 바꾸도록 확장했다.
+   - 메가진화 시 타입/능력치/특성/스프라이트를 함께 교체한다.
+   - HP는 현재 비율을 유지하도록 맞췄다.
+
+이번 단계에서 특히 해결한 문제
+- base species는 맞는데 sprite family 안에서 폼 PNG를 정확히 고르기 어려운 문제
+- 빌더에서 선택한 form과 실제 전투 표시 스프라이트가 어긋날 수 있던 문제
+- 메가진화 시 자산만 바뀌거나, 반대로 데이터만 바뀌는 식으로 불일치가 날 수 있던 문제
+
+현재 상태
+- 폼 자산이 있는 family 중 상당수를 자동/수동 혼합 방식으로 매핑한다.
+- raw PNG가 실제로 존재하지만 이름 규칙이 특이한 family는 sprite variant 선택기로 직접 고를 수 있다.
+- 자동 매핑되지 않는 폼은 무리해서 잘못 연결하지 않고 남겨두었다.
+
+아직 남아 있는 한계
+- 모든 mid-battle form change가 완전히 구현된 것은 아니다.
+  예: Aegislash stance, Mimikyu busted, 일부 특수 변신 폼 등
+- 일부 raw PNG는 존재하지만, 현재 Dex form 이름과 1:1 대응이 명확하지 않아 자동 연결하지 않았다.
+- exact asset이 없거나 구분이 불명확한 폼은 unresolved로 남아 있을 수 있다.
+  예: 일부 Totem, Antique/Masterpiece, Rockruff-Dusk, Eevee-Gmax, Pikachu-Gmax 등
+- Dynamax / Z-Move / 더블 전용 세부 행동 로직은 다음 메인 단계다.
+
+다음 단계 추천
+1. 싱글 배틀 턴 엔진 본격 확장
+   - 우선도 / 스피드 순서
+   - 교체
+   - 데미지 계산 정교화
+   - 상태이상 / 랭크 변화 / 지속효과
+2. 더블 배틀 구조 확장
+3. Terastal / Mega / Z-Move / Dynamax 전투 흐름 정교화

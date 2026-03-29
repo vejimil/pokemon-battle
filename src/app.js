@@ -96,6 +96,342 @@ const speciesDataCache = new Map();
 const moveDataCache = new Map();
 const imageInfoCache = new Map();
 
+const FORM_ASSET_OVERRIDES = Object.freeze({
+  'Eevee-Gmax': 'EEVEE_2',
+  'Greninja-Bond': 'GRENINJA_2',
+  'Greninja-Ash': 'GRENINJA_2',
+  'Greninja-Mega': 'GRENINJA_3',
+  'Pikachu-Rock-Star': 'PIKACHU_3',
+  'Pikachu-Belle': 'PIKACHU_4',
+  'Pikachu-Pop-Star': 'PIKACHU_5',
+  'Pikachu-PhD': 'PIKACHU_6',
+  'Pikachu-Libre': 'PIKACHU_7',
+  'Pikachu-Gmax': 'PIKACHU_17',
+  'Zygarde-10%': 'ZYGARDE_1',
+  'Zygarde-Complete': 'ZYGARDE_3',
+  'Zygarde-Mega': 'ZYGARDE_5',
+});
+const EXPLICIT_ONLY_FORM_FAMILIES = new Set(['EEVEE', 'GRENINJA', 'PIKACHU']);
+
+function normalizeAssetFamilyKey(name) {
+  return String(name || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+}
+function uniqueNames(values) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values || []) {
+    const key = toId(value);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+function parseAssetFamilies(list = []) {
+  const families = new Map();
+  for (const rawId of list) {
+    const id = String(rawId || '');
+    const match = /^(.+?)(?:_(female|male|\d+))?$/i.exec(id);
+    if (!match) continue;
+    const baseId = match[1];
+    const suffix = match[2] || '';
+    if (!families.has(baseId)) {
+      families.set(baseId, {
+        baseId,
+        baseExists: false,
+        numeric: new Map(),
+        genders: {},
+        rawAssetIds: [],
+      });
+    }
+    const family = families.get(baseId);
+    family.rawAssetIds.push(id);
+    if (!suffix) family.baseExists = true;
+    else if (/^\d+$/.test(suffix)) family.numeric.set(Number(suffix), id);
+    else family.genders[suffix.toLowerCase()] = id;
+  }
+  for (const family of families.values()) {
+    family.rawAssetIds.sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
+  }
+  return families;
+}
+function buildFamilyFormNames(baseSpeciesName, familySpeciesNames, baseEntry) {
+  const ordered = [];
+  const seen = new Set();
+  const pushName = (name) => {
+    const key = toId(name);
+    if (!key || seen.has(key) || key === toId(baseSpeciesName)) return;
+    seen.add(key);
+    ordered.push(name);
+  };
+  for (const name of baseEntry?.formeOrder || []) pushName(name);
+  const extras = (familySpeciesNames || []).filter(name => {
+    const key = toId(name);
+    return key && key !== toId(baseSpeciesName) && !seen.has(key);
+  }).sort((a, b) => {
+    const aName = String(a).replace(new RegExp(`^${baseSpeciesName}-`, 'i'), '');
+    const bName = String(b).replace(new RegExp(`^${baseSpeciesName}-`, 'i'), '');
+    return aName.localeCompare(bName, undefined, {numeric: true});
+  });
+  extras.forEach(pushName);
+  return uniqueNames(ordered);
+}
+function buildAssetDex() {
+  if (!state.manifest?.pokemon?.front?.length || !state.dex) {
+    state.assetDex = null;
+    state.speciesChoices = [];
+    state.allSpeciesChoices = [];
+    return;
+  }
+
+  const frontFamilies = parseAssetFamilies(state.manifest.pokemon.front);
+  const allSpecies = state.dex.species.all().filter(species => species?.exists);
+  const familyLookup = new Map();
+  const speciesByBase = new Map();
+  for (const species of allSpecies) {
+    const baseSpeciesName = species.baseSpecies || species.name;
+    if (!speciesByBase.has(baseSpeciesName)) speciesByBase.set(baseSpeciesName, []);
+    speciesByBase.get(baseSpeciesName).push(species.name);
+    const assetKey = normalizeAssetFamilyKey(baseSpeciesName);
+    if (!familyLookup.has(assetKey)) familyLookup.set(assetKey, baseSpeciesName);
+  }
+
+  const assetDex = {
+    families: new Map(),
+    familyBySpecies: new Map(),
+    speciesToAsset: new Map(),
+    allSpeciesChoices: [],
+  };
+
+  for (const [assetBaseId, assetFamily] of frontFamilies.entries()) {
+    const baseSpeciesName = familyLookup.get(assetBaseId) || humanizeSpriteId(assetBaseId);
+    const baseEntry = state.dex.species.get(baseSpeciesName);
+    const familySpeciesNames = uniqueNames([baseSpeciesName, ...(speciesByBase.get(baseSpeciesName) || [])]);
+    const orderedForms = buildFamilyFormNames(baseSpeciesName, familySpeciesNames, baseEntry);
+    const speciesToAsset = new Map();
+    const assetToSpecies = new Map();
+
+    if (assetFamily.baseExists) {
+      speciesToAsset.set(baseSpeciesName, assetBaseId);
+      assetToSpecies.set(assetBaseId, baseSpeciesName);
+    }
+
+    if (!EXPLICIT_ONLY_FORM_FAMILIES.has(assetBaseId)) {
+      const numericAssetIds = Array.from(assetFamily.numeric.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([, assetId]) => assetId);
+      for (const [index, formName] of orderedForms.entries()) {
+        const assetId = numericAssetIds[index];
+        if (assetId) {
+          speciesToAsset.set(formName, assetId);
+          assetToSpecies.set(assetId, formName);
+        }
+      }
+    }
+
+    for (const [speciesName, assetId] of Object.entries(FORM_ASSET_OVERRIDES)) {
+      const speciesData = state.dex.species.get(speciesName);
+      const speciesBase = speciesData?.exists ? (speciesData.baseSpecies || speciesData.name) : speciesName.split('-')[0];
+      if (toId(speciesBase) !== toId(baseSpeciesName)) continue;
+      if (!assetFamily.rawAssetIds.includes(assetId)) continue;
+      speciesToAsset.set(speciesName, assetId);
+      assetToSpecies.set(assetId, speciesName);
+    }
+
+    const unresolvedFormOrder = orderedForms.filter(name => !speciesToAsset.has(name));
+    if (orderedForms.length === 1 && unresolvedFormOrder.length === 1 && assetFamily.numeric.size === 1) {
+      const onlyAssetId = Array.from(assetFamily.numeric.values())[0];
+      speciesToAsset.set(unresolvedFormOrder[0], onlyAssetId);
+      assetToSpecies.set(onlyAssetId, unresolvedFormOrder[0]);
+    }
+
+    const formChoices = familySpeciesNames.map(speciesName => {
+      const speciesData = state.dex.species.get(speciesName);
+      const selectable = Boolean(speciesData?.exists) && !speciesData.battleOnly;
+      const assetId = speciesToAsset.get(speciesName) || '';
+      const display = displaySpeciesName(speciesName);
+      return {
+        speciesName: speciesData?.name || speciesName,
+        display,
+        assetId,
+        selectable,
+        hasAsset: Boolean(assetId),
+        battleOnly: Boolean(speciesData?.battleOnly),
+      };
+    }).filter(choice => choice.selectable || choice.speciesName === baseSpeciesName);
+
+    const assetChoices = [];
+    if (assetFamily.baseExists) {
+      assetChoices.push({
+        id: assetBaseId,
+        display: `${displaySpeciesName(assetToSpecies.get(assetBaseId) || baseSpeciesName)} · ${assetBaseId}`,
+      });
+    }
+    const numericEntries = Array.from(assetFamily.numeric.entries()).sort((a, b) => a[0] - b[0]);
+    for (const [, assetId] of numericEntries) {
+      assetChoices.push({
+        id: assetId,
+        display: `${displaySpeciesName(assetToSpecies.get(assetId) || humanizeSpriteId(assetId))} · ${assetId}`,
+      });
+    }
+    for (const genderKey of ['female', 'male']) {
+      if (assetFamily.genders[genderKey]) {
+        assetChoices.push({
+          id: assetFamily.genders[genderKey],
+          display: `${displaySpeciesName(baseSpeciesName)} ${genderKey === 'female' ? '♀' : '♂'} · ${assetFamily.genders[genderKey]}`,
+        });
+      }
+    }
+
+    const family = {
+      assetBaseId,
+      baseSpeciesName,
+      assetFamily,
+      formChoices,
+      assetChoices,
+      speciesToAsset,
+      assetToSpecies,
+    };
+    assetDex.families.set(baseSpeciesName, family);
+    for (const speciesName of familySpeciesNames) {
+      assetDex.familyBySpecies.set(speciesName, family);
+      if (speciesToAsset.has(speciesName)) assetDex.speciesToAsset.set(speciesName, speciesToAsset.get(speciesName));
+      const speciesData = state.dex.species.get(speciesName);
+      if (speciesData?.exists && !speciesData.battleOnly) {
+        assetDex.allSpeciesChoices.push(makeChoice('species', speciesData.name, {
+          family: baseSpeciesName,
+          assetId: speciesToAsset.get(speciesData.name) || '',
+        }));
+      }
+    }
+  }
+
+  const baseChoices = Array.from(assetDex.families.values())
+    .map(family => makeChoice('species', family.baseSpeciesName, {assetId: family.assetBaseId, family: family.baseSpeciesName}))
+    .sort((a, b) => a.english.localeCompare(b.english));
+
+  state.assetDex = assetDex;
+  state.speciesChoices = baseChoices;
+  state.allSpeciesChoices = uniqueNames(assetDex.allSpeciesChoices.map(choice => choice.english))
+    .map(name => assetDex.allSpeciesChoices.find(choice => choice.english === name))
+    .sort((a, b) => a.english.localeCompare(b.english));
+}
+function getFamilyForSpecies(speciesName) {
+  if (!state.assetDex) return null;
+  const normalized = normalizeLocalizedInput('species', speciesName, state.allSpeciesChoices || state.speciesChoices || []);
+  if (state.assetDex.familyBySpecies.has(normalized)) return state.assetDex.familyBySpecies.get(normalized);
+  const data = state.dex?.species?.get(normalized);
+  if (data?.exists) return state.assetDex.familyBySpecies.get(data.baseSpecies || data.name) || null;
+  return null;
+}
+function resolveSpeciesSelection(rawValue) {
+  const normalized = normalizeLocalizedInput('species', rawValue, state.allSpeciesChoices || state.speciesChoices || []);
+  if (!normalized) return {baseSpeciesName: '', speciesName: '', family: null};
+  const speciesData = state.dex?.species?.get(normalized);
+  if (speciesData?.exists) {
+    const speciesName = speciesData.name;
+    const baseSpeciesName = speciesData.baseSpecies || speciesName;
+    return {
+      speciesName,
+      baseSpeciesName,
+      family: getFamilyForSpecies(speciesName) || getFamilyForSpecies(baseSpeciesName),
+    };
+  }
+  const family = getFamilyForSpecies(normalized);
+  const baseSpeciesName = family?.baseSpeciesName || normalized;
+  return {speciesName: baseSpeciesName, baseSpeciesName, family};
+}
+function getFormChoicesForSpecies(baseSpeciesName) {
+  const family = getFamilyForSpecies(baseSpeciesName);
+  if (!family) return [];
+  return family.formChoices.filter(choice => choice.selectable);
+}
+function getAutoSpriteIdForSpecies(speciesName, gender = '', baseSpeciesName = '') {
+  const family = getFamilyForSpecies(speciesName || baseSpeciesName);
+  if (!family) return '';
+  const resolvedSpecies = normalizeLocalizedInput('species', speciesName || baseSpeciesName, state.allSpeciesChoices || state.speciesChoices || []) || speciesName || baseSpeciesName || family.baseSpeciesName;
+  let assetId = family.speciesToAsset.get(resolvedSpecies) || family.speciesToAsset.get(baseSpeciesName) || family.assetBaseId;
+  if (gender && toId(resolvedSpecies) === toId(family.baseSpeciesName)) {
+    const genderAsset = family.assetFamily.genders[gender === 'F' ? 'female' : gender === 'M' ? 'male' : ''];
+    if (genderAsset) assetId = genderAsset;
+  }
+  return assetId || '';
+}
+function syncMonSprite(mon) {
+  const family = getFamilyForSpecies(mon.formSpecies || mon.species || mon.baseSpecies);
+  const familyAssetIds = family?.assetChoices?.map(choice => choice.id) || [];
+  const autoId = getAutoSpriteIdForSpecies(mon.formSpecies || mon.species, mon.gender, mon.baseSpecies);
+  if (mon.spriteOverrideId && !familyAssetIds.includes(mon.spriteOverrideId)) mon.spriteOverrideId = '';
+  mon.spriteAutoId = autoId;
+  mon.spriteId = mon.spriteOverrideId || autoId || '';
+}
+function renderFormSelectors(mon) {
+  if (!els.formeSelect || !els.spriteVariantSelect) return;
+  const family = getFamilyForSpecies(mon.formSpecies || mon.species || mon.baseSpecies);
+  const formChoices = family ? family.formChoices.filter(choice => choice.selectable) : [];
+  els.formeSelect.innerHTML = formChoices.length
+    ? formChoices.map(choice => `<option value="${choice.speciesName}">${choice.display}${choice.hasAsset ? '' : ' · 에셋 없음 / no sprite'}</option>`).join('\n')
+    : '<option value="">기본 폼만 사용 / Base form only</option>';
+  els.formeSelect.disabled = !formChoices.length;
+  const selectedForm = formChoices.find(choice => toId(choice.speciesName) === toId(mon.formSpecies || mon.species))
+    ? formChoices.find(choice => toId(choice.speciesName) === toId(mon.formSpecies || mon.species)).speciesName
+    : (formChoices[0]?.speciesName || '');
+  if (selectedForm) els.formeSelect.value = selectedForm;
+  else if (!formChoices.length) els.formeSelect.value = '';
+
+  const autoLabel = mon.spriteAutoId
+    ? `자동 / Auto (${displaySpeciesName(family?.assetToSpecies?.get(mon.spriteAutoId) || mon.formSpecies || mon.species || family?.baseSpeciesName || '')} · ${mon.spriteAutoId})`
+    : '자동 / Auto';
+  const assetOptions = family ? [{id: '', display: autoLabel}, ...family.assetChoices] : [{id: '', display: '자동 / Auto'}];
+  els.spriteVariantSelect.innerHTML = assetOptions.map(choice => `<option value="${choice.id}">${choice.display}</option>`).join('\n');
+  els.spriteVariantSelect.disabled = !family;
+  els.spriteVariantSelect.value = mon.spriteOverrideId || '';
+}
+function applySpeciesSelection(mon, speciesName) {
+  const resolved = resolveSpeciesSelection(speciesName);
+  mon.baseSpecies = resolved.baseSpeciesName || speciesName || '';
+  mon.formSpecies = resolved.speciesName || speciesName || '';
+  mon.species = mon.formSpecies || mon.baseSpecies;
+}
+function isMegaSpeciesName(speciesName = '') {
+  return /-mega/i.test(speciesName);
+}
+function getMegaCandidateForMon(mon) {
+  const family = getFamilyForSpecies(mon.baseSpecies || mon.species);
+  if (!family || !mon?.item) return null;
+  const candidates = family.formChoices.filter(choice => /-mega/i.test(choice.speciesName));
+  const matched = candidates.find(choice => {
+    const species = state.dex.species.get(choice.speciesName);
+    return species?.exists && species.requiredItem && toId(species.requiredItem) === toId(mon.item);
+  });
+  if (!matched) return null;
+  const species = state.dex.species.get(matched.speciesName);
+  return species?.exists ? {speciesName: species.name, assetId: matched.assetId || getAutoSpriteIdForSpecies(species.name, mon.gender, family.baseSpeciesName)} : null;
+}
+function calcStatsForSpeciesData(mon, speciesData) {
+  return calcStats({
+    ...mon,
+    data: {stats: {...(speciesData?.stats || {})}},
+  });
+}
+function applyBattleFormChange(mon, speciesData, spriteId = '') {
+  if (!mon || !speciesData) return;
+  const hpRatio = mon.maxHp > 0 ? mon.hp / mon.maxHp : 1;
+  const recalculated = calcStatsForSpeciesData(mon, speciesData);
+  mon.originalData = speciesData;
+  mon.baseSpecies = speciesData.baseSpecies || speciesData.name;
+  mon.species = speciesData.name;
+  mon.formSpecies = speciesData.name;
+  mon.types = [...(speciesData.types || [])];
+  mon.originalTypes = [...(speciesData.types || [])];
+  mon.ability = Object.values(speciesData.abilityMap || {}).filter(Boolean)[0] || speciesData.requiredAbility || mon.ability;
+  mon.stats = recalculated;
+  mon.maxHp = recalculated?.hp || mon.maxHp;
+  mon.hp = Math.max(1, Math.min(mon.maxHp, Math.floor(mon.maxHp * hpRatio)));
+  mon.spriteAutoId = spriteId || getAutoSpriteIdForSpecies(speciesData.name, mon.gender, mon.baseSpecies);
+  mon.spriteId = mon.spriteAutoId;
+}
+
 const state = {
   runtimeReady: false,
   dex: null,
@@ -107,6 +443,8 @@ const state = {
   validationProfile: 'open',
   manifest: null,
   speciesChoices: [],
+  allSpeciesChoices: [],
+  assetDex: null,
   playerNames: ['Player 1', 'Player 2'],
   teams: [[], []],
   selected: {player: 0, slot: 0},
@@ -325,8 +663,9 @@ function renderPickerOptions() {
     button.addEventListener('click', async () => {
       const mon = getSelectedMon();
       if (picker.mode === 'species') {
-        mon.species = option.english;
-        mon.displaySpecies = option.english;
+        applySpeciesSelection(mon, option.english);
+        mon.displaySpecies = mon.formSpecies || mon.species;
+        mon.spriteOverrideId = '';
         await hydrateSelectedSpecies();
         await renderValidation();
       } else if (picker.mode === 'move' && Number.isInteger(picker.moveIndex)) {
@@ -396,7 +735,7 @@ function deepClone(obj) {
 }
 function createEmptyMon() {
   return {
-    species: '', displaySpecies: '', spriteId: '', shiny: false, level: 100,
+    species: '', baseSpecies: '', formSpecies: '', displaySpecies: '', spriteId: '', spriteAutoId: '', spriteOverrideId: '', shiny: false, level: 100,
     nickname: '', gender: '',
     nature: 'Jolly', item: 'Leftovers', ability: '', teraType: 'normal',
     moves: ['', '', '', ''],
@@ -522,15 +861,7 @@ async function fetchJson(url) {
   return res.json();
 }
 async function loadManifest() {
-  const manifest = await fetchJson('./assets/manifest.json');
-  state.manifest = manifest;
-  const ids = Array.from(new Set(manifest.pokemon.front
-    .filter(id => !/_female$/i.test(id) && !/_male$/i.test(id) && !/_\d+$/i.test(id) && id !== '000')
-    .sort()));
-  state.speciesChoices = ids.map(id => {
-    const english = humanizeSpriteId(id);
-    return {id, english, korean: getLocalizedName('species', english), display: displaySpeciesName(english)};
-  });
+  state.manifest = await fetchJson('./assets/manifest.json');
 }
 async function pathExists(url) {
   try {
@@ -875,21 +1206,11 @@ function collectTeamDiagnostics(team, playerIndex) {
 }
 
 function getBaseSpriteId(speciesInput) {
-  const guessRaw = String(speciesInput || '').trim();
-  if (!guessRaw) return '';
-  const guess = normalizeLocalizedInput('species', guessRaw, state.speciesChoices);
-  const byId = state.speciesChoices.find(entry => entry.id === guess.toUpperCase());
-  if (byId) return byId.id;
-  const normalized = guess.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
-  const direct = state.manifest.pokemon.front.includes(normalized) ? normalized : '';
-  if (direct) return direct;
-  const labelMatch = state.speciesChoices.find(entry =>
-    toId(entry.english) === toId(guess) ||
-    toId(entry.display) === toId(guessRaw) ||
-    toId(entry.korean) === toId(guessRaw)
-  );
-  return labelMatch?.id || '';
+  const resolved = resolveSpeciesSelection(speciesInput);
+  if (!resolved.family) return '';
+  return getAutoSpriteIdForSpecies(resolved.speciesName || resolved.baseSpeciesName, '', resolved.baseSpeciesName);
 }
+
 function spritePath(spriteId, facing = 'front', shiny = false) {
   const folder = facing === 'back'
     ? shiny ? 'Back shiny' : 'Back'
@@ -1017,6 +1338,8 @@ function bindElements() {
     editorAbilityNote: document.getElementById('editor-ability-note'),
     editorAbilityEffect: document.getElementById('editor-ability-effect'),
     speciesInput: document.getElementById('species-input'),
+    formeSelect: document.getElementById('forme-select'),
+    spriteVariantSelect: document.getElementById('sprite-variant-select'),
     speciesStatus: document.getElementById('species-status'),
     nicknameInput: document.getElementById('nickname-input'),
     abilitySelect: document.getElementById('ability-select'),
@@ -1189,13 +1512,16 @@ function implementedItemNote(name) {
 }
 async function hydrateSelectedSpecies() {
   const mon = getSelectedMon();
-  const normalizedSpecies = normalizeLocalizedInput('species', mon.species || mon.displaySpecies, state.speciesChoices);
-  if (normalizedSpecies) mon.species = normalizedSpecies;
-  const spriteId = getBaseSpriteId(mon.species || mon.displaySpecies);
-  if (!spriteId) {
+  const rawSelection = mon.formSpecies || mon.species || mon.baseSpecies || mon.displaySpecies;
+  const resolved = resolveSpeciesSelection(rawSelection);
+  if (!resolved.baseSpeciesName) {
     mon.data = null;
     mon.displaySpecies = mon.species || '';
+    mon.baseSpecies = '';
+    mon.formSpecies = '';
     mon.spriteId = '';
+    mon.spriteAutoId = '';
+    mon.spriteOverrideId = '';
     mon.ability = '';
     mon.moves = mon.moves || ['', '', '', ''];
     if (!mon.teraType) mon.teraType = 'normal';
@@ -1206,32 +1532,43 @@ async function hydrateSelectedSpecies() {
     renderAll();
     return;
   }
-  mon.spriteId = spriteId;
-  mon.displaySpecies = humanizeSpriteId(spriteId);
+
+  mon.baseSpecies = resolved.baseSpeciesName;
+  mon.formSpecies = resolved.speciesName || resolved.baseSpeciesName;
+  mon.species = mon.formSpecies;
   if (els.speciesStatus) els.speciesStatus.textContent = '로컬 전투 데이터에서 포켓몬 정보를 불러오는 중… / Loading species data from local battle data…';
   try {
-    const data = await getSpeciesData(mon.displaySpecies);
+    const data = await getSpeciesData(mon.formSpecies);
     mon.data = data;
     mon.species = data.name;
+    mon.formSpecies = data.name;
+    mon.baseSpecies = data.baseSpecies || data.name;
     mon.displaySpecies = data.name;
     if (!mon.ability || !data.abilities.includes(mon.ability)) mon.ability = data.abilities[0] || '';
     if (!mon.teraType) mon.teraType = data.types[0] || 'normal';
     rebuildMoveDatalist(mon);
-    if (els.speciesStatus) els.speciesStatus.textContent = `${displaySpeciesName(data.name)} 불러옴 · ${data.types.map(displayType).join(' · ')}`;
+    syncMonSprite(mon);
+    if (els.speciesStatus) {
+      const spriteNote = mon.spriteId ? ` · 스프라이트 / sprite ${mon.spriteId}` : ' · 스프라이트 없음 / no sprite mapped';
+      els.speciesStatus.textContent = `${displaySpeciesName(data.name)} 불러옴 · ${data.types.map(displayType).join(' · ')}${spriteNote}`;
+    }
   } catch (error) {
     mon.data = null;
+    mon.displaySpecies = mon.formSpecies || mon.species || '';
+    syncMonSprite(mon);
     if (els.speciesStatus) els.speciesStatus.textContent = '로컬 전투 데이터에서 포켓몬 정보를 불러오지 못했습니다. / Species data could not be loaded from local battle data.';
   }
   saveState();
   renderAll();
 }
+
 function renderEditor() {
   const mon = getSelectedMon();
   rebuildMoveDatalist(mon);
   const displayName = mon.nickname?.trim() || displaySpeciesName(mon.displaySpecies || mon.species) || '포켓몬 미선택 / No species selected';
   els.editorTitle.textContent = `${state.playerNames[state.selected.player]} · 슬롯 / Slot ${state.selected.slot + 1}`;
-  els.editorSubtitle.textContent = '포켓몬, 기술, 능력치, 지닌 도구, 성격, 특성, 테라 타입을 설정하세요. / Set species, moves, stats, item, nature, ability, and tera type.';
-  els.speciesInput.value = displaySpeciesName(mon.displaySpecies || mon.species || '');
+  els.editorSubtitle.textContent = '포켓몬, 폼, 스프라이트, 기술, 능력치, 지닌 도구, 성격, 특성, 테라 타입을 설정하세요. / Set species, forme, sprite, moves, stats, item, nature, ability, and tera type.';
+  els.speciesInput.value = displaySpeciesName(mon.baseSpecies || mon.species || '');
   if (els.nicknameInput) els.nicknameInput.value = mon.nickname || '';
   els.itemInput.value = displayItemName(mon.item || '');
   els.levelInput.value = mon.level;
@@ -1245,8 +1582,10 @@ function renderEditor() {
   (mon.data?.types || []).forEach(type => els.editorTypeRow.appendChild(createTypePill(type)));
   renderEditorFlags(mon);
   renderItemIcon(mon.item);
+  syncMonSprite(mon);
+  renderFormSelectors(mon);
   if (els.speciesStatus) {
-    if (mon.data?.types?.length) els.speciesStatus.textContent = `${displaySpeciesName(mon.data.name)} 불러옴 · ${mon.data.types.map(displayType).join(' · ')}`;
+    if (mon.data?.types?.length) els.speciesStatus.textContent = `${displaySpeciesName(mon.data.name)} 불러옴 · ${mon.data.types.map(displayType).join(' · ')}${mon.spriteId ? ` · 스프라이트 / sprite ${mon.spriteId}` : ''}`;
     else if (mon.spriteId) els.speciesStatus.textContent = '로컬 전투 데이터에서 포켓몬 정보를 불러오지 못했습니다. / Species data could not be loaded from local battle data.';
     else if (mon.species || mon.displaySpecies) els.speciesStatus.textContent = '업로드된 스프라이트와 일치하는 포켓몬이 없습니다. / No uploaded sprite matched that species name.';
     else els.speciesStatus.textContent = '포켓몬을 선택하면 로컬 전투 데이터를 불러옵니다. / Choose a species to load local battle data.';
@@ -1309,7 +1648,7 @@ async function validateMon(mon, playerIndex, slotIndex) {
       errors.push(`${prefix}: ${speciesLabel} ${explainNonstandard(mon.data.isNonstandard)}`);
     }
     if (mon.data.battleOnly) {
-      errors.push(`${prefix}: ${speciesLabel}은(는) 전투 중 전용 폼입니다. / ${mon.data.name} is a battle-only form. ${displaySpeciesName(mon.data.battleOnly)} 또는 기본 폼을 팀 편집기에서 사용하세요. / Use ${mon.data.battleOnly} or its base form in the builder until form-change logic is added.`);
+      errors.push(`${prefix}: ${speciesLabel}은(는) 전투 중 전용 폼입니다. / ${mon.data.name} is a battle-only form. ${displaySpeciesName(Array.isArray(mon.data.battleOnly) ? mon.data.battleOnly[0] : mon.data.battleOnly)} 또는 기본 폼을 팀 편집기에서 사용하세요. / Use its listed base form in the builder until that specific runtime transformation is implemented.`);
     }
     const requiredItems = [mon.data.requiredItem, ...(mon.data.requiredItems || [])].filter(Boolean);
     if (requiredItems.length && !matchesListedName(mon.item, requiredItems)) {
@@ -1325,7 +1664,7 @@ async function validateMon(mon, playerIndex, slotIndex) {
       errors.push(`${prefix}: ${speciesLabel}은(는) ${displayType(mon.data.requiredTeraType)} 테라 타입이 필요합니다. / ${mon.data.name} requires Tera type ${titleCase(mon.data.requiredTeraType)}.`);
     }
     if (requiredItems.length || mon.data.requiredMove || mon.data.requiredAbility || mon.data.requiredTeraType) {
-      warnings.push(`${prefix}: ${speciesLabel}은(는) 조건부 폼입니다. / ${mon.data.name} is a condition-based form. 이 빌드는 선택된 폼을 직접 저장하지만 전투 중 변신 연출은 아직 없습니다. / This build stores the chosen form directly and does not yet animate mid-battle transformations.`);
+      warnings.push(`${prefix}: ${speciesLabel}은(는) 조건부 폼입니다. / ${mon.data.name} is a condition-based form. 이 빌드는 실제 업로드 스프라이트와 폼 매핑을 연결하며, 메가진화처럼 일부 변신은 전투 중 처리하지만 모든 폼 전환 연출이 완성된 것은 아닙니다. / This build now resolves uploaded sprite forms and handles some transformations such as Mega Evolution, but not every mid-battle form change is fully modeled yet.`);
     }
   }
 
@@ -1377,22 +1716,27 @@ async function validateMon(mon, playerIndex, slotIndex) {
 async function rehydrateTeams() {
   for (const team of state.teams) {
     for (const mon of team) {
-      if (!mon.species && !mon.displaySpecies) continue;
-      const spriteId = getBaseSpriteId(mon.species || mon.displaySpecies);
-      if (!spriteId) continue;
-      mon.spriteId = spriteId;
-      mon.displaySpecies = humanizeSpriteId(spriteId);
+      if (!mon.species && !mon.displaySpecies && !mon.baseSpecies) continue;
+      const source = mon.formSpecies || mon.species || mon.baseSpecies || mon.displaySpecies;
+      const resolved = resolveSpeciesSelection(source);
+      if (!resolved.baseSpeciesName) continue;
+      mon.baseSpecies = resolved.baseSpeciesName;
+      mon.formSpecies = resolved.speciesName || resolved.baseSpeciesName;
+      mon.species = mon.formSpecies;
       try {
-        const data = await getSpeciesData(mon.displaySpecies);
+        const data = await getSpeciesData(mon.formSpecies);
         mon.data = data;
+        mon.displaySpecies = data.name;
         if (!mon.ability || !data.abilities.includes(mon.ability)) mon.ability = data.abilities[0] || '';
         if (!mon.teraType) mon.teraType = data.types[0] || 'normal';
       } catch (error) {
         mon.data = null;
       }
+      syncMonSprite(mon);
     }
   }
 }
+
 
 async function renderValidation() {
   const allErrors = [];
@@ -1456,11 +1800,29 @@ function wireEditorEvents() {
   els.player2Name.addEventListener('input', syncPlayerNames);
   els.speciesInput.addEventListener('change', async () => {
     const mon = getSelectedMon();
-    const normalized = normalizeLocalizedInput('species', els.speciesInput.value.trim(), state.speciesChoices);
-    mon.species = normalized || els.speciesInput.value.trim();
-    mon.displaySpecies = mon.species;
+    applySpeciesSelection(mon, els.speciesInput.value.trim());
+    mon.displaySpecies = mon.formSpecies || mon.species;
+    mon.spriteOverrideId = '';
     await hydrateSelectedSpecies();
     await renderValidation();
+  });
+  els.formeSelect?.addEventListener('change', async () => {
+    const mon = getSelectedMon();
+    const nextForm = els.formeSelect.value || mon.baseSpecies || mon.species;
+    if (!nextForm) return;
+    mon.formSpecies = nextForm;
+    mon.species = nextForm;
+    mon.spriteOverrideId = '';
+    await hydrateSelectedSpecies();
+    await renderValidation();
+  });
+  els.spriteVariantSelect?.addEventListener('change', () => {
+    const mon = getSelectedMon();
+    mon.spriteOverrideId = els.spriteVariantSelect.value || '';
+    syncMonSprite(mon);
+    renderEditor();
+    renderRoster();
+    saveState();
   });
   els.browseSpeciesBtn?.addEventListener('click', () => showPicker('species'));
   els.nicknameInput?.addEventListener('input', () => {
@@ -1555,8 +1917,9 @@ function wireEditorEvents() {
     }
     const picked = candidates.find(choice => getBaseSpriteId(choice.english)) || candidates[0];
     if (!picked) return;
-    mon.species = picked.english;
-    mon.displaySpecies = picked.english;
+    applySpeciesSelection(mon, picked.english);
+    mon.displaySpecies = mon.formSpecies || mon.species;
+    mon.spriteOverrideId = '';
     mon.item = commonItems[Math.floor(Math.random() * commonItems.length)] || '';
     mon.nature = natureOrder[Math.floor(Math.random() * natureOrder.length)] || mon.nature;
     mon.gender = '';
@@ -1627,13 +1990,18 @@ function buildBattleMon(mon, player, slot) {
     id: `${player}-${slot}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
     player,
     slot,
-    species: mon.displaySpecies || mon.species,
+    species: mon.displaySpecies || mon.formSpecies || mon.species,
+    baseSpecies: mon.baseSpecies || mon.data?.baseSpecies || mon.data?.name || mon.species,
+    formSpecies: mon.formSpecies || mon.displaySpecies || mon.species,
     nickname: mon.nickname || '',
     gender: mon.gender || '',
     spriteId: mon.spriteId,
+    spriteAutoId: mon.spriteAutoId || mon.spriteId,
     shiny: mon.shiny,
     level: mon.level,
     nature: mon.nature,
+    evs: deepClone(mon.evs),
+    ivs: deepClone(mon.ivs),
     item: mon.item,
     ability: mon.ability,
     teraType: mon.teraType,
@@ -1650,6 +2018,7 @@ function buildBattleMon(mon, player, slot) {
     protect: false,
     fainted: false,
     teraUsed: false,
+    megaUsed: isMegaSpeciesName(mon.data?.name || mon.formSpecies || mon.species),
     volatile: {},
     originalData: mon.data,
   };
@@ -1667,6 +2036,7 @@ async function startBattle() {
       active: state.mode === 'singles' ? [0] : [0,1],
       choices: {},
       mustSwitch: [],
+      megaUsed: state.teams[player].some(mon => isMegaSpeciesName(mon.data?.name || mon.formSpecies || mon.species)),
     })),
     log: [{text: '배틀 시작! 양쪽 팀이 전장에 나왔습니다. / Battle started. Both teams enter the field.', tone: 'accent'}],
   };
@@ -1778,7 +2148,7 @@ function targetOptionsFor(player, actionMonIndex, move) {
 function ensureChoiceObjects(player) {
   const side = state.battle.players[player];
   side.active.forEach(activeIndex => {
-    if (!side.choices[activeIndex]) side.choices[activeIndex] = {kind:'', move:'', target:null, switchTo:null, tera:false};
+    if (!side.choices[activeIndex]) side.choices[activeIndex] = {kind:'', move:'', target:null, switchTo:null, tera:false, mega:false};
   });
 }
 function renderChoicePanel(player, container, statusEl, titleEl) {
@@ -1825,7 +2195,7 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
         const move = await getMoveData(moveName);
         btn.innerHTML = `<strong>${displayMoveName(move.name)}</strong><small>${displayType(move.type)} · ${move.category}${move.power ? ` · ${move.power} BP` : ''}${move.accuracy ? ` · ${move.accuracy}%` : ''}</small>`;
         btn.addEventListener('click', () => {
-          side.choices[activeIndex] = {kind:'move', move: move.name, target: null, tera: choice.tera || false};
+          side.choices[activeIndex] = {kind:'move', move: move.name, target: null, tera: choice.tera || false, mega: choice.mega || false};
           renderBattle();
         });
       } catch (error) {
@@ -1846,6 +2216,19 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
       renderBattle();
     });
     toggles.appendChild(teraBtn);
+    const megaOption = getMegaCandidateForMon(mon);
+    if (megaOption && !mon.megaUsed) {
+      const megaBtn = document.createElement('button');
+      megaBtn.type = 'button';
+      megaBtn.className = `toggle-pill ${choice.mega ? 'active' : ''}`;
+      megaBtn.textContent = `메가진화 / Mega Evolution`;
+      megaBtn.disabled = Boolean(side.megaUsed) && !choice.mega;
+      megaBtn.addEventListener('click', () => {
+        choice.mega = !choice.mega;
+        renderBattle();
+      });
+      toggles.appendChild(megaBtn);
+    }
     const switchBtn = document.createElement('button');
     switchBtn.type = 'button';
     switchBtn.className = 'toggle-pill';
@@ -1936,6 +2319,8 @@ function renderPendingChoices() {
       let text = '대기 중 / Pending';
       if (choice?.kind === 'switch' && Number.isInteger(choice.switchTo)) text = `교체 / Switch → ${displaySpeciesName(side.team[choice.switchTo].species)}`;
       if (choice?.kind === 'move') text = choice.target ? `${displayMoveName(choice.move)} → ${displaySpeciesName(battle.players[choice.target.player].team[choice.target.slot].species)}` : displayMoveName(choice.move);
+      if (choice?.kind === 'move' && choice?.mega) text += ' · 메가진화 / Mega';
+      if (choice?.kind === 'move' && choice?.tera) text += ' · 테라 / Tera';
       rows.push(`<div class="pending-card"><strong>${mon ? displaySpeciesName(mon.species) : '빈 슬롯 / Empty slot'}</strong>${text}</div>`);
     });
   });
@@ -2018,6 +2403,18 @@ async function performMove(action) {
   if (!check.ok) {
     addLog(check.reason);
     return;
+  }
+  if (choice.mega && !currentMon.megaUsed && !side.megaUsed) {
+    const megaCandidate = getMegaCandidateForMon(currentMon);
+    if (megaCandidate) {
+      const megaData = await getSpeciesData(megaCandidate.speciesName).catch(() => null);
+      if (megaData) {
+        applyBattleFormChange(currentMon, megaData, megaCandidate.assetId);
+        currentMon.megaUsed = true;
+        side.megaUsed = true;
+        addLog(`${displaySpeciesName(currentMon.baseSpecies || currentMon.species)}이(가) 메가진화했다! / ${currentMon.baseSpecies || currentMon.species} Mega Evolved into ${megaData.name}!`, 'accent');
+      }
+    }
   }
   if (choice.tera && !currentMon.teraUsed) {
     currentMon.types = [currentMon.teraType];
@@ -2300,6 +2697,7 @@ async function bootstrap() {
   await detectAssetBases();
   loadSavedState();
   await loadDataProvider();
+  buildAssetDex();
   await loadMoveNames();
   await rehydrateTeams();
   buildStaticLists();
@@ -2308,9 +2706,9 @@ async function bootstrap() {
   renderAll();
   state.runtimeReady = true;
   showRuntime(
-    '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets and localized battle data are connected.',
+    '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets, localized battle data, and form-aware sprite resolution are connected.',
     'ready',
-    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고뿐 아니라, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, event-only move bundle checks, and profile-based Species Clause / Item Clause / level-50 enforcement. 전투 판정은 아직 프로젝트의 커스텀 런타임을 사용하므로, 카트리지 수준의 완전한 시뮬레이터 통합은 다음 단계입니다. / Battle resolution is still the project’s custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
+    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고뿐 아니라, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, event-only move bundle checks, and profile-based Species Clause / Item Clause / level-50 enforcement. 전투 판정은 아직 프로젝트의 커스텀 런타임을 사용하지만, 이번 단계에서는 업로드된 PNG 파일명을 직접 읽어 폼 스프라이트를 매핑하고, 폼 선택 / 스프라이트 변형 선택 / 메가진화용 폼 스왑까지 연결했습니다. / Battle resolution still uses the project’s custom runtime, but this stage now reads the uploaded PNG naming scheme directly, wires form-aware sprite mapping, adds forme/sprite-variant controls, and swaps Mega Evolution sprites against those resolved assets.`
   );
 }
 
