@@ -1,0 +1,79 @@
+[Stage 11] Singles precision saturation pass 3 (volatile/status/end-of-turn/item suppression expansion)
+
+이번 단계에서 한 일
+1. volatile / status 정밀도를 추가 확장했다.
+   - confusion(혼란)을 구현했다.
+   - self-hit(자해), 턴 감소, 회복 타이밍을 연결했다.
+   - sleep은 field-wide Uproar가 있을 때 즉시 해제 / 새로 적용 차단되도록 보강했다.
+
+2. status-style move edge case를 더 넣었다.
+   - Yawn
+   - Leech Seed
+   - Torment
+   - Heal Block
+   - Embargo
+   - Perish Song
+   - Magnet Rise
+   - Aqua Ring
+   - Ingrain
+   - Nightmare
+   - Destiny Bond
+   - Grudge
+   - Stockpile / Swallow / Spit Up
+   - Uproar 기본 강제 지속
+
+3. Substitute와 volatile move 상호작용을 보강했다.
+   - bypasssub가 아닌 Yawn / Leech Seed / Heal Block / Embargo / Nightmare / confusion류는 대타출동 뒤에 있으면 막히게 했다.
+   - Torment처럼 bypasssub 플래그가 있는 경우는 그대로 통과하게 유지했다.
+
+4. choice / item suppression 정밀도를 보강했다.
+   - Embargo 동안 held item effect를 끄는 helper를 추가했다.
+   - Choice item lock / Choice Scarf speed / Assault Vest SpD + status lock / Eviolite / Clear Amulet / Heavy-Duty Boots / Focus Sash / Rocky Helmet / Life Orb / Leftovers / Black Sludge / Sitrus Berry / weather rock / terrain extender / light clay 등 주요 item checks를 suppression-aware로 바꿨다.
+   - Trick / Switcheroo에서 user 쪽 item도 상대 기준으로 removable check를 하도록 고쳐 Sticky Hold / irremovable edge case를 대칭적으로 맞췄다.
+
+5. end-of-turn residual을 확장했다.
+   - Aqua Ring / Ingrain heal
+   - Leech Seed drain + source-side active heal
+   - Nightmare residual
+   - Perish Song count / faint
+   - Uproar turn countdown / wake interaction
+   - Magnet Rise / Heal Block / Embargo / Torment / Yawn turn cleanup
+   - 기존 burn / poison / toxic / sand / Grassy Terrain / Leftovers / Black Sludge / Sitrus / Dynamax expiry 흐름은 유지하면서 active-only 처리 원칙 유지
+
+6. faint-trigger precision을 보강했다.
+   - Destiny Bond: 상대 공격으로 쓰러지면 attacker도 함께 기절
+   - Grudge: 쓰러뜨린 상대의 방금 쓴 move PP를 0으로 설정
+
+7. move restriction precision을 더 넣었다.
+   - Torment 때문에 같은 기술 연속 사용 금지
+   - Heal Block 때문에 healing / drain move 사용 및 회복 차단
+   - Uproar 중 강제 반복 사용
+   - forced move가 PP / Disable / Torment와 충돌하면 Struggle로 빠지는 흐름을 더 넓게 허용
+
+이번 단계에서 조심한 점
+- asset mapping 로직은 건드리지 않았다.
+- 실제 sprite filename 가정은 새로 추가하지 않았다.
+- code-only 원칙 유지
+- singles precision saturation 범위를 우선했고, doubles로 넘어가지 않았다.
+
+현재 한계
+- 아직 full cartridge parity는 아니다.
+- Torment / Encore / Choice / Disable / Uproar가 동시에 얽힌 극단 조합은 추가 정밀화 여지가 있다.
+- Heal Block / Embargo는 이번 단계에서 battle-relevant major interactions 위주로 넣었고, 모든 희귀 상호작용까지 100% 다 펼치진 않았다.
+- Stockpile-family / Destiny Bond / Grudge / Perish Song도 핵심 흐름은 맞췄지만, ultra-rare timing edge case는 후속 정밀화가 가능하다.
+- multi-turn locked move 전반(Outrage/Petal Dance/Thrash 전체 정밀화), crash / per-hit timing / more tag-based interactions는 아직 후속 우선순위다.
+
+다음 단계 추천
+1. singles precision saturation 계속
+   - Torment / Encore / Choice / Disable / Uproar / Struggle 충돌 edge case 추가
+   - Heal Block / Embargo / item suppression 예외 더 확대
+   - Leech Seed / Perish Song / Destiny Bond / Grudge / Yawn exact timing refinement
+   - more no-target / failure / immunity / timing exceptions
+
+2. move-behavior precision 추가
+   - crash damage
+   - more drain / recoil timing
+   - more multihit / per-hit secondary timing
+   - more tag-driven interactions (sound / powder / wind / slicing / pulse / punch / bite / bomb)
+
+3. 그 다음에야 doubles expansion

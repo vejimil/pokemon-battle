@@ -676,11 +676,123 @@ function currentBattleWeather() {
 function currentBattleTerrain() {
   return state.battle?.terrain || '';
 }
+function getHeldItemId(mon, {ignoreSuppression = false} = {}) {
+  if (!mon?.item) return '';
+  if (!ignoreSuppression && mon?.volatile?.embargoTurns > 0) return '';
+  return slugify(mon.item);
+}
+function isItemSuppressed(mon) {
+  return Boolean(mon?.item) && getHeldItemId(mon) === '';
+}
+function moveHasHealingEffect(move) {
+  const moveId = toId(move?.baseMoveName || move?.name || move?.id);
+  return Boolean(move?.healing > 0 || move?.drain > 0 || move?.flags?.heal || ['rest','swallow','shoreup','strengthsap','junglehealing','lifedew','floralhealing','healpulse','recover','roost','milkdrink','softboiled','moonlight','morningsun','synthesis','wish'].includes(moveId));
+}
+function anyActiveUproar() {
+  if (!state.battle) return false;
+  return state.battle.players.some(side => getActiveMonsForSide(side).some(mon => mon?.volatile?.uproarTurns > 0 && !mon.fainted));
+}
+function getSourceSideActiveRecipient(player) {
+  const side = getSideForPlayer(player);
+  return getActiveMonsForSide(side)[0] || null;
+}
+function clearStockpile(mon) {
+  if (!mon?.volatile?.stockpileLayers) return;
+  const layers = mon.volatile.stockpileLayers || 0;
+  mon.volatile.stockpileLayers = 0;
+  if (layers > 0) {
+    mon.boosts.def = clamp((mon.boosts.def || 0) - layers, -6, 6);
+    mon.boosts.spd = clamp((mon.boosts.spd || 0) - layers, -6, 6);
+  }
+}
+function clearBattleVolatile(mon, key) {
+  if (!mon?.volatile || !(key in mon.volatile)) return;
+  delete mon.volatile[key];
+}
+function isMoveBlockedByTorment(mon, moveIndex = null, moveName = '') {
+  if (!mon?.volatile?.tormentTurns || !mon?.lastMoveMeta?.moveName) return false;
+  const lastName = mon.lastMoveMeta.moveName || mon.lastMoveMeta.moveId || '';
+  if (moveName && toId(lastName) === toId(moveName)) return true;
+  if (Number.isInteger(moveIndex)) {
+    const slot = mon.moveSlots?.[moveIndex];
+    if (slot && toId(slot.name) === toId(lastName)) return true;
+  }
+  return false;
+}
+function isMoveBlockedByHealBlock(mon, move) {
+  return Boolean(mon?.volatile?.healBlockTurns > 0) && moveHasHealingEffect(move);
+}
+function tryApplyConfusion(target, turns = 0, sourceLabel = 'confusion') {
+  if (!target || target.fainted) return false;
+  target.volatile = target.volatile || {};
+  if (target.volatile.confusionTurns > 0) return false;
+  target.volatile.confusionTurns = turns || (2 + Math.floor(Math.random() * 4));
+  addLog(`${displaySpeciesName(target.species)}은(는) 혼란에 빠졌다! / ${target.species} became confused!`);
+  return true;
+}
+function applyPerishSongToTarget(target) {
+  if (!target || target.fainted) return false;
+  target.volatile = target.volatile || {};
+  if (target.volatile.perishSongTurns > 0) return false;
+  target.volatile.perishSongTurns = 4;
+  addLog(`${displaySpeciesName(target.species)}의 멸망의노래 / Perish Song 카운트가 시작되었다. / ${target.species}'s perish count fell to 3.`, 'accent');
+  return true;
+}
+function applyVolatileStatusMove(user, target, move) {
+  if (!target || target.fainted) return false;
+  const moveId = toId(move?.baseMoveName || move?.name || move?.id);
+  target.volatile = target.volatile || {};
+  if (target.volatile?.substituteHp > 0 && target.id !== user?.id && !move.flags?.bypasssub) {
+    addLog(`${displaySpeciesName(target.species)}의 대타출동 / Substitute가 ${displayMoveName(move.name)}를 막았다. / ${target.species}'s substitute blocked ${move.name}.`);
+    return true;
+  }
+  if (moveId === 'yawn') {
+    if (target.status || target.volatile.yawnTurns > 0 || anyActiveUproar()) return false;
+    target.volatile.yawnTurns = 2;
+    addLog(`${displaySpeciesName(target.species)}은(는) 하품 / Yawn 때문에 졸리기 시작했다. / ${target.species} grew drowsy.`);
+    return true;
+  }
+  if (moveId === 'leechseed') {
+    if (target.types.includes('grass') || target.volatile.leechSeeded) return false;
+    target.volatile.leechSeeded = true;
+    target.volatile.leechSeedSourcePlayer = user?.player ?? 0;
+    addLog(`${displaySpeciesName(target.species)}에게 씨뿌리기 / Leech Seed가 심어졌다. / ${target.species} was seeded.`);
+    return true;
+  }
+  if (moveId === 'torment') {
+    if (target.volatile.tormentTurns > 0) return false;
+    target.volatile.tormentTurns = 3;
+    addLog(`${displaySpeciesName(target.species)}은(는) 괴롭힘 / Torment 상태가 되었다. / ${target.species} was subjected to Torment.`, 'accent');
+    return true;
+  }
+  if (moveId === 'healblock') {
+    if (target.volatile.healBlockTurns > 0) return false;
+    target.volatile.healBlockTurns = 5;
+    addLog(`${displaySpeciesName(target.species)}은(는) 회복봉인 / Heal Block 상태가 되었다. / ${target.species} was prevented from healing.`, 'accent');
+    return true;
+  }
+  if (moveId === 'embargo') {
+    if (target.volatile.embargoTurns > 0) return false;
+    target.volatile.embargoTurns = 5;
+    clearChoiceLock(target);
+    addLog(`${displaySpeciesName(target.species)}은(는) 금제 / Embargo 상태가 되었다. / ${target.species} can no longer use its held item.`, 'accent');
+    return true;
+  }
+  if (moveId === 'nightmare') {
+    if (target.status !== 'slp' || target.volatile.nightmare) return false;
+    target.volatile.nightmare = true;
+    addLog(`${displaySpeciesName(target.species)}은(는) 악몽 / Nightmare에 시달리기 시작했다. / ${target.species} began having a nightmare.`, 'accent');
+    return true;
+  }
+  if (move.volatileStatus === 'confusion') return tryApplyConfusion(target);
+  return false;
+}
 function isGrounded(mon) {
   if (!mon || mon.fainted) return false;
+  if (mon.volatile?.magnetRiseTurns > 0) return false;
   if ((mon.types || []).includes('flying')) return false;
   if (slugify(mon.ability) === 'levitate') return false;
-  if (slugify(mon.item) === 'airballoon' && !mon.volatile?.airBalloonPopped) return false;
+  if (getHeldItemId(mon) === 'airballoon' && !mon.volatile?.airBalloonPopped) return false;
   return true;
 }
 function groundedMonsOnField() {
@@ -1102,16 +1214,16 @@ function getModifiedStat(mon, stat) {
   if (stat !== 'hp') value = Math.max(1, Math.floor(value * statStageMultiplier(mon.boosts[stat] || 0)));
   if (stat === 'spe') {
     if (mon.status === 'par') value = Math.floor(value * 0.5);
-    if (toId(mon.item) === 'choicescarf') value = Math.floor(value * 1.5);
+    if (getHeldItemId(mon) === 'choicescarf') value = Math.floor(value * 1.5);
     if (getSideForMon(mon)?.sideConditions?.tailwindTurns > 0) value = Math.floor(value * 2);
     if (state.battle?.weather === 'sun' && slugify(mon.ability) === 'chlorophyll') value = Math.floor(value * 2);
     if (state.battle?.weather === 'rain' && slugify(mon.ability) === 'swiftswim') value = Math.floor(value * 2);
     if (state.battle?.weather === 'sand' && slugify(mon.ability) === 'sandrush') value = Math.floor(value * 2);
     if (state.battle?.weather === 'snow' && slugify(mon.ability) === 'slushrush') value = Math.floor(value * 2);
   }
-  if (stat === 'def' && toId(mon.item) === 'eviolite' && mon.data?.evolves) value = Math.floor(value * 1.5);
+  if (stat === 'def' && getHeldItemId(mon) === 'eviolite' && mon.data?.evolves) value = Math.floor(value * 1.5);
   if (stat === 'def' && state.battle?.weather === 'snow' && mon.types.includes('ice')) value = Math.floor(value * 1.5);
-  if (stat === 'spd' && toId(mon.item) === 'assaultvest') value = Math.floor(value * 1.5);
+  if (stat === 'spd' && getHeldItemId(mon) === 'assaultvest') value = Math.floor(value * 1.5);
   if (stat === 'spd' && state.battle?.weather === 'sand' && mon.types.includes('rock')) value = Math.floor(value * 1.5);
   return value;
 }
@@ -1329,6 +1441,8 @@ async function getMoveData(moveName) {
     selfBoosts: {...(move.self?.boosts || move.selfBoost?.boosts || {})},
     selfAilment: move.self?.status || '',
     selfVolatileStatus: move.self?.volatileStatus || '',
+    volatileStatus: move.volatileStatus || '',
+    secondaryVolatileStatus: move.secondary?.volatileStatus || move.secondaries?.[0]?.volatileStatus || '',
   };
   moveDataCache.set(key, result);
   return result;
@@ -2439,7 +2553,7 @@ function applyStartOfBattleAbilities() {
         const foe = battle.players[1 - side.team[idx].player];
         foe.active.forEach(foeIdx => {
           const target = foe.team[foeIdx];
-          if (target && !target.fainted && slugify(target.item) !== 'clearamulet') {
+          if (target && !target.fainted && getHeldItemId(target) !== 'clearamulet') {
             target.boosts.atk = clamp((target.boosts.atk || 0) - 1, -6, 6);
             addLog(`${mon.species}'s Intimidate lowers ${target.species}'s Attack.`, 'accent');
           }
@@ -2505,7 +2619,7 @@ function isMoveDisabled(mon, moveIndex = null, moveName = '') {
 }
 function syncChoiceLockWithItem(mon) {
   if (!mon) return;
-  if (!CHOICE_ITEM_IDS.has(slugify(mon.item))) clearChoiceLock(mon);
+  if (!CHOICE_ITEM_IDS.has(getHeldItemId(mon))) clearChoiceLock(mon);
 }
 function recordLastMoveUsed(mon, move) {
   if (!mon || !move) return;
@@ -2615,6 +2729,9 @@ function clearSwitchVolatile(mon) {
     flashFire: mon.volatile?.flashFire || false,
     usedSitrus: mon.volatile?.usedSitrus || false,
   };
+  mon.lastMoveTurn = 0;
+  mon.lastMoveUsed = '';
+  mon.lastMoveMeta = null;
 }
 function getForcedMoveChoice(mon) {
   if (!mon || mon.fainted) return null;
@@ -2625,10 +2742,16 @@ function getForcedMoveChoice(mon) {
       return {moveIndex: encore.moveIndex, moveName: slot.name, source: 'encore', hasPp: slot.pp > 0};
     }
   }
-  if (mon.choiceLockMove && Number.isInteger(mon.choiceLockMoveIndex)) {
+  if (mon.choiceLockMove && Number.isInteger(mon.choiceLockMoveIndex) && CHOICE_ITEM_IDS.has(getHeldItemId(mon))) {
     const slot = mon.moveSlots?.[mon.choiceLockMoveIndex];
     if (slot && toId(slot.name) === toId(mon.choiceLockMove)) {
       return {moveIndex: mon.choiceLockMoveIndex, moveName: slot.name, source: 'choice', hasPp: slot.pp > 0};
+    }
+  }
+  if (mon.volatile?.uproarTurns > 0 && Number.isInteger(mon.volatile?.uproarMoveIndex)) {
+    const slot = mon.moveSlots?.[mon.volatile.uproarMoveIndex];
+    if (slot && toId(slot.name) === toId(mon.volatile.uproarMoveName || 'Uproar')) {
+      return {moveIndex: mon.volatile.uproarMoveIndex, moveName: slot.name, source: 'uproar', hasPp: slot.pp > 0};
     }
   }
   return null;
@@ -2660,7 +2783,7 @@ function setBattleWeather(weather, source = null, turns = null) {
     addLog('날씨 효과가 사라졌다. / The weather returned to normal.');
     return;
   }
-  const itemId = source ? slugify(source.item) : '';
+  const itemId = source ? getHeldItemId(source) : '';
   const baseTurns = turns ?? ((normalized === 'rain' && itemId === 'damprock') || (normalized === 'sun' && itemId === 'heatrock') || (normalized === 'sand' && itemId === 'smoothrock') || (normalized === 'snow' && itemId === 'icyrock') ? 8 : 5);
   state.battle.weatherTurns = baseTurns;
   addLog(`${weatherDisplayLabel(normalized)} 상태가 전장을 덮었다. / ${weatherDisplayLabel(normalized)} took over the field.`, 'accent');
@@ -2674,7 +2797,7 @@ function setBattleTerrain(terrain, source = null, turns = null) {
     addLog('지형 효과가 사라졌다. / The terrain returned to normal.');
     return;
   }
-  const itemId = source ? slugify(source.item) : '';
+  const itemId = source ? getHeldItemId(source) : '';
   const baseTurns = turns ?? (itemId === 'terrainextender' ? 8 : 5);
   state.battle.terrainTurns = baseTurns;
   addLog(`${terrainDisplayLabel(normalized)} 상태가 전장을 덮었다. / ${terrainDisplayLabel(normalized)} covered the field.`, 'accent');
@@ -2735,7 +2858,7 @@ function applyEntryHazards(player, mon) {
   const side = state.battle.players[player];
   const hazards = side?.hazards;
   if (!hazards) return;
-  if (slugify(mon.item) === 'heavydutyboots') {
+  if (getHeldItemId(mon) === 'heavydutyboots') {
     addLog(`${displaySpeciesName(mon.species)}은(는) 헤비듀티부츠 / Heavy-Duty Boots 덕분에 함정의 영향을 받지 않았다. / ${mon.species} ignored entry hazards with Heavy-Duty Boots.`);
     return;
   }
@@ -2809,6 +2932,17 @@ function applyMoveSelfEffects(user, move) {
     user.volatile = user.volatile || {};
     user.volatile.mustRecharge = true;
   }
+  if (user && !user.fainted && user.hp > 0) {
+    const moveId = toId(move?.baseMoveName || move?.name || move?.id);
+    if (moveId === 'uproar' && !user.volatile.uproarTurns) {
+      const slotIndex = user.moveSlots?.findIndex(slot => slot && toId(slot.name) === toId(move.baseMoveName || move.name)) ?? -1;
+      user.volatile.uproarTurns = 3;
+      user.volatile.uproarMoveName = move.baseMoveName || move.name;
+      user.volatile.uproarMoveIndex = slotIndex;
+    }
+    if (moveId === 'destinybond') user.volatile.destinyBond = true;
+    if (moveId === 'grudge') user.volatile.grudge = true;
+  }
   const boosts = move?.selfBoosts || {};
   const statMap = {attack:'atk', defense:'def', 'special-attack':'spa', 'special-defense':'spd', speed:'spe'};
   for (const [rawStat, amount] of Object.entries(boosts)) {
@@ -2822,6 +2956,7 @@ function applyMoveSelfEffects(user, move) {
 function afterMoveResolution(user, hitTargets, move, totalDamage) {
   const moveId = toId(move?.baseMoveName || move?.name || move?.id);
   recordLastMoveUsed(user, move);
+  applyMoveSelfEffects(user, move);
   if (move.category === 'status') return;
   if (hitTargets.length) {
     if (move.weather) {
@@ -2846,7 +2981,6 @@ function afterMoveResolution(user, hitTargets, move, totalDamage) {
     applySideConditionMove(user.player, move);
     handleSuccessfulHitUtilities(user, hitTargets, move);
   }
-  applyMoveSelfEffects(user, move);
   if (moveId === 'struggle') {
     const recoil = Math.max(1, Math.floor((user.baseMaxHp || user.maxHp) / 4));
     user.hp = Math.max(0, user.hp - recoil);
@@ -3003,10 +3137,25 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
     moveButtons.className = 'choice-buttons';
     const forcedMove = getForcedMoveChoice(mon);
     const lockedOutToStruggle = Boolean(forcedMove && (forcedMove.hasPp === false || isMoveDisabled(mon, forcedMove.moveIndex, forcedMove.moveName)));
-    const usableMoveCount = mon.moveSlots?.filter((slot, index) => slot && slot.pp > 0 && !isMoveDisabled(mon, index, slot.name)).length || 0;
+    const usableMoveCount = mon.moveSlots?.filter((slot, index) => slot && slot.pp > 0 && !isMoveDisabled(mon, index, slot.name) && !isMoveBlockedByTorment(mon, index, slot.name)).length || 0;
     const statusHints = [];
     if (mon.volatile?.tauntTurns > 0) statusHints.push(`도발 / Taunt ${mon.volatile.tauntTurns}`);
     if (mon.volatile?.substituteHp > 0) statusHints.push(`대타출동 / Substitute ${mon.volatile.substituteHp} HP`);
+    if (mon.volatile?.confusionTurns > 0) statusHints.push(`혼란 / Confusion ${mon.volatile.confusionTurns}`);
+    if (mon.volatile?.tormentTurns > 0) statusHints.push(`괴롭힘 / Torment ${mon.volatile.tormentTurns}`);
+    if (mon.volatile?.healBlockTurns > 0) statusHints.push(`회복봉인 / Heal Block ${mon.volatile.healBlockTurns}`);
+    if (mon.volatile?.embargoTurns > 0) statusHints.push(`금제 / Embargo ${mon.volatile.embargoTurns}`);
+    if (mon.volatile?.yawnTurns > 0) statusHints.push(`하품 / Yawn ${mon.volatile.yawnTurns}`);
+    if (mon.volatile?.leechSeeded) statusHints.push(`씨뿌리기 / Leech Seed`);
+    if (mon.volatile?.magnetRiseTurns > 0) statusHints.push(`전자부유 / Magnet Rise ${mon.volatile.magnetRiseTurns}`);
+    if (mon.volatile?.aquaRing) statusHints.push(`아쿠아링 / Aqua Ring`);
+    if (mon.volatile?.ingrain) statusHints.push(`뿌리박기 / Ingrain`);
+    if (mon.volatile?.nightmare) statusHints.push(`악몽 / Nightmare`);
+    if (mon.volatile?.perishSongTurns > 0) statusHints.push(`멸망의노래 / Perish Song ${mon.volatile.perishSongTurns - 1}`);
+    if (mon.volatile?.stockpileLayers > 0) statusHints.push(`비축하기 / Stockpile ${mon.volatile.stockpileLayers}`);
+    if (mon.volatile?.uproarTurns > 0) statusHints.push(`소란 / Uproar ${mon.volatile.uproarTurns}`);
+    if (mon.volatile?.destinyBond) statusHints.push(`길동무 / Destiny Bond`);
+    if (mon.volatile?.grudge) statusHints.push(`원한 / Grudge`);
     if (mon.volatile?.disable?.turns > 0) statusHints.push(`금지 / Disable → ${displayMoveName(mon.volatile.disable.moveName)} (${mon.volatile.disable.turns})`);
     if (forcedMove?.source === 'encore') statusHints.push(`앵콜 / Encore → ${displayMoveName(forcedMove.moveName)}`);
     if (forcedMove?.source === 'choice') statusHints.push(`구애 잠금 / Choice lock → ${displayMoveName(forcedMove.moveName)}`);
@@ -3031,11 +3180,13 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
         const move = await getMoveData(moveName);
         const preview = previewMoveForUi(mon, move);
         const taunted = mon.volatile?.tauntTurns > 0 && (preview?.category || move.category) === 'status';
-        const avBlocked = slugify(mon.item) === 'assaultvest' && (preview?.category || move.category) === 'status';
+        const avBlocked = getHeldItemId(mon) === 'assaultvest' && (preview?.category || move.category) === 'status';
+        const tormentBlocked = isMoveBlockedByTorment(mon, moveIndex, move.name);
+        const healBlocked = isMoveBlockedByHealBlock(mon, preview || move);
         const forcedLocked = forcedMove && forcedMove.moveIndex !== moveIndex;
         const disabledMove = isMoveDisabled(mon, moveIndex, move.name);
-        btn.innerHTML = `<strong>${displayMoveName(preview?.name || move.name)}</strong><small>${displayType(preview?.type || move.type)} · ${preview?.category || move.category}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · PP ${slot.pp}/${slot.maxPp}${taunted ? ' · 도발 봉인 / Taunt' : ''}${avBlocked ? ' · AV 봉인 / Assault Vest' : ''}${disabledMove ? ' · 금지 / Disable' : ''}${forcedLocked ? ' · 잠김 / Locked' : ''}</small>`;
-        if (taunted || avBlocked || disabledMove || forcedLocked) {
+        btn.innerHTML = `<strong>${displayMoveName(preview?.name || move.name)}</strong><small>${displayType(preview?.type || move.type)} · ${preview?.category || move.category}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · PP ${slot.pp}/${slot.maxPp}${taunted ? ' · 도발 봉인 / Taunt' : ''}${avBlocked ? ' · AV 봉인 / Assault Vest' : ''}${disabledMove ? ' · 금지 / Disable' : ''}${tormentBlocked ? ' · 괴롭힘 / Torment' : ''}${healBlocked ? ' · 회복봉인 / Heal Block' : ''}${forcedLocked ? ' · 잠김 / Locked' : ''}</small>`;
+        if (taunted || avBlocked || disabledMove || tormentBlocked || healBlocked || forcedLocked) {
           btn.disabled = true;
           btn.classList.add('disabled');
         }
@@ -3336,7 +3487,7 @@ function triggerSwitchInEffects(player, mon) {
   if (slugify(mon.ability) === 'intimidate') {
     state.battle.players[1-player].active.forEach(idx => {
       const target = state.battle.players[1-player].team[idx];
-      if (target && !target.fainted && slugify(target.item) !== 'clearamulet') {
+      if (target && !target.fainted && getHeldItemId(target) !== 'clearamulet') {
         target.boosts.atk = clamp((target.boosts.atk || 0) - 1, -6, 6);
         addLog(`${displaySpeciesName(mon.species)}의 위협 / Intimidate! ${displaySpeciesName(target.species)}의 공격이 떨어졌다. / ${mon.species}'s Intimidate lowers ${target.species}'s Attack.`, 'accent');
       }
@@ -3473,6 +3624,24 @@ async function performMove(action) {
     return;
   }
   if (check.wake) addLog(`${displaySpeciesName(currentMon.species)}은(는) 잠에서 깼다! / ${currentMon.species} woke up!`);
+  if (currentMon.volatile?.confusionTurns > 0) {
+    addLog(`${displaySpeciesName(currentMon.species)}은(는) 혼란 상태다. / ${currentMon.species} is confused.`);
+    currentMon.volatile.confusionTurns = Math.max(0, currentMon.volatile.confusionTurns - 1);
+    if (currentMon.volatile.confusionTurns <= 0) {
+      delete currentMon.volatile.confusionTurns;
+      addLog(`${displaySpeciesName(currentMon.species)}은(는) 혼란에서 회복했다. / ${currentMon.species} snapped out of confusion.`);
+    } else if (Math.random() < (1 / 3)) {
+      const selfHit = Math.max(1, Math.floor((currentMon.baseMaxHp || currentMon.maxHp) / 8));
+      currentMon.hp = Math.max(0, currentMon.hp - selfHit);
+      addLog(`${displaySpeciesName(currentMon.species)}이(가) 혼란으로 자신을 공격했다! / ${currentMon.species} hurt itself in its confusion!`);
+      if (currentMon.hp <= 0) {
+        currentMon.hp = 0;
+        currentMon.fainted = true;
+        addLog(`${displaySpeciesName(currentMon.species)}은(는) 쓰러졌다. / ${currentMon.species} fainted.`, 'win');
+      }
+      return;
+    }
+  }
 
   let moveChoice = choice;
   let resolvedBaseMove = baseMove;
@@ -3480,14 +3649,15 @@ async function performMove(action) {
   if (forcedMove && choice.moveIndex !== forcedMove.moveIndex) {
     moveChoice = {...choice, move: forcedMove.moveName, moveIndex: forcedMove.moveIndex, target: choice.target};
     resolvedBaseMove = await getMoveData(forcedMove.moveName).catch(() => STRUGGLE_MOVE);
-    addLog(`${displaySpeciesName(currentMon.species)}은(는) ${forcedMove.source === 'encore' ? '앵콜 / Encore' : '구애 잠금 / Choice lock'} 때문에 ${displayMoveName(forcedMove.moveName)}밖에 쓸 수 없다. / ${currentMon.species} is forced to use ${forcedMove.moveName}.`);
+    const forcedLabel = forcedMove.source === 'encore' ? '앵콜 / Encore' : (forcedMove.source === 'choice' ? '구애 잠금 / Choice lock' : '소란 / Uproar');
+    addLog(`${displaySpeciesName(currentMon.species)}은(는) ${forcedLabel} 때문에 ${displayMoveName(forcedMove.moveName)}밖에 쓸 수 없다. / ${currentMon.species} is forced to use ${forcedMove.moveName}.`);
   }
   const moveSlot = getBattleMoveSlot(currentMon, moveChoice);
   if (moveChoice.moveIndex === -1) {
     moveChoice = {...choice, tera:false, mega:false, z:false, dynamax:false};
     resolvedBaseMove = STRUGGLE_MOVE;
   } else if (!moveSlot || moveSlot.pp <= 0) {
-    if (hasUsableMoves(currentMon) && !(forcedMove && (forcedMove.source === 'encore' || forcedMove.source === 'choice'))) {
+    if (hasUsableMoves(currentMon) && !forcedMove) {
       addLog(`${displaySpeciesName(currentMon.species)}의 선택한 기술 PP가 없다. / ${currentMon.species} has no PP left for that move.`);
       return;
     }
@@ -3505,8 +3675,24 @@ async function performMove(action) {
       return;
     }
   }
+  const tormentedMove = moveChoice.moveIndex !== -1 && isMoveBlockedByTorment(currentMon, moveChoice.moveIndex, resolvedBaseMove?.name || moveChoice.move);
+  if (tormentedMove) {
+    if (forcedMove) {
+      moveChoice = {...moveChoice, move: STRUGGLE_MOVE.name, moveIndex: -1, tera: false, mega: false, z: false, dynamax: false};
+      resolvedBaseMove = STRUGGLE_MOVE;
+    } else {
+      addLog(`${displaySpeciesName(currentMon.species)}은(는) 괴롭힘 / Torment 때문에 같은 기술을 연속으로 사용할 수 없다. / ${currentMon.species} can't use the same move twice due to Torment.`);
+      return;
+    }
+  }
+  if (moveChoice.moveIndex !== -1 && isMoveBlockedByHealBlock(currentMon, resolvedBaseMove)) {
+    addLog(`${displaySpeciesName(currentMon.species)}은(는) 회복봉인 / Heal Block 때문에 그 기술을 사용할 수 없다. / ${currentMon.species} can't use that move because of Heal Block.`);
+    return;
+  }
 
   const moveId = toId(resolvedBaseMove?.baseMoveName || resolvedBaseMove?.name || resolvedBaseMove?.id);
+  if (currentMon.volatile?.destinyBond && moveId !== 'destinybond') delete currentMon.volatile.destinyBond;
+  if (currentMon.volatile?.grudge && moveId !== 'grudge') delete currentMon.volatile.grudge;
   const isProtectMove = PROTECT_MOVE_IDS.has(moveId);
   currentMon.usedProtectMoveThisTurn = isProtectMove;
   if (!isProtectMove) currentMon.protectCounter = 0;
@@ -3542,9 +3728,18 @@ async function performMove(action) {
     addLog(`${displaySpeciesName(currentMon.species)}은(는) 도발 / Taunt 때문에 변화기를 사용할 수 없다. / ${currentMon.species} can't use status moves due to Taunt.`);
     return;
   }
-  if (slugify(currentMon.item) === 'assaultvest' && move.category === 'status') {
+  if (getHeldItemId(currentMon) === 'assaultvest' && move.category === 'status') {
     addLog(`${displaySpeciesName(currentMon.species)}은(는) 돌격조끼 / Assault Vest 때문에 변화기를 사용할 수 없다. / ${currentMon.species} can't use status moves while holding Assault Vest.`);
     return;
+  }
+  if (moveId === 'spitup') {
+    const stockpileLayers = currentMon.volatile?.stockpileLayers || 0;
+    if (!stockpileLayers) {
+      addLog('토해내기 / Spit Up가 실패했다. / Spit Up failed.');
+      return;
+    }
+    move.power = 100 * stockpileLayers;
+    clearStockpile(currentMon);
   }
   if (move.useZ) side.zUsed = true;
   if (moveChoice.moveIndex !== -1) consumeMovePp(currentMon, moveChoice);
@@ -3565,10 +3760,10 @@ async function performMove(action) {
       return;
     }
   }
-  if (!move.useZ && !move.useMax && CHOICE_ITEM_IDS.has(slugify(currentMon.item)) && moveChoice.moveIndex >= 0) {
+  if (!move.useZ && !move.useMax && CHOICE_ITEM_IDS.has(getHeldItemId(currentMon)) && moveChoice.moveIndex >= 0) {
     currentMon.choiceLockMove = resolvedBaseMove.name;
     currentMon.choiceLockMoveIndex = moveChoice.moveIndex;
-    currentMon.choiceLockSource = slugify(currentMon.item);
+    currentMon.choiceLockSource = getHeldItemId(currentMon);
   }
   if (isProtectMove) {
     const successRate = currentMon.protectCounter > 0 ? (1 / (3 ** currentMon.protectCounter)) : 1;
@@ -3647,12 +3842,12 @@ async function performMove(action) {
         damage = 0;
         break;
       }
-      if (slugify(target.item) === 'airballoon' && !target.volatile?.airBalloonPopped && getBattleMoveType(currentMon, move) === 'ground') {
+      if (getHeldItemId(target) === 'airballoon' && !target.volatile?.airBalloonPopped && getBattleMoveType(currentMon, move) === 'ground') {
         addLog(`${displaySpeciesName(target.species)}의 풍선 / Air Balloon 때문에 땅 타입 기술이 통하지 않았다. / ${target.species}'s Air Balloon made it immune to the Ground-type attack.`);
         damage = 0;
         break;
       }
-      if (slugify(target.item) === 'focussash' && target.hp === target.maxHp && damage >= target.hp) {
+      if (getHeldItemId(target) === 'focussash' && target.hp === target.maxHp && damage >= target.hp) {
         damage = target.hp - 1;
         addLog(`${displaySpeciesName(target.species)}은(는) 기합의띠 / Focus Sash로 버텼다! / ${target.species} endured with Focus Sash!`, 'accent');
       }
@@ -3673,16 +3868,20 @@ async function performMove(action) {
       lastDamageInfo = damageInfo;
       if (damageInfo.crit) addLog('급소에 맞았다! / A critical hit!');
       if (move.drain && damage > 0) {
-        const heal = Math.max(1, Math.floor(damage * (move.drain / 100)));
-        currentMon.hp = Math.min(currentMon.maxHp, currentMon.hp + heal);
-        addLog(`${displaySpeciesName(currentMon.species)}의 HP가 ${heal} 회복되었다. / ${currentMon.species} restored ${heal} HP.`);
+        if (currentMon.volatile?.healBlockTurns > 0) {
+          addLog(`${displaySpeciesName(currentMon.species)}은(는) 회복봉인 / Heal Block 때문에 HP를 회복할 수 없었다. / ${currentMon.species} could not heal because of Heal Block.`);
+        } else {
+          const heal = Math.max(1, Math.floor(damage * (move.drain / 100)));
+          currentMon.hp = Math.min(currentMon.maxHp, currentMon.hp + heal);
+          addLog(`${displaySpeciesName(currentMon.species)}의 HP가 ${heal} 회복되었다. / ${currentMon.species} restored ${heal} HP.`);
+        }
       }
       maybeApplySecondary(currentMon, target, move);
       if (moveId === 'knockoff' && damage > 0) {
         const removedItem = tryRemoveHeldItem(target, currentMon, 'knockoff');
         if (removedItem) addLog(`${displaySpeciesName(target.species)}의 ${displayItemName(removedItem)}이(가) 탁쳐서떨구기 / Knock Off로 떨어졌다. / ${target.species} lost its ${removedItem} to Knock Off.`);
       }
-      if (!target.volatile?.airBalloonPopped && slugify(target.item) === 'airballoon' && damage > 0) {
+      if (!target.volatile?.airBalloonPopped && getHeldItemId(target) === 'airballoon' && damage > 0) {
         target.volatile.airBalloonPopped = true;
         addLog(`${displaySpeciesName(target.species)}의 풍선 / Air Balloon이 터졌다! / ${target.species}'s Air Balloon popped!`);
       }
@@ -3690,6 +3889,20 @@ async function performMove(action) {
         target.fainted = true;
         target.hp = 0;
         addLog(`${displaySpeciesName(target.species)}은(는) 쓰러졌다. / ${target.species} fainted.`, 'win');
+        if (target.volatile?.grudge && moveChoice.moveIndex >= 0) {
+          const attackerSlot = currentMon.moveSlots?.[moveChoice.moveIndex];
+          if (attackerSlot) {
+            attackerSlot.pp = 0;
+            addLog(`${displaySpeciesName(target.species)}의 원한 / Grudge 때문에 ${displayMoveName(attackerSlot.name)}의 PP가 0이 되었다. / ${attackerSlot.name} lost all its PP due to Grudge.`);
+          }
+          delete target.volatile.grudge;
+        }
+        if (target.volatile?.destinyBond && currentMon.hp > 0) {
+          currentMon.hp = 0;
+          currentMon.fainted = true;
+          addLog(`${displaySpeciesName(target.species)}의 길동무 / Destiny Bond로 ${displaySpeciesName(currentMon.species)}도 함께 쓰러졌다. / ${currentMon.species} took its foe down with Destiny Bond!`, 'win');
+          delete target.volatile.destinyBond;
+        }
         break;
       }
     }
@@ -3697,12 +3910,12 @@ async function performMove(action) {
       addLog(`${displaySpeciesName(target.species)}의 HP가 ${totalDamage}만큼 줄었다${lastDamageInfo?.effectivenessText ? ` (${lastDamageInfo.effectivenessText})` : ''}. / ${target.species} lost ${totalDamage} HP${lastDamageInfo?.effectivenessText ? ` (${lastDamageInfo.effectivenessText})` : ''}.`);
       aliveTargets.push(target);
     }
-    if (slugify(currentMon.item) === 'lifeorb' && totalDamage > 0) {
+    if (getHeldItemId(currentMon) === 'lifeorb' && totalDamage > 0) {
       const recoil = Math.max(1, Math.floor(currentMon.baseMaxHp / 10));
       currentMon.hp = Math.max(0, currentMon.hp - recoil);
       addLog(`${displaySpeciesName(currentMon.species)}은(는) 생명의구슬 / Life Orb 반동으로 데미지를 입었다. / ${currentMon.species} was hurt by Life Orb.`);
     }
-    if (slugify(target.item) === 'rockyhelmet' && totalDamage > 0 && move.category === 'physical' && move.flags?.contact) {
+    if (getHeldItemId(target) === 'rockyhelmet' && totalDamage > 0 && move.category === 'physical' && move.flags?.contact) {
       const recoil = Math.max(1, Math.floor(currentMon.baseMaxHp / 6));
       currentMon.hp = Math.max(0, currentMon.hp - recoil);
       addLog(`${displaySpeciesName(currentMon.species)}은(는) 울퉁불퉁멧 / Rocky Helmet 때문에 데미지를 입었다. / ${currentMon.species} was hurt by Rocky Helmet.`);
@@ -3727,6 +3940,11 @@ function canMove(mon) {
     return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 풀죽어서 움직일 수 없다. / ${mon.species} flinched and couldn't move.`};
   }
   if (mon.status === 'slp') {
+    if (anyActiveUproar()) {
+      mon.status = '';
+      mon.sleepTurns = 0;
+      return {ok:true, wake:true};
+    }
     mon.sleepTurns = Math.max(0, (mon.sleepTurns || 1) - 1);
     if (mon.sleepTurns > 0) return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 잠들어 있다. / ${mon.species} is asleep.`};
     mon.status = '';
@@ -3781,12 +3999,12 @@ function applyStatusMove(user, targets, move) {
     return;
   }
   if (moveId === 'reflect' && userSide?.sideConditions) {
-    userSide.sideConditions.reflectTurns = slugify(user.item) === 'lightclay' ? 8 : 5;
+    userSide.sideConditions.reflectTurns = getHeldItemId(user) === 'lightclay' ? 8 : 5;
     addLog(`${state.battle.players[user.player].name} 측에 리플렉터 / Reflect가 전개되었다. / Reflect protected ${state.battle.players[user.player].name}'s side.`, 'accent');
     return;
   }
   if (moveId === 'lightscreen' && userSide?.sideConditions) {
-    userSide.sideConditions.lightScreenTurns = slugify(user.item) === 'lightclay' ? 8 : 5;
+    userSide.sideConditions.lightScreenTurns = getHeldItemId(user) === 'lightclay' ? 8 : 5;
     addLog(`${state.battle.players[user.player].name} 측에 빛의장막 / Light Screen이 전개되었다. / Light Screen protected ${state.battle.players[user.player].name}'s side.`, 'accent');
     return;
   }
@@ -3795,7 +4013,7 @@ function applyStatusMove(user, targets, move) {
       addLog('오로라베일 / Aurora Veil은 눈 상태에서만 사용할 수 있다. / Aurora Veil only works during snow.');
       return;
     }
-    userSide.sideConditions.auroraVeilTurns = slugify(user.item) === 'lightclay' ? 8 : 5;
+    userSide.sideConditions.auroraVeilTurns = getHeldItemId(user) === 'lightclay' ? 8 : 5;
     addLog(`${state.battle.players[user.player].name} 측에 오로라베일 / Aurora Veil이 전개되었다. / Aurora Veil protected ${state.battle.players[user.player].name}'s side.`, 'accent');
     return;
   }
@@ -3882,7 +4100,7 @@ function applyStatusMove(user, targets, move) {
       addLog(`${displayMoveName(move.name)}가 실패했다. / ${move.name} failed.`);
       return;
     }
-    if ((targetItem && !canRemoveHeldItem(target, user)) || (userItem && !canRemoveHeldItem(user, user))) {
+    if ((targetItem && !canRemoveHeldItem(target, user)) || (userItem && !canRemoveHeldItem(user, target))) {
       if (targetItem && slugify(target.ability) === 'stickyhold') {
         addLog(`${displaySpeciesName(target.species)}의 점착 / Sticky Hold 때문에 도구를 바꿀 수 없었다. / ${target.species}'s Sticky Hold prevented the item swap.`);
       } else {
@@ -3897,6 +4115,82 @@ function applyStatusMove(user, targets, move) {
     addLog(`${displaySpeciesName(user.species)}와(과) ${displaySpeciesName(target.species)}의 도구가 뒤바뀌었다. / ${user.species} and ${target.species} switched items.`, 'accent');
     return;
   }
+  if (moveId === 'perishsong') {
+    const applied = targets.filter(target => applyPerishSongToTarget(target)).length;
+    if (!applied) addLog('멸망의노래 / Perish Song가 실패했다. / Perish Song failed.');
+    return;
+  }
+  if (moveId === 'magnetrise') {
+    if (user.volatile?.magnetRiseTurns > 0) {
+      addLog('전자부유 / Magnet Rise가 실패했다. / Magnet Rise failed.');
+      return;
+    }
+    user.volatile.magnetRiseTurns = 5;
+    addLog(`${displaySpeciesName(user.species)}이(가) 전자부유 / Magnet Rise로 공중에 떴다. / ${user.species} levitated with Magnet Rise.`, 'accent');
+    return;
+  }
+  if (moveId === 'aquaring') {
+    if (user.volatile?.aquaRing) {
+      addLog('아쿠아링 / Aqua Ring이 실패했다. / Aqua Ring failed.');
+      return;
+    }
+    user.volatile.aquaRing = true;
+    addLog(`${displaySpeciesName(user.species)} 주변에 아쿠아링 / Aqua Ring이 생겼다. / ${user.species} surrounded itself with a veil of water.`, 'accent');
+    return;
+  }
+  if (moveId === 'ingrain') {
+    if (user.volatile?.ingrain) {
+      addLog('뿌리박기 / Ingrain이 실패했다. / Ingrain failed.');
+      return;
+    }
+    user.volatile.ingrain = true;
+    addLog(`${displaySpeciesName(user.species)}이(가) 뿌리를 내렸다. / ${user.species} planted its roots.`, 'accent');
+    return;
+  }
+  if (moveId === 'stockpile') {
+    const layers = user.volatile?.stockpileLayers || 0;
+    if (layers >= 3) {
+      addLog('비축하기 / Stockpile이 실패했다. / Stockpile failed.');
+      return;
+    }
+    user.volatile.stockpileLayers = layers + 1;
+    user.boosts.def = clamp((user.boosts.def || 0) + 1, -6, 6);
+    user.boosts.spd = clamp((user.boosts.spd || 0) + 1, -6, 6);
+    addLog(`${displaySpeciesName(user.species)}이(가) 비축하기 / Stockpile을 ${user.volatile.stockpileLayers}회 쌓았다. / ${user.species} stockpiled ${user.volatile.stockpileLayers}.`, 'accent');
+    return;
+  }
+  if (moveId === 'swallow') {
+    const layers = user.volatile?.stockpileLayers || 0;
+    if (!layers) {
+      addLog('꿀꺽 / Swallow가 실패했다. / Swallow failed.');
+      return;
+    }
+    if (user.volatile?.healBlockTurns > 0) {
+      addLog(`${displaySpeciesName(user.species)}은(는) 회복봉인 / Heal Block 때문에 HP를 회복할 수 없다. / ${user.species} cannot restore HP because of Heal Block.`);
+      return;
+    }
+    const ratio = layers === 1 ? 0.25 : (layers === 2 ? 0.5 : 1);
+    const heal = Math.max(1, Math.floor((user.baseMaxHp || user.maxHp) * ratio));
+    user.hp = Math.min(user.maxHp, user.hp + heal);
+    clearStockpile(user);
+    addLog(`${displaySpeciesName(user.species)}이(가) 꿀꺽 / Swallow로 HP를 회복했다. / ${user.species} restored HP with Swallow.`);
+    return;
+  }
+  if (moveId === 'spitup') {
+    const target = targets.find(Boolean);
+    const layers = user.volatile?.stockpileLayers || 0;
+    if (!target || !layers) {
+      addLog('토해내기 / Spit Up가 실패했다. / Spit Up failed.');
+      return;
+    }
+    move.power = 100 * layers;
+    clearStockpile(user);
+  }
+  if (['yawn','leechseed','torment','healblock','embargo','nightmare'].includes(moveId) || move.volatileStatus === 'confusion') {
+    const applied = applyVolatileStatusMove(user, targets.find(Boolean), move);
+    if (!applied) addLog(`${displayMoveName(move.name)}가 실패했다. / ${move.name} failed.`);
+    return;
+  }
   if (moveId === 'defog') {
     handleSuccessfulHitUtilities(user, targets, move);
     return;
@@ -3906,6 +4200,10 @@ function applyStatusMove(user, targets, move) {
     return;
   }
   if (move.healing) {
+    if (user.volatile?.healBlockTurns > 0) {
+      addLog(`${displaySpeciesName(user.species)}은(는) 회복봉인 / Heal Block 때문에 HP를 회복할 수 없다. / ${user.species} cannot restore HP because of Heal Block.`);
+      return;
+    }
     const healBase = user.baseMaxHp || user.maxHp;
     const heal = Math.max(1, Math.floor(healBase * (move.healing / 100)));
     user.hp = Math.min(user.maxHp, user.hp + heal);
@@ -3948,6 +4246,9 @@ function maybeApplySecondary(user, target, move) {
     target.volatile.flinch = true;
     addLog(`${displaySpeciesName(target.species)}은(는) 풀죽었다! / ${target.species} flinched!`);
   }
+  if (move.secondaryVolatileStatus === 'confusion' && Math.random() * 100 < (move.effectChance || 100)) {
+    tryApplyConfusion(target);
+  }
   if (move.statChanges.length && move.statChance > 0 && Math.random() * 100 < move.statChance) {
     move.statChanges.forEach(change => {
       const statMap = {attack:'atk', defense:'def', 'special-attack':'spa', 'special-defense':'spd', speed:'spe'};
@@ -3963,6 +4264,10 @@ function applyAilment(target, ailment, chance) {
   const map = {burn:'brn', paralysis:'par', poison:'psn', sleep:'slp', freeze:'frz', 'bad-poison':'tox'};
   const status = map[ailment] || '';
   if (!status) return;
+  if (status === 'slp' && anyActiveUproar()) {
+    addLog('소란 / Uproar 때문에 잠들지 않았다. / The uproar kept it awake.');
+    return;
+  }
   if (state.battle?.terrain === 'electricterrain' && status === 'slp' && isGrounded(target)) {
     addLog(`${terrainDisplayLabel('electricterrain')} 때문에 잠들지 않았다. / Electric Terrain prevented sleep.`);
     return;
@@ -3994,15 +4299,15 @@ function computeDamage(attacker, defender, move, spread = false) {
   if (moveId === 'expandingforce' && terrain === 'psychicterrain' && isGrounded(attacker)) power = Math.floor(power * 1.5);
   if ((moveId === 'earthquake' || moveId === 'bulldoze' || moveId === 'magnitude') && terrain === 'grassyterrain' && isGrounded(defender)) power = Math.floor(power * 0.5);
   if (slugify(attacker.ability) === 'technician' && power <= 60 && !move.useZ && !move.useMax) power = Math.floor(power * 1.5);
-  if (slugify(attacker.item) === 'choiceband' && physical) atk = Math.floor(atk * 1.5);
-  if (slugify(attacker.item) === 'choicespecs' && !physical) atk = Math.floor(atk * 1.5);
+  if (getHeldItemId(attacker) === 'choiceband' && physical) atk = Math.floor(atk * 1.5);
+  if (getHeldItemId(attacker) === 'choicespecs' && !physical) atk = Math.floor(atk * 1.5);
   if (moveId === 'knockoff' && defender?.item && canRemoveHeldItem(defender, attacker)) power = Math.floor(power * 1.5);
-  if (slugify(attacker.item) === 'muscleband' && physical) power = Math.floor(power * 1.1);
-  if (slugify(attacker.item) === 'wiseglasses' && !physical) power = Math.floor(power * 1.1);
+  if (getHeldItemId(attacker) === 'muscleband' && physical) power = Math.floor(power * 1.1);
+  if (getHeldItemId(attacker) === 'wiseglasses' && !physical) power = Math.floor(power * 1.1);
   const typeBoostItems = {
     mysticwater:'water', charcoal:'fire', miracleseed:'grass', magnet:'electric', blackglasses:'dark', nevermeltice:'ice', softsand:'ground', dragonfang:'dragon', pixieplate:'fairy', poisonbarb:'poison', silverpowder:'bug', spelltag:'ghost', sharpbeak:'flying', twistedspoon:'psychic', hardstone:'rock', silkscarf:'normal', metalcoat:'steel'
   };
-  if (typeBoostItems[slugify(attacker.item)] === moveType) power = Math.floor(power * 1.2);
+  if (typeBoostItems[getHeldItemId(attacker)] === moveType) power = Math.floor(power * 1.2);
   if (weather === 'sun') {
     if (moveType === 'fire') power = Math.floor(power * 1.5);
     if (moveType === 'water') power = Math.floor(power * 0.5);
@@ -4024,8 +4329,8 @@ function computeDamage(attacker, defender, move, spread = false) {
   if (slugify(attacker.ability) === 'flashfire' && attacker.volatile.flashFire && moveType === 'fire') damage = Math.floor(damage * 1.5);
   let effectiveness = typeEffectiveness(moveType, defender);
   if (terrain === 'mistyterrain' && moveType === 'dragon' && isGrounded(defender)) damage = Math.floor(damage * 0.5);
-  if (slugify(attacker.item) === 'expertbelt' && effectiveness > 1) damage = Math.floor(damage * 1.2);
-  const critChance = move.critRate > 0 ? Math.min(50, 12.5 * (move.critRate + 1)) : (slugify(attacker.item) === 'scopelens' ? 12.5 : 4.167);
+  if (getHeldItemId(attacker) === 'expertbelt' && effectiveness > 1) damage = Math.floor(damage * 1.2);
+  const critChance = move.critRate > 0 ? Math.min(50, 12.5 * (move.critRate + 1)) : (getHeldItemId(attacker) === 'scopelens' ? 12.5 : 4.167);
   const crit = Math.random() * 100 < critChance;
   if (crit) damage = Math.floor(damage * 1.5);
   if (spread) damage = Math.floor(damage * 0.75);
@@ -4071,6 +4376,37 @@ function endOfTurn() {
         addLog(`${displaySpeciesName(mon.species)}은(는) 쓰러졌다. / ${mon.species} fainted.`, 'win');
         return true;
       };
+      if (mon.volatile?.aquaRing && mon.hp > 0) {
+        const heal = Math.max(1, Math.floor(hpBase / 16));
+        mon.hp = Math.min(mon.maxHp, mon.hp + heal);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 아쿠아링 / Aqua Ring으로 HP를 회복했다. / ${mon.species} restored HP with Aqua Ring.`);
+      }
+      if (mon.volatile?.ingrain && mon.hp > 0) {
+        const heal = Math.max(1, Math.floor(hpBase / 16));
+        mon.hp = Math.min(mon.maxHp, mon.hp + heal);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 뿌리박기 / Ingrain으로 HP를 회복했다. / ${mon.species} restored HP with Ingrain.`);
+      }
+      if (mon.volatile?.leechSeeded && mon.hp > 0) {
+        const drain = Math.max(1, Math.floor(hpBase / 8));
+        mon.hp = Math.max(0, mon.hp - drain);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 씨뿌리기 / Leech Seed 때문에 HP를 빼앗겼다. / ${mon.species}'s health was sapped by Leech Seed.`);
+        const recipient = getSourceSideActiveRecipient(mon.volatile.leechSeedSourcePlayer);
+        if (recipient && !recipient.fainted && recipient.hp > 0) {
+          recipient.hp = Math.min(recipient.maxHp, recipient.hp + drain);
+          addLog(`${displaySpeciesName(recipient.species)}이(가) 씨뿌리기 / Leech Seed로 HP를 회복했다. / ${recipient.species} absorbed health with Leech Seed.`);
+        }
+        if (faintIfNeeded()) return;
+      }
+      if (mon.volatile?.nightmare) {
+        if (mon.status === 'slp') {
+          const dmg = Math.max(1, Math.floor(hpBase / 4));
+          mon.hp = Math.max(0, mon.hp - dmg);
+          addLog(`${displaySpeciesName(mon.species)}은(는) 악몽 / Nightmare 때문에 괴로워했다. / ${mon.species} is locked in a nightmare.`);
+          if (faintIfNeeded()) return;
+        } else {
+          delete mon.volatile.nightmare;
+        }
+      }
       if (battle.weather === 'sand' && !['rock','ground','steel'].some(type => mon.types.includes(type))) {
         const dmg = Math.max(1, Math.floor(hpBase / 16));
         mon.hp = Math.max(0, mon.hp - dmg);
@@ -4102,12 +4438,12 @@ function endOfTurn() {
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
         addLog(`${displaySpeciesName(mon.species)}은(는) 그래스필드 / Grassy Terrain으로 HP를 회복했다. / ${mon.species} was healed by Grassy Terrain.`);
       }
-      if (slugify(mon.item) === 'leftovers' && !mon.fainted) {
+      if (getHeldItemId(mon) === 'leftovers' && !mon.fainted) {
         const heal = Math.max(1, Math.floor(hpBase / 16));
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
         addLog(`${displaySpeciesName(mon.species)}은(는) 먹다남은음식 / Leftovers로 HP를 조금 회복했다. / ${mon.species} restored a little HP with Leftovers.`);
       }
-      if (slugify(mon.item) === 'blacksludge') {
+      if (getHeldItemId(mon) === 'blacksludge') {
         const amount = Math.max(1, Math.floor(hpBase / 16));
         if (mon.types.includes('poison')) {
           mon.hp = Math.min(mon.maxHp, mon.hp + amount);
@@ -4118,7 +4454,7 @@ function endOfTurn() {
           if (faintIfNeeded()) return;
         }
       }
-      if (slugify(mon.item) === 'sitrusberry' && mon.hp > 0 && mon.hp <= mon.maxHp / 2 && !mon.volatile.usedSitrus) {
+      if (getHeldItemId(mon) === 'sitrusberry' && mon.hp > 0 && mon.hp <= mon.maxHp / 2 && !mon.volatile.usedSitrus) {
         const heal = Math.max(1, Math.floor(hpBase / 4));
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
         mon.volatile.usedSitrus = true;
@@ -4140,13 +4476,56 @@ function endOfTurn() {
     getActiveMonsForSide(side).forEach(mon => {
       if (mon.volatile?.tauntTurns > 0) mon.volatile.tauntTurns = Math.max(0, mon.volatile.tauntTurns - 1);
       if (mon.volatile?.tauntTurns === 0) delete mon.volatile.tauntTurns;
+      if (mon.volatile?.tormentTurns > 0) mon.volatile.tormentTurns = Math.max(0, mon.volatile.tormentTurns - 1);
+      if (mon.volatile?.tormentTurns === 0) delete mon.volatile.tormentTurns;
+      if (mon.volatile?.healBlockTurns > 0) mon.volatile.healBlockTurns = Math.max(0, mon.volatile.healBlockTurns - 1);
+      if (mon.volatile?.healBlockTurns === 0) delete mon.volatile.healBlockTurns;
+      if (mon.volatile?.embargoTurns > 0) mon.volatile.embargoTurns = Math.max(0, mon.volatile.embargoTurns - 1);
+      if (mon.volatile?.embargoTurns === 0) delete mon.volatile.embargoTurns;
+      if (mon.volatile?.magnetRiseTurns > 0) mon.volatile.magnetRiseTurns = Math.max(0, mon.volatile.magnetRiseTurns - 1);
+      if (mon.volatile?.magnetRiseTurns === 0) delete mon.volatile.magnetRiseTurns;
+      if (mon.volatile?.yawnTurns > 0) {
+        mon.volatile.yawnTurns = Math.max(0, mon.volatile.yawnTurns - 1);
+        if (mon.volatile.yawnTurns === 0) {
+          delete mon.volatile.yawnTurns;
+          if (!mon.status && !anyActiveUproar()) applyAilment(mon, 'sleep', 100);
+        }
+      }
       if (mon.volatile?.encore?.turns > 0) mon.volatile.encore.turns = Math.max(0, mon.volatile.encore.turns - 1);
       if (mon.volatile?.encore?.turns === 0) delete mon.volatile.encore;
       if (mon.volatile?.disable?.turns > 0) mon.volatile.disable.turns = Math.max(0, mon.volatile.disable.turns - 1);
       if (mon.volatile?.disable?.turns === 0) delete mon.volatile.disable;
+      if (mon.volatile?.perishSongTurns > 0) {
+        mon.volatile.perishSongTurns = Math.max(0, mon.volatile.perishSongTurns - 1);
+        if (mon.volatile.perishSongTurns > 0) {
+          addLog(`${displaySpeciesName(mon.species)}의 멸망의노래 / Perish Song 카운트가 ${mon.volatile.perishSongTurns - 1}(으)로 줄었다. / ${mon.species}'s perish count fell to ${Math.max(0, mon.volatile.perishSongTurns - 1)}.`);
+        } else {
+          mon.hp = 0;
+          mon.fainted = true;
+          addLog(`${displaySpeciesName(mon.species)}은(는) 멸망의노래 / Perish Song 때문에 쓰러졌다. / ${mon.species} perished!`, 'win');
+        }
+      }
+      if (mon.volatile?.uproarTurns > 0) {
+        mon.volatile.uproarTurns = Math.max(0, mon.volatile.uproarTurns - 1);
+        if (mon.volatile.uproarTurns <= 0) {
+          delete mon.volatile.uproarTurns;
+          delete mon.volatile.uproarMoveIndex;
+          delete mon.volatile.uproarMoveName;
+          addLog(`${displaySpeciesName(mon.species)}의 소란 / Uproar가 멈췄다. / ${mon.species} calmed down.`);
+        }
+      }
       if (mon.volatile?.flinch) delete mon.volatile.flinch;
     });
   });
+  if (anyActiveUproar()) {
+    battle.players.forEach(side => getActiveMonsForSide(side).forEach(mon => {
+      if (mon.status === 'slp') {
+        mon.status = '';
+        mon.sleepTurns = 0;
+        addLog(`${displaySpeciesName(mon.species)}은(는) 소란 / Uproar 때문에 잠에서 깼다! / ${mon.species} woke up because of the uproar!`);
+      }
+    }));
+  }
   if (battle.trickRoomTurns > 0) {
     battle.trickRoomTurns = Math.max(0, battle.trickRoomTurns - 1);
     if (battle.trickRoomTurns === 0) addLog('트릭룸 / Trick Room 효과가 끝났다. / Trick Room wore off.');
