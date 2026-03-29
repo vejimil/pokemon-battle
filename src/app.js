@@ -684,6 +684,92 @@ function getHeldItemId(mon, {ignoreSuppression = false} = {}) {
 function isItemSuppressed(mon) {
   return Boolean(mon?.item) && getHeldItemId(mon) === '';
 }
+function getAbilityId(mon) {
+  return slugify(mon?.ability || '');
+}
+function moveHasFlag(move, flag) {
+  return Boolean(move?.flags?.[flag]);
+}
+function isSoundMove(move) {
+  return moveHasFlag(move, 'sound');
+}
+function isPunchingMove(move) {
+  return moveHasFlag(move, 'punch');
+}
+function isBitingMove(move) {
+  return moveHasFlag(move, 'bite');
+}
+function isPulseMove(move) {
+  return moveHasFlag(move, 'pulse');
+}
+function isSlicingMove(move) {
+  return moveHasFlag(move, 'slicing');
+}
+function isWindMove(move) {
+  return moveHasFlag(move, 'wind');
+}
+function isPowderMove(move) {
+  return moveHasFlag(move, 'powder');
+}
+function isBulletMove(move) {
+  return moveHasFlag(move, 'bullet');
+}
+function uproarPreventsSleep(mon) {
+  return anyActiveUproar() && getAbilityId(mon) !== 'soundproof';
+}
+function causesContactEffects(attacker, move) {
+  if (!moveHasFlag(move, 'contact')) return false;
+  const itemId = getHeldItemId(attacker);
+  if (itemId === 'protectivepads') return false;
+  if (itemId === 'punchingglove' && isPunchingMove(move)) return false;
+  return true;
+}
+function targetHasAdditionalEffectProtection(target) {
+  const abilityId = getAbilityId(target);
+  if (abilityId === 'shielddust') return true;
+  if (getHeldItemId(target) === 'covertcloak') return true;
+  return false;
+}
+function isImmuneToPowderMove(target) {
+  return Boolean(target && ((target.types || []).includes('grass') || getAbilityId(target) === 'overcoat' || getHeldItemId(target) === 'safetygoggles'));
+}
+function handleTagBasedMoveImmunity(attacker, target, move) {
+  if (!target || target.fainted || !move) return false;
+  if (isSoundMove(move) && getAbilityId(target) === 'soundproof') {
+    addLog(`${displaySpeciesName(target.species)}의 방음 / Soundproof 때문에 ${displayMoveName(move.name)}가 통하지 않았다. / ${target.species}'s Soundproof blocked ${move.name}.`);
+    return true;
+  }
+  if (isBulletMove(move) && getAbilityId(target) === 'bulletproof') {
+    addLog(`${displaySpeciesName(target.species)}의 방탄 / Bulletproof 때문에 ${displayMoveName(move.name)}가 통하지 않았다. / ${target.species}'s Bulletproof blocked ${move.name}.`);
+    return true;
+  }
+  if (isPowderMove(move) && isImmuneToPowderMove(target)) {
+    addLog(`${displaySpeciesName(target.species)}은(는) 가루 기술에 면역이라 ${displayMoveName(move.name)}가 통하지 않았다. / ${target.species} is immune to powder moves, so ${move.name} failed.`);
+    return true;
+  }
+  if (isWindMove(move) && getAbilityId(target) === 'windrider') {
+    target.boosts.atk = clamp((target.boosts.atk || 0) + 1, -6, 6);
+    addLog(`${displaySpeciesName(target.species)}의 풍승 / Wind Rider가 바람 기술을 막고 공격을 올렸다! / ${target.species}'s Wind Rider blocked the wind move and boosted Attack!`, 'accent');
+    return true;
+  }
+  return false;
+}
+function shouldUseSingleAccuracyCheck(attacker, move) {
+  if (!move?.multiaccuracy) return true;
+  return getHeldItemId(attacker) === 'loadeddice';
+}
+function getPerHitMoveVariant(move, hitNumber) {
+  const moveId = toId(move?.baseMoveName || move?.name || move?.id);
+  if (moveId === 'tripleaxel') return {...move, power: 20 * hitNumber};
+  if (moveId === 'triplekick') return {...move, power: 10 * hitNumber};
+  return move;
+}
+function applyCrashDamage(mon, move) {
+  if (!mon || mon.fainted || !move?.hasCrashDamage) return;
+  const crash = Math.max(1, Math.floor((mon.baseMaxHp || mon.maxHp) / 2));
+  mon.hp = Math.max(0, mon.hp - crash);
+  addLog(`${displaySpeciesName(mon.species)}은(는) 기술 실패 반동으로 크게 부딪혔다! / ${mon.species} kept going and crashed!`);
+}
 function moveHasHealingEffect(move) {
   const moveId = toId(move?.baseMoveName || move?.name || move?.id);
   return Boolean(move?.healing > 0 || move?.drain > 0 || move?.flags?.heal || ['rest','swallow','shoreup','strengthsap','junglehealing','lifedew','floralhealing','healpulse','recover','roost','milkdrink','softboiled','moonlight','morningsun','synthesis','wish'].includes(moveId));
@@ -733,7 +819,7 @@ function tryApplyConfusion(target, turns = 0, sourceLabel = 'confusion') {
 function applyPerishSongToTarget(target) {
   if (!target || target.fainted) return false;
   target.volatile = target.volatile || {};
-  if (target.volatile.perishSongTurns > 0) return false;
+  if (target.volatile.perishSongTurns > 0 || getAbilityId(target) === 'soundproof') return false;
   target.volatile.perishSongTurns = 4;
   addLog(`${displaySpeciesName(target.species)}의 멸망의노래 / Perish Song 카운트가 시작되었다. / ${target.species}'s perish count fell to 3.`, 'accent');
   return true;
@@ -747,7 +833,7 @@ function applyVolatileStatusMove(user, target, move) {
     return true;
   }
   if (moveId === 'yawn') {
-    if (target.status || target.volatile.yawnTurns > 0 || anyActiveUproar()) return false;
+    if (target.status || target.volatile.yawnTurns > 0 || uproarPreventsSleep(target)) return false;
     target.volatile.yawnTurns = 2;
     addLog(`${displaySpeciesName(target.species)}은(는) 하품 / Yawn 때문에 졸리기 시작했다. / ${target.species} grew drowsy.`);
     return true;
@@ -1438,6 +1524,8 @@ async function getMoveData(moveName) {
     selfSwitch: move.selfSwitch || '',
     forceSwitch: Boolean(move.forceSwitch),
     recoil: Array.isArray(move.recoil) ? Math.round((move.recoil[0] / move.recoil[1]) * 100) : 0,
+    hasCrashDamage: Boolean(move.hasCrashDamage),
+    multiaccuracy: Boolean(move.multiaccuracy),
     selfBoosts: {...(move.self?.boosts || move.selfBoost?.boosts || {})},
     selfAilment: move.self?.status || '',
     selfVolatileStatus: move.self?.volatileStatus || '',
@@ -2981,6 +3069,11 @@ function afterMoveResolution(user, hitTargets, move, totalDamage) {
     applySideConditionMove(user.player, move);
     handleSuccessfulHitUtilities(user, hitTargets, move);
   }
+  if (getHeldItemId(user) === 'shellbell' && totalDamage > 0 && !user.fainted) {
+    const heal = Math.max(1, Math.floor(totalDamage / 8));
+    user.hp = Math.min(user.maxHp, user.hp + heal);
+    addLog(`${displaySpeciesName(user.species)}은(는) 조개껍질방울 / Shell Bell로 HP를 회복했다. / ${user.species} restored HP with Shell Bell.`);
+  }
   if (moveId === 'struggle') {
     const recoil = Math.max(1, Math.floor((user.baseMaxHp || user.maxHp) / 4));
     user.hp = Math.max(0, user.hp - recoil);
@@ -3494,10 +3587,15 @@ function triggerSwitchInEffects(player, mon) {
     });
   }
 }
-function rollHitCount(move) {
+function rollHitCount(attacker, move) {
+  const moveId = toId(move?.baseMoveName || move?.name || move?.id);
   const minHits = move?.minHits || 1;
   const maxHits = move?.maxHits || 1;
   if (maxHits <= minHits) return Math.max(1, minHits);
+  if (getHeldItemId(attacker) === 'loadeddice') {
+    if (moveId === 'populationbomb') return 4 + Math.floor(Math.random() * 7);
+    if (maxHits === 5 && minHits === 2) return Math.random() < 0.5 ? 4 : 5;
+  }
   return minHits + Math.floor(Math.random() * (maxHits - minHits + 1));
 }
 function applyBoost(target, stat, amount, text) {
@@ -3816,35 +3914,57 @@ async function performMove(action) {
 
   const aliveTargets = [];
   let totalDamageDealt = 0;
+  let anyHitConnected = false;
+  let crashEligibleFailure = false;
   for (const target of targets) {
     if (!target || target.fainted) continue;
-    const accuracy = move.accuracy || 100;
-    if (!move.bypassAccuracy && Math.random() * 100 >= accuracy) {
-      addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}는 ${displaySpeciesName(target.species)}에게 빗나갔다. / ${currentMon.species}'s ${move.name} missed ${target.species}.`);
+    if (handleTagBasedMoveImmunity(currentMon, target, move)) {
+      crashEligibleFailure = crashEligibleFailure || move.hasCrashDamage;
       continue;
     }
-    const hits = rollHitCount(move);
+    const singleAccuracyCheck = shouldUseSingleAccuracyCheck(currentMon, move);
+    const baseAccuracy = move.accuracy || 100;
+    if (!move.bypassAccuracy && singleAccuracyCheck && Math.random() * 100 >= baseAccuracy) {
+      addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}는 ${displaySpeciesName(target.species)}에게 빗나갔다. / ${currentMon.species}'s ${move.name} missed ${target.species}.`);
+      crashEligibleFailure = crashEligibleFailure || move.hasCrashDamage;
+      continue;
+    }
+    const hits = rollHitCount(currentMon, move);
     let totalDamage = 0;
     let lastDamageInfo = null;
     for (let hit = 0; hit < hits; hit += 1) {
       if (target.hp <= 0) break;
-      const damageInfo = computeDamage(currentMon, target, move, targets.length > 1);
+      const hitMove = getPerHitMoveVariant(move, hit + 1);
+      if (!move.bypassAccuracy && !singleAccuracyCheck) {
+        const hitAccuracy = hitMove.accuracy || 100;
+        if (Math.random() * 100 >= hitAccuracy) {
+          if (hit === 0) {
+            addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}는 ${displaySpeciesName(target.species)}에게 빗나갔다. / ${currentMon.species}'s ${move.name} missed ${target.species}.`);
+            crashEligibleFailure = crashEligibleFailure || move.hasCrashDamage;
+          }
+          break;
+        }
+      }
+      const damageInfo = computeDamage(currentMon, target, hitMove, targets.length > 1);
       let damage = damageInfo.damage;
-      if (slugify(target.ability) === 'multiscale' && target.hp === target.maxHp) damage = Math.floor(damage * 0.5);
-      if (slugify(target.ability) === 'flashfire' && getBattleMoveType(currentMon, move) === 'fire') {
+      if (getAbilityId(target) === 'multiscale' && target.hp === target.maxHp) damage = Math.floor(damage * 0.5);
+      if (getAbilityId(target) === 'flashfire' && getBattleMoveType(currentMon, hitMove) === 'fire') {
         addLog(`${displaySpeciesName(target.species)}의 타오르는불꽃 / Flash Fire가 공격을 흡수했다. / ${target.species}'s Flash Fire absorbed the attack.`);
         target.volatile.flashFire = true;
         damage = 0;
+        if (hit === 0) crashEligibleFailure = crashEligibleFailure || move.hasCrashDamage;
         break;
       }
-      if (slugify(target.ability) === 'levitate' && getBattleMoveType(currentMon, move) === 'ground') {
+      if (getAbilityId(target) === 'levitate' && getBattleMoveType(currentMon, hitMove) === 'ground') {
         addLog(`${displaySpeciesName(target.species)}은(는) 부유 / Levitate 덕분에 땅 타입 기술을 피했다. / ${target.species} avoided the Ground-type move thanks to Levitate.`);
         damage = 0;
+        if (hit === 0) crashEligibleFailure = crashEligibleFailure || move.hasCrashDamage;
         break;
       }
-      if (getHeldItemId(target) === 'airballoon' && !target.volatile?.airBalloonPopped && getBattleMoveType(currentMon, move) === 'ground') {
+      if (getHeldItemId(target) === 'airballoon' && !target.volatile?.airBalloonPopped && getBattleMoveType(currentMon, hitMove) === 'ground') {
         addLog(`${displaySpeciesName(target.species)}의 풍선 / Air Balloon 때문에 땅 타입 기술이 통하지 않았다. / ${target.species}'s Air Balloon made it immune to the Ground-type attack.`);
         damage = 0;
+        if (hit === 0) crashEligibleFailure = crashEligibleFailure || move.hasCrashDamage;
         break;
       }
       if (getHeldItemId(target) === 'focussash' && target.hp === target.maxHp && damage >= target.hp) {
@@ -3852,12 +3972,13 @@ async function performMove(action) {
         addLog(`${displaySpeciesName(target.species)}은(는) 기합의띠 / Focus Sash로 버텼다! / ${target.species} endured with Focus Sash!`, 'accent');
       }
       if (target.protect && move.partialProtect) damage = Math.max(1, Math.floor(damage * 0.25));
-      if (target.volatile?.substituteHp > 0 && !move.flags?.bypasssub) {
+      if (target.volatile?.substituteHp > 0 && !hitMove.flags?.bypasssub) {
         const subDamage = Math.max(0, damage);
         target.volatile.substituteHp = Math.max(0, target.volatile.substituteHp - subDamage);
         totalDamage += subDamage;
         totalDamageDealt += subDamage;
         lastDamageInfo = damageInfo;
+        anyHitConnected = anyHitConnected || subDamage > 0;
         addLog(`${displaySpeciesName(target.species)}의 대타출동 / Substitute가 공격을 대신 맞았다. / ${target.species}'s substitute took the hit.`);
         if (target.volatile.substituteHp <= 0) clearSubstitute(target);
         continue;
@@ -3866,6 +3987,7 @@ async function performMove(action) {
       totalDamage += Math.max(0, damage);
       totalDamageDealt += Math.max(0, damage);
       lastDamageInfo = damageInfo;
+      anyHitConnected = anyHitConnected || damage > 0;
       if (damageInfo.crit) addLog('급소에 맞았다! / A critical hit!');
       if (move.drain && damage > 0) {
         if (currentMon.volatile?.healBlockTurns > 0) {
@@ -3876,7 +3998,7 @@ async function performMove(action) {
           addLog(`${displaySpeciesName(currentMon.species)}의 HP가 ${heal} 회복되었다. / ${currentMon.species} restored ${heal} HP.`);
         }
       }
-      maybeApplySecondary(currentMon, target, move);
+      maybeApplySecondary(currentMon, target, hitMove);
       if (moveId === 'knockoff' && damage > 0) {
         const removedItem = tryRemoveHeldItem(target, currentMon, 'knockoff');
         if (removedItem) addLog(`${displaySpeciesName(target.species)}의 ${displayItemName(removedItem)}이(가) 탁쳐서떨구기 / Knock Off로 떨어졌다. / ${target.species} lost its ${removedItem} to Knock Off.`);
@@ -3915,11 +4037,14 @@ async function performMove(action) {
       currentMon.hp = Math.max(0, currentMon.hp - recoil);
       addLog(`${displaySpeciesName(currentMon.species)}은(는) 생명의구슬 / Life Orb 반동으로 데미지를 입었다. / ${currentMon.species} was hurt by Life Orb.`);
     }
-    if (getHeldItemId(target) === 'rockyhelmet' && totalDamage > 0 && move.category === 'physical' && move.flags?.contact) {
+    if (getHeldItemId(target) === 'rockyhelmet' && totalDamage > 0 && move.category === 'physical' && causesContactEffects(currentMon, move)) {
       const recoil = Math.max(1, Math.floor(currentMon.baseMaxHp / 6));
       currentMon.hp = Math.max(0, currentMon.hp - recoil);
       addLog(`${displaySpeciesName(currentMon.species)}은(는) 울퉁불퉁멧 / Rocky Helmet 때문에 데미지를 입었다. / ${currentMon.species} was hurt by Rocky Helmet.`);
     }
+  }
+  if (move.hasCrashDamage && crashEligibleFailure && !anyHitConnected && targets.length) {
+    applyCrashDamage(currentMon, move);
   }
   if (move.useMax) applyMaxMoveBonus(currentMon, aliveTargets, move);
   afterMoveResolution(currentMon, aliveTargets, move, totalDamageDealt);
@@ -3940,7 +4065,7 @@ function canMove(mon) {
     return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 풀죽어서 움직일 수 없다. / ${mon.species} flinched and couldn't move.`};
   }
   if (mon.status === 'slp') {
-    if (anyActiveUproar()) {
+    if (uproarPreventsSleep(mon)) {
       mon.status = '';
       mon.sleepTurns = 0;
       return {ok:true, wake:true};
@@ -3996,6 +4121,12 @@ function applyStatusMove(user, targets, move) {
   if (moveId === 'tailwind' && userSide?.sideConditions) {
     userSide.sideConditions.tailwindTurns = 4;
     addLog(`${state.battle.players[user.player].name} 측에 순풍 / Tailwind가 불기 시작했다. / Tailwind blew from ${state.battle.players[user.player].name}'s side.`, 'accent');
+    getActiveMonsForSide(userSide).forEach(mon => {
+      if (getAbilityId(mon) === 'windrider') {
+        mon.boosts.atk = clamp((mon.boosts.atk || 0) + 1, -6, 6);
+        addLog(`${displaySpeciesName(mon.species)}의 풍승 / Wind Rider로 공격이 올랐다! / ${mon.species}'s Wind Rider boosted its Attack!`, 'accent');
+      }
+    });
     return;
   }
   if (moveId === 'reflect' && userSide?.sideConditions) {
@@ -4035,6 +4166,7 @@ function applyStatusMove(user, targets, move) {
   if (moveId === 'taunt') {
     const target = targets.find(Boolean);
     if (!target || target.fainted) return;
+    if (handleTagBasedMoveImmunity(user, target, move)) return;
     if (target.volatile?.substituteHp > 0 && !move.flags?.bypasssub) {
       addLog(`${displaySpeciesName(target.species)}의 대타출동 / Substitute가 도발을 막았다. / ${target.species}'s substitute blocked Taunt.`);
       return;
@@ -4045,6 +4177,7 @@ function applyStatusMove(user, targets, move) {
   }
   if (moveId === 'encore') {
     const target = targets.find(Boolean);
+    if (target && handleTagBasedMoveImmunity(user, target, move)) return;
     const lastMove = target?.lastMoveUsed;
     if (target?.volatile?.substituteHp > 0 && !move.flags?.bypasssub) {
       addLog(`${displaySpeciesName(target.species)}의 대타출동 / Substitute가 앵콜을 막았다. / ${target.species}'s substitute blocked Encore.`);
@@ -4066,6 +4199,7 @@ function applyStatusMove(user, targets, move) {
   }
   if (moveId === 'disable') {
     const target = targets.find(Boolean);
+    if (target && handleTagBasedMoveImmunity(user, target, move)) return;
     const lastMoveMeta = target?.lastMoveMeta;
     const lastMove = target?.lastMoveUsed;
     if (!target || !lastMove || !lastMoveMeta || lastMoveMeta.usedZ || lastMoveMeta.usedMax || lastMoveMeta.moveId === 'struggle') {
@@ -4086,6 +4220,7 @@ function applyStatusMove(user, targets, move) {
   }
   if (moveId === 'trick' || moveId === 'switcheroo') {
     const target = targets.find(Boolean);
+    if (target && handleTagBasedMoveImmunity(user, target, move)) return;
     if (!target || target.fainted) {
       addLog(`${displayMoveName(move.name)}가 실패했다. / ${move.name} failed.`);
       return;
@@ -4240,6 +4375,7 @@ function applyStatusMove(user, targets, move) {
 }
 function maybeApplySecondary(user, target, move) {
   if (target?.volatile?.substituteHp > 0 && !move.flags?.bypasssub) return;
+  if (targetHasAdditionalEffectProtection(target)) return;
   if (move.ailment && move.ailment !== 'none' && move.ailmentChance > 0) applyAilment(target, move.ailment, move.ailmentChance);
   if (move.flinchChance > 0 && !target?.volatile?.actedThisTurn && Math.random() * 100 < move.flinchChance) {
     target.volatile = target.volatile || {};
@@ -4264,7 +4400,7 @@ function applyAilment(target, ailment, chance) {
   const map = {burn:'brn', paralysis:'par', poison:'psn', sleep:'slp', freeze:'frz', 'bad-poison':'tox'};
   const status = map[ailment] || '';
   if (!status) return;
-  if (status === 'slp' && anyActiveUproar()) {
+  if (status === 'slp' && uproarPreventsSleep(target)) {
     addLog('소란 / Uproar 때문에 잠들지 않았다. / The uproar kept it awake.');
     return;
   }
@@ -4299,6 +4435,11 @@ function computeDamage(attacker, defender, move, spread = false) {
   if (moveId === 'expandingforce' && terrain === 'psychicterrain' && isGrounded(attacker)) power = Math.floor(power * 1.5);
   if ((moveId === 'earthquake' || moveId === 'bulldoze' || moveId === 'magnitude') && terrain === 'grassyterrain' && isGrounded(defender)) power = Math.floor(power * 0.5);
   if (slugify(attacker.ability) === 'technician' && power <= 60 && !move.useZ && !move.useMax) power = Math.floor(power * 1.5);
+  if (getAbilityId(attacker) === 'ironfist' && isPunchingMove(move)) power = Math.floor(power * 1.2);
+  if (getAbilityId(attacker) === 'strongjaw' && isBitingMove(move)) power = Math.floor(power * 1.5);
+  if (getAbilityId(attacker) === 'megalauncher' && isPulseMove(move)) power = Math.floor(power * 1.5);
+  if (getAbilityId(attacker) === 'sharpness' && isSlicingMove(move)) power = Math.floor(power * 1.5);
+  if (getHeldItemId(attacker) === 'punchingglove' && isPunchingMove(move)) power = Math.floor(power * 1.1);
   if (getHeldItemId(attacker) === 'choiceband' && physical) atk = Math.floor(atk * 1.5);
   if (getHeldItemId(attacker) === 'choicespecs' && !physical) atk = Math.floor(atk * 1.5);
   if (moveId === 'knockoff' && defender?.item && canRemoveHeldItem(defender, attacker)) power = Math.floor(power * 1.5);
@@ -4488,7 +4629,7 @@ function endOfTurn() {
         mon.volatile.yawnTurns = Math.max(0, mon.volatile.yawnTurns - 1);
         if (mon.volatile.yawnTurns === 0) {
           delete mon.volatile.yawnTurns;
-          if (!mon.status && !anyActiveUproar()) applyAilment(mon, 'sleep', 100);
+          if (!mon.status && !uproarPreventsSleep(mon)) applyAilment(mon, 'sleep', 100);
         }
       }
       if (mon.volatile?.encore?.turns > 0) mon.volatile.encore.turns = Math.max(0, mon.volatile.encore.turns - 1);
@@ -4519,7 +4660,7 @@ function endOfTurn() {
   });
   if (anyActiveUproar()) {
     battle.players.forEach(side => getActiveMonsForSide(side).forEach(mon => {
-      if (mon.status === 'slp') {
+      if (mon.status === 'slp' && getAbilityId(mon) !== 'soundproof') {
         mon.status = '';
         mon.sleepTurns = 0;
         addLog(`${displaySpeciesName(mon.species)}은(는) 소란 / Uproar 때문에 잠에서 깼다! / ${mon.species} woke up because of the uproar!`);
