@@ -1,0 +1,84 @@
+[Stage 9] Singles precision pass (choice lock / Encore / Taunt / Substitute / Trick Room / Tailwind / screens)
+
+이번 단계에서 한 일
+1. side condition을 싱글 런타임에 추가했다.
+   - 각 side에
+     - Reflect
+     - Light Screen
+     - Aurora Veil
+     - Tailwind
+     지속 턴을 추가했다.
+   - battle 전역에는 Trick Room 턴을 추가했다.
+   - 전투 UI 상단 필드 상태 줄에 weather / terrain뿐 아니라 side condition과 Trick Room도 표시되도록 확장했다.
+
+2. 스피드 순서와 속도 보정을 더 정밀하게 연결했다.
+   - Tailwind가 켜진 side의 Speed를 2배로 반영한다.
+   - Trick Room이 켜져 있으면 같은 priority 안에서 느린 포켓몬이 먼저 행동한다.
+
+3. 구애 아이템(choice item) 잠금을 추가했다.
+   - Choice Band / Choice Specs / Choice Scarf를 들고 처음 선택한 기술에 전투 중 묶인다.
+   - switch out하면 잠금이 풀린다.
+   - 잠긴 기술 PP가 없으면 Struggle로 이어질 수 있게 처리했다.
+   - 선택 UI에서도 구애 잠금 상태를 표시한다.
+
+4. Encore를 추가했다.
+   - 대상이 마지막으로 사용한 기술을 기준으로 Encore lock을 건다.
+   - 해당 기술 슬롯과 PP가 남아 있을 때만 성립한다.
+   - Substitute 뒤에 있는 대상은 Encore를 막는다.
+   - 선택 UI에 Encore 고정 상태를 표시한다.
+
+5. Taunt를 추가했다.
+   - Taunt가 걸리면 status move 사용이 막힌다.
+   - UI에서 변화기 버튼을 막고, 런타임에서도 재검사한다.
+   - Substitute 뒤에 있는 대상은 Taunt를 막는다.
+
+6. Substitute를 추가했다.
+   - 현재 HP의 1/4를 써서 대타를 만든다.
+   - 이미 대타가 있으면 실패한다.
+   - HP가 충분하지 않으면 실패한다.
+   - damaging move는 먼저 substitute HP를 깎는다.
+   - status / ailment / secondary status 변화도 대타가 막는다.
+   - 대타가 깨지면 로그를 띄운다.
+
+7. screen damage reduction을 추가했다.
+   - Reflect: 물리 데미지 반감
+   - Light Screen: 특수 데미지 반감
+   - Aurora Veil: 물리 / 특수 모두 반감
+   - 현재 구현은 싱글 기준의 핵심 반감 로직 위주다.
+
+8. Defog 연계를 보강했다.
+   - 기존 hazard 제거에 더해 Reflect / Light Screen / Aurora Veil도 함께 지운다.
+   - terrain 제거 로직은 그대로 유지했다.
+
+9. Assault Vest 예외를 추가했다.
+   - 선택 UI에서 status move를 봉인한다.
+   - 런타임에서도 다시 검사해서 status move 사용을 막는다.
+
+10. switch out 시 volatile 정리를 더 강화했다.
+   - boost / protect chain / choice lock / encore / taunt / substitute 같은 전투 중 상태를 정리한다.
+   - Air Balloon popped / Flash Fire charge / Sitrus 사용 여부처럼 남겨야 하는 일부 플래그만 유지한다.
+
+이번 단계에서 조심한 점
+- asset mapping 로직은 건드리지 않았다.
+- 실제 에셋 파일명을 새로 가정하지 않았다.
+- Stage 6의 form-aware asset mapping과 Stage 7~8의 battle runtime을 유지하면서 singles precision만 보강했다.
+
+현재 한계
+- 아직 full Showdown parity는 아니다.
+- Disable / Torment / Imprison / Heal Block / Magic Coat / Snatch / Infiltrator / sound-based 예외 같은 세부 판정은 더 필요하다.
+- Trick / Knock Off / Encore의 모든 edge case / choice lock의 완전한 cartridge parity / critical hit와 screen의 세부 예외도 후속 보강 여지가 있다.
+- doubles 전용 redirection / ally-side 예외 / spread reduction 정밀화는 아직 다음 단계다.
+
+다음 단계 추천
+1. singles 세부 판정 추가 안정화 마무리
+   - Knock Off / Trick / Disable / Sucker Punch / more immunity edge cases
+   - status / volatile / item / ability timing 정밀화
+   - forced switch / replacement timing 추가 보강
+
+2. doubles 확장
+   - 더블 타겟팅
+   - ally interaction
+   - spread / redirection / protect / replacement 흐름 확장
+
+3. 특수 전투 중 폼 변화 강화
+   - Aegislash / Mimikyu / Wishiwashi / Morpeko / Ogerpon / Terapagos 등 runtime form changes
