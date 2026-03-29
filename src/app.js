@@ -2930,6 +2930,10 @@ function clearEnginePendingChoice(player, slot, battle = state.battle) {
   if (!battle?.pendingChoices?.[getEngineSideId(player)]) return;
   delete battle.pendingChoices[getEngineSideId(player)][slot];
 }
+function clearEnginePendingChoicesForPlayer(player, battle = state.battle) {
+  if (!battle?.pendingChoices) return;
+  battle.pendingChoices[getEngineSideId(player)] = {};
+}
 function clearEnginePendingChoices(battle = state.battle) {
   if (!battle) return;
   battle.pendingChoices = {p1: {}, p2: {}};
@@ -3010,13 +3014,14 @@ function canEngineSwitchNormally(player, requestSlot = 0, battle = state.battle)
   if (!moveRequest) return false;
   return !moveRequest.trapped && !moveRequest.maybeTrapped;
 }
-function getEngineSwitchOptions(player, activeIndex, battle = state.battle) {
+function getEngineSwitchOptions(player, activeIndex, battle = state.battle, {allowLegacyFallback = false} = {}) {
   const side = battle?.players?.[player];
   if (!side) return [];
 
+  const request = getEngineRequestForPlayer(player, battle);
   const requestEntries = getEngineRequestSideEntries(player, battle);
   if (requestEntries.length) {
-    const requestOptions = requestEntries
+    return requestEntries
       .map((entry, index) => ({entry, mon: side.team[index], index}))
       .filter(({entry, mon, index}) => (
         mon &&
@@ -3025,12 +3030,35 @@ function getEngineSwitchOptions(player, activeIndex, battle = state.battle) {
         !side.active.includes(index)
       ))
       .map(({mon, index}) => ({mon, index}));
-    if (requestOptions.length) return requestOptions;
   }
+
+  if (isEngineActionableRequest(request) || !allowLegacyFallback) return [];
 
   return side.team
     .map((mon, index) => ({mon, index}))
     .filter(({mon, index}) => mon && !mon.fainted && !side.active.includes(index) && index !== activeIndex);
+}
+function pruneEnginePendingChoices(battle = state.battle) {
+  if (!isShowdownLocalBattle(battle)) return;
+  ensureBattleUiState(battle);
+  for (const player of [0, 1]) {
+    const request = getEngineRequestForPlayer(player, battle);
+    if (!isEngineActionableRequest(request)) {
+      clearEnginePendingChoicesForPlayer(player, battle);
+      continue;
+    }
+    const sideId = getEngineSideId(player);
+    const actionSlots = new Set(getEngineActionSlots(player, battle));
+    const pending = {...(battle.pendingChoices?.[sideId] || {})};
+    Object.keys(pending).forEach(rawSlot => {
+      const slot = Number(rawSlot);
+      if (!Number.isInteger(slot) || !actionSlots.has(slot)) {
+        clearEnginePendingChoice(player, slot, battle);
+        return;
+      }
+      normalizeEnginePendingChoice(player, slot, battle);
+    });
+  }
 }
 function getEngineChoiceSummary(player, slot, battle = state.battle) {
   const choice = normalizeEnginePendingChoice(player, slot, battle);
@@ -3058,6 +3086,7 @@ function getEnginePlayersNeedingAction(battle = state.battle) {
 }
 function canAutoResolveEngineTurn(battle = state.battle) {
   if (!isShowdownLocalBattle(battle) || battle?.winner || battle?.resolvingTurn) return false;
+  pruneEnginePendingChoices(battle);
   const players = battle?.players || [];
   if (!players.length) return false;
   let actionableCount = 0;
@@ -3086,6 +3115,7 @@ function getEngineTurnChipState(player, battle = state.battle) {
 }
 function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
   const battle = ensureBattleUiState(state.battle);
+  pruneEnginePendingChoices(battle);
   const side = battle.players[player];
   const request = side.request;
   titleEl.textContent = `${side.name} 선택 / Engine Choice`;
@@ -3727,6 +3757,7 @@ function getBattleBadgeText(mon) {
 function renderBattle() {
   const battle = ensureBattleUiState(state.battle);
   if (!battle) return;
+  if (isShowdownLocalBattle(battle)) pruneEnginePendingChoices(battle);
   els.turnNumber.textContent = battle.turn;
   els.battleP1Name.textContent = battle.players[0].name;
   els.battleP2Name.textContent = battle.players[1].name;
@@ -4109,6 +4140,7 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
 }
 function isChoiceComplete(player, activeIndex) {
   if (isShowdownLocalBattle(state.battle)) {
+    pruneEnginePendingChoices(state.battle);
     const request = getEngineRequestForPlayer(player);
     if (!isEngineActionableRequest(request)) return true;
     const choice = normalizeEnginePendingChoice(player, activeIndex);
@@ -4145,6 +4177,7 @@ function isPlayerReady(player) {
 function renderPendingChoices() {
   const battle = state.battle;
   if (isShowdownLocalBattle(battle)) {
+    pruneEnginePendingChoices(battle);
     const rows = [];
     battle.players.forEach((side, player) => {
       const request = getEngineRequestForPlayer(player, battle);
@@ -4187,6 +4220,7 @@ function renderPendingChoices() {
   els.pendingChoices.innerHTML = rows.join('');
 }
 async function resolveEngineTurn(battle = state.battle) {
+  pruneEnginePendingChoices(battle);
   const nextSnapshot = await submitShowdownLocalSinglesChoices({battleId: battle.id, battle});
   state.battle = adoptEngineBattleSnapshot(nextSnapshot);
 }
