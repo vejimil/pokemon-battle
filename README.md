@@ -10,12 +10,13 @@ A GitHub Pages-ready local 2-player Pokémon-style battle builder and pass-and-p
 - Species lookup, move lookup, item lookup, ability selection, nature selection, IV/EV editing, level, shiny flag, and Tera type
 - Validation for common team-building constraints
 - Learnset-aware validation using vendored local data
+- Stronger validator-style legality checks for nonstandard flags, form requirements, item / ability legality, Tera type, gender, and team warnings
 - Animated uploaded Pokémon sprites rendered from strip-style PNGs
 - Uploaded item icons, type icons, and status overlays used locally
 - Browser battle flow with turn selection, speed/priority ordering, damage, switching, fainting, and battle log
 - Local save via `localStorage`
 
-## Stage 3: full data localization
+## Stage 4: legality / validator strengthening
 
 This build no longer depends on PokéAPI or a live Dex CDN at runtime for core species / move / item / ability / learnset data.
 
@@ -73,11 +74,14 @@ This ZIP is code-only, so those asset files are **not included** here.
 
 ## Notes about scope
 
-This build now localizes the main builder data layer, but it is still not a full competitive simulator yet.
+This build now localizes the main builder data layer and adds a stronger validator layer, but it is still not a full competitive simulator yet.
 
 Included now:
 - Local species / moves / items / abilities / learnsets / aliases / formats data / natures / conditions / rulesets / tags / type chart loading
-- Team-building validation driven by that vendored data
+- Validator-style team-building checks driven by that vendored data
+- Nonstandard filtering that keeps Past-tagged legacy content available while blocking unsupported categories like CAP / Future / Unobtainable
+- Requirement checks for special forms (required item / move / ability / Tera type) plus battle-only form blocking
+- Learnset source warnings for legacy-only or event-only move sources
 - Saved-team rehydration against the localized Dex on startup
 - Local asset rendering and browser battle prototype flow
 
@@ -92,6 +96,6 @@ Still not fully exhaustive yet:
 
 The best next milestone after this build is:
 
-1. Full legality layer / TeamValidator-equivalent integration
+1. Deeper TeamValidator parity for exact source combinations, event constraints, and format-specific clauses
 2. Full simulator integration for battle resolution
 3. Expanded mechanic support for Mega Evolution, Z-Moves, Dynamax, and complete Terastal handling

@@ -31,6 +31,14 @@ const commonItems = [
 ];
 const implementedAbilities = new Set(['intimidate','levitate','technician','adaptability','multiscale','flash-fire']);
 const implementedItems = new Set(['leftovers','life-orb','choice-band','choice-specs','choice-scarf','focus-sash','assault-vest','sitrus-berry','rocky-helmet','expert-belt','lum-berry','eviolite','clear-amulet','scope-lens','muscle-band','wise-glasses','mystic-water','charcoal','miracle-seed','magnet','black-glasses','never-melt-ice','soft-sand','dragon-fang','pixie-plate','poison-barb','silver-powder','spell-tag','sharp-beak','twisted-spoon','hard-stone','silk-scarf','metal-coat','black-sludge']);
+const BUILDER_ALLOWED_NONSTANDARD = new Set(['Past']);
+const NONSTANDARD_REASON_LABELS = {
+  Future: 'is marked as future / unreleased content in the loaded data.',
+  CAP: 'belongs to CAP/custom content, not official cartridge data.',
+  LGPE: 'belongs to the Let’s Go ruleset only.',
+  Unobtainable: 'is marked unobtainable in the loaded data.',
+  Gigantamax: 'is Gigantamax-only battle content and should not be chosen directly here.',
+};
 const targetHints = {
   'selected-pokemon': 'single-opponent',
   'random-opponent': 'single-opponent',
@@ -71,6 +79,7 @@ const state = {
   teams: [[], []],
   selected: {player: 0, slot: 0},
   builderErrors: [],
+  builderWarnings: [],
   battle: null,
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
 };
@@ -105,8 +114,14 @@ function humanizeSpriteId(id) {
 function dataSourceLabel() {
   return state.dex ? `Local Dex ${state.dexVersion || ''}`.trim() : state.dataProvider;
 }
+function isAllowedNonstandard(value) {
+  return !value || BUILDER_ALLOWED_NONSTANDARD.has(value);
+}
+function explainNonstandard(value) {
+  return NONSTANDARD_REASON_LABELS[value] || `is marked as ${value} in the loaded data.`;
+}
 function isDexSupported(entry) {
-  return Boolean(entry?.exists) && !entry?.isNonstandard && !entry?.tier?.includes?.('Unreleased');
+  return Boolean(entry?.exists) && isAllowedNonstandard(entry?.isNonstandard) && !entry?.tier?.includes?.('Unreleased');
 }
 function getDexSpeciesEntry(name) {
   if (!state.dex) return null;
@@ -341,16 +356,34 @@ async function getSpeciesData(speciesName) {
   if (!species?.exists) throw new Error(`Species not found in local data: ${speciesName}`);
 
   const abilityNames = Object.values(species.abilities || {}).filter(Boolean);
+  const fullLearnset = state.dex.species.getFullLearnset(species.id) || {};
+  const learnsetSources = Object.fromEntries(Object.entries(fullLearnset).map(([moveId, sources]) => [toId(moveId), Array.isArray(sources) ? [...sources] : []]));
   const data = {
     id: species.num || 0,
     name: species.name,
     apiName: species.id,
+    baseSpecies: species.baseSpecies || species.name,
+    forme: species.forme || '',
     types: [...(species.types || [])].map(type => type.toLowerCase()),
     abilities: abilityNames,
     stats: {...species.baseStats},
     weight: species.weightkg || 0,
     evolves: Boolean(species.evos?.length),
-    learnset: getFullLearnsetIds(species.id),
+    learnset: Object.keys(learnsetSources),
+    learnsetSources,
+    requiredItem: species.requiredItem || '',
+    requiredItems: Array.isArray(species.requiredItems) ? [...species.requiredItems] : [],
+    requiredMove: species.requiredMove || '',
+    requiredAbility: species.requiredAbility || '',
+    requiredTeraType: species.requiredTeraType ? String(species.requiredTeraType).toLowerCase() : '',
+    battleOnly: species.battleOnly || '',
+    changesFrom: species.changesFrom || '',
+    isNonstandard: species.isNonstandard ?? null,
+    tier: species.tier ?? '',
+    doublesTier: species.doublesTier ?? '',
+    natDexTier: species.natDexTier ?? '',
+    gender: species.gender || '',
+    genderRatio: species.genderRatio ? {...species.genderRatio} : null,
   };
   speciesDataCache.set(key, data);
   return data;
@@ -388,10 +421,70 @@ async function getMoveData(moveName) {
     statChanges: Object.entries(secondaryBoosts.boosts || move.boosts || {}).map(([stat, change]) => ({stat, change})),
     effectChance: move.secondary?.chance || move.secondaries?.[0]?.chance || 0,
     metaCategory: move.category === 'Status' ? 'status' : '',
+    isNonstandard: move.isNonstandard ?? null,
+    isZ: Boolean(move.isZ),
+    isMax: Boolean(move.isMax),
+    flags: {...(move.flags || {})},
   };
   moveDataCache.set(key, result);
   return result;
 }
+function joinReadableList(values) {
+  const list = Array.from(new Set((values || []).filter(Boolean)));
+  if (!list.length) return '';
+  if (list.length === 1) return list[0];
+  if (list.length === 2) return `${list[0]} or ${list[1]}`;
+  return `${list.slice(0, -1).join(', ')}, or ${list[list.length - 1]}`;
+}
+function matchesListedName(value, choices) {
+  const id = toId(value);
+  return Boolean(id) && (choices || []).some(choice => toId(choice) === id);
+}
+function summarizeLearnsetSources(sources) {
+  const normalized = (sources || []).map(source => String(source));
+  const hasCurrentGen = normalized.some(source => source.startsWith('9'));
+  const hasEvent = normalized.some(source => /^\dS/.test(source));
+  const eventOnly = normalized.length > 0 && normalized.every(source => /^\dS/.test(source));
+  const legacyOnly = normalized.length > 0 && !hasCurrentGen;
+  return {normalized, hasCurrentGen, hasEvent, eventOnly, legacyOnly};
+}
+function validateGenderChoice(mon, prefix, errors) {
+  if (!mon.data) return;
+  const chosenGender = mon.gender || '';
+  const fixedGender = mon.data.gender || '';
+  if (fixedGender) {
+    if (chosenGender && chosenGender !== fixedGender) errors.push(`${prefix}: ${mon.data.name} must use gender ${fixedGender}.`);
+    return;
+  }
+  if (chosenGender === 'N') errors.push(`${prefix}: ${mon.data.name} is not genderless.`);
+  if (chosenGender && !['M', 'F'].includes(chosenGender)) errors.push(`${prefix}: gender must be M, F, or Auto.`);
+}
+function collectTeamWarnings(team, playerIndex) {
+  const warnings = [];
+  const speciesBuckets = new Map();
+  const itemBuckets = new Map();
+  team.forEach((mon, slotIndex) => {
+    const speciesLabel = mon.data?.name || mon.displaySpecies || mon.species || '';
+    const speciesKey = toId(mon.data?.apiName || speciesLabel);
+    if (!speciesKey) return;
+    if (!speciesBuckets.has(speciesKey)) speciesBuckets.set(speciesKey, {label: speciesLabel, slots: []});
+    speciesBuckets.get(speciesKey).slots.push(slotIndex + 1);
+
+    const itemKey = toId(mon.item);
+    if (itemKey) {
+      if (!itemBuckets.has(itemKey)) itemBuckets.set(itemKey, {label: mon.item, slots: []});
+      itemBuckets.get(itemKey).slots.push(slotIndex + 1);
+    }
+  });
+  for (const {label, slots} of speciesBuckets.values()) {
+    if (slots.length > 1) warnings.push(`${state.playerNames[playerIndex]}: duplicate species (${label}) in slots ${slots.join(', ')}. This build allows it, but many competitive formats do not.`);
+  }
+  for (const {label, slots} of itemBuckets.values()) {
+    if (slots.length > 1) warnings.push(`${state.playerNames[playerIndex]}: duplicate held item (${label}) in slots ${slots.join(', ')}. This build allows it, but VGC-style Item Clause would not.`);
+  }
+  return warnings;
+}
+
 function getBaseSpriteId(speciesInput) {
   const guess = String(speciesInput || '').trim();
   if (!guess) return '';
@@ -543,6 +636,7 @@ function bindElements() {
     ivGrid: document.getElementById('iv-grid'),
     evTotal: document.getElementById('ev-total'),
     builderErrors: document.getElementById('builder-errors'),
+    builderWarnings: document.getElementById('builder-warnings'),
     validationSummary: document.getElementById('validation-summary'),
     startBattleBtn: document.getElementById('start-battle-btn'),
     copyPrevBtn: document.getElementById('copy-prev-btn'),
@@ -758,39 +852,98 @@ function renderEditor() {
 }
 async function validateMon(mon, playerIndex, slotIndex) {
   const errors = [];
+  const warnings = [];
   const prefix = `${state.playerNames[playerIndex]} slot ${slotIndex + 1}`;
   if (!mon.displaySpecies && !mon.species) errors.push(`${prefix}: choose a Pokémon.`);
   if (!mon.spriteId) errors.push(`${prefix}: species must match an available uploaded sprite.`);
   if (!mon.data) errors.push(`${prefix}: species data is still missing.`);
+
   const evTotal = Object.values(mon.evs).reduce((sum, value) => sum + Number(value || 0), 0);
   if (evTotal > 510) errors.push(`${prefix}: EV total exceeds 510.`);
   for (const stat of statOrder) {
-    if ((mon.evs[stat] ?? 0) > 252) errors.push(`${prefix}: ${statLabels[stat]} EV exceeds 252.`);
-    if ((mon.ivs[stat] ?? 31) > 31 || (mon.ivs[stat] ?? 31) < 0) errors.push(`${prefix}: ${statLabels[stat]} IV must stay between 0 and 31.`);
+    const ev = Number(mon.evs[stat] ?? 0);
+    const iv = Number(mon.ivs[stat] ?? 31);
+    if (!Number.isInteger(ev)) errors.push(`${prefix}: ${statLabels[stat]} EV must be an integer.`);
+    if (!Number.isInteger(iv)) errors.push(`${prefix}: ${statLabels[stat]} IV must be an integer.`);
+    if (ev > 252 || ev < 0) errors.push(`${prefix}: ${statLabels[stat]} EV must stay between 0 and 252.`);
+    if (iv > 31 || iv < 0) errors.push(`${prefix}: ${statLabels[stat]} IV must stay between 0 and 31.`);
   }
-  if (mon.level < 1 || mon.level > 100) errors.push(`${prefix}: level must stay between 1 and 100.`);
+
+  if (!Number.isInteger(Number(mon.level || 0)) || mon.level < 1 || mon.level > 100) errors.push(`${prefix}: level must stay between 1 and 100.`);
+  if (!natures[mon.nature]) errors.push(`${prefix}: ${mon.nature || 'Blank'} is not a valid nature.`);
+  if (!TYPES.includes(toId(mon.teraType))) errors.push(`${prefix}: ${mon.teraType || 'Blank'} is not a valid Tera type.`);
+
   if (!mon.ability) errors.push(`${prefix}: choose an ability.`);
   if (mon.data?.abilities?.length && mon.ability && !mon.data.abilities.includes(mon.ability)) errors.push(`${prefix}: ${mon.ability} is not a valid ability for ${mon.data.name}.`);
+  validateGenderChoice(mon, prefix, errors);
+
+  if (mon.data) {
+    if (mon.data.isNonstandard && !isAllowedNonstandard(mon.data.isNonstandard)) {
+      errors.push(`${prefix}: ${mon.data.name} ${explainNonstandard(mon.data.isNonstandard)}`);
+    }
+    if (mon.data.battleOnly) {
+      errors.push(`${prefix}: ${mon.data.name} is a battle-only form. Use ${mon.data.battleOnly} or its base form in the builder until form-change logic is added.`);
+    }
+    const requiredItems = [mon.data.requiredItem, ...(mon.data.requiredItems || [])].filter(Boolean);
+    if (requiredItems.length && !matchesListedName(mon.item, requiredItems)) {
+      errors.push(`${prefix}: ${mon.data.name} requires ${joinReadableList(requiredItems)}.`);
+    }
+    if (mon.data.requiredMove && !mon.moves.some(move => toId(move) === toId(mon.data.requiredMove))) {
+      errors.push(`${prefix}: ${mon.data.name} requires ${mon.data.requiredMove} in its moveset.`);
+    }
+    if (mon.data.requiredAbility && toId(mon.ability) !== toId(mon.data.requiredAbility)) {
+      errors.push(`${prefix}: ${mon.data.name} requires the ability ${mon.data.requiredAbility}.`);
+    }
+    if (mon.data.requiredTeraType && toId(mon.teraType) !== toId(mon.data.requiredTeraType)) {
+      errors.push(`${prefix}: ${mon.data.name} requires Tera type ${titleCase(mon.data.requiredTeraType)}.`);
+    }
+    if (requiredItems.length || mon.data.requiredMove || mon.data.requiredAbility || mon.data.requiredTeraType) {
+      warnings.push(`${prefix}: ${mon.data.name} is a condition-based form. This build stores the chosen form directly and does not yet animate mid-battle transformations.`);
+    }
+  }
+
   if (state.dex && mon.item) {
     const item = state.dex.items.get(mon.item);
     if (!item?.exists) errors.push(`${prefix}: ${mon.item} is not a valid item.`);
+    else if (!isAllowedNonstandard(item.isNonstandard)) errors.push(`${prefix}: ${item.name} ${explainNonstandard(item.isNonstandard)}`);
+    else if (!implementedItems.has(slugify(item.name))) warnings.push(`${prefix}: ${item.name} is legal in the builder, but its special battle behavior is not fully implemented in the current custom runtime.`);
   }
+
+  if (state.dex && mon.ability) {
+    const ability = state.dex.abilities.get(mon.ability);
+    if (!ability?.exists) errors.push(`${prefix}: ${mon.ability} is not a valid ability.`);
+    else if (!isAllowedNonstandard(ability.isNonstandard)) errors.push(`${prefix}: ${ability.name} ${explainNonstandard(ability.isNonstandard)}`);
+    else if (!implementedAbilities.has(slugify(ability.name))) warnings.push(`${prefix}: ${ability.name} is legal in the builder, but its full triggered behavior is not implemented in the current custom runtime.`);
+  }
+
   const chosenMoves = mon.moves.filter(Boolean);
   if (chosenMoves.length !== 4) errors.push(`${prefix}: pick exactly four moves.`);
   const moveIds = chosenMoves.map(toId);
   if (new Set(moveIds).size !== moveIds.length) errors.push(`${prefix}: duplicate moves are not allowed.`);
   const learnsetIds = new Set(mon.data?.learnset || []);
+  const learnsetSources = mon.data?.learnsetSources || {};
   for (const move of chosenMoves) {
     try {
       const loadedMove = await getMoveData(move);
-      if (state.dex && learnsetIds.size && !learnsetIds.has(toId(loadedMove.apiName || loadedMove.name))) {
+      const moveId = toId(loadedMove.apiName || loadedMove.name);
+      if (loadedMove.isZ || loadedMove.isMax) {
+        errors.push(`${prefix}: ${loadedMove.name} is battle-generated special move content and should not be selected as a base moveslot.`);
+      }
+      if (!isAllowedNonstandard(loadedMove.isNonstandard)) {
+        errors.push(`${prefix}: ${loadedMove.name} ${explainNonstandard(loadedMove.isNonstandard)}`);
+      }
+      if (state.dex && learnsetIds.size && !learnsetIds.has(moveId)) {
         errors.push(`${prefix}: ${loadedMove.name} is not in ${mon.data?.name || mon.displaySpecies}'s loaded learnset.`);
+      } else {
+        const sourceInfo = summarizeLearnsetSources(learnsetSources[moveId]);
+        if (sourceInfo.eventOnly) warnings.push(`${prefix}: ${loadedMove.name} appears event-only in the loaded learnset sources. Exact event/source compatibility is not modeled yet.`);
+        else if (sourceInfo.legacyOnly) warnings.push(`${prefix}: ${loadedMove.name} only appears through older-generation learnset sources. Transfer/source compatibility is not modeled yet.`);
       }
     } catch (error) {
       errors.push(`${prefix}: move “${move}” could not be loaded.`);
     }
   }
-  return errors;
+  return {errors, warnings};
 }
 async function rehydrateTeams() {
   for (const team of state.teams) {
@@ -814,23 +967,39 @@ async function rehydrateTeams() {
 
 async function renderValidation() {
   const allErrors = [];
+  const allWarnings = [];
   for (const [playerIndex, team] of state.teams.entries()) {
     for (const [slotIndex, mon] of team.entries()) {
-      const errors = await validateMon(mon, playerIndex, slotIndex);
-      allErrors.push(...errors);
+      const result = await validateMon(mon, playerIndex, slotIndex);
+      allErrors.push(...result.errors);
+      allWarnings.push(...result.warnings);
     }
+    allWarnings.push(...collectTeamWarnings(team, playerIndex));
   }
   state.builderErrors = allErrors;
+  state.builderWarnings = Array.from(new Set(allWarnings));
   if (allErrors.length) {
     els.builderErrors.classList.remove('hidden');
     els.builderErrors.textContent = allErrors.join('\n');
-    els.validationSummary.textContent = `${allErrors.length} issue${allErrors.length === 1 ? '' : 's'} remaining before battle can start.`;
+    els.validationSummary.textContent = `${allErrors.length} issue${allErrors.length === 1 ? '' : 's'} remaining before battle can start.${state.builderWarnings.length ? ` ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} also noted.` : ''}`;
     els.startBattleBtn.disabled = true;
   } else {
     els.builderErrors.classList.add('hidden');
     els.builderErrors.textContent = '';
-    els.validationSummary.textContent = 'Both teams are valid. Battle start is ready.';
+    els.validationSummary.textContent = state.builderWarnings.length
+      ? `Teams pass validation. ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} note advanced source/runtime limits.`
+      : 'Both teams are valid. Battle start is ready.';
     els.startBattleBtn.disabled = false;
+  }
+
+  if (els.builderWarnings) {
+    if (state.builderWarnings.length) {
+      els.builderWarnings.classList.remove('hidden');
+      els.builderWarnings.textContent = state.builderWarnings.join('\n');
+    } else {
+      els.builderWarnings.classList.add('hidden');
+      els.builderWarnings.textContent = '';
+    }
   }
 }
 function wireEditorEvents() {
@@ -1663,7 +1832,7 @@ async function bootstrap() {
   showRuntime(
     'Runtime ready. Local assets and localized battle data are connected.',
     'ready',
-    `Pokémon sprite base: ${state.assetBase.pokemon}<br>Item icon base: ${state.assetBase.items}<br>Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, and validates selected moves against each species’ loaded learnset without PokéAPI or Dex CDN requests. Battle resolution is still the project’s custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
+    `Pokémon sprite base: ${state.assetBase.pokemon}<br>Item icon base: ${state.assetBase.items}<br>Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, and team-level warnings. Battle resolution is still the project’s custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
   );
 }
 

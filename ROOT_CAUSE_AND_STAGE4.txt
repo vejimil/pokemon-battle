@@ -1,0 +1,32 @@
+Current progress summary
+
+Previous completed stage
+- Stage 3 full builder-data localization
+- Vendored local species / moves / items / abilities / learnsets / formats / natures / conditions / type chart
+- Saved-team rehydration against the local Dex
+
+Stage 4 now implemented: stronger legality / validator layer
+- Past-tagged legacy data is now allowed in builder lists so old mechanics can stay in scope.
+- Unsupported nonstandard categories such as Future, CAP, LGPE-only, Unobtainable, and Gigantamax-only move content are blocked.
+- Validation now checks:
+  - valid nature
+  - valid Tera type
+  - integer / bounded EVs and IVs
+  - valid items and abilities against local Dex data
+  - item / ability nonstandard flags
+  - form requirements such as required item / move / ability / Tera type
+  - battle-only forms
+  - fixed gender mismatches
+  - direct selection of Z / Max battle-generated moves
+  - learnset source warnings for legacy-only or event-only sources
+  - team-level duplicate species / duplicate item warnings
+- Validator also warns when a legal item or ability is not yet fully implemented by the current custom battle runtime.
+
+What this stage still does not claim to finish
+- Full Showdown TeamValidator parity for exact move-source combinations and event constraints
+- Full simulator parity for every move, item, ability, and field edge case
+- Cartridge-accurate transformation handling for Mega / Z / Max / Tera during battle flow
+
+Best next milestone
+- Move from strengthened builder validation into real simulator-side mechanic expansion.
+- Start battle-engine upgrades for transformation mechanics and broader move / ability coverage.

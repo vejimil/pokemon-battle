@@ -385,7 +385,18 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   color: var(--bad);
   white-space: pre-wrap;
 }
-.error-box.hidden { display: none; }
+.error-box.hidden,
+.warning-box.hidden { display: none; }
+
+.warning-box {
+  margin-top: 14px;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.24);
+  color: #fcd34d;
+  white-space: pre-wrap;
+}
 
 .sprite-shell {
   width: 70px;
