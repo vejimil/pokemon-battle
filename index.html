@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PKB — Local Pokémon Battle Builder</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%2230%22 fill=%22%23ef4444%22/%3E%3Cpath d=%22M2 32h60%22 stroke=%22%23ffffff%22 stroke-width=%226%22/%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%2210%22 fill=%22%23ffffff%22 stroke=%22%23111827%22 stroke-width=%224%22/%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%224%22 fill=%22%23111827%22/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -149,6 +150,12 @@
 
                   <div class="checkbox-row">
                     <label class="check-pill"><input id="shiny-checkbox" type="checkbox" /> <span>Shiny</span></label>
+                  </div>
+
+                  <div class="editor-helper-stack">
+                    <div id="species-status" class="helper-note">Choose a species to load PokéAPI data.</div>
+                    <div id="editor-ability-note" class="helper-note">Select a species to load its ability list.</div>
+                    <div id="editor-ability-effect" class="helper-note">No held item selected.</div>
                   </div>
 
                   <section class="moves-section">

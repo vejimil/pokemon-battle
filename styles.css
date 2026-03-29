@@ -317,6 +317,20 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   border: 1px solid rgba(255,255,255,0.08);
 }
 .check-pill input { width: auto; }
+.editor-helper-stack {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.helper-note {
+  padding: 0.7rem 0.85rem;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.08);
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
 .section-head {
   display: flex;
   justify-content: space-between;

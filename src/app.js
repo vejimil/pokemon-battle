@@ -85,6 +85,13 @@ const state = {
 
 const els = {};
 
+function clearSpriteAnimation(container) {
+  if (container?._spriteTimer) {
+    clearInterval(container._spriteTimer);
+    delete container._spriteTimer;
+  }
+}
+
 function slugify(text) {
   return String(text || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 }
@@ -115,6 +122,7 @@ function deepClone(obj) {
 function createEmptyMon() {
   return {
     species: '', displaySpecies: '', spriteId: '', shiny: false, level: 100,
+    nickname: '', gender: '',
     nature: 'Jolly', item: 'Leftovers', ability: '', teraType: 'normal',
     moves: ['', '', '', ''],
     evs: {hp:0, atk:0, def:0, spa:0, spd:0, spe:0},
@@ -319,11 +327,11 @@ function spritePath(spriteId, facing = 'front', shiny = false) {
   const folder = facing === 'back'
     ? shiny ? 'Back shiny' : 'Back'
     : shiny ? 'Front shiny' : 'Front';
-  return `./assets/pokemon/${folder}/${spriteId}.png`;
+  return `./assets/Pokemon/${folder}/${spriteId}.png`;
 }
 function iconPath(spriteId, shiny = false) {
   const folder = shiny ? 'Icons shiny' : 'Icons';
-  return `./assets/pokemon/${folder}/${spriteId}.png`;
+  return `./assets/Pokemon/${folder}/${spriteId}.png`;
 }
 function itemIconPath(itemName) {
   const slug = slugify(itemName);
@@ -358,6 +366,7 @@ async function ensureImageInfo(url) {
   return info;
 }
 async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=false, size='large'}) {
+  clearSpriteAnimation(container);
   container.innerHTML = '';
   container.className = `sprite-shell ${size}`;
   if (!spriteId) {
@@ -386,7 +395,16 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
         frame = (frame + 1) % info.count;
       };
       draw();
-      if (info.count > 1) setInterval(draw, 120);
+      if (info.count > 1) {
+        const timer = setInterval(() => {
+          if (!container.isConnected || canvas !== container.firstChild) {
+            clearInterval(timer);
+            return;
+          }
+          draw();
+        }, 120);
+        container._spriteTimer = timer;
+      }
     };
     img.src = url;
     container.appendChild(canvas);
@@ -413,13 +431,17 @@ function bindElements() {
     editorSprite: document.getElementById('editor-sprite'),
     editorSpeciesName: document.getElementById('editor-species-name'),
     editorTypeRow: document.getElementById('editor-type-row'),
+    editorFlags: document.getElementById('editor-flags'),
     editorAbilityNote: document.getElementById('editor-ability-note'),
     editorAbilityEffect: document.getElementById('editor-ability-effect'),
     speciesInput: document.getElementById('species-input'),
     speciesStatus: document.getElementById('species-status'),
+    nicknameInput: document.getElementById('nickname-input'),
     abilitySelect: document.getElementById('ability-select'),
     natureSelect: document.getElementById('nature-select'),
+    genderSelect: document.getElementById('gender-select'),
     itemInput: document.getElementById('item-input'),
+    itemIcon: document.getElementById('item-icon'),
     levelInput: document.getElementById('level-input'),
     teraSelect: document.getElementById('tera-select'),
     shinyCheckbox: document.getElementById('shiny-checkbox'),
@@ -468,6 +490,34 @@ function buildStaticLists() {
   els.natureSelect.innerHTML = natureOrder.map(name => `<option value="${name}">${name}</option>`).join('');
   els.teraSelect.innerHTML = TYPES.map(type => `<option value="${type}">${titleCase(type)}</option>`).join('');
 }
+function renderItemIcon(itemName) {
+  if (!els.itemIcon) return;
+  els.itemIcon.innerHTML = '';
+  const url = itemIconPath(itemName);
+  if (!url || !itemName) {
+    els.itemIcon.textContent = '—';
+    return;
+  }
+  const img = document.createElement('img');
+  img.src = url;
+  img.alt = itemName;
+  img.loading = 'lazy';
+  img.onerror = () => {
+    els.itemIcon.textContent = '—';
+  };
+  els.itemIcon.appendChild(img);
+}
+function renderEditorFlags(mon) {
+  if (!els.editorFlags) return;
+  const flags = [];
+  if (mon.shiny) flags.push('Shiny');
+  if (mon.gender === 'M') flags.push('Male');
+  if (mon.gender === 'F') flags.push('Female');
+  if (mon.gender === 'N') flags.push('Genderless');
+  flags.push(`Level ${mon.level || 100}`);
+  if (mon.teraType) flags.push(`Tera ${titleCase(mon.teraType)}`);
+  els.editorFlags.innerHTML = flags.map(flag => `<span class="flag-chip">${flag}</span>`).join('');
+}
 function createStatInputs(gridEl, prefix, values, onChange) {
   gridEl.innerHTML = '';
   for (const stat of statOrder) {
@@ -513,7 +563,9 @@ function renderRoster() {
       meta.className = 'slot-meta';
       const species = mon.displaySpecies || `Slot ${slot + 1}`;
       const moveCount = mon.moves.filter(Boolean).length;
-      meta.innerHTML = `<div class="slot-name">${species}</div><div class="slot-sub">${mon.ability || 'No ability'} · ${moveCount}/4 moves</div>`;
+      const title = mon.nickname?.trim() || species;
+      const subline = mon.nickname?.trim() ? `${species} · ${mon.ability || 'No ability'} · ${moveCount}/4 moves` : `${mon.ability || 'No ability'} · ${moveCount}/4 moves`;
+      meta.innerHTML = `<div class="slot-name">${title}</div><div class="slot-sub">${subline}</div>`;
       button.appendChild(meta);
       container.appendChild(button);
     });
@@ -540,39 +592,54 @@ async function hydrateSelectedSpecies() {
     mon.data = null;
     mon.displaySpecies = mon.species || '';
     mon.spriteId = '';
-    renderEditor();
+    mon.ability = '';
+    if (!mon.teraType) mon.teraType = 'normal';
+    if (els.speciesStatus) els.speciesStatus.textContent = mon.species ? 'No uploaded sprite matched that species name.' : 'Choose a species to load PokéAPI data.';
+    saveState();
+    renderAll();
     return;
   }
   mon.spriteId = spriteId;
   mon.displaySpecies = humanizeSpriteId(spriteId);
-  els.speciesStatus.textContent = 'Loading species data…';
+  if (els.speciesStatus) els.speciesStatus.textContent = 'Loading species data…';
   try {
     const data = await getSpeciesData(mon.displaySpecies);
     mon.data = data;
     if (!mon.ability || !data.abilities.includes(mon.ability)) mon.ability = data.abilities[0] || '';
     if (!mon.teraType) mon.teraType = data.types[0] || 'normal';
-    els.speciesStatus.textContent = `${data.name} loaded · ${data.types.map(titleCase).join(' / ')}`;
+    if (els.speciesStatus) els.speciesStatus.textContent = `${data.name} loaded · ${data.types.map(titleCase).join(' / ')}`;
   } catch (error) {
     mon.data = null;
-    els.speciesStatus.textContent = 'Species data could not be loaded from PokéAPI.';
+    if (els.speciesStatus) els.speciesStatus.textContent = 'Species data could not be loaded from PokéAPI.';
   }
   saveState();
   renderAll();
 }
 function renderEditor() {
   const mon = getSelectedMon();
+  const displayName = mon.nickname?.trim() || mon.displaySpecies || mon.species || 'No species selected';
   els.editorTitle.textContent = `${state.playerNames[state.selected.player]} · Slot ${state.selected.slot + 1}`;
   els.editorSubtitle.textContent = 'Set species, moves, stats, item, nature, ability, and tera type.';
   els.speciesInput.value = mon.displaySpecies || mon.species || '';
+  if (els.nicknameInput) els.nicknameInput.value = mon.nickname || '';
   els.itemInput.value = mon.item || '';
   els.levelInput.value = mon.level;
   els.natureSelect.value = mon.nature || 'Jolly';
+  if (els.genderSelect) els.genderSelect.value = mon.gender || '';
   els.teraSelect.value = mon.teraType || 'normal';
   els.shinyCheckbox.checked = Boolean(mon.shiny);
   els.moveInputs.forEach((input, idx) => input.value = mon.moves[idx] || '');
-  els.editorSpeciesName.textContent = mon.displaySpecies || 'No species selected';
+  els.editorSpeciesName.textContent = displayName;
   els.editorTypeRow.innerHTML = '';
   (mon.data?.types || []).forEach(type => els.editorTypeRow.appendChild(createTypePill(type)));
+  renderEditorFlags(mon);
+  renderItemIcon(mon.item);
+  if (els.speciesStatus) {
+    if (mon.data?.types?.length) els.speciesStatus.textContent = `${mon.data.name} loaded · ${mon.data.types.map(titleCase).join(' / ')}`;
+    else if (mon.spriteId) els.speciesStatus.textContent = 'Species data could not be loaded from PokéAPI.';
+    else if (mon.species || mon.displaySpecies) els.speciesStatus.textContent = 'No uploaded sprite matched that species name.';
+    else els.speciesStatus.textContent = 'Choose a species to load PokéAPI data.';
+  }
   els.editorAbilityNote.textContent = mon.ability ? implementedAbilityNote(mon.ability) : 'Select a species to load its ability list.';
   els.editorAbilityEffect.textContent = implementedItemNote(mon.item);
   els.abilitySelect.innerHTML = (mon.data?.abilities || []).map(name => `<option value="${name}">${name}</option>`).join('') || '<option value="">No abilities loaded</option>';
@@ -655,8 +722,16 @@ function wireEditorEvents() {
   els.speciesInput.addEventListener('change', async () => {
     const mon = getSelectedMon();
     mon.species = els.speciesInput.value.trim();
+    mon.displaySpecies = mon.species;
     await hydrateSelectedSpecies();
     await renderValidation();
+  });
+  els.nicknameInput?.addEventListener('input', () => {
+    const mon = getSelectedMon();
+    mon.nickname = els.nicknameInput.value.trim();
+    renderEditor();
+    renderRoster();
+    saveState();
   });
   els.abilitySelect.addEventListener('change', () => {
     const mon = getSelectedMon();
@@ -672,11 +747,18 @@ function wireEditorEvents() {
     saveState();
     renderValidation();
   });
+  els.genderSelect?.addEventListener('change', () => {
+    const mon = getSelectedMon();
+    mon.gender = els.genderSelect.value;
+    renderEditor();
+    saveState();
+  });
   els.itemInput.addEventListener('input', () => {
     const mon = getSelectedMon();
     mon.item = els.itemInput.value.trim();
     renderEditor();
     saveState();
+    renderValidation();
   });
   els.levelInput.addEventListener('input', () => {
     const mon = getSelectedMon();
@@ -688,6 +770,7 @@ function wireEditorEvents() {
   els.teraSelect.addEventListener('change', () => {
     const mon = getSelectedMon();
     mon.teraType = els.teraSelect.value;
+    renderEditor();
     saveState();
   });
   els.shinyCheckbox.addEventListener('change', () => {
@@ -731,7 +814,22 @@ function wireEditorEvents() {
   els.exportTeamsBtn.addEventListener('click', () => {
     const lines = state.teams.flatMap((team, player) => team.map((mon, slot) => {
       const stats = calcStats(mon);
-      return `${state.playerNames[player]} - Slot ${slot + 1}\n${mon.displaySpecies || mon.species} @ ${mon.item || 'No Item'}\nAbility: ${mon.ability}\nLevel: ${mon.level}\nTera Type: ${titleCase(mon.teraType || 'normal')}\n${mon.nature} Nature\nEVs: ${statOrder.map(stat => `${mon.evs[stat]} ${statLabels[stat]}`).join(' / ')}\nIVs: ${statOrder.map(stat => `${mon.ivs[stat]} ${statLabels[stat]}`).join(' / ')}\nStats: ${stats ? statOrder.map(stat => `${statLabels[stat]} ${stats[stat]}`).join(' / ') : 'pending'}\n- ${mon.moves.join('\n- ')}\n`;
+      const headerName = mon.nickname?.trim() ? `${mon.nickname} (${mon.displaySpecies || mon.species})` : (mon.displaySpecies || mon.species);
+      const extraTags = [mon.gender || '', mon.shiny ? 'Shiny' : ''].filter(Boolean).join(' · ');
+      const rows = [
+        `${state.playerNames[player]} - Slot ${slot + 1}`,
+        `${headerName} @ ${mon.item || 'No Item'}`,
+        `Ability: ${mon.ability}`,
+        `Level: ${mon.level}${extraTags ? ` · ${extraTags}` : ''}`,
+        `Tera Type: ${titleCase(mon.teraType || 'normal')}`,
+        `${mon.nature} Nature`,
+        `EVs: ${statOrder.map(stat => `${mon.evs[stat]} ${statLabels[stat]}`).join(' / ')}`,
+        `IVs: ${statOrder.map(stat => `${mon.ivs[stat]} ${statLabels[stat]}`).join(' / ')}`,
+        `Stats: ${stats ? statOrder.map(stat => `${statLabels[stat]} ${stats[stat]}`).join(' / ') : 'pending'}`,
+        ...mon.moves.map(move => `- ${move}`),
+        '',
+      ];
+      return rows.join('\n');
     }));
     navigator.clipboard.writeText(lines.join('\n'));
     els.validationSummary.textContent = 'Teams exported to your clipboard.';
@@ -755,6 +853,8 @@ function buildBattleMon(mon, player, slot) {
     player,
     slot,
     species: mon.displaySpecies || mon.species,
+    nickname: mon.nickname || '',
+    gender: mon.gender || '',
     spriteId: mon.spriteId,
     shiny: mon.shiny,
     level: mon.level,

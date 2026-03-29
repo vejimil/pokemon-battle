@@ -1,0 +1,8 @@
+Modified files only:
+- index.html
+- styles.css
+- src/app.js
+
+How to apply:
+Copy these files over the matching files in your existing repository.
+Do not replace your assets folder.
