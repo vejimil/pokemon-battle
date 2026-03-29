@@ -30,7 +30,7 @@ const commonItems = [
   'Mystic Water','Charcoal','Miracle Seed','Magnet','Black Glasses','Never-Melt Ice','Soft Sand','Dragon Fang','Pixie Plate','Poison Barb',
   'Silver Powder','Spell Tag','Sharp Beak','Twisted Spoon','Hard Stone','Silk Scarf','Metal Coat','Black Sludge'
 ];
-const implementedAbilities = new Set(['intimidate','levitate','technician','adaptability','multiscale','flash-fire']);
+const implementedAbilities = new Set(['intimidate','levitate','technician','adaptability','multiscale','flash-fire','sticky-hold']);
 const implementedItems = new Set(['leftovers','lifeorb','choiceband','choicespecs','choicescarf','focussash','assaultvest','sitrusberry','rockyhelmet','expertbelt','lumberry','eviolite','clearamulet','scopelens','muscleband','wiseglasses','mysticwater','charcoal','miracleseed','magnet','blackglasses','nevermeltice','softsand','dragonfang','pixieplate','poisonbarb','silverpowder','spelltag','sharpbeak','twistedspoon','hardstone','silkscarf','metalcoat','blacksludge','heavydutyboots','airballoon','damprock','heatrock','smoothrock','icyrock','terrainextender','lightclay']);
 const VALIDATION_PROFILES = {
   open: {
@@ -2391,7 +2391,10 @@ async function buildBattleMon(mon, player, slot) {
     preDynamaxSpriteId: '',
     megaUsed: isMegaSpeciesName(mon.data?.name || mon.formSpecies || mon.species),
     gmaxMove: mon.data?.canGigantamax || '',
-    volatile: {},
+    volatile: {actedThisTurn: false},
+    lastMoveUsed: '',
+    lastMoveMeta: null,
+    lastMoveTurn: 0,
     originalData: mon.data,
   };
 }
@@ -2473,15 +2476,140 @@ function getSideForMon(mon) {
   if (!state.battle || mon?.player == null) return null;
   return state.battle.players[mon.player] || null;
 }
+function getRawDexItem(itemName = '') {
+  if (!state.dex || !itemName) return null;
+  const item = state.dex.items.get(itemName);
+  return item?.exists ? item : null;
+}
+function getRawDexSpecies(speciesName = '') {
+  if (!state.dex || !speciesName) return null;
+  const species = state.dex.species.get(speciesName);
+  return species?.exists ? species : null;
+}
+function clearChoiceLock(mon) {
+  if (!mon) return;
+  mon.choiceLockMove = '';
+  mon.choiceLockMoveIndex = null;
+  mon.choiceLockSource = '';
+}
+function clearDisable(mon) {
+  if (mon?.volatile?.disable) delete mon.volatile.disable;
+}
+function isMoveDisabled(mon, moveIndex = null, moveName = '') {
+  const disabled = mon?.volatile?.disable;
+  if (!disabled || disabled.turns <= 0) return false;
+  if (Number.isInteger(moveIndex) && disabled.moveIndex === moveIndex) return true;
+  if (moveName && toId(disabled.moveName) === toId(moveName)) return true;
+  const slot = Number.isInteger(disabled.moveIndex) ? mon?.moveSlots?.[disabled.moveIndex] : null;
+  return Boolean(slot && toId(slot.name) === toId(disabled.moveName) && (!Number.isInteger(moveIndex) || moveIndex === disabled.moveIndex));
+}
+function syncChoiceLockWithItem(mon) {
+  if (!mon) return;
+  if (!CHOICE_ITEM_IDS.has(slugify(mon.item))) clearChoiceLock(mon);
+}
+function recordLastMoveUsed(mon, move) {
+  if (!mon || !move) return;
+  mon.lastMoveUsed = move?.baseMoveName || move?.name || '';
+  mon.lastMoveMeta = {
+    moveId: toId(move?.baseMoveName || move?.name || move?.id),
+    moveName: move?.baseMoveName || move?.name || '',
+    usedZ: Boolean(move?.useZ),
+    usedMax: Boolean(move?.useMax),
+    category: move?.category || '',
+  };
+  mon.lastMoveTurn = state.battle?.turn || 0;
+}
+function getChoiceIndexForMon(mon) {
+  const side = getSideForMon(mon);
+  if (!side || !mon?.id) return -1;
+  return side.team.findIndex(member => member?.id === mon.id);
+}
+function getPendingChoiceForMon(mon) {
+  const side = getSideForMon(mon);
+  const index = getChoiceIndexForMon(mon);
+  if (!side || index < 0) return null;
+  return side.choices?.[index] || null;
+}
+function isSpeciesLockedItem(mon, item) {
+  if (!mon || !item) return false;
+  const itemId = toId(item.id || item.name || item);
+  const species = getRawDexSpecies(mon.species) || getRawDexSpecies(mon.formSpecies) || getRawDexSpecies(mon.baseSpecies) || mon.originalData || null;
+  const requiredItems = new Set([
+    species?.requiredItem,
+    ...(species?.requiredItems || []),
+    mon?.originalData?.requiredItem,
+    ...(mon?.originalData?.requiredItems || []),
+  ].filter(Boolean).map(toId));
+  if (requiredItems.has(itemId)) return true;
+  const baseSpeciesId = toId(mon.baseSpecies || species?.baseSpecies || mon.species);
+  if (item.megaStone) return true;
+  if (item.zMove) return true;
+  if (item.onPlate && baseSpeciesId === 'arceus') return true;
+  if (item.onMemory && baseSpeciesId === 'silvally') return true;
+  if (item.onDrive && baseSpeciesId === 'genesect') return true;
+  if ((itemId === 'griseousorb' || itemId === 'griseouscore') && baseSpeciesId === 'giratina') return true;
+  if ((itemId === 'rustedsword' || itemId === 'rustedshield') && ['zacian','zamazenta'].includes(baseSpeciesId)) return true;
+  if (itemId.endsWith('mask') && baseSpeciesId === 'ogerpon') return true;
+  return false;
+}
+function canRemoveHeldItem(mon, source = null) {
+  if (!mon?.item) return false;
+  const item = getRawDexItem(mon.item);
+  if (!item) return true;
+  if (source && source.id !== mon.id && slugify(mon.ability) === 'stickyhold') return false;
+  if (isSpeciesLockedItem(mon, item)) return false;
+  return true;
+}
+function tryRemoveHeldItem(mon, source = null, reason = 'effect') {
+  if (!mon?.item) return null;
+  if (!canRemoveHeldItem(mon, source)) {
+    if (source && source.id !== mon.id && slugify(mon.ability) === 'stickyhold') {
+      addLog(`${displaySpeciesName(mon.species)}의 점착 / Sticky Hold 때문에 도구를 빼앗을 수 없었다. / ${mon.species}'s Sticky Hold kept its item from being removed.`);
+    }
+    return null;
+  }
+  const removedItem = mon.item;
+  mon.item = '';
+  syncChoiceLockWithItem(mon);
+  return removedItem;
+}
+function trySetHeldItem(mon, itemName = '') {
+  if (!mon) return false;
+  mon.item = itemName || '';
+  syncChoiceLockWithItem(mon);
+  return true;
+}
+function hasUsableNonDisabledMove(mon) {
+  return Boolean(mon?.moveSlots?.some((slot, index) => slot && slot.pp > 0 && !isMoveDisabled(mon, index, slot.name)));
+}
+function getActiveMonsForSide(side) {
+  return (side?.active || []).map(index => side.team[index]).filter(mon => mon && !mon.fainted);
+}
+async function isTargetAboutToUseDamagingMove(target) {
+  if (!target || target.fainted || target.volatile?.actedThisTurn || target.volatile?.mustRecharge) return false;
+  const pendingChoice = getPendingChoiceForMon(target);
+  if (!pendingChoice || pendingChoice.kind !== 'move') return false;
+  const forcedMove = getForcedMoveChoice(target);
+  const resolvedChoice = forcedMove
+    ? {...pendingChoice, move: forcedMove.moveName, moveIndex: forcedMove.moveIndex, target: pendingChoice.target}
+    : pendingChoice;
+  const baseMove = resolvedChoice.moveIndex === -1
+    ? STRUGGLE_MOVE
+    : await getMoveData(resolvedChoice.move).catch(() => null);
+  if (!baseMove) return false;
+  if (resolvedChoice.moveIndex !== -1 && isMoveDisabled(target, resolvedChoice.moveIndex, baseMove.name) && !forcedMove) return false;
+  const side = getSideForMon(target);
+  const runtimeMove = await buildResolvedMove(target, side, resolvedChoice, baseMove);
+  return runtimeMove.category !== 'status';
+}
 function clearSwitchVolatile(mon) {
   if (!mon) return;
   mon.boosts = {atk:0,def:0,spa:0,spd:0,spe:0};
   mon.protect = false;
   mon.protectCounter = 0;
   mon.usedProtectMoveThisTurn = false;
-  mon.choiceLockMove = '';
-  mon.choiceLockMoveIndex = null;
-  mon.choiceLockSource = '';
+  clearChoiceLock(mon);
+  if (mon.status === 'tox') mon.toxicCounter = 1;
   mon.volatile = {
     airBalloonPopped: mon.volatile?.airBalloonPopped || false,
     flashFire: mon.volatile?.flashFire || false,
@@ -2677,6 +2805,10 @@ function handleSuccessfulHitUtilities(user, targets, move) {
   }
 }
 function applyMoveSelfEffects(user, move) {
+  if (move?.selfVolatileStatus === 'mustrecharge' && user && !user.fainted && user.hp > 0) {
+    user.volatile = user.volatile || {};
+    user.volatile.mustRecharge = true;
+  }
   const boosts = move?.selfBoosts || {};
   const statMap = {attack:'atk', defense:'def', 'special-attack':'spa', 'special-defense':'spd', speed:'spe'};
   for (const [rawStat, amount] of Object.entries(boosts)) {
@@ -2689,7 +2821,7 @@ function applyMoveSelfEffects(user, move) {
 }
 function afterMoveResolution(user, hitTargets, move, totalDamage) {
   const moveId = toId(move?.baseMoveName || move?.name || move?.id);
-  user.lastMoveUsed = move?.baseMoveName || move?.name || '';
+  recordLastMoveUsed(user, move);
   if (move.category === 'status') return;
   if (hitTargets.length) {
     if (move.weather) {
@@ -2870,11 +3002,12 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
     const moveButtons = document.createElement('div');
     moveButtons.className = 'choice-buttons';
     const forcedMove = getForcedMoveChoice(mon);
-    const lockedOutToStruggle = Boolean(forcedMove && forcedMove.hasPp === false);
-    const usableMoveCount = mon.moveSlots?.filter(slot => slot && slot.pp > 0).length || 0;
+    const lockedOutToStruggle = Boolean(forcedMove && (forcedMove.hasPp === false || isMoveDisabled(mon, forcedMove.moveIndex, forcedMove.moveName)));
+    const usableMoveCount = mon.moveSlots?.filter((slot, index) => slot && slot.pp > 0 && !isMoveDisabled(mon, index, slot.name)).length || 0;
     const statusHints = [];
     if (mon.volatile?.tauntTurns > 0) statusHints.push(`도발 / Taunt ${mon.volatile.tauntTurns}`);
     if (mon.volatile?.substituteHp > 0) statusHints.push(`대타출동 / Substitute ${mon.volatile.substituteHp} HP`);
+    if (mon.volatile?.disable?.turns > 0) statusHints.push(`금지 / Disable → ${displayMoveName(mon.volatile.disable.moveName)} (${mon.volatile.disable.turns})`);
     if (forcedMove?.source === 'encore') statusHints.push(`앵콜 / Encore → ${displayMoveName(forcedMove.moveName)}`);
     if (forcedMove?.source === 'choice') statusHints.push(`구애 잠금 / Choice lock → ${displayMoveName(forcedMove.moveName)}`);
     if (statusHints.length) {
@@ -2900,8 +3033,9 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
         const taunted = mon.volatile?.tauntTurns > 0 && (preview?.category || move.category) === 'status';
         const avBlocked = slugify(mon.item) === 'assaultvest' && (preview?.category || move.category) === 'status';
         const forcedLocked = forcedMove && forcedMove.moveIndex !== moveIndex;
-        btn.innerHTML = `<strong>${displayMoveName(preview?.name || move.name)}</strong><small>${displayType(preview?.type || move.type)} · ${preview?.category || move.category}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · PP ${slot.pp}/${slot.maxPp}${taunted ? ' · 도발 봉인 / Taunt' : ''}${avBlocked ? ' · AV 봉인 / Assault Vest' : ''}${forcedLocked ? ' · 잠김 / Locked' : ''}</small>`;
-        if (taunted || avBlocked || forcedLocked) {
+        const disabledMove = isMoveDisabled(mon, moveIndex, move.name);
+        btn.innerHTML = `<strong>${displayMoveName(preview?.name || move.name)}</strong><small>${displayType(preview?.type || move.type)} · ${preview?.category || move.category}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · PP ${slot.pp}/${slot.maxPp}${taunted ? ' · 도발 봉인 / Taunt' : ''}${avBlocked ? ' · AV 봉인 / Assault Vest' : ''}${disabledMove ? ' · 금지 / Disable' : ''}${forcedLocked ? ' · 잠김 / Locked' : ''}</small>`;
+        if (taunted || avBlocked || disabledMove || forcedLocked) {
           btn.disabled = true;
           btn.classList.add('disabled');
         }
@@ -3126,6 +3260,11 @@ function renderPendingChoices() {
 }
 async function resolveTurn() {
   const battle = state.battle;
+  battle.players.forEach(side => side.team.forEach(mon => {
+    if (!mon) return;
+    mon.volatile = mon.volatile || {};
+    mon.volatile.actedThisTurn = false;
+  }));
   const queue = [];
   for (const [player, side] of battle.players.entries()) {
     for (const activeIndex of side.active) {
@@ -3163,6 +3302,7 @@ async function resolveTurn() {
   });
   for (const action of queue) {
     if (battle.winner) break;
+    if (action.mon?.volatile) action.mon.volatile.actedThisTurn = true;
     if (action.choice.kind === 'switch') performSwitch(action.player, action.activeIndex, action.choice.switchTo);
     else if (action.choice.kind === 'move') await performMove(action);
     fillFaintedActives();
@@ -3324,6 +3464,8 @@ async function performMove(action) {
   const currentIndex = side.active.find(idx => side.team[idx].id === mon.id) ?? action.activeIndex;
   const currentMon = side.team[currentIndex];
   if (!currentMon || currentMon.fainted) return;
+  currentMon.volatile = currentMon.volatile || {};
+  currentMon.volatile.actedThisTurn = true;
 
   const check = canMove(currentMon);
   if (!check.ok) {
@@ -3351,6 +3493,17 @@ async function performMove(action) {
     }
     moveChoice = {...choice, move: STRUGGLE_MOVE.name, moveIndex:-1, tera:false, mega:false, z:false, dynamax:false};
     resolvedBaseMove = STRUGGLE_MOVE;
+  }
+
+  const selectedDisabledMove = moveChoice.moveIndex !== -1 && isMoveDisabled(currentMon, moveChoice.moveIndex, resolvedBaseMove?.name || moveChoice.move);
+  if (selectedDisabledMove) {
+    if (forcedMove) {
+      moveChoice = {...moveChoice, move: STRUGGLE_MOVE.name, moveIndex: -1, tera: false, mega: false, z: false, dynamax: false};
+      resolvedBaseMove = STRUGGLE_MOVE;
+    } else {
+      addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(resolvedBaseMove?.name || moveChoice.move)}는 금지 / Disable 상태라 사용할 수 없다. / ${currentMon.species}'s ${resolvedBaseMove?.name || moveChoice.move} is disabled.`);
+      return;
+    }
   }
 
   const moveId = toId(resolvedBaseMove?.baseMoveName || resolvedBaseMove?.name || resolvedBaseMove?.id);
@@ -3397,11 +3550,21 @@ async function performMove(action) {
   if (moveChoice.moveIndex !== -1) consumeMovePp(currentMon, moveChoice);
   let targets = resolveTargets(player, currentIndex, moveChoice, move);
   if (!targets.length) {
+    recordLastMoveUsed(currentMon, move);
     addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}! 그러나 맞힐 대상이 없었다. / ${currentMon.species} used ${move.name}, but there was no valid target.`);
     return;
   }
 
   addLog(`${displaySpeciesName(currentMon.species)}의 ${displayMoveName(move.name)}! / ${currentMon.species} used ${move.name}.`, 'accent');
+  if (moveId === 'suckerpunch') {
+    const target = targets.find(candidate => candidate && !candidate.fainted);
+    const willAttack = target ? await isTargetAboutToUseDamagingMove(target) : false;
+    if (!willAttack) {
+      recordLastMoveUsed(currentMon, move);
+      addLog(`기습 / Sucker Punch가 실패했다. / Sucker Punch failed.`);
+      return;
+    }
+  }
   if (!move.useZ && !move.useMax && CHOICE_ITEM_IDS.has(slugify(currentMon.item)) && moveChoice.moveIndex >= 0) {
     currentMon.choiceLockMove = resolvedBaseMove.name;
     currentMon.choiceLockMoveIndex = moveChoice.moveIndex;
@@ -3417,6 +3580,7 @@ async function performMove(action) {
     } else {
       addLog(`${displaySpeciesName(currentMon.species)}의 보호 기술이 실패했다. / ${currentMon.species}'s protection move failed.`);
     }
+    recordLastMoveUsed(currentMon, move);
     return;
   }
 
@@ -3443,7 +3607,10 @@ async function performMove(action) {
     addLog(`${displaySpeciesName(target.species)}은(는) 자신을 보호했다. / ${target.species} protected itself.`);
   }
   targets = validTargets;
-  if (!targets.length && move.target !== 'opponent-side' && move.target !== 'self-side' && move.target !== 'ally-side') return;
+  if (!targets.length && move.target !== 'opponent-side' && move.target !== 'self-side' && move.target !== 'ally-side') {
+    recordLastMoveUsed(currentMon, move);
+    return;
+  }
 
   if (move.category === 'status') {
     applyStatusMove(currentMon, targets, move);
@@ -3490,7 +3657,7 @@ async function performMove(action) {
         addLog(`${displaySpeciesName(target.species)}은(는) 기합의띠 / Focus Sash로 버텼다! / ${target.species} endured with Focus Sash!`, 'accent');
       }
       if (target.protect && move.partialProtect) damage = Math.max(1, Math.floor(damage * 0.25));
-      if (target.volatile?.substituteHp > 0) {
+      if (target.volatile?.substituteHp > 0 && !move.flags?.bypasssub) {
         const subDamage = Math.max(0, damage);
         target.volatile.substituteHp = Math.max(0, target.volatile.substituteHp - subDamage);
         totalDamage += subDamage;
@@ -3511,6 +3678,10 @@ async function performMove(action) {
         addLog(`${displaySpeciesName(currentMon.species)}의 HP가 ${heal} 회복되었다. / ${currentMon.species} restored ${heal} HP.`);
       }
       maybeApplySecondary(currentMon, target, move);
+      if (moveId === 'knockoff' && damage > 0) {
+        const removedItem = tryRemoveHeldItem(target, currentMon, 'knockoff');
+        if (removedItem) addLog(`${displaySpeciesName(target.species)}의 ${displayItemName(removedItem)}이(가) 탁쳐서떨구기 / Knock Off로 떨어졌다. / ${target.species} lost its ${removedItem} to Knock Off.`);
+      }
       if (!target.volatile?.airBalloonPopped && slugify(target.item) === 'airballoon' && damage > 0) {
         target.volatile.airBalloonPopped = true;
         addLog(`${displaySpeciesName(target.species)}의 풍선 / Air Balloon이 터졌다! / ${target.species}'s Air Balloon popped!`);
@@ -3531,7 +3702,7 @@ async function performMove(action) {
       currentMon.hp = Math.max(0, currentMon.hp - recoil);
       addLog(`${displaySpeciesName(currentMon.species)}은(는) 생명의구슬 / Life Orb 반동으로 데미지를 입었다. / ${currentMon.species} was hurt by Life Orb.`);
     }
-    if (slugify(target.item) === 'rockyhelmet' && totalDamage > 0 && move.category === 'physical') {
+    if (slugify(target.item) === 'rockyhelmet' && totalDamage > 0 && move.category === 'physical' && move.flags?.contact) {
       const recoil = Math.max(1, Math.floor(currentMon.baseMaxHp / 6));
       currentMon.hp = Math.max(0, currentMon.hp - recoil);
       addLog(`${displaySpeciesName(currentMon.species)}은(는) 울퉁불퉁멧 / Rocky Helmet 때문에 데미지를 입었다. / ${currentMon.species} was hurt by Rocky Helmet.`);
@@ -3547,6 +3718,14 @@ async function performMove(action) {
 }
 function canMove(mon) {
   if (!mon || mon.fainted) return {ok:false, reason:'기절 상태입니다. / Fainted.'};
+  if (mon.volatile?.mustRecharge) {
+    delete mon.volatile.mustRecharge;
+    return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 재충전이 필요하다. / ${mon.species} must recharge.`};
+  }
+  if (mon.volatile?.flinch) {
+    delete mon.volatile.flinch;
+    return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 풀죽어서 움직일 수 없다. / ${mon.species} flinched and couldn't move.`};
+  }
   if (mon.status === 'slp') {
     mon.sleepTurns = Math.max(0, (mon.sleepTurns || 1) - 1);
     if (mon.sleepTurns > 0) return {ok:false, reason:`${displaySpeciesName(mon.species)}은(는) 잠들어 있다. / ${mon.species} is asleep.`};
@@ -3638,7 +3817,7 @@ function applyStatusMove(user, targets, move) {
   if (moveId === 'taunt') {
     const target = targets.find(Boolean);
     if (!target || target.fainted) return;
-    if (target.volatile?.substituteHp > 0) {
+    if (target.volatile?.substituteHp > 0 && !move.flags?.bypasssub) {
       addLog(`${displaySpeciesName(target.species)}의 대타출동 / Substitute가 도발을 막았다. / ${target.species}'s substitute blocked Taunt.`);
       return;
     }
@@ -3649,7 +3828,7 @@ function applyStatusMove(user, targets, move) {
   if (moveId === 'encore') {
     const target = targets.find(Boolean);
     const lastMove = target?.lastMoveUsed;
-    if (target?.volatile?.substituteHp > 0) {
+    if (target?.volatile?.substituteHp > 0 && !move.flags?.bypasssub) {
       addLog(`${displaySpeciesName(target.species)}의 대타출동 / Substitute가 앵콜을 막았다. / ${target.species}'s substitute blocked Encore.`);
       return;
     }
@@ -3665,6 +3844,57 @@ function applyStatusMove(user, targets, move) {
     }
     target.volatile.encore = {moveName: slot.name, moveIndex, turns: 3};
     addLog(`${displaySpeciesName(target.species)}은(는) 앵콜 / Encore로 ${displayMoveName(slot.name)}에 묶였다. / ${target.species} received an encore!`, 'accent');
+    return;
+  }
+  if (moveId === 'disable') {
+    const target = targets.find(Boolean);
+    const lastMoveMeta = target?.lastMoveMeta;
+    const lastMove = target?.lastMoveUsed;
+    if (!target || !lastMove || !lastMoveMeta || lastMoveMeta.usedZ || lastMoveMeta.usedMax || lastMoveMeta.moveId === 'struggle') {
+      addLog('금지 / Disable가 실패했다. / Disable failed.');
+      return;
+    }
+    const moveIndex = target.moveSlots?.findIndex(slot => slot && toId(slot.name) === toId(lastMove)) ?? -1;
+    const slot = moveIndex >= 0 ? target.moveSlots[moveIndex] : null;
+    if (!slot || slot.pp <= 0) {
+      addLog('금지 / Disable가 실패했다. / Disable failed.');
+      return;
+    }
+    const pendingChoice = getPendingChoiceForMon(target);
+    const duration = pendingChoice?.kind === 'move' && !target.volatile?.actedThisTurn ? 4 : 5;
+    target.volatile.disable = {moveName: slot.name, moveIndex, turns: duration};
+    addLog(`${displaySpeciesName(target.species)}의 ${displayMoveName(slot.name)}가 금지 / Disable 상태가 되었다. / ${target.species}'s ${slot.name} was disabled.`, 'accent');
+    return;
+  }
+  if (moveId === 'trick' || moveId === 'switcheroo') {
+    const target = targets.find(Boolean);
+    if (!target || target.fainted) {
+      addLog(`${displayMoveName(move.name)}가 실패했다. / ${move.name} failed.`);
+      return;
+    }
+    if (target.volatile?.substituteHp > 0 && !move.flags?.bypasssub) {
+      addLog(`${displaySpeciesName(target.species)}의 대타출동 / Substitute가 ${displayMoveName(move.name)}를 막았다. / ${target.species}'s substitute blocked ${move.name}.`);
+      return;
+    }
+    const userItem = user.item || '';
+    const targetItem = target.item || '';
+    if (!userItem && !targetItem) {
+      addLog(`${displayMoveName(move.name)}가 실패했다. / ${move.name} failed.`);
+      return;
+    }
+    if ((targetItem && !canRemoveHeldItem(target, user)) || (userItem && !canRemoveHeldItem(user, user))) {
+      if (targetItem && slugify(target.ability) === 'stickyhold') {
+        addLog(`${displaySpeciesName(target.species)}의 점착 / Sticky Hold 때문에 도구를 바꿀 수 없었다. / ${target.species}'s Sticky Hold prevented the item swap.`);
+      } else {
+        addLog(`${displayMoveName(move.name)}가 실패했다. / ${move.name} failed.`);
+      }
+      return;
+    }
+    clearChoiceLock(user);
+    clearChoiceLock(target);
+    trySetHeldItem(user, targetItem);
+    trySetHeldItem(target, userItem);
+    addLog(`${displaySpeciesName(user.species)}와(과) ${displaySpeciesName(target.species)}의 도구가 뒤바뀌었다. / ${user.species} and ${target.species} switched items.`, 'accent');
     return;
   }
   if (moveId === 'defog') {
@@ -3684,7 +3914,7 @@ function applyStatusMove(user, targets, move) {
   if (move.statChanges.length) {
     const applyToSelf = ['self','self-side'].includes(move.target) || (move.metaCategory === 'net-good-stats' && move.target !== 'single-opponent');
     const recipients = applyToSelf ? [user] : targets.filter(target => {
-      if (target.volatile?.substituteHp > 0 && target.id !== user.id) {
+      if (target.volatile?.substituteHp > 0 && target.id !== user.id && !move.flags?.bypasssub) {
         addLog(`${displaySpeciesName(target.species)}의 대타출동 / Substitute가 변화를 막았다. / ${target.species}'s substitute blocked the status move.`);
         return false;
       }
@@ -3702,7 +3932,7 @@ function applyStatusMove(user, targets, move) {
   }
   if (move.ailment && move.ailment !== 'none') {
     targets.forEach(target => {
-      if (target.volatile?.substituteHp > 0 && target.id !== user.id) {
+      if (target.volatile?.substituteHp > 0 && target.id !== user.id && !move.flags?.bypasssub) {
         addLog(`${displaySpeciesName(target.species)}의 대타출동 / Substitute가 상태이상을 막았다. / ${target.species}'s substitute blocked the status condition.`);
         return;
       }
@@ -3711,8 +3941,13 @@ function applyStatusMove(user, targets, move) {
   }
 }
 function maybeApplySecondary(user, target, move) {
-  if (target?.volatile?.substituteHp > 0) return;
+  if (target?.volatile?.substituteHp > 0 && !move.flags?.bypasssub) return;
   if (move.ailment && move.ailment !== 'none' && move.ailmentChance > 0) applyAilment(target, move.ailment, move.ailmentChance);
+  if (move.flinchChance > 0 && !target?.volatile?.actedThisTurn && Math.random() * 100 < move.flinchChance) {
+    target.volatile = target.volatile || {};
+    target.volatile.flinch = true;
+    addLog(`${displaySpeciesName(target.species)}은(는) 풀죽었다! / ${target.species} flinched!`);
+  }
   if (move.statChanges.length && move.statChance > 0 && Math.random() * 100 < move.statChance) {
     move.statChanges.forEach(change => {
       const statMap = {attack:'atk', defense:'def', 'special-attack':'spa', 'special-defense':'spd', speed:'spe'};
@@ -3761,6 +3996,7 @@ function computeDamage(attacker, defender, move, spread = false) {
   if (slugify(attacker.ability) === 'technician' && power <= 60 && !move.useZ && !move.useMax) power = Math.floor(power * 1.5);
   if (slugify(attacker.item) === 'choiceband' && physical) atk = Math.floor(atk * 1.5);
   if (slugify(attacker.item) === 'choicespecs' && !physical) atk = Math.floor(atk * 1.5);
+  if (moveId === 'knockoff' && defender?.item && canRemoveHeldItem(defender, attacker)) power = Math.floor(power * 1.5);
   if (slugify(attacker.item) === 'muscleband' && physical) power = Math.floor(power * 1.1);
   if (slugify(attacker.item) === 'wiseglasses' && !physical) power = Math.floor(power * 1.1);
   const typeBoostItems = {
@@ -3822,32 +4058,44 @@ function fillFaintedActives() {
 function endOfTurn() {
   const battle = state.battle;
   battle.players.forEach(side => {
-    side.team.forEach(mon => {
-      if (!mon || mon.fainted) return;
+    getActiveMonsForSide(side).forEach(mon => {
       const hpBase = mon.baseMaxHp || mon.maxHp;
       if (!mon.usedProtectMoveThisTurn) mon.protectCounter = 0;
       mon.usedProtectMoveThisTurn = false;
       mon.protect = false;
+      const faintIfNeeded = () => {
+        if (mon.hp > 0) return false;
+        mon.hp = 0;
+        mon.fainted = true;
+        if (mon.dynamaxed) clearDynamax(mon);
+        addLog(`${displaySpeciesName(mon.species)}은(는) 쓰러졌다. / ${mon.species} fainted.`, 'win');
+        return true;
+      };
       if (battle.weather === 'sand' && !['rock','ground','steel'].some(type => mon.types.includes(type))) {
         const dmg = Math.max(1, Math.floor(hpBase / 16));
         mon.hp = Math.max(0, mon.hp - dmg);
         addLog(`${displaySpeciesName(mon.species)}은(는) 모래바람 / Sandstorm 때문에 데미지를 입었다. / ${mon.species} was buffeted by the sandstorm.`);
+        if (faintIfNeeded()) return;
       }
       if (mon.status === 'brn') {
         const dmg = Math.max(1, Math.floor(hpBase / 16));
         mon.hp = Math.max(0, mon.hp - dmg);
         addLog(`${displaySpeciesName(mon.species)}은(는) 화상 데미지를 입었다. / ${mon.species} was hurt by its burn.`);
+        if (faintIfNeeded()) return;
       }
       if (mon.status === 'psn') {
         const dmg = Math.max(1, Math.floor(hpBase / 8));
         mon.hp = Math.max(0, mon.hp - dmg);
         addLog(`${displaySpeciesName(mon.species)}은(는) 독 데미지를 입었다. / ${mon.species} was hurt by poison.`);
+        if (faintIfNeeded()) return;
       }
       if (mon.status === 'tox') {
-        mon.toxicCounter = Math.max(1, mon.toxicCounter + 1);
+        mon.toxicCounter = Math.max(1, mon.toxicCounter || 1);
         const dmg = Math.max(1, Math.floor(hpBase * mon.toxicCounter / 16));
         mon.hp = Math.max(0, mon.hp - dmg);
         addLog(`${displaySpeciesName(mon.species)}은(는) 맹독 데미지를 입었다. / ${mon.species} was hurt by toxic poison.`);
+        mon.toxicCounter += 1;
+        if (faintIfNeeded()) return;
       }
       if (battle.terrain === 'grassyterrain' && isGrounded(mon) && mon.hp > 0) {
         const heal = Math.max(1, Math.floor(hpBase / 16));
@@ -3867,6 +4115,7 @@ function endOfTurn() {
         } else {
           mon.hp = Math.max(0, mon.hp - amount);
           addLog(`${displaySpeciesName(mon.species)}은(는) 검은오물 / Black Sludge 때문에 데미지를 입었다. / ${mon.species} was hurt by Black Sludge.`);
+          if (faintIfNeeded()) return;
         }
       }
       if (slugify(mon.item) === 'sitrusberry' && mon.hp > 0 && mon.hp <= mon.maxHp / 2 && !mon.volatile.usedSitrus) {
@@ -3874,13 +4123,6 @@ function endOfTurn() {
         mon.hp = Math.min(mon.maxHp, mon.hp + heal);
         mon.volatile.usedSitrus = true;
         addLog(`${displaySpeciesName(mon.species)}은(는) 오랭열매 / Sitrus Berry로 HP를 회복했다. / ${mon.species} restored HP with Sitrus Berry.`);
-      }
-      if (mon.hp <= 0) {
-        mon.hp = 0;
-        mon.fainted = true;
-        if (mon.dynamaxed) clearDynamax(mon);
-        addLog(`${displaySpeciesName(mon.species)}은(는) 쓰러졌다. / ${mon.species} fainted.`, 'win');
-        return;
       }
       if (mon.dynamaxed) {
         mon.dynamaxTurns = Math.max(0, mon.dynamaxTurns - 1);
@@ -3895,12 +4137,14 @@ function endOfTurn() {
     ['reflectTurns','lightScreenTurns','auroraVeilTurns','tailwindTurns'].forEach(key => {
       if (side.sideConditions?.[key] > 0) side.sideConditions[key] = Math.max(0, side.sideConditions[key] - 1);
     });
-    side.team.forEach(mon => {
-      if (!mon || mon.fainted) return;
+    getActiveMonsForSide(side).forEach(mon => {
       if (mon.volatile?.tauntTurns > 0) mon.volatile.tauntTurns = Math.max(0, mon.volatile.tauntTurns - 1);
       if (mon.volatile?.tauntTurns === 0) delete mon.volatile.tauntTurns;
       if (mon.volatile?.encore?.turns > 0) mon.volatile.encore.turns = Math.max(0, mon.volatile.encore.turns - 1);
       if (mon.volatile?.encore?.turns === 0) delete mon.volatile.encore;
+      if (mon.volatile?.disable?.turns > 0) mon.volatile.disable.turns = Math.max(0, mon.volatile.disable.turns - 1);
+      if (mon.volatile?.disable?.turns === 0) delete mon.volatile.disable;
+      if (mon.volatile?.flinch) delete mon.volatile.flinch;
     });
   });
   if (battle.trickRoomTurns > 0) {

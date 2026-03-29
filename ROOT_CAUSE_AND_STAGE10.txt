@@ -1,0 +1,72 @@
+[Stage 10] Singles precision pass 2 (Knock Off / Trick / Switcheroo / Disable / Sucker Punch / residual+volatile timing)
+
+이번 단계에서 한 일
+1. Knock Off를 추가 정밀 구현했다.
+   - target item이 실제로 떨어질 수 있을 때만 1.5배 위력을 적용했다.
+   - damage가 실제로 본체에 들어간 뒤에 item을 제거하도록 연결했다.
+   - Sticky Hold / form-locked item / Mega Stone / Z-Crystal / 주요 form 유지 아이템은 제거되지 않도록 막았다.
+   - Substitute 뒤에 있으면 기존처럼 본체 item은 떨어지지 않게 유지했다.
+
+2. Trick / Switcheroo를 추가했다.
+   - 양쪽 item 교환(또는 한쪽만 item 보유 시 일방 전달)을 지원한다.
+   - 둘 다 빈손이면 실패한다.
+   - Sticky Hold 대상은 교환을 막는다.
+   - form 유지용 / irremovable item은 교환되지 않게 처리했다.
+   - item이 바뀌면 기존 choice lock은 즉시 해제되도록 정리했다.
+
+3. Disable를 추가했다.
+   - target의 last used move를 기준으로 disable을 건다.
+   - Z / Max / Struggle에는 걸리지 않게 막았다.
+   - PP가 0이면 실패한다.
+   - 아직 이번 턴 행동하지 않은 target에게 맞히면 실질 지속 턴이 1턴 짧아지도록 4턴 처리, 아니면 5턴 처리로 간단 정밀화했다.
+   - 선택 UI에서도 Disable 상태를 표시하고, 해당 기술 버튼을 막는다.
+   - Encore / Choice lock으로 disabled move만 강제되는 경우 Struggle로 이어질 수 있게 처리했다.
+
+4. Sucker Punch를 추가했다.
+   - target이 아직 이번 턴 행동 전이고, 실제로 damaging move를 쓰려는 경우에만 성공하도록 연결했다.
+   - switch / status move / recharge 상태 / 이미 행동한 target 상대로는 실패한다.
+
+5. substitute / bypasssub 예외를 일부 정밀화했다.
+   - sound 등 bypasssub flag가 있는 기술은 substitute가 secondary / status / damage를 막지 않도록 보강했다.
+   - Disable는 bypasssub 플래그를 존중하도록 연결했다.
+
+6. flinch / recharge volatile을 최소 구현했다.
+   - secondary flinch가 걸리면 아직 행동하지 않은 target의 턴을 막는다.
+   - must recharge 계열 self volatile을 읽어서 다음 턴 행동 불가를 처리한다.
+   - Sucker Punch 판정에서도 must recharge를 반영한다.
+
+7. residual / 턴 종료 정밀도를 보강했다.
+   - end of turn residual이 벤치 전체가 아니라 active Pokémon에게만 적용되도록 수정했다.
+   - toxic damage가 첫 턴부터 2/16으로 들어가던 문제를 고쳐 1/16 → 2/16 순으로 증가하도록 수정했다.
+   - switch out 시 toxic counter를 다시 첫 tick 기준으로 리셋하도록 보강했다.
+   - residual 도중 HP가 0이 되면 이후 회복/추가 residual이 계속 진행되지 않도록 중간 faint 처리로 정리했다.
+   - Disable 턴 감소도 end of turn에 추가했다.
+
+8. contact 예외도 하나 바로잡았다.
+   - Rocky Helmet 반동이 이제 physical 전체가 아니라 contact move에만 적용된다.
+
+이번 단계에서 조심한 점
+- asset mapping 로직은 건드리지 않았다.
+- form sprite 파일명은 새로 가정하지 않았다.
+- code-only 작업 원칙을 유지했다.
+
+현재 한계
+- item swap / remove의 full cartridge parity는 아직 아니다.
+  - 더 많은 특수 아이템 / ability / form-change 예외를 계속 늘릴 수 있다.
+- Disable / Encore / Choice lock / Struggle 상호작용은 핵심 위주로 맞췄고, 극한 edge case는 후속 정밀화 여지가 있다.
+- recharge / flinch / sound-based / bypasssub는 최소 유효 범위부터 연결한 상태다.
+- 아직 doubles 전용 redirection / ally interaction / spread timing은 다음 단계다.
+
+다음 단계 추천
+1. singles 세부 판정 추가 안정화 계속
+   - Trick / Knock Off / Disable / Encore / Choice의 edge case 추가
+   - status / volatile / recoil / fail timing / no-target timing 추가 정리
+   - item / ability / substitute / bypasssub 예외 확대
+
+2. doubles 확장
+   - 더블 타겟팅
+   - ally interaction
+   - spread / redirection / protect / replacement 흐름 확장
+
+3. 특수 전투 중 폼 변화 강화
+   - Aegislash / Mimikyu / Wishiwashi / Morpeko / Ogerpon / Terapagos 등 runtime form changes
