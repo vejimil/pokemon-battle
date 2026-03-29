@@ -2713,13 +2713,31 @@ async function startCustomRuntimeBattle() {
   applyStartOfBattleAbilities();
   return battle;
 }
+function cloneEngineBattleSnapshot(snapshot) {
+  if (!snapshot) return null;
+  return {
+    ...snapshot,
+    players: (snapshot.players || []).map(side => ({
+      ...side,
+      active: Array.isArray(side.active) ? [...side.active] : [],
+      team: (side.team || []).map(mon => mon ? {
+        ...mon,
+        boosts: {...(mon.boosts || {atk: 0, def: 0, spa: 0, spd: 0, spe: 0})},
+        volatile: {...(mon.volatile || {})},
+        moveSlots: Array.isArray(mon.moveSlots)
+          ? mon.moveSlots.map(slot => slot ? {...slot} : slot)
+          : [],
+      } : mon),
+      choices: {},
+      mustSwitch: [],
+      request: side.request || null,
+    })),
+    log: Array.isArray(snapshot.log) ? [...snapshot.log] : [],
+  };
+}
 function adoptEngineBattleSnapshot(snapshot) {
-  const battle = ensureBattleUiState(snapshot);
+  const battle = ensureBattleUiState(cloneEngineBattleSnapshot(snapshot));
   if (!battle) return null;
-  battle.players?.forEach(side => {
-    side.choices = {};
-    side.mustSwitch = [];
-  });
   clearEnginePendingChoices(battle);
   battle.resolvingTurn = false;
   battle.sourceOfTruth = 'engine';
@@ -2867,6 +2885,17 @@ function getEngineSideId(player) {
 function getEngineRequestForPlayer(player, battle = state.battle) {
   return battle?.players?.[player]?.request || null;
 }
+function getEngineRequestSide(player, battle = state.battle) {
+  return getEngineRequestForPlayer(player, battle)?.side || null;
+}
+function getEngineRequestSideEntries(player, battle = state.battle) {
+  const requestSide = getEngineRequestSide(player, battle);
+  return Array.isArray(requestSide?.pokemon) ? requestSide.pokemon : [];
+}
+function isEngineRequestSideEntryFainted(entry) {
+  const condition = String(entry?.condition || '').toLowerCase();
+  return Boolean(entry?.fainted) || condition.includes(' fnt');
+}
 function isEngineForceSwitchRequest(request) {
   return Array.isArray(request?.forceSwitch) && request.forceSwitch.some(Boolean);
 }
@@ -2963,7 +2992,7 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
     kind: 'move',
     move: moveInfo.move || rawChoice.move || '',
     moveIndex: rawChoice.moveIndex,
-    target: rawChoice.target || null,
+    target: null,
     mega: Boolean(rawChoice.mega && moveRequest?.canMegaEvo),
     tera: Boolean(rawChoice.tera && moveRequest?.canTerastallize),
     z: Boolean(rawChoice.z && zInfo),
@@ -2984,6 +3013,21 @@ function canEngineSwitchNormally(player, requestSlot = 0, battle = state.battle)
 function getEngineSwitchOptions(player, activeIndex, battle = state.battle) {
   const side = battle?.players?.[player];
   if (!side) return [];
+
+  const requestEntries = getEngineRequestSideEntries(player, battle);
+  if (requestEntries.length) {
+    const requestOptions = requestEntries
+      .map((entry, index) => ({entry, mon: side.team[index], index}))
+      .filter(({entry, mon, index}) => (
+        mon &&
+        index !== activeIndex &&
+        !isEngineRequestSideEntryFainted(entry) &&
+        !side.active.includes(index)
+      ))
+      .map(({mon, index}) => ({mon, index}));
+    if (requestOptions.length) return requestOptions;
+  }
+
   return side.team
     .map((mon, index) => ({mon, index}))
     .filter(({mon, index}) => mon && !mon.fainted && !side.active.includes(index) && index !== activeIndex);
@@ -3096,7 +3140,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       section.appendChild(forcedNote);
     }
 
-    if (isEngineForceSwitchRequest(request) || !mon || mon.fainted) {
+    if (isEngineForceSwitchRequest(request)) {
       const switchWrap = document.createElement('div');
       switchWrap.className = 'choice-buttons';
       getEngineSwitchOptions(player, activeIndex, battle).forEach(({mon: option, index}) => {
@@ -3126,7 +3170,33 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       return;
     }
 
+    if (!mon) {
+      const note = document.createElement('div');
+      note.className = 'small-note';
+      note.textContent = '현재 전투 포켓몬 정보가 엔진 스냅샷에 없습니다. / Current active Pokémon data is missing from the engine snapshot.';
+      section.appendChild(note);
+      container.appendChild(section);
+      return;
+    }
+
+    if (mon.fainted) {
+      const note = document.createElement('div');
+      note.className = 'small-note';
+      note.textContent = '기절 상태입니다. 엔진이 강제 교체 요청을 보낼 때만 교체를 선택할 수 있습니다. / This Pokémon is fainted. A replacement can only be chosen when the engine sends a force-switch request.';
+      section.appendChild(note);
+      container.appendChild(section);
+      return;
+    }
+
     const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+    if (!moveRequest) {
+      const note = document.createElement('div');
+      note.className = 'small-note';
+      note.textContent = '현재 행동 요청이 없습니다. 엔진의 다음 요청을 기다리는 중입니다. / There is no active move request right now. Waiting for the next engine request.';
+      section.appendChild(note);
+      container.appendChild(section);
+      return;
+    }
     const moveButtons = document.createElement('div');
     moveButtons.className = 'choice-buttons';
     (moveRequest?.moves || []).forEach((moveInfo, moveIndex) => {
@@ -4116,13 +4186,17 @@ function renderPendingChoices() {
   });
   els.pendingChoices.innerHTML = rows.join('');
 }
+async function resolveEngineTurn(battle = state.battle) {
+  const nextSnapshot = await submitShowdownLocalSinglesChoices({battleId: battle.id, battle});
+  state.battle = adoptEngineBattleSnapshot(nextSnapshot);
+}
 async function resolveTurn() {
   const battle = ensureBattleUiState(state.battle);
   if (!battle || battle.resolvingTurn) return;
   battle.resolvingTurn = true;
   if (isShowdownLocalBattle(battle)) {
     try {
-      state.battle = adoptEngineBattleSnapshot(await submitShowdownLocalSinglesChoices({battleId: battle.id, battle}));
+      await resolveEngineTurn(battle);
       renderBattle();
     } catch (error) {
       console.error('Failed to resolve Showdown-local singles turn', error);
