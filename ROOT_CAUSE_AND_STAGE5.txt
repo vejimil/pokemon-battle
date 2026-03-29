@@ -1,0 +1,24 @@
+Stage 5 / deeper legality parity
+
+What changed
+- Added validation profiles:
+  - Open custom
+  - Standard-style singles
+  - VGC-style doubles
+- Profile rules can now enforce Species Clause, Item Clause, and fixed level 50 checks.
+- Added learnset-lineage access in the local Dex so validator logic can inspect direct event distributions instead of only flattened learnset IDs.
+- Added event-only move bundle validation:
+  - looks up direct 3S/4S/5S/... event sources per move
+  - checks matching event metadata when available
+  - compares chosen nature / gender / ability / shiny state / IV requirements / minimum level
+  - escalates to hard errors for clearly impossible combinations on unbreedable species
+  - keeps softer warnings where breeding / transfer chains are still ambiguous
+
+Why this stage matters
+- The previous validator could tell whether a move existed in the loaded learnset, but it still treated many event-only combinations as generic warnings.
+- This stage moves validation closer to real TeamValidator-style source reasoning without yet replacing the current custom battle runtime.
+
+Still not finished yet
+- This is still best-effort legality, not full Showdown TeamValidator parity.
+- Exact cross-generation breeding, transfer, HOME, and one-off format bans are not yet fully modeled.
+- Battle execution is still the project custom runtime rather than the full simulator.

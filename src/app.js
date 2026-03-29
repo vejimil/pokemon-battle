@@ -1,7 +1,7 @@
 import {loadLocalDex, LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_TYPES, LOCAL_TYPE_CHART} from './local-dex.js';
 import {KO_NAME_MAPS} from './i18n-ko-data.js';
 
-const STORAGE_KEY = 'pkb-static-state-v1';
+const STORAGE_KEY = 'pkb-static-state-v2';
 const SHOWDOWN_TARGET_HINTS = {
   normal: 'single-opponent',
   adjacentFoe: 'single-opponent',
@@ -32,6 +32,36 @@ const commonItems = [
 ];
 const implementedAbilities = new Set(['intimidate','levitate','technician','adaptability','multiscale','flash-fire']);
 const implementedItems = new Set(['leftovers','life-orb','choice-band','choice-specs','choice-scarf','focus-sash','assault-vest','sitrus-berry','rocky-helmet','expert-belt','lum-berry','eviolite','clear-amulet','scope-lens','muscle-band','wise-glasses','mystic-water','charcoal','miracle-seed','magnet','black-glasses','never-melt-ice','soft-sand','dragon-fang','pixie-plate','poison-barb','silver-powder','spell-tag','sharp-beak','twisted-spoon','hard-stone','silk-scarf','metal-coat','black-sludge']);
+const VALIDATION_PROFILES = {
+  open: {
+    id: 'open',
+    label: '자유 규칙 / Open custom',
+    description: '프로젝트 전체 범위를 넓게 허용합니다. 중복 종족 / 도구는 경고만 띄웁니다. / Broad project-scope validation. Duplicate species and items stay as warnings only.',
+    enforceSpeciesClause: false,
+    enforceItemClause: false,
+    forcedLevel: null,
+    recommendedMode: null,
+  },
+  standardsingles: {
+    id: 'standardsingles',
+    label: '스탠다드 싱글 느낌 / Standard-style singles',
+    description: '싱글용 기본 클로즈를 더 엄격하게 적용합니다. 종족 중복은 불가이며 도구 중복은 허용합니다. / Stricter singles-style clauses: Species Clause on, Item Clause off.',
+    enforceSpeciesClause: true,
+    enforceItemClause: false,
+    forcedLevel: null,
+    recommendedMode: 'singles',
+  },
+  vgcdoubles: {
+    id: 'vgcdoubles',
+    label: 'VGC 스타일 더블 / VGC-style doubles',
+    description: '더블 + 종족 클로즈 + 도구 클로즈 + 레벨 50 고정 검증을 적용합니다. / Doubles with Species Clause, Item Clause, and fixed level 50 validation.',
+    enforceSpeciesClause: true,
+    enforceItemClause: true,
+    forcedLevel: 50,
+    recommendedMode: 'doubles',
+  },
+};
+
 const BUILDER_ALLOWED_NONSTANDARD = new Set(['Past']);
 const NONSTANDARD_REASON_LABELS = {
   Future: 'is marked as future / unreleased content in the loaded data.',
@@ -74,6 +104,7 @@ const state = {
   dataProvider: 'Local Showdown data',
   mode: 'singles',
   teamSize: 3,
+  validationProfile: 'open',
   manifest: null,
   speciesChoices: [],
   playerNames: ['Player 1', 'Player 2'],
@@ -458,6 +489,7 @@ function showRuntime(message, type = 'loading', notes = '') {
 function saveState() {
   const snapshot = {
     mode: state.mode,
+    validationProfile: state.validationProfile,
     playerNames: state.playerNames,
     teams: state.teams.map(team => team.map(mon => ({...mon, data: null}))),
   };
@@ -469,6 +501,7 @@ function loadSavedState() {
     if (!raw) return;
     const parsed = JSON.parse(raw);
     state.mode = parsed.mode === 'doubles' ? 'doubles' : 'singles';
+    state.validationProfile = VALIDATION_PROFILES[parsed.validationProfile] ? parsed.validationProfile : 'open';
     state.teamSize = state.mode === 'doubles' ? 4 : 3;
     state.playerNames = Array.isArray(parsed.playerNames) ? parsed.playerNames.slice(0,2).map(v => v || 'Player') : ['Player 1','Player 2'];
     rebuildTeamSize();
@@ -585,6 +618,12 @@ async function getSpeciesData(speciesName) {
     natDexTier: species.natDexTier ?? '',
     gender: species.gender || '',
     genderRatio: species.genderRatio ? {...species.genderRatio} : null,
+    eggGroups: Array.isArray(species.eggGroups) ? [...species.eggGroups] : [],
+    abilityMap: {...(species.abilities || {})},
+    learnsetLineage: state.dex.species.getLearnsetLineage(species.id).map(entry => ({
+      ...entry,
+      speciesName: state.dex.species.get(entry.id)?.name || entry.id,
+    })),
   };
   speciesDataCache.set(key, data);
   return data;
@@ -649,6 +688,143 @@ function summarizeLearnsetSources(sources) {
   const legacyOnly = normalized.length > 0 && !hasCurrentGen;
   return {normalized, hasCurrentGen, hasEvent, eventOnly, legacyOnly};
 }
+
+function getValidationProfile() {
+  return VALIDATION_PROFILES[state.validationProfile] || VALIDATION_PROFILES.open;
+}
+function renderValidationProfileNote() {
+  if (!els.validationProfileSelect) return;
+  els.validationProfileSelect.value = state.validationProfile;
+  const profile = getValidationProfile();
+  if (els.validationProfileNote) {
+    const modeNote = profile.recommendedMode && profile.recommendedMode !== state.mode
+      ? ` 현재 모드는 ${state.mode === 'singles' ? '싱글 / Singles' : '더블 / Doubles'}입니다. 이 프로필은 ${profile.recommendedMode === 'singles' ? '싱글 / Singles' : '더블 / Doubles'}을 권장합니다. / Current mode is ${state.mode}. This profile is intended for ${profile.recommendedMode}.`
+      : '';
+    els.validationProfileNote.textContent = `${profile.description}${modeNote}`;
+  }
+}
+function isSpeciesBreedable(speciesData) {
+  const eggGroups = Array.isArray(speciesData?.eggGroups) ? speciesData.eggGroups.map(group => String(group)) : [];
+  if (!eggGroups.length) return false;
+  return !eggGroups.includes('Undiscovered') && !eggGroups.includes('Ditto');
+}
+function getAbilityNamesForEvent(monData, eventData) {
+  if (!monData) return [];
+  if (Array.isArray(eventData?.abilities) && eventData.abilities.length) return eventData.abilities.map(String);
+  if (eventData?.isHidden === true) {
+    return monData.abilityMap?.H ? [monData.abilityMap.H] : [];
+  }
+  if (eventData?.isHidden === false) {
+    return Object.entries(monData.abilityMap || {})
+      .filter(([slot]) => slot !== 'H' && slot !== 'S')
+      .map(([, name]) => name)
+      .filter(Boolean);
+  }
+  return Object.values(monData.abilityMap || {}).filter(Boolean);
+}
+function getMoveEventCandidates(mon, moveId) {
+  const lineage = Array.isArray(mon?.data?.learnsetLineage) ? mon.data.learnsetLineage : [];
+  const out = [];
+  for (const entry of lineage) {
+    const directSources = Array.isArray(entry?.learnset?.[moveId]) ? entry.learnset[moveId] : [];
+    for (const source of directSources) {
+      const match = String(source).match(/^(\d)S(\d+)$/);
+      if (!match) continue;
+      const eventIndex = Number(match[2]);
+      const eventData = entry?.eventData?.[eventIndex] || null;
+      out.push({
+        sourceCode: String(source),
+        generation: Number(match[1]),
+        eventIndex,
+        speciesId: entry?.id || '',
+        speciesName: entry?.speciesName || entry?.id || '',
+        eventData,
+      });
+    }
+  }
+  return out;
+}
+function eventCandidateMatchesMon(candidate, mon, requiredMoves = []) {
+  const eventData = candidate?.eventData;
+  if (!eventData) return {ok: false, reasons: ['event metadata missing']};
+  const reasons = [];
+  if (eventData.gender && mon.gender && mon.gender !== eventData.gender) reasons.push(`requires gender ${displayGender(eventData.gender)}`);
+  if (eventData.nature && mon.nature && toId(mon.nature) !== toId(eventData.nature)) reasons.push(`requires nature ${displayNatureName(eventData.nature)}`);
+  if (eventData.shiny && !mon.shiny) reasons.push('requires a shiny event');
+  const allowedAbilities = getAbilityNamesForEvent(mon.data, eventData);
+  if (allowedAbilities.length && mon.ability && !allowedAbilities.some(name => toId(name) === toId(mon.ability))) {
+    reasons.push(`requires ability ${joinReadableList(allowedAbilities, displayAbilityName)}`);
+  }
+  for (const [stat, exactIv] of Object.entries(eventData.ivs || {})) {
+    const chosenIv = Number(mon.ivs?.[stat] ?? 31);
+    if (chosenIv !== Number(exactIv)) reasons.push(`requires ${statLabels[stat] || stat.toUpperCase()} IV ${exactIv}`);
+  }
+  if (eventData.perfectIVs) {
+    const perfectCount = statOrder.filter(stat => Number(mon.ivs?.[stat] ?? 31) === 31).length;
+    if (perfectCount < Number(eventData.perfectIVs)) reasons.push(`requires at least ${eventData.perfectIVs} perfect IVs`);
+  }
+  if (eventData.level && Number(mon.level || 100) < Number(eventData.level)) reasons.push(`minimum obtainable level is ${eventData.level}`);
+  const eventMoves = Array.isArray(eventData.moves) ? eventData.moves.map(toId) : [];
+  if (requiredMoves.length && !requiredMoves.every(move => eventMoves.includes(toId(move)))) reasons.push('event bundle does not contain all required event-only moves together');
+  return {ok: reasons.length === 0, reasons};
+}
+function validateEventMoveCombination(mon, prefix, warnings, errors) {
+  const chosenMoves = mon.moves.filter(Boolean);
+  if (!chosenMoves.length || !mon?.data) return;
+  const eventOnlyMoves = [];
+  for (const moveName of chosenMoves) {
+    const moveId = toId(moveName);
+    const sourceInfo = summarizeLearnsetSources(mon.data.learnsetSources?.[moveId]);
+    if (sourceInfo.eventOnly) eventOnlyMoves.push({name: moveName, id: moveId});
+  }
+  if (!eventOnlyMoves.length) return;
+
+  const bundleMoves = eventOnlyMoves.map(move => move.id);
+  const matchingCandidates = [];
+  const missingMetadataMoves = [];
+  const incompatibleReasons = [];
+
+  for (const move of eventOnlyMoves) {
+    const candidates = getMoveEventCandidates(mon, move.id);
+    if (!candidates.length || candidates.every(candidate => !candidate.eventData)) {
+      missingMetadataMoves.push(move.name);
+      continue;
+    }
+    for (const candidate of candidates) {
+      const result = eventCandidateMatchesMon(candidate, mon, bundleMoves);
+      if (result.ok) {
+        matchingCandidates.push({moveName: move.name, candidate});
+      } else {
+        incompatibleReasons.push(`${displayMoveName(move.name)} → ${candidate.speciesName || mon.data.name} ${candidate.sourceCode}: ${result.reasons.join(', ')}`);
+      }
+    }
+  }
+
+  if (missingMetadataMoves.length) {
+    warnings.push(`${prefix}: ${joinReadableList(missingMetadataMoves, displayMoveName)} 기술은 이벤트 전용으로 보이지만, 현재 로컬 데이터에서 정확한 이벤트 상세를 모두 해석하지 못했습니다. / ${missingMetadataMoves.join(', ')} appear event-only, but the current local parser could not fully resolve their event metadata.`);
+  }
+
+  if (!matchingCandidates.length) {
+    const detail = incompatibleReasons.length
+      ? ` 세부 사유 예시 / example reasons: ${incompatibleReasons.slice(0, 3).join(' ; ')}.`
+      : '';
+    if (eventOnlyMoves.length === 1 && !missingMetadataMoves.length) {
+      errors.push(`${prefix}: ${displayMoveName(eventOnlyMoves[0].name)} 기술의 이벤트 조건이 현재 설정과 맞지 않습니다. / The chosen build does not satisfy the resolved event requirements for ${eventOnlyMoves[0].name}.${detail}`);
+    } else if (eventOnlyMoves.length > 1 && !isSpeciesBreedable(mon.data)) {
+      errors.push(`${prefix}: ${joinReadableList(eventOnlyMoves.map(move => move.name), displayMoveName)} 기술 조합은 공통 이벤트 배포와 맞지 않습니다. / This event-only move combination does not line up with a single compatible distribution for ${mon.data.name}.${detail}`);
+    } else {
+      warnings.push(`${prefix}: ${joinReadableList(eventOnlyMoves.map(move => move.name), displayMoveName)} 기술 조합은 이벤트 출처 충돌 가능성이 있습니다. / This event-only move combination may be source-incompatible.${detail}`);
+    }
+    return;
+  }
+
+  const uniqueSources = Array.from(new Set(matchingCandidates.map(entry => `${entry.candidate.speciesId}:${entry.candidate.sourceCode}`)));
+  const matchingBundle = matchingCandidates.some(entry => eventCandidateMatchesMon(entry.candidate, mon, bundleMoves).ok);
+  if (eventOnlyMoves.length > 1 && uniqueSources.length > 1 && !matchingBundle) {
+    if (isSpeciesBreedable(mon.data)) warnings.push(`${prefix}: 이벤트 전용 기술이 여러 배포에 흩어져 있습니다. / The chosen event-only moves come from different distributions. 교배 / 세대 이동으로 가능한지까지는 아직 완전 검증하지 못합니다. / Full breeding-transfer compatibility is not modeled yet.`);
+    else errors.push(`${prefix}: 이벤트 전용 기술들이 서로 다른 배포에 흩어져 있어 함께 사용할 수 없습니다. / The chosen event-only moves come from different one-off distributions and do not appear to be simultaneously legal.`);
+  }
+}
 function validateGenderChoice(mon, prefix, errors) {
   if (!mon.data) return;
   const chosenGender = mon.gender || '';
@@ -661,8 +837,10 @@ function validateGenderChoice(mon, prefix, errors) {
   if (chosenGender === 'N') errors.push(`${prefix}: ${speciesLabel} 포켓몬은 무성별이 아닙니다. / ${mon.data.name} is not genderless.`);
   if (chosenGender && !['M', 'F'].includes(chosenGender)) errors.push(`${prefix}: 성별은 자동 / Auto, 수컷 / Male, 암컷 / Female 중 하나여야 합니다. / gender must be Auto, Male, or Female.`);
 }
-function collectTeamWarnings(team, playerIndex) {
+function collectTeamDiagnostics(team, playerIndex) {
   const warnings = [];
+  const errors = [];
+  const profile = getValidationProfile();
   const speciesBuckets = new Map();
   const itemBuckets = new Map();
   team.forEach((mon, slotIndex) => {
@@ -679,12 +857,21 @@ function collectTeamWarnings(team, playerIndex) {
     }
   });
   for (const {label, slots} of speciesBuckets.values()) {
-    if (slots.length > 1) warnings.push(`${state.playerNames[playerIndex]}: 같은 포켓몬 ${displaySpeciesName(label)} 이(가) 슬롯 ${slots.join(', ')}에 중복되어 있습니다. / duplicate species (${label}) in slots ${slots.join(', ')}. This build allows it, but many formats do not.`);
+    if (slots.length > 1) {
+      const msg = `${state.playerNames[playerIndex]}: 같은 포켓몬 ${displaySpeciesName(label)} 이(가) 슬롯 ${slots.join(', ')}에 중복되어 있습니다. / duplicate species (${label}) in slots ${slots.join(', ')}.`;
+      (profile.enforceSpeciesClause ? errors : warnings).push(profile.enforceSpeciesClause ? `${msg} 현재 검증 프로필에서는 Species Clause로 금지됩니다. / This validation profile enforces Species Clause.` : `${msg} 이 프로필에서는 경고만 표시합니다. / This profile only warns about it.`);
+    }
   }
   for (const {label, slots} of itemBuckets.values()) {
-    if (slots.length > 1) warnings.push(`${state.playerNames[playerIndex]}: 같은 지닌 도구 ${displayItemName(label)} 이(가) 슬롯 ${slots.join(', ')}에 중복되어 있습니다. / duplicate held item (${label}) in slots ${slots.join(', ')}. This build allows it, but VGC-style Item Clause would not.`);
+    if (slots.length > 1) {
+      const msg = `${state.playerNames[playerIndex]}: 같은 지닌 도구 ${displayItemName(label)} 이(가) 슬롯 ${slots.join(', ')}에 중복되어 있습니다. / duplicate held item (${label}) in slots ${slots.join(', ')}.`;
+      (profile.enforceItemClause ? errors : warnings).push(profile.enforceItemClause ? `${msg} 현재 검증 프로필에서는 Item Clause로 금지됩니다. / This validation profile enforces Item Clause.` : `${msg} 이 프로필에서는 경고만 표시합니다. / This profile only warns about it.`);
+    }
   }
-  return warnings;
+  if (profile.recommendedMode && profile.recommendedMode !== state.mode) {
+    warnings.push(`${state.playerNames[playerIndex]} 팀: 현재 검증 프로필은 ${profile.recommendedMode === 'singles' ? '싱글 / Singles' : '더블 / Doubles'}용입니다. / The selected validation profile is intended for ${profile.recommendedMode}.`);
+  }
+  return {errors, warnings};
 }
 
 function getBaseSpriteId(speciesInput) {
@@ -811,6 +998,8 @@ function bindElements() {
     runtimeNotes: document.getElementById('runtime-notes'),
     modeSinglesBtn: document.getElementById('mode-singles-btn'),
     modeDoublesBtn: document.getElementById('mode-doubles-btn'),
+    validationProfileSelect: document.getElementById('validation-profile-select'),
+    validationProfileNote: document.getElementById('validation-profile-note'),
     player1Name: document.getElementById('player1-name'),
     player2Name: document.getElementById('player2-name'),
     rosterP1: document.getElementById('roster-p1'),
@@ -894,6 +1083,9 @@ function buildStaticLists() {
   setDatalistOptions(els.itemList, state.itemChoices);
   state.allMoveChoices = moveNameCache.map(name => makeChoice('moves', name));
   setDatalistOptions(els.moveList, state.allMoveChoices);
+  if (els.validationProfileSelect) {
+    els.validationProfileSelect.innerHTML = Object.values(VALIDATION_PROFILES).map(profile => `<option value="${profile.id}">${profile.label}</option>`).join('\n');
+  }
   els.natureSelect.innerHTML = natureOrder.map(name => `<option value="${name}">${displayNatureName(name)}</option>`).join('\n');
   els.teraSelect.innerHTML = TYPES.map(type => `<option value="${type}">${displayType(type)}</option>`).join('\n');
 }
@@ -1103,6 +1295,8 @@ async function validateMon(mon, playerIndex, slotIndex) {
   }
 
   if (!Number.isInteger(Number(mon.level || 0)) || mon.level < 1 || mon.level > 100) errors.push(`${prefix}: 레벨은 1~100 사이여야 합니다. / level must stay between 1 and 100.`);
+  const profile = getValidationProfile();
+  if (profile.forcedLevel && Number(mon.level || 0) !== profile.forcedLevel) errors.push(`${prefix}: 현재 검증 프로필에서는 레벨 ${profile.forcedLevel}만 허용합니다. / The selected validation profile requires level ${profile.forcedLevel}.`);
   if (!natures[mon.nature]) errors.push(`${prefix}: ${displayNatureName(mon.nature || 'Blank')} 성격은 유효하지 않습니다. / ${mon.nature || 'Blank'} is not a valid nature.`);
   if (!TYPES.includes(toId(mon.teraType))) errors.push(`${prefix}: ${displayType(mon.teraType || 'Blank')} 테라 타입은 유효하지 않습니다. / ${mon.teraType || 'Blank'} is not a valid Tera type.`);
 
@@ -1169,13 +1363,14 @@ async function validateMon(mon, playerIndex, slotIndex) {
         errors.push(`${prefix}: ${displayMoveName(loadedMove.name)} 기술은 ${speciesLabel}의 로컬 learnset에 없습니다. / ${loadedMove.name} is not in ${mon.data?.name || mon.displaySpecies}'s loaded learnset.`);
       } else {
         const sourceInfo = summarizeLearnsetSources(learnsetSources[moveId]);
-        if (sourceInfo.eventOnly) warnings.push(`${prefix}: ${displayMoveName(loadedMove.name)} 기술은 로컬 learnset 기준 이벤트 전용으로 보입니다. / ${loadedMove.name} appears event-only in the loaded learnset sources. 정확한 이벤트/출처 조합 검증은 아직 구현되지 않았습니다. / Exact event/source compatibility is not modeled yet.`);
+        if (sourceInfo.eventOnly) warnings.push(`${prefix}: ${displayMoveName(loadedMove.name)} 기술은 로컬 learnset 기준 이벤트 전용으로 보입니다. / ${loadedMove.name} appears event-only in the loaded learnset sources. 아래의 이벤트 출처 검사가 추가 조건을 계속 확인합니다. / Additional event-source checks below will validate stricter compatibility where possible.`);
         else if (sourceInfo.legacyOnly) warnings.push(`${prefix}: ${displayMoveName(loadedMove.name)} 기술은 구세대 출처만 확인됩니다. / ${loadedMove.name} only appears through older-generation learnset sources. 세대 이동/출처 호환성 검증은 아직 구현되지 않았습니다. / Transfer/source compatibility is not modeled yet.`);
       }
     } catch (error) {
       errors.push(`${prefix}: 기술 ${displayMoveName(move)} 정보를 불러오지 못했습니다. / move “${move}” could not be loaded.`);
     }
   }
+  validateEventMoveCombination(mon, prefix, warnings, errors);
   return {errors, warnings};
 }
 
@@ -1208,7 +1403,9 @@ async function renderValidation() {
       allErrors.push(...result.errors);
       allWarnings.push(...result.warnings);
     }
-    allWarnings.push(...collectTeamWarnings(team, playerIndex));
+    const teamDiagnostics = collectTeamDiagnostics(team, playerIndex);
+    allErrors.push(...teamDiagnostics.errors);
+    allWarnings.push(...teamDiagnostics.warnings);
   }
   state.builderErrors = allErrors;
   state.builderWarnings = Array.from(new Set(allWarnings));
@@ -1247,6 +1444,12 @@ function wireEditorEvents() {
     state.mode = 'doubles';
     rebuildTeamSize();
     renderAll();
+    saveState();
+  });
+  els.validationProfileSelect?.addEventListener('change', async () => {
+    state.validationProfile = VALIDATION_PROFILES[els.validationProfileSelect.value] ? els.validationProfileSelect.value : 'open';
+    renderValidationProfileNote();
+    await renderValidation();
     saveState();
   });
   els.player1Name.addEventListener('input', syncPlayerNames);
@@ -1408,6 +1611,7 @@ function wireEditorEvents() {
   els.resetStorageBtn.addEventListener('click', () => {
     localStorage.removeItem(STORAGE_KEY);
     state.mode = 'singles';
+    state.validationProfile = 'open';
     state.playerNames = ['Player 1','Player 2'];
     els.player1Name.value = 'Player 1';
     els.player2Name.value = 'Player 2';
@@ -2079,6 +2283,7 @@ function wireBattleEvents() {
 function renderAll() {
   els.modeSinglesBtn.classList.toggle('active', state.mode === 'singles');
   els.modeDoublesBtn.classList.toggle('active', state.mode === 'doubles');
+  renderValidationProfileNote();
   els.player1Name.value = state.playerNames[0];
   els.player2Name.value = state.playerNames[1];
   syncPlayerNames();
@@ -2105,7 +2310,7 @@ async function bootstrap() {
   showRuntime(
     '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets and localized battle data are connected.',
     'ready',
-    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, and team-level warnings. 전투 판정은 아직 프로젝트의 커스텀 런타임을 사용하므로, 카트리지 수준의 완전한 시뮬레이터 통합은 다음 단계입니다. / Battle resolution is still the project’s custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
+    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고뿐 아니라, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, event-only move bundle checks, and profile-based Species Clause / Item Clause / level-50 enforcement. 전투 판정은 아직 프로젝트의 커스텀 런타임을 사용하므로, 카트리지 수준의 완전한 시뮬레이터 통합은 다음 단계입니다. / Battle resolution is still the project’s custom runtime, so full cartridge-accurate simulator integration remains the next milestone.`
   );
 }
 

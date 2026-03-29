@@ -10,7 +10,7 @@ A GitHub Pages-ready local 2-player Pokémon-style battle builder and pass-and-p
 - Species lookup, move lookup, item lookup, ability selection, nature selection, IV/EV editing, level, shiny flag, and Tera type
 - Validation for common team-building constraints
 - Learnset-aware validation using vendored local data
-- Stronger validator-style legality checks for nonstandard flags, form requirements, item / ability legality, Tera type, gender, and team warnings
+- Stronger validator-style legality checks for nonstandard flags, form requirements, item / ability legality, Tera type, gender, team warnings, validation-profile clauses, and event-only move bundle checks
 - Animated uploaded Pokémon sprites rendered from strip-style PNGs
 - Uploaded item icons, type icons, and status overlays used locally
 - Browser battle flow with turn selection, speed/priority ordering, damage, switching, fainting, and battle log
@@ -96,6 +96,6 @@ Still not fully exhaustive yet:
 
 The best next milestone after this build is:
 
-1. Deeper TeamValidator parity for exact source combinations, event constraints, and format-specific clauses
+1. Continue deeper TeamValidator parity for exact source combinations, event constraints, and format-specific clauses
 2. Full simulator integration for battle resolution
 3. Expanded mechanic support for Mega Evolution, Z-Moves, Dynamax, and complete Terastal handling

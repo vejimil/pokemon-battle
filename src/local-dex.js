@@ -94,6 +94,7 @@ const moveCache = new Map();
 const itemCache = new Map();
 const abilityCache = new Map();
 const learnsetCache = new Map();
+const learnsetLineageCache = new Map();
 
 function resolveAliasTarget(name) {
   const id = toId(name);
@@ -204,6 +205,39 @@ function mergeLearnsetInto(target, source) {
   }
 }
 
+function collectLearnsetLineage(id, seen = new Set()) {
+  if (!id) return [];
+  if (learnsetLineageCache.has(id)) return learnsetLineageCache.get(id);
+  if (seen.has(id)) return [];
+  seen.add(id);
+
+  const species = Pokedex[id] || null;
+  const lineage = [];
+  if (species) {
+    if (species.prevo) lineage.push(...collectLearnsetLineage(toId(species.prevo), seen));
+    if (species.baseSpecies && toId(species.baseSpecies) !== id) {
+      lineage.push(...collectLearnsetLineage(toId(species.baseSpecies), seen));
+    }
+    if (species.changesFrom) lineage.push(...collectLearnsetLineage(toId(species.changesFrom), seen));
+  }
+  lineage.push({
+    id,
+    learnset: {...(Learnsets[id]?.learnset || {})},
+    eventData: Array.isArray(Learnsets[id]?.eventData) ? Learnsets[id].eventData.map(event => ({...event, moves: [...(event.moves || [])], abilities: Array.isArray(event.abilities) ? [...event.abilities] : event.abilities, ivs: event.ivs ? {...event.ivs} : undefined})) : [],
+    eventOnly: Boolean(Learnsets[id]?.eventOnly),
+  });
+
+  const deduped = [];
+  const used = new Set();
+  for (const entry of lineage) {
+    if (!entry?.id || used.has(entry.id)) continue;
+    used.add(entry.id);
+    deduped.push(entry);
+  }
+  learnsetLineageCache.set(id, deduped);
+  return deduped;
+}
+
 function buildFullLearnset(id, seen = new Set()) {
   if (!id) return {};
   if (learnsetCache.has(id)) return learnsetCache.get(id);
@@ -211,15 +245,9 @@ function buildFullLearnset(id, seen = new Set()) {
   seen.add(id);
 
   const merged = {};
-  const species = Pokedex[id] || null;
-  if (species) {
-    if (species.prevo) mergeLearnsetInto(merged, buildFullLearnset(toId(species.prevo), seen));
-    if (species.baseSpecies && toId(species.baseSpecies) !== id) {
-      mergeLearnsetInto(merged, buildFullLearnset(toId(species.baseSpecies), seen));
-    }
-    if (species.changesFrom) mergeLearnsetInto(merged, buildFullLearnset(toId(species.changesFrom), seen));
+  for (const entry of collectLearnsetLineage(id, seen)) {
+    mergeLearnsetInto(merged, entry.learnset || {});
   }
-  mergeLearnsetInto(merged, Learnsets[id]?.learnset || {});
   learnsetCache.set(id, merged);
   return merged;
 }
@@ -236,6 +264,16 @@ const speciesApi = {
     const species = this.get(name);
     if (!species?.exists) return null;
     return buildFullLearnset(species.id);
+  },
+  getLearnsetLineage(name) {
+    const species = this.get(name);
+    if (!species?.exists) return [];
+    return collectLearnsetLineage(species.id).map(entry => ({
+      id: entry.id,
+      learnset: {...(entry.learnset || {})},
+      eventData: Array.isArray(entry.eventData) ? entry.eventData.map(event => ({...event, moves: [...(event.moves || [])], abilities: Array.isArray(event.abilities) ? [...event.abilities] : event.abilities, ivs: event.ivs ? {...event.ivs} : undefined})) : [],
+      eventOnly: Boolean(entry.eventOnly),
+    }));
   },
 };
 
