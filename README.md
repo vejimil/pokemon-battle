@@ -99,3 +99,21 @@ The best next milestone after this build is:
 1. Continue deeper TeamValidator parity for exact source combinations, event constraints, and format-specific clauses
 2. Full simulator integration for battle resolution
 3. Continue deeper singles parity (weather / terrain / PP / hazards / move coverage), then extend doubles and refine Mega / Z-Move / Dynamax / Terastal edge cases
+
+
+## Stage 13: first Showdown-family singles migration step
+
+This stage introduces an engine boundary for battle resolution instead of continuing to grow the monolithic custom runtime inside `src/app.js`.
+
+Added in this stage:
+
+- `src/engine/showdown-serialization.js` — converts the current builder team objects into Pokémon Showdown packed-team strings and converts the current UI choices into Showdown command strings
+- `src/engine/showdown-singles-engine.js` — browser-side Showdown-family singles adapter that attempts to load `@pkmn/sim` first and falls back to `pokemon-showdown` browser ESM builds, then starts a Gen 9 Custom Game stream and submits singles choices through that engine path
+- `src/app.js` now chooses the Showdown-family engine path for singles first, keeps doubles on the existing custom runtime for now, and syncs basic battle state (active Pokémon, HP, status, winner, weather/terrain/trick-room indicators, form/tera/dynamax markers, and protocol log messages) back into the existing UI
+
+Important limitations of this first migration step:
+
+- Singles only; doubles are still on the legacy custom runtime path
+- The builder / renderer / sprite-mapping system are preserved, but the choice UI is not yet request-driven from simulator `|request|` payloads
+- Side conditions / hazards / exact PP-disable-state syncing from simulator requests are not fully migrated yet
+- If the browser cannot load a Showdown-family ESM build from CDN, the app falls back to the existing custom runtime for that battle

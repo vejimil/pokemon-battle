@@ -1,5 +1,6 @@
 import {loadLocalDex, LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_TYPES, LOCAL_TYPE_CHART} from './local-dex.js';
 import {KO_NAME_MAPS} from './i18n-ko-data.js';
+import {createShowdownSinglesEngine, formatShowdownProtocolLog} from './engine/showdown-singles-engine.js';
 
 const STORAGE_KEY = 'pkb-static-state-v2';
 const SHOWDOWN_TARGET_HINTS = {
@@ -960,6 +961,7 @@ const state = {
   picker: {mode: '', moveIndex: null, options: []},
   battle: null,
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
+  preferredBattleEngine: 'auto',
 };
 
 const els = {};
@@ -2603,31 +2605,70 @@ async function buildBattleMon(mon, player, slot) {
 async function startBattle() {
   await renderValidation();
   if (state.builderErrors.length) return;
+  const players = await Promise.all([0,1].map(async player => ({
+    name: state.playerNames[player],
+    team: await Promise.all(state.teams[player].map((mon, slot) => buildBattleMon(mon, player, slot))),
+    active: state.mode === 'singles' ? [0] : [0,1],
+    choices: {},
+    mustSwitch: [],
+    megaUsed: state.teams[player].some(mon => isMegaSpeciesName(mon.data?.name || mon.formSpecies || mon.species)),
+    teraUsed: false,
+    zUsed: false,
+    dynamaxUsed: false,
+    hazards: {stealthRock: false, spikes: 0, toxicSpikes: 0, stickyWeb: false},
+    sideConditions: {reflectTurns: 0, lightScreenTurns: 0, auroraVeilTurns: 0, tailwindTurns: 0},
+  })));
   state.battle = {
     mode: state.mode,
     turn: 1,
     winner: null,
-    players: await Promise.all([0,1].map(async player => ({
-      name: state.playerNames[player],
-      team: await Promise.all(state.teams[player].map((mon, slot) => buildBattleMon(mon, player, slot))),
-      active: state.mode === 'singles' ? [0] : [0,1],
-      choices: {},
-      mustSwitch: [],
-      megaUsed: state.teams[player].some(mon => isMegaSpeciesName(mon.data?.name || mon.formSpecies || mon.species)),
-      teraUsed: false,
-      zUsed: false,
-      dynamaxUsed: false,
-      hazards: {stealthRock: false, spikes: 0, toxicSpikes: 0, stickyWeb: false},
-      sideConditions: {reflectTurns: 0, lightScreenTurns: 0, auroraVeilTurns: 0, tailwindTurns: 0},
-    }))),
+    players,
     weather: '',
     weatherTurns: 0,
     terrain: '',
     terrainTurns: 0,
     trickRoomTurns: 0,
     log: [{text: '배틀 시작! 양쪽 팀이 전장에 나왔습니다. / Battle started. Both teams enter the field.', tone: 'accent'}],
+    engine: {kind: 'custom', label: '커스텀 런타임 / Custom runtime', moduleUrl: ''},
+    showdown: {instance: null, rawLogCount: 0, lastSnapshot: null},
   };
-  applyStartOfBattleAbilities();
+
+  if (shouldUseShowdownSinglesEngine()) {
+    try {
+      const {engine, preparedTeams, moduleUrl, snapshot} = await createShowdownSinglesEngine({
+        builderTeams: state.teams,
+        playerNames: state.playerNames,
+      });
+      state.battle.engine = {
+        kind: 'showdown-singles',
+        label: 'Showdown-family singles stream',
+        moduleUrl,
+      };
+      state.battle.showdown.instance = engine;
+      for (const player of [0, 1]) {
+        preparedTeams[player].forEach((set, slot) => {
+          const mon = state.battle.players[player].team[slot];
+          if (!mon) return;
+          mon.showdownNickname = set.name;
+          mon.showdownSlot = slot;
+        });
+      }
+      syncShowdownSnapshotToBattle(snapshot);
+      addLog(`싱글 배틀은 이제 Showdown-family 엔진 경로로 시작됩니다. / Singles now start through the Showdown-family engine path.`, 'accent');
+    } catch (error) {
+      state.battle.engine = {
+        kind: 'custom',
+        label: '커스텀 런타임 / Custom runtime (fallback)',
+        moduleUrl: '',
+      };
+      addLog(`Showdown-family 엔진을 불러오지 못해 이번 배틀은 기존 커스텀 런타임으로 진행합니다. / Could not load the Showdown-family engine, so this battle falls back to the existing custom runtime. ${error.message}`, 'warning');
+      applyStartOfBattleAbilities();
+    }
+  } else {
+    addLog('더블은 아직 기존 커스텀 런타임 경로를 유지합니다. / Doubles still use the existing custom runtime path for now.', 'accent');
+    applyStartOfBattleAbilities();
+  }
+
   els.battlePanel.classList.remove('hidden');
   renderBattle();
 }
@@ -2652,6 +2693,85 @@ function applyStartOfBattleAbilities() {
 }
 function addLog(text, tone = '') {
   state.battle.log.unshift({text, tone});
+}
+function shouldUseShowdownSinglesEngine() {
+  return state.mode === 'singles';
+}
+function battleUsesShowdownEngine() {
+  return state.battle?.engine?.kind === 'showdown-singles';
+}
+function sideIdForPlayerIndex(player) {
+  return player === 0 ? 'p1' : 'p2';
+}
+function syncShowdownSnapshotToBattle(snapshot) {
+  if (!state.battle || !snapshot) return;
+  const battle = state.battle;
+  const previousRawCount = battle.showdown?.rawLogCount || 0;
+  const rawLog = Array.isArray(snapshot.rawLog) ? snapshot.rawLog : [];
+  for (let i = previousRawCount; i < rawLog.length; i += 1) {
+    const chunk = rawLog[i];
+    for (const line of String(chunk || '').split('\n').map(part => part.trim()).filter(Boolean)) {
+      const entry = formatShowdownProtocolLog(line);
+      if (entry) battle.log.unshift(entry);
+    }
+  }
+  battle.showdown = {
+    ...(battle.showdown || {}),
+    rawLogCount: rawLog.length,
+    lastSnapshot: snapshot,
+  };
+  battle.turn = Number(snapshot.turn || battle.turn || 1);
+  battle.winner = snapshot.winner ? (snapshot.winner === 'Draw' ? '무승부 / Draw' : snapshot.winner) : null;
+  battle.weather = snapshot.weather || '';
+  battle.weatherTurns = battle.weather ? 1 : 0;
+  battle.terrain = snapshot.terrain || '';
+  battle.terrainTurns = battle.terrain ? 1 : 0;
+  battle.trickRoomTurns = snapshot.trickRoomActive ? 1 : 0;
+  for (const player of [0, 1]) {
+    const sideId = sideIdForPlayerIndex(player);
+    const sourceSide = snapshot.sides?.[sideId];
+    const targetSide = battle.players[player];
+    if (!sourceSide || !targetSide) continue;
+    if (sourceSide.name) targetSide.name = sourceSide.name;
+    targetSide.active = [Number.isInteger(sourceSide.activeSlot) ? sourceSide.activeSlot : 0];
+    sourceSide.team.forEach((sourceMon, slot) => {
+      const targetMon = targetSide.team[slot];
+      if (!targetMon) return;
+      targetMon.showdownNickname = sourceMon.nickname || targetMon.showdownNickname || targetMon.nickname || '';
+      targetMon.showdownSlot = slot;
+      if (sourceMon.species) {
+        targetMon.species = sourceMon.species;
+        targetMon.formSpecies = sourceMon.species;
+        targetMon.displaySpecies = sourceMon.species;
+      }
+      if (Number.isFinite(sourceMon.maxHp) && sourceMon.maxHp > 0) {
+        targetMon.maxHp = sourceMon.maxHp;
+        targetMon.baseMaxHp = sourceMon.maxHp;
+      }
+      if (Number.isFinite(sourceMon.hp)) targetMon.hp = sourceMon.hp;
+      targetMon.status = sourceMon.status || '';
+      targetMon.fainted = Boolean(sourceMon.fainted);
+      targetMon.terastallized = Boolean(sourceMon.terastallized);
+      targetMon.dynamaxed = Boolean(sourceMon.dynamaxed);
+      if (sourceMon.teraType) targetMon.teraType = sourceMon.teraType;
+    });
+  }
+}
+async function resolveTurnWithShowdownEngine() {
+  const battle = state.battle;
+  const activeChoices = {
+    0: battle.players[0].choices[battle.players[0].active[0]],
+    1: battle.players[1].choices[battle.players[1].active[0]],
+  };
+  try {
+    const snapshot = await battle.showdown.instance.submitChoices(activeChoices);
+    syncShowdownSnapshotToBattle(snapshot);
+    battle.players.forEach(side => { side.choices = {}; });
+  } catch (error) {
+    addLog(`Showdown-family 엔진 처리 중 문제가 발생했습니다. / Showdown-family engine could not resolve the turn: ${error.message}`, 'warning');
+    battle.players.forEach(side => { side.choices = {}; });
+  }
+  renderBattle();
 }
 function describeHazards(side) {
   if (!side?.hazards) return '없음 / none';
@@ -2853,6 +2973,7 @@ function renderBattleFieldStatus() {
   if (!els.battleFieldStatus || !state.battle) return;
   const battle = state.battle;
   const parts = [];
+  if (battle.engine?.label) parts.push(`엔진 / Engine: ${battle.engine.label}`);
   if (battle.weather) parts.push(`${weatherDisplayLabel(battle.weather)} (${battle.weatherTurns})`);
   if (battle.terrain) parts.push(`${terrainDisplayLabel(battle.terrain)} (${battle.terrainTurns})`);
   if (battle.trickRoomTurns > 0) parts.push(`트릭룸 / Trick Room (${battle.trickRoomTurns})`);
@@ -3503,6 +3624,10 @@ function renderPendingChoices() {
   els.pendingChoices.innerHTML = rows.join('\n');
 }
 async function resolveTurn() {
+  if (battleUsesShowdownEngine()) {
+    await resolveTurnWithShowdownEngine();
+    return;
+  }
   const battle = state.battle;
   battle.players.forEach(side => side.team.forEach(mon => {
     if (!mon) return;
@@ -4744,9 +4869,9 @@ async function bootstrap() {
   renderAll();
   state.runtimeReady = true;
   showRuntime(
-    '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets, localized battle data, and form-aware sprite resolution are connected.',
+    '준비 완료. 로컬 에셋, 현지화된 데이터, 그리고 Showdown-family 싱글 마이그레이션 경로가 연결되었습니다. / Runtime ready. Local assets, localized data, and the Showdown-family singles migration path are connected.',
     'ready',
-    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고뿐 아니라, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, event-only move bundle checks, and profile-based Species Clause / Item Clause / level-50 enforcement. 전투 판정은 아직 프로젝트의 커스텀 런타임을 사용하지만, 이번 단계에서는 업로드된 PNG 파일명을 직접 읽어 폼 스프라이트를 매핑하고, 폼 선택 / 스프라이트 변형 선택 / 메가진화용 폼 스왑까지 연결했습니다. / Battle resolution still uses the project’s custom runtime, but this stage now reads the uploaded PNG naming scheme directly, wires form-aware sprite mapping, adds forme/sprite-variant controls, and swaps Mega Evolution sprites against those resolved assets.`
+    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고뿐 아니라, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, event-only move bundle checks, and profile-based Species Clause / Item Clause / level-50 enforcement. 이번 단계에서는 업로드된 PNG 파일명을 직접 읽는 폼 스프라이트 매핑과 UI 구조를 유지한 채, 싱글 배틀 시작/턴 제출 경로를 Showdown-family 시뮬레이터 스트림으로 넘길 수 있는 첫 마이그레이션 단계를 추가했습니다. / This stage keeps the existing form-aware sprite mapping and UI structure, while adding the first migration step that can route singles battle start and turn submission through a Showdown-family simulator stream.`
   );
 }
 
