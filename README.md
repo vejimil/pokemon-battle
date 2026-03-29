@@ -101,19 +101,35 @@ The best next milestone after this build is:
 3. Continue deeper singles parity (weather / terrain / PP / hazards / move coverage), then extend doubles and refine Mega / Z-Move / Dynamax / Terastal edge cases
 
 
-## Stage 13: first Showdown-family singles migration step
+## Stage 13: local Showdown-family singles migration
 
-This stage introduces an engine boundary for battle resolution instead of continuing to grow the monolithic custom runtime inside `src/app.js`.
+This build now contains a **local Node-backed Showdown-family singles engine path**.
 
-Added in this stage:
+What it means:
 
-- `src/engine/showdown-serialization.js` — converts the current builder team objects into Pokémon Showdown packed-team strings and converts the current UI choices into Showdown command strings
-- `src/engine/showdown-singles-engine.js` — browser-side Showdown-family singles adapter that attempts to load `@pkmn/sim` first and falls back to `pokemon-showdown` browser ESM builds, then starts a Gen 9 Custom Game stream and submits singles choices through that engine path
-- `src/app.js` now chooses the Showdown-family engine path for singles first, keeps doubles on the existing custom runtime for now, and syncs basic battle state (active Pokémon, HP, status, winner, weather/terrain/trick-room indicators, form/tera/dynamax markers, and protocol log messages) back into the existing UI
+- Running `npm start` serves the existing app and a local battle-core API together.
+- When that local server is available, **singles battles** use the Showdown-family engine path first.
+- If the server is not running, the app automatically falls back to the old custom browser battle runtime.
+- Doubles are still on the old custom runtime in this stage.
 
-Important limitations of this first migration step:
+New files for this stage:
 
-- Singles only; doubles are still on the legacy custom runtime path
-- The builder / renderer / sprite-mapping system are preserved, but the choice UI is not yet request-driven from simulator `|request|` payloads
-- Side conditions / hazards / exact PP-disable-state syncing from simulator requests are not fully migrated yet
-- If the browser cannot load a Showdown-family ESM build from CDN, the app falls back to the existing custom runtime for that battle
+- `server/server.cjs`
+- `server/showdown-engine.cjs`
+- `src/engine/showdown-local-bridge.js`
+- `MIGRATION_STAGE13_LOCAL_SHOWDOWN_SINGLES.md`
+
+Important current limitation:
+
+- The migrated singles path currently uses `gen9customgame`.
+- This supports **Mega Evolution, Z-Moves, and Terastallization** in the local engine path.
+- **Dynamax is not yet available** in this Gen 9 engine path and remains a later migration/custom-extension task.
+
+### Local run for the migrated path
+
+1. Keep your existing `assets/` folder in place.
+2. Open the project root in a terminal.
+3. Run `npm start`.
+4. Open `http://localhost:4173`.
+
+This ZIP is still code-only and does not include your asset folders.

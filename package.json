@@ -1,0 +1,9 @@
+{
+  "name": "pkb-showdown-local-migration",
+  "private": true,
+  "version": "0.13.0-stage13-local-showdown-singles",
+  "description": "PKB local singles migration step with an embedded Showdown-family Node battle core",
+  "scripts": {
+    "start": "node ./server/server.cjs"
+  }
+}

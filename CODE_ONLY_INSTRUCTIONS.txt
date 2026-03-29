@@ -2,6 +2,7 @@ This ZIP is code-only.
 
 Included:
 - .nojekyll
+- package.json
 - README.md
 - CODE_ONLY_INSTRUCTIONS.txt
 - ROOT_CAUSE_AND_STAGE2.txt
@@ -13,13 +14,25 @@ Included:
 - ROOT_CAUSE_AND_STAGE6.txt
 - ROOT_CAUSE_AND_STAGE7.txt
 - ROOT_CAUSE_AND_STAGE8.txt
+- ROOT_CAUSE_AND_STAGE9.txt
+- ROOT_CAUSE_AND_STAGE10.txt
+- ROOT_CAUSE_AND_STAGE11.txt
+- ROOT_CAUSE_AND_STAGE12.txt
+- MIGRATION_STAGE13_LOCAL_SHOWDOWN_SINGLES.md
 - index.html
 - styles.css
+- server/server.cjs
+- server/showdown-engine.cjs
 - src/app.js
 - src/local-dex.js
 - src/showdown-dex.js
 - src/i18n-ko-data.js
+- src/engine/showdown-local-bridge.js
 - src/data/*.js
+- node_modules/@pkmn/sim/* (vendored local simulator package files required for the local engine path)
+- node_modules/@pkmn/streams/* (small local stub used by the vendored simulator package)
+- node_modules/@pkmn/sets/* (small local stub used by the vendored simulator package)
+- node_modules/ts-chacha20/* (small local stub used by the vendored simulator package)
 - scripts/*.cjs
 
 Not included:
@@ -33,3 +46,5 @@ How to use:
 2. Copy these files into your existing project root.
 3. Keep your current assets/ folder exactly as it is.
 4. Replace files when prompted.
+5. For the migrated local singles engine path, run `npm start` and open `http://localhost:4173`.
+6. If you do not run the local server, the app will still fall back to the old custom browser battle runtime.
