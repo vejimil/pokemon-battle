@@ -313,6 +313,12 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   gap: 10px;
   align-items: center;
 }
+.compound-input-picker {
+  grid-template-columns: minmax(0, 1fr) 52px;
+}
+.compound-input-picker .picker-input-row {
+  min-width: 0;
+}
 .item-icon {
   width: 52px;
   height: 52px;
@@ -777,6 +783,9 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   border: 1px solid rgba(255,255,255,0.1);
   background: rgba(255,255,255,0.04);
   color: var(--text);
+}
+.picker-option strong {
+  display: block;
 }
 .picker-option small {
   display: block;

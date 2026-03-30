@@ -1015,8 +1015,11 @@ const state = {
   selected: {player: 0, slot: 0},
   builderErrors: [],
   builderWarnings: [],
+  itemChoices: [],
+  natureChoices: [],
+  allMoveChoices: [],
   currentMoveChoices: [],
-  picker: {mode: '', moveIndex: null, options: []},
+  picker: {mode: '', moveIndex: null, options: [], emptyHint: ''},
   battle: null,
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
   showdownLocal: {available: false},
@@ -1296,6 +1299,46 @@ const FORM_SUFFIX_TRANSLATIONS = {
   Teal: '벽록',
   Stellar: '스텔라',
 };
+function normalizeSearchText(text) {
+  return String(text || '')
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[’'`]/g, '')
+    .replace(/♀/g, ' female ')
+    .replace(/♂/g, ' male ')
+    .replace(/&/g, ' and ')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+function normalizeSearchKey(text) {
+  return normalizeSearchText(text).replace(/\s+/g, '');
+}
+function buildChoiceSearchTerms(kind, english, choice = {}) {
+  const candidates = new Set([
+    english,
+    choice.english,
+    choice.korean,
+    choice.display,
+    choice.label,
+    choice.name,
+    getLocalizedName(kind, english),
+  ]);
+  if (kind === 'species') {
+    candidates.add(getLocalizedSpeciesFallback(english));
+    candidates.add(String(english || '').replace(/-/g, ' '));
+  }
+  return Array.from(candidates).map(value => String(value || '').trim()).filter(Boolean);
+}
+function refreshChoiceSearchIndex(choice, kind = '') {
+  if (!choice) return choice;
+  const terms = buildChoiceSearchTerms(kind, choice.english || choice.label || choice.name || '', choice);
+  choice.searchTerms = terms;
+  choice.searchTexts = terms.map(normalizeSearchText).filter(Boolean);
+  choice.searchKeys = terms.map(normalizeSearchKey).filter(Boolean);
+  return choice;
+}
 const reverseNameMaps = Object.fromEntries(
   Object.entries(LOCALIZED_NAME_MAPS).map(([kind, map]) => {
     const reverse = new Map();
@@ -1305,10 +1348,12 @@ const reverseNameMaps = Object.fromEntries(
         korean,
         `${korean} / ${english}`,
         `${english} / ${korean}`,
+        String(english || '').replace(/-/g, ' '),
       ];
+      if (kind === 'species') candidates.push(getLocalizedSpeciesFallback(english));
       for (const candidate of candidates) {
-        const id = toId(candidate);
-        if (id) reverse.set(id, english);
+        const key = normalizeSearchKey(candidate);
+        if (key) reverse.set(key, english);
       }
     }
     return [kind, reverse];
@@ -1385,6 +1430,7 @@ function relocalizeChoices(choices = [], kind = '') {
     if (!choice?.english) continue;
     choice.korean = getLocalizedName(kind, choice.english);
     choice.display = displayEntity(kind, choice.english);
+    refreshChoiceSearchIndex(choice, kind);
   }
 }
 function relocalizeChoiceCaches() {
@@ -1393,8 +1439,12 @@ function relocalizeChoiceCaches() {
   relocalizeChoices(state.itemChoices, 'items');
   relocalizeChoices(state.allMoveChoices, 'moves');
   relocalizeChoices(state.currentMoveChoices, 'moves');
+  relocalizeChoices(state.natureChoices, 'natures');
   if (state.picker?.mode === 'species') relocalizeChoices(state.picker.options, 'species');
   if (state.picker?.mode === 'move') relocalizeChoices(state.picker.options, 'moves');
+  if (state.picker?.mode === 'item') relocalizeChoices(state.picker.options, 'items');
+  if (state.picker?.mode === 'ability') relocalizeChoices(state.picker.options, 'abilities');
+  if (state.picker?.mode === 'nature') relocalizeChoices(state.picker.options, 'natures');
 }
 function setLanguage(language) {
   const next = language === 'en' ? 'en' : 'ko';
@@ -1472,48 +1522,92 @@ function displayNatureName(name) {
 function normalizeLocalizedInput(kind, value, fallbackChoices = []) {
   const raw = String(value || '').trim();
   if (!raw) return '';
-  const direct = reverseNameMaps[kind]?.get(toId(raw));
+  const direct = reverseNameMaps[kind]?.get(normalizeSearchKey(raw));
   if (direct) return direct;
   const split = raw.split('/').map(part => part.trim()).filter(Boolean);
   for (const piece of split) {
-    const fromSplit = reverseNameMaps[kind]?.get(toId(piece));
+    const fromSplit = reverseNameMaps[kind]?.get(normalizeSearchKey(piece));
     if (fromSplit) return fromSplit;
   }
+  const normalizedRawKey = normalizeSearchKey(raw);
   for (const choice of fallbackChoices) {
-    if (toId(choice.english || choice.label || choice.name) === toId(raw)) return choice.english || choice.label || choice.name;
-    if (toId(choice.display) === toId(raw)) return choice.english || choice.label || choice.name;
-    if (toId(choice.korean) === toId(raw)) return choice.english || choice.label || choice.name;
+    refreshChoiceSearchIndex(choice, kind);
+    const english = choice.english || choice.label || choice.name;
+    if (!english) continue;
+    if ((choice.searchKeys || []).includes(normalizedRawKey)) return english;
   }
   return raw;
 }
 function normalizeBuilderSpeciesInput(value) {
-  const raw = String(value || '').trim();
-  if (!raw) return '';
-  const choices = state.speciesChoices || [];
-  const split = raw.split('/').map(part => part.trim()).filter(Boolean);
-  const candidates = split.length ? split : [raw];
-  for (const piece of candidates) {
-    for (const choice of choices) {
-      if (toId(choice.english) === toId(piece) || toId(choice.display) === toId(piece) || toId(choice.korean) === toId(piece)) {
-        return choice.english;
-      }
-    }
-  }
-  return raw;
+  return normalizeLocalizedInput('species', value, state.speciesChoices || []);
 }
 function makeChoice(kind, english, extra = {}) {
-  return {
+  const choice = {
     english,
     korean: getLocalizedName(kind, english),
     display: displayEntity(kind, english),
+    kind,
     ...extra,
   };
+  return refreshChoiceSearchIndex(choice, kind);
+}
+function sortChoicesForLanguage(choices = []) {
+  return [...(choices || [])].sort((a, b) => {
+    const left = state.language === 'en' ? (a?.english || a?.display || '') : (a?.korean || a?.display || a?.english || '');
+    const right = state.language === 'en' ? (b?.english || b?.display || '') : (b?.korean || b?.display || b?.english || '');
+    return left.localeCompare(right, state.language === 'ko' ? 'ko' : 'en', {numeric: true, sensitivity: 'base'});
+  });
 }
 function setDatalistOptions(el, choices) {
-  el.innerHTML = (choices || []).map(choice => {
+  el.innerHTML = sortChoicesForLanguage(choices).map(choice => {
     const value = choice.display || choice.english || '';
     return `<option value="${value}"></option>`;
   }).join('\n');
+}
+function buildPickerSubtitle(option, mode) {
+  const alternate = state.language === 'en'
+    ? (option.korean && option.korean !== option.english ? option.korean : '')
+    : (option.english && option.english !== option.korean ? option.english : '');
+  if (mode === 'move' && option.meta) {
+    const details = [option.meta.type && displayType(option.meta.type), option.meta.categoryLabel, option.meta.powerLabel, option.meta.accuracyLabel].filter(Boolean);
+    return [alternate, details.join(' · ')].filter(Boolean).join(' · ');
+  }
+  return alternate;
+}
+function rankPickerOption(option, rawQuery = '') {
+  if (!rawQuery) return {matched: true, score: 1000};
+  const queryText = normalizeSearchText(rawQuery);
+  const queryKey = normalizeSearchKey(rawQuery);
+  if (!queryKey) return {matched: true, score: 1000};
+  let best = Number.POSITIVE_INFINITY;
+  const texts = option.searchTexts || [];
+  const keys = option.searchKeys || [];
+  for (let i = 0; i < texts.length; i += 1) {
+    const text = texts[i] || '';
+    const key = keys[i] || normalizeSearchKey(text);
+    if (!text && !key) continue;
+    if (key === queryKey || text === queryText) best = Math.min(best, 0);
+    else if (text.startsWith(queryText)) best = Math.min(best, 1);
+    else if (text.split(' ').some(part => part.startsWith(queryText))) best = Math.min(best, 2);
+    else if (text.includes(queryText)) best = Math.min(best, 3);
+    else if (key.includes(queryKey)) best = Math.min(best, 4);
+  }
+  return {matched: Number.isFinite(best), score: best};
+}
+function filterPickerOptions(options = [], rawQuery = '') {
+  const ranked = [];
+  for (const option of options) {
+    const rankedMatch = rankPickerOption(option, rawQuery);
+    if (!rankedMatch.matched) continue;
+    ranked.push({option, score: rankedMatch.score});
+  }
+  ranked.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    const left = state.language === 'en' ? (a.option.english || a.option.display || '') : (a.option.korean || a.option.display || a.option.english || '');
+    const right = state.language === 'en' ? (b.option.english || b.option.display || '') : (b.option.korean || b.option.display || b.option.english || '');
+    return left.localeCompare(right, state.language === 'ko' ? 'ko' : 'en', {numeric: true, sensitivity: 'base'});
+  });
+  return ranked.map(entry => entry.option);
 }
 function getCurrentMoveChoices(mon = getSelectedMon()) {
   if (!mon?.data?.learnset?.length || !state.dex) return [];
@@ -1524,9 +1618,25 @@ function getCurrentMoveChoices(mon = getSelectedMon()) {
     if (!move?.exists || !isDexSupported(move) || move.isZ || move.isMax) continue;
     if (seen.has(move.name)) continue;
     seen.add(move.name);
-    out.push(makeChoice('moves', move.name));
+    out.push(makeChoice('moves', move.name, {
+      meta: {
+        type: String(move.type || '').toLowerCase(),
+        categoryLabel: move.category ? lang(
+          move.category === 'Status' ? '변화' : (move.category === 'Physical' ? '물리' : '특수'),
+          move.category
+        ) : '',
+        powerLabel: move.basePower ? lang(`위력 ${move.basePower}`, `Power ${move.basePower}`) : lang('위력 —', 'Power —'),
+        accuracyLabel: move.accuracy === true ? lang('명중 반드시', 'Accuracy sure-hit') : lang(`명중 ${move.accuracy || '—'}`, `Accuracy ${move.accuracy || '—'}`),
+      },
+    }));
   }
-  return out.sort((a, b) => a.english.localeCompare(b.english));
+  return sortChoicesForLanguage(out);
+}
+function getCurrentAbilityChoices(mon = getSelectedMon()) {
+  return sortChoicesForLanguage((mon?.data?.abilities || []).map(name => makeChoice('abilities', name)));
+}
+function getNatureChoices() {
+  return sortChoicesForLanguage((state.natureChoices || []).length ? state.natureChoices : natureOrder.map(name => makeChoice('natures', name)));
 }
 function rebuildMoveDatalist(mon = getSelectedMon()) {
   const choices = getCurrentMoveChoices(mon);
@@ -1537,6 +1647,7 @@ function rebuildMoveDatalist(mon = getSelectedMon()) {
 function showPicker(mode, moveIndex = null) {
   let options = [];
   let title = lang('선택', 'Select');
+  let emptyHint = lang('검색 결과가 없습니다.', 'No results found.');
   if (mode === 'species') {
     options = state.speciesChoices;
     title = lang('포켓몬 선택', 'Choose Pokémon');
@@ -1546,8 +1657,20 @@ function showPicker(mode, moveIndex = null) {
     title = Number.isInteger(moveIndex)
       ? lang(`기술 ${moveIndex + 1} 선택`, `Choose Move ${moveIndex + 1}`)
       : lang('기술 선택', 'Choose move');
+    if (!mon?.data) emptyHint = lang('먼저 포켓몬을 선택하면 배울 수 있는 기술 목록이 표시됩니다.', 'Choose a species first to load its learnable moves.');
+  } else if (mode === 'item') {
+    options = state.itemChoices || [];
+    title = lang('도구 선택', 'Choose Item');
+  } else if (mode === 'ability') {
+    const mon = getSelectedMon();
+    options = getCurrentAbilityChoices(mon);
+    title = lang('특성 선택', 'Choose Ability');
+    if (!mon?.data) emptyHint = lang('먼저 포켓몬을 선택하면 특성 목록이 표시됩니다.', 'Choose a species first to load its abilities.');
+  } else if (mode === 'nature') {
+    options = getNatureChoices();
+    title = lang('성격 선택', 'Choose Nature');
   }
-  state.picker = {mode, moveIndex, options};
+  state.picker = {mode, moveIndex, options, emptyHint};
   els.pickerTitle.textContent = title;
   els.pickerSearch.value = '';
   els.pickerModal.classList.remove('hidden');
@@ -1559,19 +1682,17 @@ function hidePicker() {
   els.pickerModal.classList.add('hidden');
 }
 function renderPickerOptions() {
-  const picker = state.picker || {options: []};
-  const query = toId(els.pickerSearch?.value || '');
-  const filtered = (picker.options || []).filter(option => {
-    if (!query) return true;
-    return [option.display, option.english, option.korean].some(value => toId(value).includes(query));
-  });
+  const picker = state.picker || {options: [], emptyHint: ''};
+  const query = els.pickerSearch?.value || '';
+  const filtered = filterPickerOptions(picker.options || [], query);
   els.pickerList.innerHTML = '';
-  els.pickerEmpty.textContent = filtered.length ? '' : lang('검색 결과가 없습니다.', 'No results found.');
+  els.pickerEmpty.textContent = filtered.length ? '' : (picker.emptyHint || lang('검색 결과가 없습니다.', 'No results found.'));
   for (const option of filtered) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'picker-option';
-    button.innerHTML = `<strong>${option.display}</strong>`;
+    const subtitle = buildPickerSubtitle(option, picker.mode);
+    button.innerHTML = subtitle ? `<strong>${option.display}</strong><small>${subtitle}</small>` : `<strong>${option.display}</strong>`;
     button.addEventListener('click', async () => {
       const mon = getSelectedMon();
       if (picker.mode === 'species') {
@@ -1584,6 +1705,19 @@ function renderPickerOptions() {
         mon.moves[picker.moveIndex] = option.english;
         saveState();
         renderEditor();
+        await renderValidation();
+      } else if (picker.mode === 'item') {
+        mon.item = option.english;
+        await hydrateSelectedSpecies();
+        await renderValidation();
+      } else if (picker.mode === 'ability') {
+        mon.ability = option.english;
+        await hydrateSelectedSpecies();
+        await renderValidation();
+      } else if (picker.mode === 'nature') {
+        mon.nature = option.english;
+        renderEditor();
+        saveState();
         await renderValidation();
       }
       hidePicker();
@@ -2310,9 +2444,12 @@ function bindElements() {
     speciesStatus: document.getElementById('species-status'),
     nicknameInput: document.getElementById('nickname-input'),
     abilitySelect: document.getElementById('ability-select'),
+    browseAbilityBtn: document.getElementById('browse-ability-btn'),
     natureSelect: document.getElementById('nature-select'),
+    browseNatureBtn: document.getElementById('browse-nature-btn'),
     genderSelect: document.getElementById('gender-select'),
     itemInput: document.getElementById('item-input'),
+    browseItemBtn: document.getElementById('browse-item-btn'),
     itemIcon: document.getElementById('item-icon'),
     levelInput: document.getElementById('level-input'),
     teraSelect: document.getElementById('tera-select'),
@@ -2370,15 +2507,16 @@ function buildStaticLists() {
   const dexItems = state.dex
     ? state.dex.items.all().filter(item => isDexSupported(item)).map(item => item.name)
     : [];
-  const allItems = Array.from(new Set([...commonItems, ...dexItems, ...(state.manifest.items || []).map(humanizeSpriteId)])).sort((a, b) => a.localeCompare(b));
-  state.itemChoices = allItems.map(item => makeChoice('items', item));
+  const allItems = Array.from(new Set([...commonItems, ...dexItems]));
+  state.itemChoices = sortChoicesForLanguage(allItems.map(item => makeChoice('items', item)));
   setDatalistOptions(els.itemList, state.itemChoices);
-  state.allMoveChoices = moveNameCache.map(name => makeChoice('moves', name));
+  state.allMoveChoices = sortChoicesForLanguage(moveNameCache.map(name => makeChoice('moves', name)));
   setDatalistOptions(els.moveList, state.allMoveChoices);
+  state.natureChoices = sortChoicesForLanguage(natureOrder.map(name => makeChoice('natures', name)));
   if (els.validationProfileSelect) {
     els.validationProfileSelect.innerHTML = Object.values(VALIDATION_PROFILES).map(profile => `<option value="${profile.id}">${localizeText(profile.label)}</option>`).join('\n');
   }
-  els.natureSelect.innerHTML = natureOrder.map(name => `<option value="${name}">${displayNatureName(name)}</option>`).join('\n');
+  els.natureSelect.innerHTML = state.natureChoices.map(choice => `<option value="${choice.english}">${choice.display}</option>`).join('\n');
   els.teraSelect.innerHTML = TYPES.map(type => `<option value="${type}">${displayType(type)}</option>`).join('\n');
 }
 function renderItemIcon(itemName) {
@@ -2591,7 +2729,7 @@ function renderEditor() {
   }
   els.editorAbilityNote.textContent = mon.ability ? implementedAbilityNote(mon.ability) : lang('포켓몬을 선택하면 특성 목록이 로드됩니다.', 'Select a species to load its ability list.');
   els.editorAbilityEffect.textContent = implementedItemNote(mon.item);
-  els.abilitySelect.innerHTML = (mon.data?.abilities || []).map(name => `<option value="${name}">${displayAbilityName(name)}</option>`).join('') || `<option value="">${lang('특성 없음', 'No abilities loaded')}</option>`;
+  els.abilitySelect.innerHTML = getCurrentAbilityChoices(mon).map(choice => `<option value="${choice.english}">${choice.display}</option>`).join('') || `<option value="">${lang('특성 없음', 'No abilities loaded')}</option>`;
   els.abilitySelect.value = mon.ability || '';
   renderAnimatedSprite(els.editorSprite, {spriteId: mon.spriteId, facing: 'front', shiny: mon.shiny, size: 'large'});
   createStatInputs(els.evGrid, 'ev', mon.evs, (stat, value) => {
@@ -2824,6 +2962,7 @@ function wireEditorEvents() {
     await renderValidation();
   });
   els.browseSpeciesBtn?.addEventListener('click', () => showPicker('species'));
+  els.browseItemBtn?.addEventListener('click', () => showPicker('item'));
   els.nicknameInput?.addEventListener('input', () => {
     const mon = getSelectedMon();
     mon.nickname = els.nicknameInput.value.trim();
@@ -2831,12 +2970,14 @@ function wireEditorEvents() {
     renderRoster();
     saveState();
   });
+  els.browseAbilityBtn?.addEventListener('click', () => showPicker('ability'));
   els.abilitySelect.addEventListener('change', async () => {
     const mon = getSelectedMon();
     mon.ability = els.abilitySelect.value;
     await hydrateSelectedSpecies();
     await renderValidation();
   });
+  els.browseNatureBtn?.addEventListener('click', () => showPicker('nature'));
   els.natureSelect.addEventListener('change', () => {
     const mon = getSelectedMon();
     mon.nature = els.natureSelect.value;
@@ -2880,7 +3021,7 @@ function wireEditorEvents() {
   els.moveInputs.forEach((input, idx) => {
     input.addEventListener('change', async () => {
       const mon = getSelectedMon();
-      const moveChoices = [...getCurrentMoveChoices(mon), ...(state.allMoveChoices || [])];
+      const moveChoices = getCurrentMoveChoices(mon);
       mon.moves[idx] = normalizeLocalizedInput('moves', input.value.trim(), moveChoices) || input.value.trim();
       await hydrateSelectedSpecies();
       await renderValidation();

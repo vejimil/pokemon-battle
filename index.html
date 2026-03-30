@@ -135,18 +135,27 @@
                     </label>
                     <label>
                       <span data-i18n="item_label">도구</span>
-                      <div class="compound-input">
-                        <input id="item-input" list="item-list" autocomplete="off" />
+                      <div class="compound-input compound-input-picker">
+                        <div class="picker-input-row">
+                          <input id="item-input" list="item-list" autocomplete="off" />
+                          <button id="browse-item-btn" class="ghost-btn input-action-btn" type="button" data-i18n="browse_btn">선택</button>
+                        </div>
                         <div id="item-icon" class="item-icon"></div>
                       </div>
                     </label>
                     <label>
                       <span data-i18n="ability_label">특성</span>
-                      <select id="ability-select"></select>
+                      <div class="picker-input-row">
+                        <select id="ability-select"></select>
+                        <button id="browse-ability-btn" class="ghost-btn input-action-btn" type="button" data-i18n="browse_btn">선택</button>
+                      </div>
                     </label>
                     <label>
                       <span data-i18n="nature_label">성격</span>
-                      <select id="nature-select"></select>
+                      <div class="picker-input-row">
+                        <select id="nature-select"></select>
+                        <button id="browse-nature-btn" class="ghost-btn input-action-btn" type="button" data-i18n="browse_btn">선택</button>
+                      </div>
                     </label>
                     <label>
                       <span data-i18n="gender_label">성별</span>
