@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PKB — 포켓몬 로컬 배틀 빌더 / Local Pokémon Battle Builder</title>
+    <title>PKB — 포켓몬 로컬 배틀 빌더</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%2230%22 fill=%22%23ef4444%22/%3E%3Cpath d=%22M2 32h60%22 stroke=%22%23ffffff%22 stroke-width=%226%22/%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%2210%22 fill=%22%23ffffff%22 stroke=%22%23111827%22 stroke-width=%224%22/%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%224%22 fill=%22%23111827%22/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -11,22 +11,28 @@
     <div class="page-shell">
       <header class="hero">
         <div>
-          <p class="eyebrow">로컬 2인 배틀 프로토타입 / Local 2-player battle prototype</p>
+          <p class="eyebrow" data-i18n="hero_eyebrow">로컬 2인 배틀 프로토타입</p>
           <h1>PKB</h1>
-          <p class="hero-copy">
+          <p class="hero-copy" data-i18n="hero_copy">
             업로드한 스프라이트와 아이콘, 로컬 배틀 데이터를 불러와 두 팀을 직접 만든 뒤,
-            브라우저에서 바로 번갈아 조작하는 배틀을 플레이합니다. / Build two custom teams with the uploaded sprites,
-            icons, and local battle data, then play a pass-and-play battle directly in the browser.
+            브라우저에서 바로 번갈아 조작하는 배틀을 플레이합니다.
           </p>
         </div>
         <div class="hero-meta">
-          <div class="meta-card">
-            <span class="meta-label">배틀 모드 / Mode</span>
-            <strong id="hero-mode-label">싱글 / Singles · 3마리 / 3 Pokémon</strong>
+          <div class="meta-card lang-card">
+            <span class="meta-label" data-i18n="lang_label">언어</span>
+            <div class="inline-actions lang-toggle-group">
+              <button id="lang-ko-btn" class="seg-btn active" type="button">한국어</button>
+              <button id="lang-en-btn" class="seg-btn" type="button">English</button>
+            </div>
           </div>
           <div class="meta-card">
-            <span class="meta-label">엔진 / Engine</span>
-            <strong>Showdown Dex + 커스텀 배틀 런타임 / custom battle runtime</strong>
+            <span class="meta-label" data-i18n="meta_mode">배틀 모드</span>
+            <strong id="hero-mode-label">싱글 · 3마리</strong>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label" data-i18n="meta_engine">엔진</span>
+            <strong data-i18n="meta_engine_value">Showdown Dex + 커스텀 배틀 런타임</strong>
           </div>
         </div>
       </header>
@@ -34,48 +40,48 @@
       <main id="app" class="app-grid">
         <section class="panel status-panel">
           <div class="panel-header">
-            <h2>런타임 / Runtime</h2>
-            <button id="reset-storage-btn" class="ghost-btn" type="button">저장 데이터 초기화 / Reset saved data</button>
+            <h2 data-i18n="runtime_title">런타임</h2>
+            <button id="reset-storage-btn" class="ghost-btn" type="button" data-i18n="reset_storage_btn">저장 데이터 초기화</button>
           </div>
-          <div id="runtime-status" class="runtime-status loading">
-            시뮬레이터 런타임, Dex 데이터, 업로드된 에셋을 불러오는 중… / Loading simulator runtime, dex data, and uploaded assets…
+          <div id="runtime-status" class="runtime-status loading" data-i18n="runtime_loading">
+            시뮬레이터 런타임, Dex 데이터, 업로드된 에셋을 불러오는 중…
           </div>
           <div id="runtime-notes" class="runtime-notes"></div>
         </section>
 
         <section class="panel setup-panel">
           <div class="panel-header">
-            <h2>설정 / Setup</h2>
+            <h2 data-i18n="setup_title">설정</h2>
             <div class="inline-actions">
-              <button id="mode-singles-btn" class="seg-btn active" type="button">싱글 / Singles</button>
-              <button id="mode-doubles-btn" class="seg-btn" type="button">더블 / Doubles</button>
+              <button id="mode-singles-btn" class="seg-btn active" type="button" data-i18n="mode_singles">싱글</button>
+              <button id="mode-doubles-btn" class="seg-btn" type="button" data-i18n="mode_doubles">더블</button>
             </div>
           </div>
 
           <div class="name-row">
             <label>
-              <span>플레이어 1 이름 / Player 1 name</span>
+              <span data-i18n="player1_name_label">플레이어 1 이름</span>
               <input id="player1-name" type="text" maxlength="24" value="Player 1" />
             </label>
             <label>
-              <span>플레이어 2 이름 / Player 2 name</span>
+              <span data-i18n="player2_name_label">플레이어 2 이름</span>
               <input id="player2-name" type="text" maxlength="24" value="Player 2" />
             </label>
           </div>
 
           <div class="name-row profile-row">
             <label>
-              <span>검증 프로필 / Validation profile</span>
+              <span data-i18n="validation_profile_label">검증 프로필</span>
               <select id="validation-profile-select"></select>
             </label>
-            <div id="validation-profile-note" class="helper-note">현재 빌더에서 적용할 규칙 묶음을 고릅니다. / Choose which validation ruleset the builder should enforce.</div>
+            <div id="validation-profile-note" class="helper-note" data-i18n="validation_profile_note">현재 빌더에서 적용할 규칙 묶음을 고릅니다.</div>
           </div>
 
           <div class="builder-layout">
             <aside class="team-sidebar">
               <div class="team-sidebar-header">
-                <h3>팀 슬롯 / Roster</h3>
-                <p id="team-size-note">각 플레이어는 포켓몬 3마리를 만든다. / Each player builds 3 Pokémon.</p>
+                <h3 data-i18n="roster_title">팀 슬롯</h3>
+                <p id="team-size-note">각 플레이어는 포켓몬 3마리를 만든다.</p>
               </div>
               <div class="roster-columns">
                 <div>
@@ -92,12 +98,12 @@
             <section class="builder-main">
               <div class="editor-toolbar">
                 <div>
-                  <h3 id="editor-title">포켓몬 편집 / Pokémon editor</h3>
-                  <p id="editor-subtitle">왼쪽 슬롯을 선택해 편집을 시작하세요. / Choose a slot from the roster to begin.</p>
+                  <h3 id="editor-title">포켓몬 편집기</h3>
+                  <p id="editor-subtitle">왼쪽 슬롯을 선택해 편집을 시작하세요.</p>
                 </div>
                 <div class="inline-actions">
-                  <button id="copy-prev-btn" class="ghost-btn" type="button">이전 슬롯 복사 / Copy previous slot</button>
-                  <button id="randomize-slot-btn" class="ghost-btn" type="button">랜덤 슬롯 생성 / Randomize slot</button>
+                  <button id="copy-prev-btn" class="ghost-btn" type="button" data-i18n="copy_prev_btn">이전 슬롯 복사</button>
+                  <button id="randomize-slot-btn" class="ghost-btn" type="button" data-i18n="randomize_slot_btn">랜덤 슬롯 생성</button>
                 </div>
               </div>
 
@@ -107,7 +113,7 @@
                     <div id="editor-sprite" class="sprite-shell large"></div>
                   </div>
                   <div class="preview-meta">
-                    <div id="editor-species-name" class="preview-species">포켓몬 미선택 / No species selected</div>
+                    <div id="editor-species-name" class="preview-species" data-i18n="no_species_selected">포켓몬 미선택</div>
                     <div id="editor-type-row" class="type-row"></div>
                     <div id="editor-flags" class="flag-row"></div>
                   </div>
@@ -116,86 +122,86 @@
                 <div class="editor-fields">
                   <div class="form-grid two-col">
                     <label>
-                      <span>포켓몬 / Species</span>
-                      <div class="picker-input-row"><input id="species-input" list="species-list" autocomplete="off" /><button id="browse-species-btn" class="ghost-btn input-action-btn" type="button">선택 / Browse</button></div>
+                      <span data-i18n="species_label">포켓몬</span>
+                      <div class="picker-input-row"><input id="species-input" list="species-list" autocomplete="off" /><button id="browse-species-btn" class="ghost-btn input-action-btn" type="button" data-i18n="browse_btn">선택</button></div>
                     </label>
                     <label>
-                      <span>폼 / Forme</span>
+                      <span data-i18n="forme_label">폼</span>
                       <select id="forme-select"></select>
                     </label>
                     <label>
-                      <span>별명 / Nickname</span>
+                      <span data-i18n="nickname_label">별명</span>
                       <input id="nickname-input" type="text" maxlength="24" />
                     </label>
                     <label>
-                      <span>도구 / Item</span>
+                      <span data-i18n="item_label">도구</span>
                       <div class="compound-input">
                         <input id="item-input" list="item-list" autocomplete="off" />
                         <div id="item-icon" class="item-icon"></div>
                       </div>
                     </label>
                     <label>
-                      <span>특성 / Ability</span>
+                      <span data-i18n="ability_label">특성</span>
                       <select id="ability-select"></select>
                     </label>
                     <label>
-                      <span>성격 / Nature</span>
+                      <span data-i18n="nature_label">성격</span>
                       <select id="nature-select"></select>
                     </label>
                     <label>
-                      <span>성별 / Gender</span>
+                      <span data-i18n="gender_label">성별</span>
                       <select id="gender-select">
-                        <option value="">자동 / Auto</option>
-                        <option value="M">수컷 / Male</option>
-                        <option value="F">암컷 / Female</option>
-                        <option value="N">무성 / Genderless</option>
+                        <option value="" data-i18n="gender_auto">자동</option>
+                        <option value="M" data-i18n="gender_male">수컷</option>
+                        <option value="F" data-i18n="gender_female">암컷</option>
+                        <option value="N" data-i18n="gender_genderless">무성</option>
                       </select>
                     </label>
                     <label>
-                      <span>레벨 / Level</span>
+                      <span data-i18n="level_label">레벨</span>
                       <input id="level-input" type="number" min="1" max="100" value="100" />
                     </label>
                     <label>
-                      <span>테라 타입 / Tera type</span>
+                      <span data-i18n="tera_type_label">테라 타입</span>
                       <select id="tera-select"></select>
                     </label>
                   </div>
 
                   <div class="checkbox-row">
-                    <label class="check-pill"><input id="shiny-checkbox" type="checkbox" /> <span>색이 다른 포켓몬 / Shiny</span></label>
+                    <label class="check-pill"><input id="shiny-checkbox" type="checkbox" /> <span data-i18n="shiny_label">색이 다른 포켓몬</span></label>
                   </div>
 
                   <div class="editor-helper-stack">
-                    <div id="species-status" class="helper-note">포켓몬을 선택하면 배틀 데이터를 불러옵니다. / Choose a species to load battle data.</div>
-                    <div id="editor-ability-note" class="helper-note">포켓몬을 선택하면 특성 목록이 표시됩니다. / Select a species to load its ability list.</div>
-                    <div id="editor-ability-effect" class="helper-note">지닌 도구가 없습니다. / No held item selected.</div>
+                    <div id="species-status" class="helper-note" data-i18n="species_status_default">포켓몬을 선택하면 배틀 데이터를 불러옵니다.</div>
+                    <div id="editor-ability-note" class="helper-note" data-i18n="ability_note_default">포켓몬을 선택하면 특성 목록이 표시됩니다.</div>
+                    <div id="editor-ability-effect" class="helper-note" data-i18n="item_note_default">지닌 도구가 없습니다.</div>
                   </div>
 
                   <section class="moves-section">
                     <div class="section-head">
-                      <h4>기술 / Moves</h4>
-                      <span id="moves-note" class="small-note">기술은 정확히 4개 선택해야 합니다. / Pick exactly four moves.</span>
+                      <h4 data-i18n="moves_title">기술</h4>
+                      <span id="moves-note" class="small-note" data-i18n="moves_note">기술은 정확히 4개 선택해야 합니다.</span>
                     </div>
                     <div class="form-grid two-col">
-                      <label><span>기술 1 / Move 1</span><div class="picker-input-row"><input id="move1-input" list="move-list" autocomplete="off" /><button id="browse-move1-btn" class="ghost-btn input-action-btn" type="button">선택 / Browse</button></div></label>
-                      <label><span>기술 2 / Move 2</span><div class="picker-input-row"><input id="move2-input" list="move-list" autocomplete="off" /><button id="browse-move2-btn" class="ghost-btn input-action-btn" type="button">선택 / Browse</button></div></label>
-                      <label><span>기술 3 / Move 3</span><div class="picker-input-row"><input id="move3-input" list="move-list" autocomplete="off" /><button id="browse-move3-btn" class="ghost-btn input-action-btn" type="button">선택 / Browse</button></div></label>
-                      <label><span>기술 4 / Move 4</span><div class="picker-input-row"><input id="move4-input" list="move-list" autocomplete="off" /><button id="browse-move4-btn" class="ghost-btn input-action-btn" type="button">선택 / Browse</button></div></label>
+                      <label><span data-i18n="move1_label">기술 1</span><div class="picker-input-row"><input id="move1-input" list="move-list" autocomplete="off" /><button id="browse-move1-btn" class="ghost-btn input-action-btn" type="button" data-i18n="browse_btn">선택</button></div></label>
+                      <label><span data-i18n="move2_label">기술 2</span><div class="picker-input-row"><input id="move2-input" list="move-list" autocomplete="off" /><button id="browse-move2-btn" class="ghost-btn input-action-btn" type="button" data-i18n="browse_btn">선택</button></div></label>
+                      <label><span data-i18n="move3_label">기술 3</span><div class="picker-input-row"><input id="move3-input" list="move-list" autocomplete="off" /><button id="browse-move3-btn" class="ghost-btn input-action-btn" type="button" data-i18n="browse_btn">선택</button></div></label>
+                      <label><span data-i18n="move4_label">기술 4</span><div class="picker-input-row"><input id="move4-input" list="move-list" autocomplete="off" /><button id="browse-move4-btn" class="ghost-btn input-action-btn" type="button" data-i18n="browse_btn">선택</button></div></label>
                     </div>
                   </section>
 
                   <section class="stats-section">
                     <div class="section-head">
-                      <h4>노력치 / EVs</h4>
-                      <span id="ev-total" class="small-note">합계 / Total: 0 / 510</span>
+                      <h4 data-i18n="ev_title">노력치</h4>
+                      <span id="ev-total" class="small-note">합계: 0 / 510</span>
                     </div>
                     <div class="stat-grid" id="ev-grid"></div>
                   </section>
 
                   <section class="stats-section">
                     <div class="section-head">
-                      <h4>개체값 / IVs</h4>
-                      <span class="small-note">각 능력치는 0~31 범위여야 합니다. / Each stat must stay between 0 and 31.</span>
+                      <h4 data-i18n="iv_title">개체값</h4>
+                      <span class="small-note" data-i18n="iv_note">각 능력치는 0~31 범위여야 합니다.</span>
                     </div>
                     <div class="stat-grid" id="iv-grid"></div>
                   </section>
@@ -206,10 +212,10 @@
               <div id="builder-warnings" class="warning-box hidden"></div>
 
               <div class="builder-footer">
-                <div id="validation-summary" class="validation-summary">두 팀을 모두 완성하면 배틀을 시작할 수 있습니다. / Finish both teams to unlock battle start.</div>
+                <div id="validation-summary" class="validation-summary" data-i18n="validation_summary_default">두 팀을 모두 완성하면 배틀을 시작할 수 있습니다.</div>
                 <div class="inline-actions">
-                  <button id="export-teams-btn" class="ghost-btn" type="button">팀 내보내기 / Export teams</button>
-                  <button id="start-battle-btn" class="primary-btn" type="button" disabled>배틀 시작 / Start battle</button>
+                  <button id="export-teams-btn" class="ghost-btn" type="button" data-i18n="export_teams_btn">팀 내보내기</button>
+                  <button id="start-battle-btn" class="primary-btn" type="button" disabled data-i18n="start_battle_btn">배틀 시작</button>
                 </div>
               </div>
             </section>
@@ -218,10 +224,10 @@
 
         <section class="panel battle-panel hidden" id="battle-panel">
           <div class="panel-header">
-            <h2>배틀 / Battle</h2>
+            <h2 data-i18n="battle_title">배틀</h2>
             <div class="inline-actions">
-              <button id="back-to-builder-btn" class="ghost-btn" type="button">빌더로 돌아가기 / Back to builder</button>
-              <button id="restart-battle-btn" class="ghost-btn" type="button">배틀 재시작 / Restart battle</button>
+              <button id="back-to-builder-btn" class="ghost-btn" type="button" data-i18n="back_to_builder_btn">빌더로 돌아가기</button>
+              <button id="restart-battle-btn" class="ghost-btn" type="button" data-i18n="restart_battle_btn">배틀 재시작</button>
             </div>
           </div>
 
@@ -231,7 +237,7 @@
                 <div class="side-card enemy">
                   <div class="side-header">
                     <h3 id="battle-p2-name">Player 2</h3>
-                    <span id="battle-p2-turn" class="turn-chip">대기 중 / Waiting</span>
+                    <span id="battle-p2-turn" class="turn-chip" data-i18n="turn_waiting">대기 중</span>
                   </div>
                   <div id="battle-side-p2" class="side-sprite-row"></div>
                   <div id="battle-team-p2" class="battle-team-grid"></div>
@@ -241,14 +247,14 @@
                   <div class="arena-center">
                     <div class="arena-backdrop"></div>
                   </div>
-                  <div class="battle-turn-banner">턴 / Turn <span id="turn-number">0</span></div>
-                  <div id="battle-field-status" class="battle-field-status">날씨 없음 / No weather · Terrain 없음 / No terrain</div>
+                  <div class="battle-turn-banner"><span data-i18n="turn_label">턴</span> <span id="turn-number">0</span></div>
+                  <div id="battle-field-status" class="battle-field-status" data-i18n="battle_field_status_none">날씨 없음 · 지형 없음</div>
                 </div>
 
                 <div class="side-card ally">
                   <div class="side-header">
                     <h3 id="battle-p1-name">Player 1</h3>
-                    <span id="battle-p1-turn" class="turn-chip">대기 중 / Waiting</span>
+                    <span id="battle-p1-turn" class="turn-chip" data-i18n="turn_waiting">대기 중</span>
                   </div>
                   <div id="battle-side-p1" class="side-sprite-row"></div>
                   <div id="battle-team-p1" class="battle-team-grid"></div>
@@ -258,15 +264,15 @@
               <div class="choice-grid">
                 <div class="choice-panel">
                   <div class="choice-head">
-                    <h3 id="choice-p1-title">플레이어 1 행동 선택 / Player 1 choice</h3>
-                    <span id="choice-p1-status" class="small-note">아직 선택 없음 / No request yet</span>
+                    <h3 id="choice-p1-title" data-i18n="choice_title_p1">플레이어 1 행동 선택</h3>
+                    <span id="choice-p1-status" class="small-note" data-i18n="choice_status_none">아직 선택 없음</span>
                   </div>
                   <div id="choice-p1" class="choice-body"></div>
                 </div>
                 <div class="choice-panel">
                   <div class="choice-head">
-                    <h3 id="choice-p2-title">플레이어 2 행동 선택 / Player 2 choice</h3>
-                    <span id="choice-p2-status" class="small-note">아직 선택 없음 / No request yet</span>
+                    <h3 id="choice-p2-title" data-i18n="choice_title_p2">플레이어 2 행동 선택</h3>
+                    <span id="choice-p2-status" class="small-note" data-i18n="choice_status_none">아직 선택 없음</span>
                   </div>
                   <div id="choice-p2" class="choice-body"></div>
                 </div>
@@ -276,14 +282,14 @@
             <aside class="battle-sidebar">
               <div class="battle-sidebar-card">
                 <div class="panel-header compact">
-                  <h3>배틀 로그 / Battle log</h3>
-                  <button id="clear-log-btn" class="ghost-btn small" type="button">지우기 / Clear</button>
+                  <h3 data-i18n="battle_log_title">배틀 로그</h3>
+                  <button id="clear-log-btn" class="ghost-btn small" type="button" data-i18n="clear_btn">지우기</button>
                 </div>
                 <div id="battle-log" class="battle-log"></div>
               </div>
               <div class="battle-sidebar-card">
                 <div class="panel-header compact">
-                  <h3>현재 선택 / Current selections</h3>
+                  <h3 data-i18n="current_selections_title">현재 선택</h3>
                 </div>
                 <div id="pending-choices" class="pending-choices"></div>
               </div>
@@ -297,14 +303,13 @@
     <datalist id="item-list"></datalist>
     <datalist id="move-list"></datalist>
 
-
     <div id="picker-modal" class="picker-modal hidden" aria-hidden="true">
       <div class="picker-card">
         <div class="panel-header compact">
-          <h3 id="picker-title">선택 / Select</h3>
-          <button id="picker-close-btn" class="ghost-btn small" type="button">닫기 / Close</button>
+          <h3 id="picker-title" data-i18n="picker_title_default">선택</h3>
+          <button id="picker-close-btn" class="ghost-btn small" type="button" data-i18n="picker_close_btn">닫기</button>
         </div>
-        <input id="picker-search" type="text" placeholder="검색 / Search" autocomplete="off" />
+        <input id="picker-search" type="text" placeholder="검색" data-i18n-placeholder="picker_search_placeholder" autocomplete="off" />
         <div id="picker-empty" class="small-note picker-empty"></div>
         <div id="picker-list" class="picker-list"></div>
       </div>

@@ -787,3 +787,8 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   min-height: 1.2rem;
   margin-top: -2px;
 }
+
+
+.lang-card { min-width: 220px; }
+.lang-toggle-group { gap: 8px; }
+.lang-toggle-group .seg-btn { min-width: 92px; }
