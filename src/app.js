@@ -1026,6 +1026,7 @@ const state = {
 };
 
 const els = {};
+let pickerReturnFocusEl = null;
 
 const UI_STRINGS = Object.freeze({
   ko: {
@@ -1644,7 +1645,40 @@ function rebuildMoveDatalist(mon = getSelectedMon()) {
   setDatalistOptions(els.moveList, choices);
   return choices;
 }
-function showPicker(mode, moveIndex = null) {
+function getPickerFallbackFocusTarget(picker = state.picker || {}) {
+  if (picker.mode === 'species') return els.browseSpeciesBtn || els.speciesInput || document.body;
+  if (picker.mode === 'move' && Number.isInteger(picker.moveIndex)) {
+    return els.browseMoveBtns?.[picker.moveIndex] || els.moveInputs?.[picker.moveIndex] || document.body;
+  }
+  if (picker.mode === 'item') return els.browseItemBtn || els.itemInput || document.body;
+  if (picker.mode === 'ability') return els.browseAbilityBtn || els.abilitySelect || document.body;
+  if (picker.mode === 'nature') return els.browseNatureBtn || els.natureSelect || document.body;
+  return document.body;
+}
+function setPickerModalOpen(isOpen) {
+  if (!els.pickerModal) return;
+  els.pickerModal.classList.toggle('hidden', !isOpen);
+  els.pickerModal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  if (isOpen) {
+    els.pickerModal.removeAttribute('inert');
+    els.pageShell?.setAttribute('inert', '');
+  } else {
+    els.pickerModal.setAttribute('inert', '');
+    els.pageShell?.removeAttribute('inert');
+  }
+}
+function focusPickerReturnTarget(picker = state.picker || {}) {
+  const saved = pickerReturnFocusEl;
+  const fallback = getPickerFallbackFocusTarget(picker);
+  pickerReturnFocusEl = null;
+  const target = saved && document.contains(saved) ? saved : fallback;
+  if (target && typeof target.focus === 'function') {
+    requestAnimationFrame(() => {
+      if (document.contains(target)) target.focus({preventScroll: true});
+    });
+  }
+}
+function showPicker(mode, moveIndex = null, triggerEl = null) {
   let options = [];
   let title = lang('선택', 'Select');
   let emptyHint = lang('검색 결과가 없습니다.', 'No results found.');
@@ -1670,16 +1704,27 @@ function showPicker(mode, moveIndex = null) {
     options = getNatureChoices();
     title = lang('성격 선택', 'Choose Nature');
   }
+  pickerReturnFocusEl = triggerEl && typeof triggerEl.focus === 'function'
+    ? triggerEl
+    : (document.activeElement && typeof document.activeElement.focus === 'function' ? document.activeElement : null);
   state.picker = {mode, moveIndex, options, emptyHint};
   els.pickerTitle.textContent = title;
   els.pickerSearch.value = '';
-  els.pickerModal.classList.remove('hidden');
+  setPickerModalOpen(true);
   renderPickerOptions();
-  els.pickerSearch.focus();
+  requestAnimationFrame(() => {
+    els.pickerSearch?.focus({preventScroll: true});
+  });
 }
-function hidePicker() {
+function hidePicker({restoreFocus = true} = {}) {
   if (!els.pickerModal) return;
-  els.pickerModal.classList.add('hidden');
+  const picker = state.picker || {};
+  const active = document.activeElement;
+  if (active && els.pickerModal.contains(active) && typeof active.blur === 'function') {
+    active.blur();
+  }
+  setPickerModalOpen(false);
+  if (restoreFocus) focusPickerReturnTarget(picker);
 }
 function renderPickerOptions() {
   const picker = state.picker || {options: [], emptyHint: ''};
@@ -2491,6 +2536,7 @@ function bindElements() {
     speciesList: document.getElementById('species-list'),
     itemList: document.getElementById('item-list'),
     moveList: document.getElementById('move-list'),
+    pageShell: document.querySelector('.page-shell'),
     browseSpeciesBtn: document.getElementById('browse-species-btn'),
     browseMoveBtns: [0,1,2,3].map(i => document.getElementById(`browse-move${i + 1}-btn`)),
     pickerModal: document.getElementById('picker-modal'),
@@ -2961,8 +3007,8 @@ function wireEditorEvents() {
     await hydrateSelectedSpecies();
     await renderValidation();
   });
-  els.browseSpeciesBtn?.addEventListener('click', () => showPicker('species'));
-  els.browseItemBtn?.addEventListener('click', () => showPicker('item'));
+  els.browseSpeciesBtn?.addEventListener('click', (event) => showPicker('species', null, event.currentTarget));
+  els.browseItemBtn?.addEventListener('click', (event) => showPicker('item', null, event.currentTarget));
   els.nicknameInput?.addEventListener('input', () => {
     const mon = getSelectedMon();
     mon.nickname = els.nicknameInput.value.trim();
@@ -2970,14 +3016,14 @@ function wireEditorEvents() {
     renderRoster();
     saveState();
   });
-  els.browseAbilityBtn?.addEventListener('click', () => showPicker('ability'));
+  els.browseAbilityBtn?.addEventListener('click', (event) => showPicker('ability', null, event.currentTarget));
   els.abilitySelect.addEventListener('change', async () => {
     const mon = getSelectedMon();
     mon.ability = els.abilitySelect.value;
     await hydrateSelectedSpecies();
     await renderValidation();
   });
-  els.browseNatureBtn?.addEventListener('click', () => showPicker('nature'));
+  els.browseNatureBtn?.addEventListener('click', (event) => showPicker('nature', null, event.currentTarget));
   els.natureSelect.addEventListener('change', () => {
     const mon = getSelectedMon();
     mon.nature = els.natureSelect.value;
@@ -3027,7 +3073,7 @@ function wireEditorEvents() {
       await renderValidation();
     });
   });
-  els.browseMoveBtns?.forEach((btn, idx) => btn.addEventListener('click', () => showPicker('move', idx)));
+  els.browseMoveBtns?.forEach((btn, idx) => btn.addEventListener('click', (event) => showPicker('move', idx, event.currentTarget)));
   els.pickerCloseBtn?.addEventListener('click', hidePicker);
   els.pickerModal?.addEventListener('click', (event) => {
     if (event.target === els.pickerModal) hidePicker();
