@@ -2,6 +2,7 @@ import {loadLocalDex, LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_T
 import {KO_NAME_MAPS} from './i18n-ko-data.js';
 import {OFFICIAL_KO_SPECIES, OFFICIAL_KO_ITEMS} from './i18n-ko-official.js';
 import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdownLocalSinglesChoices, isShowdownLocalBattle} from './engine/showdown-local-bridge.js';
+import {Aliases} from './data/aliases.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
 const SHOWDOWN_TARGET_HINTS = {
@@ -90,6 +91,67 @@ const targetHints = {
   'selected-pokemon-me-first': 'single-opponent',
   'user-or-ally': 'ally-or-self',
 };
+const MOVE_FLAG_LABELS = Object.freeze({
+  contact: ['접촉', 'Contact'],
+  protect: ['방어 영향', 'Affected by Protect'],
+  reflectable: ['매직코트 반사', 'Reflectable'],
+  bypasssub: ['대타 관통', 'Bypasses Substitute'],
+  mirror: ['미러무브 가능', 'Mirror Move'],
+  heal: ['회복 계열', 'Healing move'],
+  sound: ['소리 기술', 'Sound move'],
+  powder: ['가루 기술', 'Powder move'],
+  pulse: ['파동 기술', 'Pulse move'],
+  punch: ['주먹 기술', 'Punch move'],
+  bite: ['물기 기술', 'Biting move'],
+  slicing: ['베기 기술', 'Slicing move'],
+  bullet: ['탄/폭탄 기술', 'Ball/Bomb move'],
+  dance: ['춤 기술', 'Dance move'],
+  wind: ['바람 기술', 'Wind move'],
+  snatch: ['가로채기 대상', 'Snatchable'],
+  recharge: ['다음 턴 쉬기', 'Needs recharge'],
+});
+const VOLATILE_STATUS_LABELS = Object.freeze({
+  encore: ['앵콜 상태', 'Encore'],
+  leechseed: ['씨뿌리기', 'Leech Seed'],
+  confusion: ['혼란', 'Confusion'],
+  flinch: ['풀죽음', 'Flinch'],
+  protect: ['방어', 'Protect'],
+  substitute: ['대타출동', 'Substitute'],
+  yawn: ['하품', 'Yawn'],
+  taunt: ['도발', 'Taunt'],
+  disable: ['금지', 'Disable'],
+  torment: ['괴롭힘', 'Torment'],
+  embargo: ['금제', 'Embargo'],
+  nightmare: ['악몽', 'Nightmare'],
+});
+const SIDE_CONDITION_LABELS = Object.freeze({
+  stealthrock: ['스텔스록', 'Stealth Rock'],
+  spikes: ['압정뿌리기', 'Spikes'],
+  toxicspikes: ['독압정', 'Toxic Spikes'],
+  stickyweb: ['끈적끈적네트', 'Sticky Web'],
+  tailwind: ['순풍', 'Tailwind'],
+  reflect: ['리플렉터', 'Reflect'],
+  lightscreen: ['빛의장막', 'Light Screen'],
+  auroraveil: ['오로라베일', 'Aurora Veil'],
+});
+const WEATHER_LABELS = Object.freeze({
+  rain: ['비', 'Rain'],
+  raindance: ['비', 'Rain'],
+  primordialsea: ['폭우', 'Heavy Rain'],
+  sun: ['쾌청', 'Sun'],
+  sunnyday: ['쾌청', 'Sun'],
+  desolateland: ['강한 햇살', 'Harsh Sun'],
+  sand: ['모래바람', 'Sandstorm'],
+  sandstorm: ['모래바람', 'Sandstorm'],
+  snow: ['눈', 'Snow'],
+  hail: ['싸라기눈', 'Hail'],
+});
+const TERRAIN_LABELS = Object.freeze({
+  electricterrain: ['일렉트릭필드', 'Electric Terrain'],
+  grassyterrain: ['그래스필드', 'Grassy Terrain'],
+  mistyterrain: ['미스트필드', 'Misty Terrain'],
+  psychicterrain: ['사이코필드', 'Psychic Terrain'],
+});
 
 const typeChart = LOCAL_TYPE_CHART;
 
@@ -163,18 +225,6 @@ const TERA_LOW_POWER_EXEMPT_MOVES = new Set([
   'waterspout','eruption','electroball','gyroball','heatcrash','heavyslam','grassknot','lowkick','flail','reversal','wringout','crushgrip','storedpower','powertrip','magnitude','naturalgift','present','spitup','trumpcard','weatherball','terrainpulse','risingvoltage','dragonenergy'
 ]);
 
-const WEATHER_LABELS = Object.freeze({
-  rain: '비 / Rain',
-  sun: '쾌청 / Sun',
-  sand: '모래바람 / Sandstorm',
-  snow: '눈 / Snow',
-});
-const TERRAIN_LABELS = Object.freeze({
-  electricterrain: '일렉트릭필드 / Electric Terrain',
-  grassyterrain: '그래스필드 / Grassy Terrain',
-  mistyterrain: '미스트필드 / Misty Terrain',
-  psychicterrain: '사이코필드 / Psychic Terrain',
-});
 const PROTECT_MOVE_IDS = new Set(['protect','detect','maxguard','spikyshield','kingsshield','banefulbunker','silktrap','burningbulwark','obstruct']);
 const SCREEN_MOVE_IDS = new Set(['reflect','lightscreen','auroraveil']);
 const CHOICE_ITEM_IDS = new Set(['choiceband','choicespecs','choicescarf']);
@@ -428,7 +478,14 @@ function buildAssetDex() {
   }
 
   const baseChoices = Array.from(assetDex.families.values())
-    .map(family => makeChoice('species', family.baseSpeciesName, {assetId: family.assetBaseId, family: family.baseSpeciesName}))
+    .map(family => makeChoice('species', family.baseSpeciesName, {
+      assetId: family.assetBaseId,
+      family: family.baseSpeciesName,
+      formSearchTerms: uniqueNames((family.allFormChoices || []).flatMap(choice => [
+        choice?.speciesName,
+        displaySpeciesName(choice?.speciesName || ''),
+      ])),
+    }))
     .sort((a, b) => a.english.localeCompare(b.english));
 
   state.assetDex = assetDex;
@@ -944,10 +1001,10 @@ function groundedMonsOnField() {
   return state.battle.players.flatMap(side => side.active.map(idx => side.team[idx])).filter(mon => mon && !mon.fainted && isGrounded(mon));
 }
 function weatherDisplayLabel(weather) {
-  return localizeText(WEATHER_LABELS[weather] || titleCase(weather));
+  return localizedWeatherLabel(weather || '');
 }
 function terrainDisplayLabel(terrain) {
-  return localizeText(TERRAIN_LABELS[terrain] || titleCase(terrain));
+  return localizedTerrainLabel(terrain || '');
 }
 function previewMoveForUi(mon, move) {
   if (!move) return null;
@@ -1019,7 +1076,7 @@ const state = {
   natureChoices: [],
   allMoveChoices: [],
   currentMoveChoices: [],
-  picker: {mode: '', moveIndex: null, options: [], emptyHint: ''},
+  picker: {mode: '', moveIndex: null, options: [], emptyHint: '', detailOption: null},
   battle: null,
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
   showdownLocal: {available: false, checked: false, skipped: false, bundledNodeServer: false, engineApiOrigin: '', probeMode: 'uninitialized'},
@@ -1361,6 +1418,18 @@ function normalizeSearchText(text) {
 function normalizeSearchKey(text) {
   return normalizeSearchText(text).replace(/\s+/g, '');
 }
+function getAliasNamesForEntity(english = '') {
+  const canonicalId = toId(english);
+  if (!canonicalId) return [];
+  const out = [];
+  for (const [aliasId, target] of Object.entries(Aliases || {})) {
+    if (toId(target) !== canonicalId) continue;
+    if (!/[a-z]/i.test(aliasId)) continue;
+    out.push(aliasId);
+    out.push(aliasId.replace(/-/g, ' '));
+  }
+  return uniqueNames(out);
+}
 function buildChoiceSearchTerms(kind, english, choice = {}) {
   const candidates = new Set([
     english,
@@ -1374,6 +1443,9 @@ function buildChoiceSearchTerms(kind, english, choice = {}) {
   if (kind === 'species') {
     candidates.add(getLocalizedSpeciesFallback(english));
     candidates.add(String(english || '').replace(/-/g, ' '));
+    for (const alias of getAliasNamesForEntity(english)) candidates.add(alias);
+    for (const formName of choice.formSearchTerms || []) candidates.add(formName);
+    for (const extra of choice.extraSearchTerms || []) candidates.add(extra);
   }
   return Array.from(candidates).map(value => String(value || '').trim()).filter(Boolean);
 }
@@ -1499,6 +1571,12 @@ function setLanguage(language) {
   relocalizeChoiceCaches();
   buildStaticLists();
   renderAll();
+  if (!els.pickerModal?.classList.contains('hidden')) {
+    const picker = state.picker || {};
+    if (picker.mode === 'move' && picker.detailOption) renderMoveDetail(picker.detailOption);
+    else if (picker.mode === 'move') resetPickerDetail();
+    renderPickerOptions();
+  }
   saveState();
 }
 
@@ -1690,6 +1768,156 @@ function rebuildMoveDatalist(mon = getSelectedMon()) {
   setDatalistOptions(els.moveList, choices);
   return choices;
 }
+function describeStatChangeMap(boosts = {}) {
+  const parts = [];
+  for (const stat of statOrder) {
+    const change = Number(boosts?.[stat] || 0);
+    if (!change) continue;
+    const label = localizeText(statLabels[stat]);
+    parts.push(state.language === 'ko'
+      ? `${label} ${change > 0 ? '+' : ''}${change}`
+      : `${label} ${change > 0 ? '+' : ''}${change}`);
+  }
+  return parts;
+}
+function displayTargetHint(target = '') {
+  const mapped = SHOWDOWN_TARGET_HINTS[target] || targetHints[target] || target || 'normal';
+  return localizeText({
+    'single-opponent': '상대 1마리 / Single opponent',
+    'all-opponents': '상대 전체 / All opponents',
+    'all-other-pokemon': '다른 포켓몬 전체 / All other Pokémon',
+    'all-pokemon': '필드 전체 / All Pokémon',
+    'self': '자신 / Self',
+    'ally': '아군 1마리 / One ally',
+    'ally-or-self': '아군 또는 자신 / Ally or self',
+    'ally-side': '아군 필드 / Ally side',
+    'self-side': '자신 필드 / Self side',
+    'opponent-side': '상대 필드 / Opponent side',
+    field: '필드 전체 / Entire field',
+  }[mapped] || `${mapped}`);
+}
+function localizedMoveFlagLabel(flag = '') {
+  const label = MOVE_FLAG_LABELS[flag];
+  return label ? lang(label[0], label[1]) : localizeText(flag);
+}
+function localizedVolatileLabel(status = '') {
+  const label = VOLATILE_STATUS_LABELS[status];
+  return label ? lang(label[0], label[1]) : localizeText(status);
+}
+function localizedSideConditionLabel(condition = '') {
+  const label = SIDE_CONDITION_LABELS[toId(condition)];
+  return label ? lang(label[0], label[1]) : localizeText(condition);
+}
+function localizedWeatherLabel(weather = '') {
+  const label = WEATHER_LABELS[toId(weather)];
+  return label ? lang(label[0], label[1]) : localizeText(weather);
+}
+function localizedTerrainLabel(terrain = '') {
+  const label = TERRAIN_LABELS[toId(terrain)];
+  return label ? lang(label[0], label[1]) : localizeText(terrain);
+}
+function buildMoveEffectSummary(move) {
+  if (!move?.exists) return lang('기술 정보를 찾을 수 없습니다.', 'Move data could not be found.');
+  const lines = [];
+  if (move.category === 'Status') lines.push(lang('변화기입니다.', 'Status move.'));
+  if (move.status) lines.push(lang(`${displayStatus(move.status)} 상태이상을 겁니다.`, `Inflicts ${displayStatus(move.status)}.`));
+  if (move.volatileStatus) lines.push(lang(`${localizedVolatileLabel(move.volatileStatus)} 상태를 겁니다.`, `Applies ${localizedVolatileLabel(move.volatileStatus)}.`));
+  if (move.sideCondition) lines.push(lang(`${localizedSideConditionLabel(move.sideCondition)}를 설치합니다.`, `Sets ${localizedSideConditionLabel(move.sideCondition)}.`));
+  if (move.weather) lines.push(lang(`${localizedWeatherLabel(move.weather)} 날씨를 만듭니다.`, `Sets ${localizedWeatherLabel(move.weather)}.`));
+  if (move.terrain) lines.push(lang(`${localizedTerrainLabel(move.terrain)}을 전개합니다.`, `Sets ${localizedTerrainLabel(move.terrain)}.`));
+  if (move.forceSwitch) lines.push(lang('명중하면 상대를 교체시킵니다.', 'Forces the target to switch on hit.'));
+  if (move.selfSwitch) lines.push(lang('사용 후 교체합니다.', 'Switches the user out after use.'));
+  if (move.stallingMove) lines.push(lang('연속 사용 시 실패 확률이 커지는 방어 계열 기술입니다.', 'Protection-style move that becomes less reliable if used repeatedly.'));
+  if (move.willCrit || Number(move.critRatio) > 1) lines.push(lang('급소 확률이 높습니다.', 'Has an elevated critical-hit rate.'));
+  if (Array.isArray(move.multiHit)) lines.push(lang(`${move.multiHit[0]}~${move.multiHit[1]}번 연속 공격합니다.`, `Hits ${move.multiHit[0]}-${move.multiHit[1]} times.`));
+  if (Array.isArray(move.drain) && move.drain[1]) lines.push(lang(`가한 피해의 약 ${Math.round((move.drain[0] / move.drain[1]) * 100)}%를 회복합니다.`, `Restores about ${Math.round((move.drain[0] / move.drain[1]) * 100)}% of damage dealt.`));
+  if (Array.isArray(move.recoil) && move.recoil[1]) lines.push(lang(`사용자도 반동 피해를 받습니다.`, 'The user takes recoil damage.'));
+  if (Array.isArray(move.heal) && move.heal[1]) lines.push(lang(`최대 HP의 약 ${Math.round((move.heal[0] / move.heal[1]) * 100)}%를 회복합니다.`, `Restores about ${Math.round((move.heal[0] / move.heal[1]) * 100)}% max HP.`));
+  const selfBoosts = describeStatChangeMap(move.boosts);
+  if (selfBoosts.length) lines.push(lang(`능력치 변화: ${selfBoosts.join(', ')}.`, `Stat changes: ${selfBoosts.join(', ')}.`));
+  const selfSecondaryBoosts = describeStatChangeMap(move.secondary?.self?.boosts);
+  if (selfSecondaryBoosts.length) lines.push(lang(`명중 후 사용자 능력치 추가 변화: ${selfSecondaryBoosts.join(', ')}.`, `On hit, user stat changes: ${selfSecondaryBoosts.join(', ')}.`));
+  const targetSecondaryBoosts = describeStatChangeMap(move.secondary?.boosts);
+  if (targetSecondaryBoosts.length) lines.push(lang(`추가 효과 능력치 변화: ${targetSecondaryBoosts.join(', ')}.`, `Secondary stat changes: ${targetSecondaryBoosts.join(', ')}.`));
+  if (move.secondary?.chance && move.secondary?.status) lines.push(lang(`${move.secondary.chance}% 확률로 ${displayStatus(move.secondary.status)}를 겁니다.`, `${move.secondary.chance}% chance to inflict ${displayStatus(move.secondary.status)}.`));
+  if (move.secondary?.chance && move.secondary?.volatileStatus) lines.push(lang(`${move.secondary.chance}% 확률로 ${localizedVolatileLabel(move.secondary.volatileStatus)} 상태를 겁니다.`, `${move.secondary.chance}% chance to apply ${localizedVolatileLabel(move.secondary.volatileStatus)}.`));
+  if (move.secondary?.chance && move.secondary?.self?.volatileStatus) lines.push(lang(`명중 시 ${move.secondary.chance}% 확률로 사용자에게 ${localizedVolatileLabel(move.secondary.self.volatileStatus)} 효과가 생깁니다.`, `On hit, ${move.secondary.chance}% chance to apply ${localizedVolatileLabel(move.secondary.self.volatileStatus)} to the user.`));
+  if (!lines.length) {
+    lines.push(move.category === 'Status'
+      ? lang('특수한 상태/필드/보조 효과를 다루는 기술입니다.', 'Applies a utility, status, or field effect.')
+      : lang('직접적인 부가 효과는 데이터에 명시되지 않은 기본 공격기입니다.', 'Primarily a direct attacking move with no extra effect listed in the local data.'));
+  }
+  return lines.join('\n');
+}
+function getPickerCurrentValue(picker = state.picker || {}, mon = getSelectedMon()) {
+  if (!picker || !mon) return '';
+  if (picker.mode === 'species') return mon.baseSpecies || mon.species || '';
+  if (picker.mode === 'move' && Number.isInteger(picker.moveIndex)) return mon.moves?.[picker.moveIndex] || '';
+  if (picker.mode === 'item') return mon.item || '';
+  if (picker.mode === 'ability') return mon.ability || '';
+  if (picker.mode === 'nature') return mon.nature || '';
+  return '';
+}
+function isPickerOptionSelected(option, picker = state.picker || {}, mon = getSelectedMon()) {
+  return toId(option?.english) === toId(getPickerCurrentValue(picker, mon));
+}
+function resetPickerDetail() {
+  if (!els.pickerDetail) return;
+  if (state.picker) state.picker.detailOption = null;
+  const isMoveMode = (state.picker?.mode === 'move');
+  els.pickerDetail.classList.toggle('hidden', !isMoveMode);
+  if (els.pickerDetailPlaceholder) {
+    els.pickerDetailPlaceholder.textContent = lang('기술 상세를 보려면 기술의 정보 버튼을 누르세요.', 'Press a move info button to inspect its details.');
+    els.pickerDetailPlaceholder.classList.toggle('hidden', !isMoveMode ? true : false);
+  }
+  els.pickerDetailContent?.classList.add('hidden');
+  if (els.pickerDetailName) els.pickerDetailName.textContent = '—';
+  if (els.pickerDetailAlt) els.pickerDetailAlt.textContent = '—';
+  if (els.pickerDetailMeta) els.pickerDetailMeta.innerHTML = '';
+  if (els.pickerDetailDesc) els.pickerDetailDesc.textContent = '';
+  if (els.pickerDetailFlags) els.pickerDetailFlags.innerHTML = '';
+}
+function renderMoveDetail(option) {
+  if (!els.pickerDetail || state.picker?.mode !== 'move') return;
+  const move = state.dex?.moves?.get?.(option?.english || '');
+  if (!move?.exists) {
+    resetPickerDetail();
+    if (els.pickerDetailPlaceholder) {
+      els.pickerDetailPlaceholder.textContent = lang('기술 상세 데이터를 불러오지 못했습니다.', 'Move detail data could not be loaded.');
+      els.pickerDetailPlaceholder.classList.remove('hidden');
+    }
+    return;
+  }
+  state.picker.detailOption = option;
+  els.pickerDetail.classList.remove('hidden');
+  els.pickerDetailPlaceholder?.classList.add('hidden');
+  els.pickerDetailContent?.classList.remove('hidden');
+  if (els.pickerDetailName) els.pickerDetailName.textContent = option.display || displayMoveName(move.name);
+  if (els.pickerDetailAlt) {
+    const alternate = state.language === 'en'
+      ? (option.korean && option.korean !== option.english ? option.korean : '')
+      : (option.english && option.english !== option.korean ? option.english : '');
+    els.pickerDetailAlt.textContent = alternate || lang('기술 상세', 'Move details');
+  }
+  const metaChips = [
+    `${lang('타입', 'Type')}: ${displayType(move.type)}`,
+    `${lang('분류', 'Category')}: ${move.category ? lang(move.category === 'Status' ? '변화' : (move.category === 'Physical' ? '물리' : '특수'), move.category) : '—'}`,
+    `${lang('위력', 'Power')}: ${move.basePower || '—'}`,
+    `${lang('명중', 'Accuracy')}: ${move.accuracy === true ? lang('반드시', 'Sure-hit') : (move.accuracy || '—')}`,
+    `${lang('PP', 'PP')}: ${move.pp || '—'}`,
+    `${lang('우선도', 'Priority')}: ${Number(move.priority || 0)}`,
+    `${lang('대상', 'Target')}: ${displayTargetHint(move.target)}`,
+  ];
+  els.pickerDetailMeta.innerHTML = metaChips.map(text => `<span class="picker-detail-chip">${text}</span>`).join('');
+  els.pickerDetailDesc.textContent = buildMoveEffectSummary(move);
+  const flagChips = [];
+  for (const [flag, enabled] of Object.entries(move.flags || {})) {
+    if (!enabled) continue;
+    flagChips.push(localizedMoveFlagLabel(flag));
+  }
+  if (move.secondary?.chance) flagChips.push(lang(`추가효과 ${move.secondary.chance}%`, `Secondary ${move.secondary.chance}%`));
+  els.pickerDetailFlags.innerHTML = flagChips.map(text => `<span class="picker-detail-chip">${text}</span>`).join('');
+}
 function getPickerFallbackFocusTarget(picker = state.picker || {}) {
   if (picker.mode === 'species') return els.browseSpeciesBtn || els.speciesInput || document.body;
   if (picker.mode === 'move' && Number.isInteger(picker.moveIndex)) {
@@ -1704,6 +1932,7 @@ function setPickerModalOpen(isOpen) {
   if (!els.pickerModal) return;
   els.pickerModal.classList.toggle('hidden', !isOpen);
   els.pickerModal.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+  document.body.classList.toggle('picker-open', isOpen);
   if (isOpen) {
     els.pickerModal.removeAttribute('inert');
     els.pageShell?.setAttribute('inert', '');
@@ -1753,11 +1982,13 @@ function showPicker(mode, moveIndex = null, triggerEl = null) {
   pickerReturnFocusEl = triggerEl && typeof triggerEl.focus === 'function'
     ? triggerEl
     : (document.activeElement && typeof document.activeElement.focus === 'function' ? document.activeElement : null);
-  state.picker = {mode, moveIndex, options, emptyHint};
+  state.picker = {mode, moveIndex, options, emptyHint, detailOption: null};
   els.pickerTitle.textContent = title;
   els.pickerSearch.value = '';
   setPickerModalOpen(true);
+  resetPickerDetail();
   renderPickerOptions();
+  els.pickerList.scrollTop = 0;
   requestAnimationFrame(() => {
     els.pickerSearch?.focus({preventScroll: true});
   });
@@ -1779,12 +2010,10 @@ function renderPickerOptions() {
   els.pickerList.innerHTML = '';
   els.pickerEmpty.textContent = filtered.length ? '' : (picker.emptyHint || lang('검색 결과가 없습니다.', 'No results found.'));
   for (const option of filtered) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'picker-option';
+    const wrap = document.createElement('div');
+    wrap.className = `picker-option${isPickerOptionSelected(option, picker) ? ' active' : ''}`;
     const subtitle = buildPickerSubtitle(option, picker.mode);
-    button.innerHTML = subtitle ? `<strong>${option.display}</strong><small>${subtitle}</small>` : `<strong>${option.display}</strong>`;
-    button.addEventListener('click', async () => {
+    const applyOption = async () => {
       const mon = getSelectedMon();
       if (picker.mode === 'species') {
         applySpeciesSelection(mon, option.english);
@@ -1812,9 +2041,37 @@ function renderPickerOptions() {
         await renderValidation();
       }
       hidePicker();
-    });
-    els.pickerList.appendChild(button);
+    };
+    if (picker.mode === 'move') {
+      wrap.innerHTML = `
+        <div class="picker-option-row">
+          <div class="picker-option-main">
+            <button type="button" class="picker-option-select">
+              <strong>${option.display}</strong>
+              ${subtitle ? `<small>${subtitle}</small>` : ''}
+            </button>
+          </div>
+          <div class="picker-option-actions">
+            <button type="button" class="ghost-btn small picker-detail-btn">${lang('정보', 'Info')}</button>
+          </div>
+        </div>`;
+      const selectBtn = wrap.querySelector('.picker-option-select');
+      selectBtn?.addEventListener('click', applyOption);
+      const detailBtn = wrap.querySelector('.picker-detail-btn');
+      detailBtn?.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        renderMoveDetail(option);
+      });
+    } else {
+      wrap.innerHTML = `<button type="button" class="picker-option-select">${subtitle ? `<strong>${option.display}</strong><small>${subtitle}</small>` : `<strong>${option.display}</strong>`}</button>`;
+      wrap.querySelector('.picker-option-select')?.addEventListener('click', applyOption);
+    }
+    els.pickerList.appendChild(wrap);
   }
+  const detailStillVisible = picker.detailOption && filtered.some(option => toId(option.english) === toId(picker.detailOption.english));
+  if (detailStillVisible) renderMoveDetail(picker.detailOption);
+  else if (picker.mode === 'move') resetPickerDetail();
 }
 function dataSourceLabel() {
   return state.dex ? `Local Dex ${state.dexVersion || ''}`.trim() : state.dataProvider;
@@ -2590,6 +2847,14 @@ function bindElements() {
     pickerSearch: document.getElementById('picker-search'),
     pickerList: document.getElementById('picker-list'),
     pickerEmpty: document.getElementById('picker-empty'),
+    pickerDetail: document.getElementById('picker-detail'),
+    pickerDetailPlaceholder: document.getElementById('picker-detail-placeholder'),
+    pickerDetailContent: document.getElementById('picker-detail-content'),
+    pickerDetailName: document.getElementById('picker-detail-name'),
+    pickerDetailAlt: document.getElementById('picker-detail-alt'),
+    pickerDetailMeta: document.getElementById('picker-detail-meta'),
+    pickerDetailDesc: document.getElementById('picker-detail-desc'),
+    pickerDetailFlags: document.getElementById('picker-detail-flags'),
     pickerCloseBtn: document.getElementById('picker-close-btn'),
   });
 }

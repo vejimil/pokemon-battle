@@ -320,7 +320,25 @@
         </div>
         <input id="picker-search" type="text" placeholder="검색" data-i18n-placeholder="picker_search_placeholder" autocomplete="off" />
         <div id="picker-empty" class="small-note picker-empty"></div>
-        <div id="picker-list" class="picker-list"></div>
+        <div class="picker-body">
+          <div class="picker-list-wrap">
+            <div id="picker-list" class="picker-list"></div>
+          </div>
+          <aside id="picker-detail" class="picker-detail hidden" aria-live="polite">
+            <div id="picker-detail-placeholder" class="picker-detail-placeholder">기술 상세를 보려면 기술의 정보 버튼을 누르세요.</div>
+            <div id="picker-detail-content" class="picker-detail-content hidden">
+              <div class="picker-detail-header">
+                <div>
+                  <div id="picker-detail-name" class="picker-detail-name">—</div>
+                  <div id="picker-detail-alt" class="picker-detail-alt">—</div>
+                </div>
+              </div>
+              <div id="picker-detail-meta" class="picker-detail-meta"></div>
+              <div id="picker-detail-desc" class="picker-detail-desc"></div>
+              <div id="picker-detail-flags" class="picker-detail-flags"></div>
+            </div>
+          </aside>
+        </div>
       </div>
     </div>
 
