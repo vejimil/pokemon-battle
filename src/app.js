@@ -1571,12 +1571,7 @@ function setLanguage(language) {
   relocalizeChoiceCaches();
   buildStaticLists();
   renderAll();
-  if (!els.pickerModal?.classList.contains('hidden')) {
-    const picker = state.picker || {};
-    if (picker.mode === 'move' && picker.detailOption) renderMoveDetail(picker.detailOption);
-    else if (picker.mode === 'move') resetPickerDetail();
-    renderPickerOptions();
-  }
+  refreshOpenPickerForCurrentLanguage();
   saveState();
 }
 
@@ -1952,15 +1947,14 @@ function focusPickerReturnTarget(picker = state.picker || {}) {
     });
   }
 }
-function showPicker(mode, moveIndex = null, triggerEl = null) {
+function getPickerConfig(mode, moveIndex = null, mon = getSelectedMon()) {
   let options = [];
   let title = lang('선택', 'Select');
   let emptyHint = lang('검색 결과가 없습니다.', 'No results found.');
   if (mode === 'species') {
-    options = state.speciesChoices;
+    options = state.speciesChoices || [];
     title = lang('포켓몬 선택', 'Choose Pokémon');
   } else if (mode === 'move') {
-    const mon = getSelectedMon();
     options = getCurrentMoveChoices(mon);
     title = Number.isInteger(moveIndex)
       ? lang(`기술 ${moveIndex + 1} 선택`, `Choose Move ${moveIndex + 1}`)
@@ -1971,7 +1965,6 @@ function showPicker(mode, moveIndex = null, triggerEl = null) {
     options = state.itemChoices || [];
     title = lang('도구 선택', 'Choose Item');
   } else if (mode === 'ability') {
-    const mon = getSelectedMon();
     options = getCurrentAbilityChoices(mon);
     title = lang('특성 선택', 'Choose Ability');
     if (!mon?.data) emptyHint = lang('먼저 포켓몬을 선택하면 특성 목록이 표시됩니다.', 'Choose a species first to load its abilities.');
@@ -1979,11 +1972,45 @@ function showPicker(mode, moveIndex = null, triggerEl = null) {
     options = getNatureChoices();
     title = lang('성격 선택', 'Choose Nature');
   }
+  return {mode, moveIndex, options, title, emptyHint};
+}
+function refreshOpenPickerForCurrentLanguage() {
+  if (!els.pickerModal || els.pickerModal.classList.contains('hidden')) return;
+  const previousPicker = state.picker || {};
+  const config = getPickerConfig(previousPicker.mode, previousPicker.moveIndex, getSelectedMon());
+  state.picker = {
+    ...previousPicker,
+    ...config,
+    detailOption: previousPicker.detailOption || null,
+  };
+  if (els.pickerTitle) els.pickerTitle.textContent = config.title;
+  renderPickerOptions();
+  if (config.mode === 'move') {
+    const detailEnglish = previousPicker.detailOption?.english;
+    if (detailEnglish) {
+      const matched = (state.picker.options || []).find(option => toId(option?.english) === toId(detailEnglish));
+      const detailOption = matched || makeChoice('moves', detailEnglish);
+      renderMoveDetail(detailOption);
+    } else {
+      resetPickerDetail();
+    }
+  } else {
+    resetPickerDetail();
+  }
+}
+function showPicker(mode, moveIndex = null, triggerEl = null) {
+  const config = getPickerConfig(mode, moveIndex, getSelectedMon());
   pickerReturnFocusEl = triggerEl && typeof triggerEl.focus === 'function'
     ? triggerEl
     : (document.activeElement && typeof document.activeElement.focus === 'function' ? document.activeElement : null);
-  state.picker = {mode, moveIndex, options, emptyHint, detailOption: null};
-  els.pickerTitle.textContent = title;
+  state.picker = {
+    mode: config.mode,
+    moveIndex: config.moveIndex,
+    options: config.options,
+    emptyHint: config.emptyHint,
+    detailOption: null,
+  };
+  els.pickerTitle.textContent = config.title;
   els.pickerSearch.value = '';
   setPickerModalOpen(true);
   resetPickerDetail();
