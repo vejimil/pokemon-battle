@@ -32,7 +32,7 @@
           </div>
           <div class="meta-card">
             <span class="meta-label" data-i18n="meta_engine">엔진</span>
-            <strong data-i18n="meta_engine_value">Showdown Dex + 커스텀 배틀 런타임</strong>
+            <strong id="hero-engine-value" data-i18n="meta_engine_value">Showdown Dex + 커스텀 배틀 런타임</strong>
           </div>
         </div>
       </header>
@@ -47,6 +47,17 @@
             시뮬레이터 런타임, Dex 데이터, 업로드된 에셋을 불러오는 중…
           </div>
           <div id="runtime-notes" class="runtime-notes"></div>
+          <div class="runtime-mode-card">
+            <div class="runtime-mode-header">
+              <strong id="runtime-mode-badge" class="turn-chip wait">런타임 확인 중</strong>
+              <span id="runtime-mode-title" class="small-note">—</span>
+            </div>
+            <div id="runtime-mode-detail" class="helper-note runtime-mode-detail">—</div>
+            <label id="legacy-fallback-option" class="check-pill runtime-check" hidden>
+              <input id="allow-legacy-fallback-checkbox" type="checkbox" />
+              <span id="legacy-fallback-label">레거시 커스텀 폴백 허용</span>
+            </label>
+          </div>
         </section>
 
         <section class="panel setup-panel">
@@ -235,6 +246,7 @@
           <div class="panel-header">
             <h2 data-i18n="battle_title">배틀</h2>
             <div class="inline-actions">
+              <span id="battle-runtime-chip" class="turn-chip wait">런타임</span>
               <button id="back-to-builder-btn" class="ghost-btn" type="button" data-i18n="back_to_builder_btn">빌더로 돌아가기</button>
               <button id="restart-battle-btn" class="ghost-btn" type="button" data-i18n="restart_battle_btn">배틀 재시작</button>
             </div>

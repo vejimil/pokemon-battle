@@ -1,8 +1,8 @@
 {
   "name": "pkb-showdown-local-migration",
   "private": true,
-  "version": "0.13.0-stage13-local-showdown-singles",
-  "description": "PKB local singles migration step with an embedded Showdown-family Node battle core",
+  "version": "0.18.0-stage18-engine-first-runtime-mode",
+  "description": "PKB engine-first migration step with explicit runtime modes and guarded legacy fallback",
   "scripts": {
     "start": "node ./server/server.cjs"
   }

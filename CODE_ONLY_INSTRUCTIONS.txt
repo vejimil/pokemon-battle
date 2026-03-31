@@ -48,4 +48,4 @@ How to use:
 3. Keep your current assets/ folder exactly as it is.
 4. Replace files when prompted.
 5. For the migrated local singles engine path, run `npm start` and open `http://localhost:4173`.
-6. If you do not run the local server, the app will still fall back to the old custom browser battle runtime.
+6. If you do not run the local server, engine-authoritative singles will be unavailable. The app no longer presents legacy singles fallback as an equivalent path; you must explicitly opt in to use it. Doubles still run on the legacy custom runtime for now.

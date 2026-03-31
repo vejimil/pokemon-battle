@@ -740,6 +740,7 @@ function getMaxMoveName(mon, move) {
   return MAX_MOVE_NAMES[toId(move.type)] || 'Max Strike';
 }
 function canDynamax(mon, side) {
+  if (!runtimeSupportsDynamax()) return false;
   if (state.battle && isShowdownLocalBattle(state.battle)) return false;
   if (!mon || mon.fainted || mon.dynamaxed) return false;
   if (side?.dynamaxUsed) return false;
@@ -1080,6 +1081,7 @@ const state = {
   battle: null,
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
   showdownLocal: {available: false, checked: false, skipped: false, bundledNodeServer: false, engineApiOrigin: '', probeMode: 'uninitialized'},
+  runtimePolicy: {allowLegacySinglesFallback: false},
 };
 
 const els = {};
@@ -1128,6 +1130,132 @@ function buildShowdownStatusNote() {
     return `로컬 Showdown 엔진 / Local Showdown engine: 현재 사용할 수 없음 / currently unavailable<br>이 페이지는 번들된 Node 서버에서 열렸지만 엔진 API 확인에 실패했습니다. 현재는 커스텀 전투 런타임으로 동작합니다. / This page is running through the bundled Node server, but the engine API check failed, so the app will currently use the custom battle runtime.${status.error ? `<br>Probe error: ${status.error}` : ''}`;
   }
   return `로컬 Showdown 엔진 / Local Showdown engine: 정적 미리보기에서는 자동 확인하지 않음 / not auto-probed in static preview<br>현재 페이지는 번들된 Node 서버가 아닌 정적 미리보기/파일 경로에서 열려 있으므로 \`/api/engine/status\`를 호출하지 않습니다. 현재는 커스텀 전투 런타임으로 동작하며, 로컬 엔진 경로를 쓰려면 \`npm start\`로 서버를 실행한 뒤 그 서버 주소에서 열어야 합니다. / This page is being opened from a static preview or file path instead of the bundled Node server, so the app does not call \`/api/engine/status\`. It uses the custom runtime here; run \`npm start\` and open the app from that server to use the local engine path.`;
+}
+
+function getEngineAuthoritativeSinglesRuntimeDescriptor() {
+  return {
+    id: 'engine-authoritative-singles',
+    title: lang('엔진 우선 싱글', 'Engine-authoritative singles'),
+    badge: lang('엔진 우선', 'Engine'),
+    badgeTone: 'ready',
+    heroLabel: lang('로컬 Showdown 싱글 엔진 우선', 'Local Showdown singles engine'),
+    detail: `${buildShowdownStatusNote()}<br>${lang('싱글 배틀 판정의 실제 기준은 브라우저 커스텀 로직이 아니라 번들된 로컬 Node 엔진입니다.', 'Singles battle resolution is driven by the bundled local Node engine rather than browser custom logic.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}`,
+    usesLegacyCustomRules: false,
+    startAllowed: true,
+    startBlockedReason: '',
+    allowLegacyOptInVisible: false,
+    allowLegacyOptInLabel: '',
+    startMessage: lang('로컬 Showdown 엔진 우선 싱글 배틀을 시작합니다.', 'Starting an engine-authoritative singles battle through the local Showdown engine.'),
+  };
+}
+
+function getLegacySinglesFallbackRuntimeDescriptor(extraReason = '') {
+  const status = state.showdownLocal || {};
+  const blockedReason = status.bundledNodeServer
+    ? lang('싱글의 정확한 경로인 로컬 엔진을 현재 사용할 수 없습니다. 레거시 커스텀 폴백은 동등한 배틀 모드가 아니므로 기본값으로는 차단합니다.', 'The local engine, which is the accurate singles path, is currently unavailable. Legacy custom fallback is not an equivalent battle mode, so it is blocked by default.')
+    : lang('현재 페이지는 정적 미리보기/파일 경로이므로 로컬 엔진 싱글 경로를 사용할 수 없습니다. 레거시 커스텀 폴백은 명시적으로 허용해야만 시작됩니다.', 'This page is running in static preview/file mode, so the local engine singles path is unavailable. Legacy custom fallback only starts when you explicitly allow it.');
+  const reasonLine = extraReason ? `<br>${extraReason}` : '';
+  return {
+    id: 'legacy-custom-singles',
+    title: lang('레거시 싱글 폴백', 'Legacy singles fallback'),
+    badge: lang('레거시 폴백', 'Legacy fallback'),
+    badgeTone: 'wait',
+    heroLabel: lang('레거시 커스텀 싱글 폴백', 'Legacy custom singles fallback'),
+    detail: `${buildShowdownStatusNote()}<br>${lang('이 경로는 엔진 우선 싱글의 임시 대체용이며, 정확한 포켓몬 배틀 구현과 동등하게 취급하면 안 됩니다.', 'This path is only a temporary substitute for engine-authoritative singles and must not be treated as equivalent to accurate Pokémon battle behavior.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}${reasonLine}`,
+    usesLegacyCustomRules: true,
+    startAllowed: Boolean(state.runtimePolicy?.allowLegacySinglesFallback),
+    startBlockedReason: blockedReason,
+    allowLegacyOptInVisible: true,
+    allowLegacyOptInLabel: lang('로컬 엔진이 없을 때 레거시 커스텀 싱글 폴백을 명시적으로 허용', 'Explicitly allow legacy custom singles fallback when the local engine is unavailable'),
+    startMessage: lang('정확도 제한이 있는 레거시 커스텀 싱글 폴백으로 배틀을 시작합니다.', 'Starting battle in the legacy custom singles fallback with limited accuracy.'),
+  };
+}
+
+function getLegacyDoublesRuntimeDescriptor() {
+  return {
+    id: 'legacy-custom-doubles',
+    title: lang('레거시 더블 런타임', 'Legacy doubles runtime'),
+    badge: lang('레거시 더블', 'Legacy doubles'),
+    badgeTone: 'wait',
+    heroLabel: lang('레거시 커스텀 더블 런타임', 'Legacy custom doubles runtime'),
+    detail: `${lang('더블은 아직 로컬 엔진으로 마이그레이션되지 않았습니다. 현재 더블 배틀은 기존 브라우저 커스텀 런타임으로만 동작하며, 엔진 우선 경로와 동등하지 않습니다.', 'Doubles have not been migrated to the local engine yet. Current doubles battles run only on the older browser custom runtime and are not equivalent to the engine-authoritative path.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}`,
+    usesLegacyCustomRules: true,
+    startAllowed: true,
+    startBlockedReason: '',
+    allowLegacyOptInVisible: false,
+    allowLegacyOptInLabel: '',
+    startMessage: lang('레거시 커스텀 더블 런타임으로 배틀을 시작합니다.', 'Starting battle in the legacy custom doubles runtime.'),
+  };
+}
+
+function getSelectedBattleRuntimeDescriptor() {
+  if (state.mode === 'singles') {
+    return state.showdownLocal?.available
+      ? getEngineAuthoritativeSinglesRuntimeDescriptor()
+      : getLegacySinglesFallbackRuntimeDescriptor();
+  }
+  return getLegacyDoublesRuntimeDescriptor();
+}
+
+function selectedRuntimeUsesLegacyCustomRules() {
+  return Boolean(getSelectedBattleRuntimeDescriptor().usesLegacyCustomRules);
+}
+
+function applyBattleRuntimeInfo(battle, descriptor) {
+  if (!battle || !descriptor) return battle;
+  battle.runtimeInfo = {
+    id: descriptor.id,
+    title: descriptor.title,
+    badge: descriptor.badge,
+    badgeTone: descriptor.badgeTone,
+    heroLabel: descriptor.heroLabel,
+    detail: descriptor.detail,
+    usesLegacyCustomRules: Boolean(descriptor.usesLegacyCustomRules),
+    engineAuthoritative: !descriptor.usesLegacyCustomRules && descriptor.id === 'engine-authoritative-singles',
+  };
+  battle.sourceOfTruth = battle.runtimeInfo.engineAuthoritative ? 'engine' : 'legacy-custom';
+  return battle;
+}
+
+function getDisplayedRuntimeDescriptor() {
+  const runtimeId = state.battle?.runtimeInfo?.id || '';
+  if (runtimeId === 'engine-authoritative-singles') return getEngineAuthoritativeSinglesRuntimeDescriptor();
+  if (runtimeId === 'legacy-custom-singles') return getLegacySinglesFallbackRuntimeDescriptor();
+  if (runtimeId === 'legacy-custom-doubles') return getLegacyDoublesRuntimeDescriptor();
+  return getSelectedBattleRuntimeDescriptor();
+}
+
+function syncRuntimeModeUi() {
+  const selected = getSelectedBattleRuntimeDescriptor();
+  const displayed = getDisplayedRuntimeDescriptor();
+  if (els.heroEngineValue) els.heroEngineValue.textContent = localizeText(selected.heroLabel);
+  if (els.runtimeModeBadge) {
+    els.runtimeModeBadge.textContent = localizeText(selected.badge);
+    els.runtimeModeBadge.className = `turn-chip ${selected.badgeTone || ''}`.trim();
+  }
+  if (els.runtimeModeTitle) els.runtimeModeTitle.textContent = localizeText(selected.title);
+  if (els.runtimeModeDetail) {
+    els.runtimeModeDetail.innerHTML = String(selected.detail || '').split('<br>').map(part => localizeText(part)).join('<br>');
+  }
+  if (els.legacyFallbackLabel) els.legacyFallbackLabel.textContent = localizeText(selected.allowLegacyOptInLabel || '');
+  if (els.allowLegacyFallbackCheckbox) els.allowLegacyFallbackCheckbox.checked = Boolean(state.runtimePolicy?.allowLegacySinglesFallback);
+  if (els.legacyFallbackOption) {
+    els.legacyFallbackOption.hidden = !selected.allowLegacyOptInVisible;
+  }
+  if (els.battleRuntimeChip) {
+    if (state.battle) {
+      els.battleRuntimeChip.hidden = false;
+      els.battleRuntimeChip.textContent = localizeText(displayed.badge || displayed.title || 'Runtime');
+      els.battleRuntimeChip.className = `turn-chip ${displayed.badgeTone || ''}`.trim();
+      els.battleRuntimeChip.title = localizeText(displayed.title || '');
+    } else {
+      els.battleRuntimeChip.hidden = true;
+    }
+  }
+}
+
+function runtimeSupportsDynamax() {
+  return false;
 }
 
 const UI_STRINGS = Object.freeze({
@@ -2260,6 +2388,7 @@ function saveState() {
     validationProfile: state.validationProfile,
     language: state.language,
     playerNames: state.playerNames,
+    runtimePolicy: {...state.runtimePolicy},
     teams: state.teams.map(team => team.map(mon => ({...mon, data: null}))),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
@@ -2274,6 +2403,7 @@ function loadSavedState() {
     state.language = parsed.language === 'en' ? 'en' : 'ko';
     state.teamSize = state.mode === 'doubles' ? 4 : 3;
     state.playerNames = Array.isArray(parsed.playerNames) ? parsed.playerNames.slice(0,2).map(v => v || 'Player') : ['Player 1','Player 2'];
+    state.runtimePolicy = {allowLegacySinglesFallback: Boolean(parsed?.runtimePolicy?.allowLegacySinglesFallback)};
     rebuildTeamSize();
     if (Array.isArray(parsed.teams)) {
       state.teams = [0,1].map(player => Array.from({length: state.teamSize}, (_, slot) => {
@@ -2793,6 +2923,12 @@ function bindElements() {
     langKoBtn: document.getElementById('lang-ko-btn'),
     langEnBtn: document.getElementById('lang-en-btn'),
     runtimeNotes: document.getElementById('runtime-notes'),
+    runtimeModeBadge: document.getElementById('runtime-mode-badge'),
+    runtimeModeTitle: document.getElementById('runtime-mode-title'),
+    runtimeModeDetail: document.getElementById('runtime-mode-detail'),
+    legacyFallbackOption: document.getElementById('legacy-fallback-option'),
+    legacyFallbackLabel: document.getElementById('legacy-fallback-label'),
+    allowLegacyFallbackCheckbox: document.getElementById('allow-legacy-fallback-checkbox'),
     modeSinglesBtn: document.getElementById('mode-singles-btn'),
     modeDoublesBtn: document.getElementById('mode-doubles-btn'),
     validationProfileSelect: document.getElementById('validation-profile-select'),
@@ -2805,6 +2941,7 @@ function bindElements() {
     rosterP2Name: document.getElementById('roster-p2-name'),
     teamSizeNote: document.getElementById('team-size-note'),
     heroModeLabel: document.getElementById('hero-mode-label'),
+    heroEngineValue: document.getElementById('hero-engine-value'),
     editorTitle: document.getElementById('editor-title'),
     editorSubtitle: document.getElementById('editor-subtitle'),
     editorSprite: document.getElementById('editor-sprite'),
@@ -2863,6 +3000,7 @@ function bindElements() {
     battleLog: document.getElementById('battle-log'),
     pendingChoices: document.getElementById('pending-choices'),
     clearLogBtn: document.getElementById('clear-log-btn'),
+    battleRuntimeChip: document.getElementById('battle-runtime-chip'),
     speciesList: document.getElementById('species-list'),
     itemList: document.getElementById('item-list'),
     moveList: document.getElementById('move-list'),
@@ -2996,22 +3134,32 @@ function renderRoster() {
 function implementedAbilityNote(name) {
   const id = slugify(name);
   if (!id) return lang('포켓몬을 선택하면 특성을 고를 수 있습니다.', "Select one of the Pokémon's native abilities.");
+  if (!selectedRuntimeUsesLegacyCustomRules()) {
+    return state.language === 'ko'
+      ? `${displayAbilityName(name)} 특성 판정은 현재 선택된 싱글 엔진 우선 경로에서 로컬 Showdown 엔진에 맡깁니다. 레거시 커스텀 구현 메모는 현재 경로의 기준이 아닙니다.`
+      : `${displayAbilityName(name)} is resolved by the local Showdown engine in the current engine-authoritative singles path. Legacy custom implementation notes are not the source of truth here.`;
+  }
   if (implementedAbilities.has(id)) return state.language === 'ko'
-    ? `${displayAbilityName(name)} 특성은 현재 전투에서 구현되어 있습니다.`
-    : `${displayAbilityName(name)} is implemented in battle.`;
+    ? `${displayAbilityName(name)} 특성은 현재 레거시 커스텀 런타임에서 구현되어 있습니다.`
+    : `${displayAbilityName(name)} is implemented in the current legacy custom runtime.`;
   return state.language === 'ko'
-    ? `${displayAbilityName(name)} 특성은 저장되고 표시되지만, 고유 발동 로직은 아직 완전하지 않습니다.`
-    : `${displayAbilityName(name)} is stored and shown in battle, but its custom triggers are not fully implemented yet.`;
+    ? `${displayAbilityName(name)} 특성은 저장되고 표시되지만, 레거시 커스텀 런타임의 고유 발동 로직은 아직 완전하지 않습니다.`
+    : `${displayAbilityName(name)} is stored and shown, but its legacy custom-runtime triggers are not fully implemented yet.`;
 }
 function implementedItemNote(name) {
   const id = slugify(name);
   if (!id) return lang('지닌 도구가 없습니다.', 'No held item selected.');
+  if (!selectedRuntimeUsesLegacyCustomRules()) {
+    return state.language === 'ko'
+      ? `${displayItemName(name)} 도구 판정은 현재 선택된 싱글 엔진 우선 경로에서 로컬 Showdown 엔진에 맡깁니다. 레거시 커스텀 구현 메모는 현재 경로의 기준이 아닙니다.`
+      : `${displayItemName(name)} is resolved by the local Showdown engine in the current engine-authoritative singles path. Legacy custom implementation notes are not the source of truth here.`;
+  }
   if (implementedItems.has(id)) return state.language === 'ko'
-    ? `${displayItemName(name)} 도구는 현재 배틀 효과가 구현되어 있습니다.`
-    : `${displayItemName(name)} has a battle effect in this build.`;
+    ? `${displayItemName(name)} 도구는 현재 레거시 커스텀 런타임에서 구현되어 있습니다.`
+    : `${displayItemName(name)} has a battle effect in the current legacy custom runtime.`;
   return state.language === 'ko'
-    ? `${displayItemName(name)} 도구는 아이콘과 함께 표시되지만, 배틀 효과는 아직 완전하지 않습니다.`
-    : `${displayItemName(name)} is shown with its icon, but its battle effect is not fully implemented yet.`;
+    ? `${displayItemName(name)} 도구는 아이콘과 함께 표시되지만, 레거시 커스텀 런타임의 배틀 효과는 아직 완전하지 않습니다.`
+    : `${displayItemName(name)} is shown with its icon, but its legacy custom-runtime battle effect is not fully implemented yet.`;
 }
 async function hydrateSelectedSpecies() {
   const mon = getSelectedMon();
@@ -3193,14 +3341,14 @@ async function validateMon(mon, playerIndex, slotIndex) {
     const item = state.dex.items.get(mon.item);
     if (!item?.exists) errors.push(`${prefix}: ${itemLabel} 도구는 유효하지 않습니다. / ${mon.item} is not a valid item.`);
     else if (!isAllowedNonstandard(item.isNonstandard)) errors.push(`${prefix}: ${displayItemName(item.name)} ${explainNonstandard(item.isNonstandard)}`);
-    else if (!implementedItems.has(slugify(item.name))) warnings.push(`${prefix}: ${displayItemName(item.name)} 도구는 빌더에서는 합법이지만 현재 전투 엔진에서 특수 효과가 완전히 구현되지 않았습니다. / ${item.name} is legal in the builder, but its special battle behavior is not fully implemented in the current custom runtime.`);
+    else if (selectedRuntimeUsesLegacyCustomRules() && !implementedItems.has(slugify(item.name))) warnings.push(`${prefix}: ${displayItemName(item.name)} 도구는 빌더에서는 합법이지만 현재 선택된 레거시 커스텀 런타임에서 특수 효과가 완전히 구현되지 않았습니다. / ${item.name} is legal in the builder, but its special battle behavior is not fully implemented in the currently selected legacy custom runtime.`);
   }
 
   if (state.dex && mon.ability) {
     const ability = state.dex.abilities.get(mon.ability);
     if (!ability?.exists) errors.push(`${prefix}: ${abilityLabel} 특성은 유효하지 않습니다. / ${mon.ability} is not a valid ability.`);
     else if (!isAllowedNonstandard(ability.isNonstandard)) errors.push(`${prefix}: ${displayAbilityName(ability.name)} ${explainNonstandard(ability.isNonstandard)}`);
-    else if (!implementedAbilities.has(slugify(ability.name))) warnings.push(`${prefix}: ${displayAbilityName(ability.name)} 특성은 빌더에서는 합법이지만 현재 전투 엔진에서 발동 로직이 완전히 구현되지 않았습니다. / ${ability.name} is legal in the builder, but its full triggered behavior is not implemented in the current custom runtime.`);
+    else if (selectedRuntimeUsesLegacyCustomRules() && !implementedAbilities.has(slugify(ability.name))) warnings.push(`${prefix}: ${displayAbilityName(ability.name)} 특성은 빌더에서는 합법이지만 현재 선택된 레거시 커스텀 런타임에서 발동 로직이 완전히 구현되지 않았습니다. / ${ability.name} is legal in the builder, but its full triggered behavior is not implemented in the currently selected legacy custom runtime.`);
   }
 
   const chosenMoves = mon.moves.filter(Boolean);
@@ -3277,6 +3425,11 @@ async function renderValidation() {
   }
   state.builderErrors = allErrors;
   state.builderWarnings = Array.from(new Set(allWarnings));
+
+  const runtime = getSelectedBattleRuntimeDescriptor();
+  const runtimeBlocked = !runtime.startAllowed;
+  const runtimeCaution = !runtimeBlocked && runtime.usesLegacyCustomRules;
+
   if (allErrors.length) {
     els.builderErrors.classList.remove('hidden');
     els.builderErrors.textContent = allErrors.map(localizeText).join('\n');
@@ -3284,13 +3437,30 @@ async function renderValidation() {
       ? `배틀 시작 전 해결할 문제 ${allErrors.length}개가 남아 있습니다.${state.builderWarnings.length ? ` 경고 ${state.builderWarnings.length}개도 함께 확인하세요.` : ''}`
       : `${allErrors.length} issue${allErrors.length === 1 ? '' : 's'} remaining before battle can start.${state.builderWarnings.length ? ` ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} also noted.` : ''}`;
     els.startBattleBtn.disabled = true;
+    els.startBattleBtn.title = '';
   } else {
     els.builderErrors.classList.add('hidden');
     els.builderErrors.textContent = '';
-    els.validationSummary.textContent = state.builderWarnings.length
-      ? lang(`팀이 기본 검증을 통과했습니다. 고급 출처/엔진 제한 관련 경고 ${state.builderWarnings.length}개가 있습니다.`, `Teams pass validation. ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} note advanced source/runtime limits.`)
-      : lang('양쪽 팀이 유효합니다. 배틀을 시작할 수 있습니다.', 'Both teams are valid. Battle start is ready.');
-    els.startBattleBtn.disabled = false;
+    if (runtimeBlocked) {
+      els.validationSummary.textContent = lang(
+        `팀은 유효하지만 현재 선택된 배틀 경로는 ${runtime.title} 상태입니다. ${runtime.startBlockedReason}`,
+        `Teams are valid, but the currently selected battle path is ${runtime.title}. ${runtime.startBlockedReason}`
+      );
+      els.startBattleBtn.disabled = true;
+      els.startBattleBtn.title = localizeText(runtime.startBlockedReason || runtime.title);
+    } else if (runtimeCaution) {
+      els.validationSummary.textContent = state.builderWarnings.length
+        ? lang(`팀은 유효하지만 현재 배틀은 ${runtime.title} 경로로 시작됩니다. 이 경로는 엔진 우선 경로와 동등하지 않으며, 경고 ${state.builderWarnings.length}개가 더 있습니다.`, `Teams are valid, but the current battle will start through ${runtime.title}. This path is not equivalent to the engine-authoritative path, and ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} remain.`)
+        : lang(`팀은 유효하지만 현재 배틀은 ${runtime.title} 경로로 시작됩니다. 이 경로는 엔진 우선 경로와 동등하지 않습니다.`, `Teams are valid, but the current battle will start through ${runtime.title}. This path is not equivalent to the engine-authoritative path.`);
+      els.startBattleBtn.disabled = false;
+      els.startBattleBtn.title = localizeText(runtime.title);
+    } else {
+      els.validationSummary.textContent = state.builderWarnings.length
+        ? lang(`팀이 기본 검증을 통과했습니다. 엔진 우선 싱글 경로로 시작할 수 있으며, 고급 출처/런타임 주의 ${state.builderWarnings.length}개가 있습니다.`, `Teams pass validation. Engine-authoritative singles can start, with ${state.builderWarnings.length} advanced source/runtime warning${state.builderWarnings.length === 1 ? '' : 's'}.`)
+        : lang('양쪽 팀이 유효합니다. 엔진 우선 배틀을 시작할 수 있습니다.', 'Both teams are valid. Engine-authoritative battle start is ready.');
+      els.startBattleBtn.disabled = false;
+      els.startBattleBtn.title = '';
+    }
   }
 
   if (els.builderWarnings) {
@@ -3496,6 +3666,7 @@ function wireEditorEvents() {
     state.mode = 'singles';
     state.validationProfile = 'open';
     state.playerNames = ['Player 1','Player 2'];
+    state.runtimePolicy = {allowLegacySinglesFallback: false};
     els.player1Name.value = 'Player 1';
     els.player2Name.value = 'Player 2';
     rebuildTeamSize();
@@ -3643,9 +3814,12 @@ async function buildBattleMon(mon, player, slot) {
 }
 async function startEngineAuthoritativeSinglesBattle() {
   const payload = await buildShowdownBattlePayload();
-  return adoptEngineBattleSnapshot(await startShowdownLocalSinglesBattle(payload));
+  return applyBattleRuntimeInfo(
+    adoptEngineBattleSnapshot(await startShowdownLocalSinglesBattle(payload)),
+    getEngineAuthoritativeSinglesRuntimeDescriptor()
+  );
 }
-async function startCustomRuntimeBattle() {
+async function startCustomRuntimeBattle(descriptor = getSelectedBattleRuntimeDescriptor()) {
   const battle = {
     mode: state.mode,
     turn: 1,
@@ -3670,6 +3844,16 @@ async function startCustomRuntimeBattle() {
     trickRoomTurns: 0,
     log: [{text: '배틀 시작! 양쪽 팀이 전장에 나왔습니다. / Battle started. Both teams enter the field.', tone: 'accent'}],
   };
+  applyBattleRuntimeInfo(battle, descriptor);
+  if (descriptor?.usesLegacyCustomRules) {
+    battle.log.unshift({
+      text: lang(
+        '현재 배틀은 레거시 커스텀 런타임으로 실행 중입니다. 이 경로는 엔진 우선 경로와 동등하지 않으며, 정확도를 보장하지 않습니다.',
+        'This battle is running in the legacy custom runtime. This path is not equivalent to the engine-authoritative path and does not guarantee accuracy.'
+      ),
+      tone: 'accent',
+    });
+  }
   state.battle = battle;
   ensureBattleUiState(battle);
   applyStartOfBattleAbilities();
@@ -3702,38 +3886,64 @@ function adoptEngineBattleSnapshot(snapshot) {
   if (!battle) return null;
   clearEnginePendingChoices(battle);
   battle.resolvingTurn = false;
-  battle.sourceOfTruth = 'engine';
+  applyBattleRuntimeInfo(battle, getEngineAuthoritativeSinglesRuntimeDescriptor());
   return battle;
 }
 async function startBattle() {
   await renderValidation();
   if (state.builderErrors.length) return;
 
-  if (state.mode === 'singles' && state.showdownLocal?.available) {
+  const runtime = getSelectedBattleRuntimeDescriptor();
+  if (!runtime.startAllowed) {
+    showRuntime(
+      lang(
+        '현재 선택된 배틀은 레거시 커스텀 폴백으로만 실행할 수 있습니다. 명시적 허용 없이는 시작하지 않습니다.',
+        'The currently selected battle can only run through the legacy custom fallback, and it will not start without explicit permission.'
+      ),
+      'warning',
+      `${runtime.detail}<br>${runtime.startBlockedReason}`
+    );
+    renderAll();
+    return;
+  }
+
+  if (runtime.id === 'engine-authoritative-singles') {
     try {
       state.battle = await startEngineAuthoritativeSinglesBattle();
+      showRuntime(runtime.startMessage, 'ready', runtime.detail);
       els.battlePanel.classList.remove('hidden');
       renderBattle();
       return;
     } catch (error) {
-      console.error('Local Showdown singles engine failed, falling back to custom runtime.', error);
+      console.error('Local Showdown singles engine start failed.', error);
+      state.showdownLocal = {
+        ...(state.showdownLocal || {}),
+        available: false,
+        error: error.message || String(error),
+      };
+      const fallback = getLegacySinglesFallbackRuntimeDescriptor(`Engine start error: ${error.message}`);
       showRuntime(
-        '로컬 Showdown 싱글 엔진 연결에 실패해 커스텀 런타임으로 되돌립니다. / Failed to use the local Showdown singles engine, falling back to the custom runtime.',
+        lang(
+          '로컬 Showdown 싱글 엔진 시작에 실패했습니다. 레거시 폴백은 더 이상 자동으로 동등 모드처럼 시작하지 않습니다.',
+          'Starting the local Showdown singles engine failed. Legacy fallback will no longer auto-start as if it were an equivalent mode.'
+        ),
         'error',
-        `Engine error: ${error.message}`
+        `${fallback.detail}<br>Engine error: ${error.message}`
       );
+      if (!state.runtimePolicy?.allowLegacySinglesFallback) {
+        renderAll();
+        return;
+      }
+      state.battle = await startCustomRuntimeBattle(fallback);
+      showRuntime(fallback.startMessage, 'warning', fallback.detail);
+      els.battlePanel.classList.remove('hidden');
+      renderBattle();
+      return;
     }
   }
 
-  if (state.mode === 'singles' && !state.showdownLocal?.available && state.showdownLocal?.bundledNodeServer) {
-    showRuntime(
-      '로컬 Showdown 엔진을 사용할 수 없어 커스텀 런타임으로 배틀을 시작합니다. / The local Showdown engine is unavailable, so the battle will start with the custom runtime.',
-      'ready',
-      buildShowdownStatusNote()
-    );
-  }
-
-  state.battle = await startCustomRuntimeBattle();
+  state.battle = await startCustomRuntimeBattle(runtime);
+  showRuntime(runtime.startMessage, 'warning', runtime.detail);
   els.battlePanel.classList.remove('hidden');
   renderBattle();
 }
@@ -4727,6 +4937,7 @@ function getBattleBadgeText(mon) {
 function renderBattle() {
   const battle = ensureBattleUiState(state.battle);
   if (!battle) return;
+  syncRuntimeModeUi();
   if (isShowdownLocalBattle(battle)) pruneEnginePendingChoices(battle);
   els.turnNumber.textContent = battle.turn;
   els.battleP1Name.textContent = battle.players[0].name;
@@ -6412,11 +6623,21 @@ function determineWinner() {
   battle.winner = alive[0] ? battle.players[0].name : battle.players[1].name;
   addLog(`${battle.winner} 승리! / ${battle.winner} wins the battle!`, 'win');
 }
+function wireRuntimeEvents() {
+  if (els.allowLegacyFallbackCheckbox) {
+    els.allowLegacyFallbackCheckbox.addEventListener('change', () => {
+      state.runtimePolicy.allowLegacySinglesFallback = Boolean(els.allowLegacyFallbackCheckbox.checked);
+      saveState();
+      renderAll();
+    });
+  }
+}
 function wireBattleEvents() {
   els.startBattleBtn.addEventListener('click', startBattle);
   els.backToBuilderBtn.addEventListener('click', () => {
     state.battle = null;
     els.battlePanel.classList.add('hidden');
+    syncRuntimeModeUi();
   });
   els.restartBattleBtn.addEventListener('click', () => startBattle());
   els.clearLogBtn.addEventListener('click', () => {
@@ -6436,8 +6657,10 @@ function renderAll() {
   syncPlayerNames();
   renderRoster();
   renderEditor();
+  syncRuntimeModeUi();
   renderValidation();
   if (state.battle) renderBattle();
+  syncRuntimeModeUi();
 }
 async function bootstrap() {
   bindElements();
@@ -6455,6 +6678,7 @@ async function bootstrap() {
   await rehydrateTeams();
   buildStaticLists();
   wireEditorEvents();
+  wireRuntimeEvents();
   wireBattleEvents();
   renderAll();
   state.runtimeReady = true;
@@ -6464,6 +6688,7 @@ async function bootstrap() {
     'ready',
     `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${showdownStatusNote}<br>이 빌드는 이제 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 레거시 기믹에 필요한 Past 태그 데이터를 허용하고, learnset / nonstandard / 폼 조건 / 아이템 / 특성 / 테라 타입 / 성별 / 팀 단위 경고뿐 아니라, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. / This build now loads fully vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex on startup, allows Past-tagged data needed for legacy mechanics, and runs a stronger validator for learnsets, nonstandard flags, form requirements, items, abilities, Tera type, gender, event-only move bundle checks, and profile-based Species Clause / Item Clause / level-50 enforcement. 이번 단계의 마이그레이션에서는 싱글 배틀 UI를 로컬 Showdown-family Node 코어의 request / snapshot 흐름 우선으로 재구성했으며, 현재 UI / 팀 빌더 / 로컬화 / 스프라이트 매핑 구조는 최대한 유지합니다. / This migration step makes the singles battle UI follow the local Showdown-family Node core through request-first and snapshot-driven flow while preserving the current UI, builder, localization, and sprite-mapping structure as much as possible.`
   );
+  syncRuntimeModeUi();
 }
 
 bootstrap().catch(error => {

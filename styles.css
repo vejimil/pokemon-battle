@@ -169,7 +169,30 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 .runtime-status.loading { color: var(--warn); }
 .runtime-status.ready { color: var(--good); }
 .runtime-status.error { color: var(--bad); }
+.runtime-status.warning { color: var(--warn); }
 .runtime-notes { margin-top: 10px; color: var(--muted); line-height: 1.55; }
+.runtime-mode-card {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.runtime-mode-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.runtime-mode-detail {
+  margin-top: 10px;
+}
+.runtime-check {
+  margin-top: 12px;
+}
+.runtime-check[hidden] {
+  display: none;
+}
 
 .name-row {
   display: grid;
