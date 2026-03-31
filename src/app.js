@@ -1022,11 +1022,56 @@ const state = {
   picker: {mode: '', moveIndex: null, options: [], emptyHint: ''},
   battle: null,
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
-  showdownLocal: {available: false},
+  showdownLocal: {available: false, checked: false, skipped: false, bundledNodeServer: false, engineApiOrigin: '', probeMode: 'uninitialized'},
 };
 
 const els = {};
 let pickerReturnFocusEl = null;
+
+function getBundledServerContext() {
+  const raw = window.__PKB_SERVER_CONTEXT__ || {};
+  return {
+    bundledNodeServer: Boolean(raw.bundledNodeServer),
+    engineApiOrigin: String(raw.engineApiOrigin || ''),
+    probeMode: String(raw.engineProbeMode || (raw.bundledNodeServer ? 'bundled-node-server' : 'static-preview-or-file')),
+  };
+}
+async function initializeShowdownLocalStatus() {
+  const context = getBundledServerContext();
+  if (!context.bundledNodeServer) {
+    state.showdownLocal = {
+      available: false,
+      checked: false,
+      skipped: true,
+      bundledNodeServer: false,
+      engineApiOrigin: context.engineApiOrigin,
+      probeMode: context.probeMode,
+      error: '',
+      note: 'Skipped the engine probe because this page is not being served by the bundled Node runtime.',
+    };
+    return state.showdownLocal;
+  }
+  const probe = await probeShowdownLocalServer();
+  state.showdownLocal = {
+    ...probe,
+    checked: true,
+    skipped: false,
+    bundledNodeServer: true,
+    engineApiOrigin: context.engineApiOrigin || window.location.origin || '',
+    probeMode: context.probeMode,
+  };
+  return state.showdownLocal;
+}
+function buildShowdownStatusNote() {
+  const status = state.showdownLocal || {};
+  if (status.available) {
+    return `로컬 Showdown 엔진 / Local Showdown engine: 연결됨 / connected (${status.engine || 'local Node service'})<br>싱글 배틀 시작 시에는 커스텀 판정 대신 로컬 Showdown-family 엔진 경로를 우선 사용합니다. / Singles battles now prefer the local Showdown-family engine path instead of the custom resolver.`;
+  }
+  if (status.bundledNodeServer) {
+    return `로컬 Showdown 엔진 / Local Showdown engine: 현재 사용할 수 없음 / currently unavailable<br>이 페이지는 번들된 Node 서버에서 열렸지만 엔진 API 확인에 실패했습니다. 현재는 커스텀 전투 런타임으로 동작합니다. / This page is running through the bundled Node server, but the engine API check failed, so the app will currently use the custom battle runtime.${status.error ? `<br>Probe error: ${status.error}` : ''}`;
+  }
+  return `로컬 Showdown 엔진 / Local Showdown engine: 정적 미리보기에서는 자동 확인하지 않음 / not auto-probed in static preview<br>현재 페이지는 번들된 Node 서버가 아닌 정적 미리보기/파일 경로에서 열려 있으므로 \`/api/engine/status\`를 호출하지 않습니다. 현재는 커스텀 전투 런타임으로 동작하며, 로컬 엔진 경로를 쓰려면 \`npm start\`로 서버를 실행한 뒤 그 서버 주소에서 열어야 합니다. / This page is being opened from a static preview or file path instead of the bundled Node server, so the app does not call \`/api/engine/status\`. It uses the custom runtime here; run \`npm start\` and open the app from that server to use the local engine path.`;
+}
 
 const UI_STRINGS = Object.freeze({
   ko: {
@@ -1692,6 +1737,7 @@ function showPicker(mode, moveIndex = null, triggerEl = null) {
       ? lang(`기술 ${moveIndex + 1} 선택`, `Choose Move ${moveIndex + 1}`)
       : lang('기술 선택', 'Choose move');
     if (!mon?.data) emptyHint = lang('먼저 포켓몬을 선택하면 배울 수 있는 기술 목록이 표시됩니다.', 'Choose a species first to load its learnable moves.');
+    else if (!options.length) emptyHint = lang('포켓몬 데이터는 불러왔지만 기술 목록이 비어 있습니다. 종족을 다시 선택해 보세요.', 'The species data loaded, but its move list is empty. Try reselecting the species.');
   } else if (mode === 'item') {
     options = state.itemChoices || [];
     title = lang('도구 선택', 'Choose Item');
@@ -3385,6 +3431,14 @@ async function startBattle() {
         `Engine error: ${error.message}`
       );
     }
+  }
+
+  if (state.mode === 'singles' && !state.showdownLocal?.available && state.showdownLocal?.bundledNodeServer) {
+    showRuntime(
+      '로컬 Showdown 엔진을 사용할 수 없어 커스텀 런타임으로 배틀을 시작합니다. / The local Showdown engine is unavailable, so the battle will start with the custom runtime.',
+      'ready',
+      buildShowdownStatusNote()
+    );
   }
 
   state.battle = await startCustomRuntimeBattle();
@@ -6103,7 +6157,7 @@ async function bootstrap() {
   await detectAssetBases();
   loadSavedState();
   await loadDataProvider();
-  state.showdownLocal = await probeShowdownLocalServer();
+  await initializeShowdownLocalStatus();
   buildAssetDex();
   await loadMoveNames();
   await rehydrateTeams();
@@ -6112,9 +6166,7 @@ async function bootstrap() {
   wireBattleEvents();
   renderAll();
   state.runtimeReady = true;
-  const showdownStatusNote = state.showdownLocal?.available
-    ? `로컬 Showdown 엔진 / Local Showdown engine: 연결됨 / connected (${state.showdownLocal.engine || 'local Node service'})<br>싱글 배틀 시작 시에는 커스텀 판정 대신 로컬 Showdown-family 엔진 경로를 우선 사용합니다. / Singles battles now prefer the local Showdown-family engine path instead of the custom resolver.`
-    : `로컬 Showdown 엔진 / Local Showdown engine: 감지되지 않음 / not detected<br>현재는 커스텀 전투 런타임으로 동작합니다. 로컬 엔진 경로를 쓰려면 \`npm start\`로 서버를 실행하세요. / The app is currently using the custom battle runtime. Run \`npm start\` to use the local engine path.`;
+  const showdownStatusNote = buildShowdownStatusNote();
   showRuntime(
     '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets, localized battle data, and form-aware sprite resolution are connected.',
     'ready',

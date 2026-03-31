@@ -77,10 +77,27 @@ function serveStatic(req, res) {
       return;
     }
     const ext = path.extname(resolved).toLowerCase();
-    res.writeHead(200, {
+    const headers = {
       'Content-Type': mimeTypes[ext] || 'application/octet-stream',
       'Cache-Control': ext === '.html' ? 'no-store' : 'public, max-age=0',
-    });
+    };
+    if (ext === '.html' && path.basename(resolved).toLowerCase() === 'index.html') {
+      fs.readFile(resolved, 'utf8', (readError, html) => {
+        if (readError) {
+          res.writeHead(500, {'Content-Type': 'text/plain; charset=utf-8'});
+          res.end('Failed to load index.html');
+          return;
+        }
+        const injected = html.replace(
+          'window.__PKB_SERVER_CONTEXT__ = {bundledNodeServer: false, engineApiOrigin: "", engineProbeMode: "static-preview-or-file"};',
+          `window.__PKB_SERVER_CONTEXT__ = {bundledNodeServer: true, engineApiOrigin: ${JSON.stringify(`http://localhost:${PORT}`)}, engineProbeMode: "bundled-node-server"};`
+        );
+        res.writeHead(200, headers);
+        res.end(injected);
+      });
+      return;
+    }
+    res.writeHead(200, headers);
     fs.createReadStream(resolved).pipe(res);
   });
 }

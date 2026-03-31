@@ -9,7 +9,10 @@ async function requestJson(url, options = {}) {
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok || data?.ok === false) {
-    throw new Error(data?.error || `Request failed: ${response.status}`);
+    const fallbackMessage = response.status === 404
+      ? `Local engine API was not found at ${url}.`
+      : `Request failed: ${response.status}`;
+    throw new Error(data?.error || fallbackMessage);
   }
   return data;
 }

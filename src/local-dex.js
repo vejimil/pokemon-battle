@@ -245,7 +245,11 @@ function buildFullLearnset(id, seen = new Set()) {
   seen.add(id);
 
   const merged = {};
-  for (const entry of collectLearnsetLineage(id, seen)) {
+  // Do not pass the same seen-set into collectLearnsetLineage here.
+  // buildFullLearnset already marked the current id as visited, and reusing
+  // that same set would make collectLearnsetLineage bail out immediately,
+  // producing an empty learnset for every species.
+  for (const entry of collectLearnsetLineage(id, new Set())) {
     mergeLearnsetInto(merged, entry.learnset || {});
   }
   learnsetCache.set(id, merged);
