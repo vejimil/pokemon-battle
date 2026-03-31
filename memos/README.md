@@ -1,5 +1,13 @@
 # PKB
 
+## Current runtime status
+
+- User-facing singles run only through the bundled local Showdown-family engine path.
+- If the bundled local Node server is unavailable, singles battle start stays blocked while the builder remains usable.
+- Doubles are still blocked until an engine-backed path exists.
+- Dynamax remains intentionally disabled because there is no verified authoritative path for it in the current build.
+- `src/legacy-custom-runtime-audit.js` is retained only as audit/reference residue and is not part of the supported runtime flow.
+
 A GitHub Pages-ready local 2-player Pokémon-style battle builder and pass-and-play battle prototype.
 
 ## What is included

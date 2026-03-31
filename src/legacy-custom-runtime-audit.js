@@ -13,12 +13,57 @@
 // - this factory expects the caller to inject the same helpers/state objects that
 //   src/app.js used when this code originally lived inline.
 // - the current app build does not import or execute this module in normal flow.
+//
+// Current classification for audit purposes:
+// - definitelyDeadInCurrentAppFlow:
+//   renderChoicePanel, renderPendingChoices, isChoiceComplete, isPlayerReady,
+//   startCustomRuntimeBattle, resolveLegacyTurn
+// - temporaryAuditReferenceCore:
+//   buildBattleMon, buildResolvedMove, performMove, resolveTargets,
+//   applyStatusMove, computeDamage, endOfTurn, determineWinner
+// - potentialSharedHelpersToRehomeLater:
+//   isSpeciesLockedItem, canRemoveHeldItem, tryRemoveHeldItem, trySetHeldItem,
+//   clearSwitchVolatile, getForcedMoveChoice, setBattleWeather, setBattleTerrain,
+//   applyEntryHazards, applySideConditionMove
+
+export const LEGACY_CUSTOM_RUNTIME_AUDIT_CLASSIFICATION = Object.freeze({
+  definitelyDeadInCurrentAppFlow: [
+    'renderChoicePanel',
+    'renderPendingChoices',
+    'isChoiceComplete',
+    'isPlayerReady',
+    'startCustomRuntimeBattle',
+    'resolveLegacyTurn',
+  ],
+  temporaryAuditReferenceCore: [
+    'buildBattleMon',
+    'buildResolvedMove',
+    'performMove',
+    'resolveTargets',
+    'applyStatusMove',
+    'computeDamage',
+    'endOfTurn',
+    'determineWinner',
+  ],
+  potentialSharedHelpersToRehomeLater: [
+    'isSpeciesLockedItem',
+    'canRemoveHeldItem',
+    'tryRemoveHeldItem',
+    'trySetHeldItem',
+    'clearSwitchVolatile',
+    'getForcedMoveChoice',
+    'setBattleWeather',
+    'setBattleTerrain',
+    'applyEntryHazards',
+    'applySideConditionMove',
+  ],
+});
 
 export function createLegacyCustomRuntimeAudit(deps = {}) {
   const {
     state, els,
     lang, clamp, deepClone,
-    calcStats, getMoveData, getSelectedBattleRuntimeDescriptor,
+    calcStats, getMoveData,
     isMegaSpeciesName, ensureBattleUiState, displaySpeciesName, displayMoveName,
     displayType, addLog, getHeldItemId, getAbilityId, displayStatus, renderBattle,
     currentBattleWeather, currentBattleTerrain, getBattleMoveType, getBattleMoveCategory,
@@ -99,7 +144,7 @@ async function buildBattleMon(mon, player, slot) {
     originalData: mon.data,
   };
 }
-async function startCustomRuntimeBattle(descriptor = getSelectedBattleRuntimeDescriptor()) {
+async function startCustomRuntimeBattle(descriptor = null) {
   const battle = {
     mode: state.mode,
     turn: 1,
@@ -124,16 +169,7 @@ async function startCustomRuntimeBattle(descriptor = getSelectedBattleRuntimeDes
     trickRoomTurns: 0,
     log: [{text: '배틀 시작! 양쪽 팀이 전장에 나왔습니다. / Battle started. Both teams enter the field.', tone: 'accent'}],
   };
-  applyBattleRuntimeInfo(battle, descriptor);
-  if (descriptor?.usesLegacyCustomRules) {
-    battle.log.unshift({
-      text: lang(
-        '현재 배틀은 레거시 커스텀 런타임으로 실행 중입니다. 이 경로는 엔진 우선 경로와 동등하지 않으며, 정확도를 보장하지 않습니다.',
-        'This battle is running in the legacy custom runtime. This path is not equivalent to the engine-authoritative path and does not guarantee accuracy.'
-      ),
-      tone: 'accent',
-    });
-  }
+  if (descriptor) applyBattleRuntimeInfo(battle, descriptor);
   state.battle = battle;
   ensureBattleUiState(battle);
   applyStartOfBattleAbilities();
@@ -188,7 +224,7 @@ function canRemoveHeldItem(mon, source = null) {
   if (isSpeciesLockedItem(mon, item)) return false;
   return true;
 }
-function tryRemoveHeldItem(mon, source = null, reason = 'effect') {
+function tryRemoveHeldItem(mon, source = null) {
   if (!mon?.item) return null;
   if (!canRemoveHeldItem(mon, source)) {
     if (source && source.id !== mon.id && slugify(mon.ability) === 'stickyhold') {

@@ -1140,11 +1140,8 @@ function getEngineAuthoritativeSinglesRuntimeDescriptor() {
     badgeTone: 'ready',
     heroLabel: lang('로컬 Showdown 싱글 엔진 필수', 'Local Showdown singles required'),
     detail: `${buildShowdownStatusNote()}<br>${lang('싱글 배틀 판정의 실제 기준은 브라우저 커스텀 로직이 아니라 번들된 로컬 Node 엔진입니다.', 'Singles battle resolution is driven by the bundled local Node engine rather than browser custom logic.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}`,
-    usesLegacyCustomRules: false,
     startAllowed: true,
     startBlockedReason: '',
-    allowLegacyOptInVisible: false,
-    allowLegacyOptInLabel: '',
     startMessage: lang('로컬 Showdown 엔진 필수 싱글 배틀을 시작합니다.', 'Starting an engine-required singles battle through the local Showdown engine.'),
   };
 }
@@ -1157,12 +1154,9 @@ function getBlockedSinglesRuntimeDescriptor(extraReason = '') {
     badge: lang('엔진 필요', 'Engine required'),
     badgeTone: 'warning',
     heroLabel: lang('로컬 엔진이 필요한 싱글', 'Singles require the local engine'),
-    detail: `${buildShowdownStatusNote()}<br>${lang('레거시 커스텀 싱글 폴백은 더 이상 사용자용 정상 배틀 모드로 노출하지 않습니다.', 'Legacy custom singles fallback is no longer exposed as a user-facing supported battle mode.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}${reasonLine}`,
-    usesLegacyCustomRules: false,
+    detail: `${buildShowdownStatusNote()}<br>${lang('지원되는 싱글 배틀은 번들된 로컬 엔진이 준비된 경우에만 열립니다.', 'Supported singles battles only open when the bundled local engine is available.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}${reasonLine}`,
     startAllowed: false,
     startBlockedReason: lang('싱글 배틀은 번들된 로컬 Showdown 엔진이 준비된 경우에만 시작할 수 있습니다.', 'Singles battles can start only when the bundled local Showdown engine is available.'),
-    allowLegacyOptInVisible: false,
-    allowLegacyOptInLabel: '',
     startMessage: '',
   };
 }
@@ -1174,12 +1168,9 @@ function getBlockedDoublesRuntimeDescriptor() {
     badge: lang('더블 보류', 'Doubles blocked'),
     badgeTone: 'warning',
     heroLabel: lang('엔진 마이그레이션 전 더블', 'Doubles awaiting engine migration'),
-    detail: `${lang('더블은 아직 로컬 엔진으로 마이그레이션되지 않았으며, 정확도 우선 원칙 때문에 레거시 브라우저 런타임을 더 이상 정상 배틀 모드로 노출하지 않습니다.', 'Doubles have not been migrated to the local engine yet, and the legacy browser runtime is no longer exposed as a normal battle mode because accuracy comes first.')}<br>${lang('팀 빌더와 선택 UI는 계속 사용할 수 있지만, 실제 더블 배틀 시작은 엔진 경로가 준비될 때까지 차단됩니다.', 'The team builder and selection UI remain available, but actual doubles battle start stays blocked until an engine-backed path is ready.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}`,
-    usesLegacyCustomRules: false,
+    detail: `${lang('더블은 아직 로컬 엔진으로 마이그레이션되지 않았습니다.', 'Doubles have not been migrated to the local engine yet.')}<br>${lang('팀 빌더와 선택 UI는 계속 사용할 수 있지만, 실제 더블 배틀 시작은 엔진 경로가 준비될 때까지 차단됩니다.', 'The team builder and selection UI remain available, but actual doubles battle start stays blocked until an engine-backed path is ready.')}<br>${lang('지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드로 노출하지 않습니다.', 'Unsupported browser battle execution paths are not exposed as user-facing normal modes.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}`,
     startAllowed: false,
     startBlockedReason: lang('더블 배틀은 아직 엔진 기반 경로가 없으므로 현재 빌드에서는 시작할 수 없습니다.', 'Doubles battles cannot start in the current build because there is no engine-backed path yet.'),
-    allowLegacyOptInVisible: false,
-    allowLegacyOptInLabel: '',
     startMessage: '',
   };
 }
@@ -1204,18 +1195,16 @@ function applyBattleRuntimeInfo(battle, descriptor) {
     badgeTone: descriptor.badgeTone,
     heroLabel: descriptor.heroLabel,
     detail: descriptor.detail,
-    usesLegacyCustomRules: Boolean(descriptor.usesLegacyCustomRules),
-    engineAuthoritative: !descriptor.usesLegacyCustomRules && descriptor.id === 'engine-authoritative-singles',
+    engineAuthoritative: descriptor.id === 'engine-authoritative-singles',
+    availability: descriptor.startAllowed ? 'available' : 'blocked',
   };
-  battle.sourceOfTruth = battle.runtimeInfo.engineAuthoritative ? 'engine' : 'legacy-custom';
+  battle.sourceOfTruth = battle.runtimeInfo.engineAuthoritative ? 'engine' : 'blocked-no-runtime';
   return battle;
 }
 
 function getDisplayedRuntimeDescriptor() {
   const runtimeId = state.battle?.runtimeInfo?.id || '';
   if (runtimeId === 'engine-authoritative-singles') return getEngineAuthoritativeSinglesRuntimeDescriptor();
-  if (runtimeId === 'legacy-custom-singles') return getBlockedSinglesRuntimeDescriptor();
-  if (runtimeId === 'legacy-custom-doubles') return getBlockedDoublesRuntimeDescriptor();
   if (runtimeId === 'blocked-singles-awaiting-engine') return getBlockedSinglesRuntimeDescriptor();
   if (runtimeId === 'blocked-doubles-awaiting-engine') return getBlockedDoublesRuntimeDescriptor();
   return getSelectedBattleRuntimeDescriptor();
@@ -3721,7 +3710,6 @@ async function buildShowdownBattlePayload() {
   };
 }
 
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: buildBattleMon
 async function startEngineAuthoritativeSinglesBattle() {
   const payload = await buildShowdownBattlePayload();
   return applyBattleRuntimeInfo(
@@ -3731,7 +3719,6 @@ async function startEngineAuthoritativeSinglesBattle() {
 }
 // Legacy custom battle entry retained only as migration residue for audit/debug purposes.
 // Stage 19 no longer exposes this path to normal user-facing battle start.
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: startCustomRuntimeBattle
 function cloneEngineBattleSnapshot(snapshot) {
   if (!snapshot) return null;
   return {
@@ -3762,6 +3749,7 @@ function adoptEngineBattleSnapshot(snapshot) {
   applyBattleRuntimeInfo(battle, getEngineAuthoritativeSinglesRuntimeDescriptor());
   return battle;
 }
+// Battle start is engine-authoritative for singles and explicitly blocked otherwise.
 async function startBattle() {
   await renderValidation();
   if (state.builderErrors.length) return;
@@ -3818,7 +3806,7 @@ async function startBattle() {
     renderAll();
   }
 }
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: applyStartOfBattleAbilities
+// Battle log / snapshot helpers used by the supported engine-backed battle panel.
 function addLog(text, tone = '') {
   state.battle.log.unshift({text, rawText: text, tone});
 }
@@ -4416,16 +4404,6 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
     container.appendChild(section);
   });
 }
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: isSpeciesLockedItem
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: canRemoveHeldItem
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: tryRemoveHeldItem
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: trySetHeldItem
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: hasUsableNonDisabledMove
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: getActiveMonsForSide
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: isTargetAboutToUseDamagingMove
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: clearSwitchVolatile
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: getForcedMoveChoice
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: clearSubstitute
 function renderBattleFieldStatus() {
   if (!els.battleFieldStatus || !state.battle) return;
   const battle = state.battle;
@@ -4439,17 +4417,6 @@ function renderBattleFieldStatus() {
   parts.push(state.language === 'ko' ? `${battle.players[1].name} 진영: ${describeSideConditions(battle.players[1])}` : `${battle.players[1].name} Side: ${describeSideConditions(battle.players[1])}`);
   els.battleFieldStatus.textContent = parts.join(' · ');
 }
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: setBattleWeather
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: setBattleTerrain
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: getBattleMoveSlot
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: hasUsableMoves
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: consumeMovePp
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: clearSideHazards
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: applySideConditionMove
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: applyEntryHazards
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: handleSuccessfulHitUtilities
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: applyMoveSelfEffects
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: afterMoveResolution
 function getActiveMons(player) {
   const side = state.battle.players[player];
   return side.active.map(idx => side.team[idx]).filter(Boolean);
@@ -4535,9 +4502,7 @@ function renderBattleTeam(player, container) {
     container.appendChild(card);
   });
 }
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: switchOptionsFor
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: targetOptionsFor
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: ensureChoiceObjects
+// Unsupported-runtime safeguards remain only to keep stale or partial battle state honest.
 function renderChoicePanel(player, container, statusEl, titleEl) {
   if (isShowdownLocalBattle(state.battle)) {
     renderEngineSinglesChoicePanel(player, container, statusEl, titleEl);
@@ -4546,12 +4511,12 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
   const sideName = state.battle?.players?.[player]?.name || (player === 0 ? state.playerNames[0] : state.playerNames[1]);
   titleEl.textContent = state.language === 'ko' ? `${sideName} 선택` : `${sideName} choices`;
   statusEl.textContent = lang(
-    '레거시 커스텀 배틀 선택 UI는 분리되었고 현재 빌드에서는 사용자용으로 노출하지 않는다.',
-    'The legacy custom battle choice UI was isolated and is not exposed in the current build.'
+    '현재 배틀 상태는 지원되는 사용자용 선택 UI를 제공하지 않습니다.',
+    'The current battle state does not provide a supported user-facing choice UI.'
   );
   container.innerHTML = `<div class="helper-note">${lang(
-    '이 배틀 상태는 현재 지원되는 사용자 경로가 아니다. 싱글은 로컬 엔진 필수이며, 더블은 엔진 경로가 준비될 때까지 시작이 차단된다.',
-    'This battle state is not a supported user-facing path. Singles require the local engine, and doubles stay blocked until an engine-backed route exists.'
+    '싱글은 로컬 엔진 필수이며, 더블은 엔진 경로가 준비될 때까지 시작이 차단됩니다.',
+    'Singles require the local engine, and doubles stay blocked until an engine-backed route exists.'
   )}</div>`;
 }
 function isChoiceComplete(player, activeIndex) {
@@ -4605,8 +4570,8 @@ function renderPendingChoices() {
     return;
   }
   els.pendingChoices.innerHTML = `<div class="pending-card">${lang(
-    '레거시 커스텀 대기 UI는 분리되었고 현재 빌드에서는 사용자용으로 노출하지 않는다.',
-    'The legacy custom pending-choice UI was isolated and is not exposed in the current build.'
+    '현재 배틀 상태에는 지원되는 사용자용 대기 UI가 없습니다.',
+    'The current battle state has no supported user-facing pending-choice UI.'
   )}</div>`;
 }
 async function resolveEngineTurn(battle = state.battle) {
@@ -4635,8 +4600,8 @@ async function resolveTurn() {
   if (battle.log) {
     battle.log.unshift({
       text: lang(
-        '레거시 커스텀 턴 해석기는 src/legacy-custom-runtime-audit.js로 분리되었고 현재 빌드에서는 사용자 경로에서 실행되지 않는다.',
-        'The legacy custom turn resolver was isolated to src/legacy-custom-runtime-audit.js and does not run in the current user-facing build.'
+        '현재 배틀 상태에는 지원되는 턴 해석 경로가 없습니다. 싱글은 로컬 엔진, 더블은 향후 엔진 마이그레이션이 필요합니다.',
+        'The current battle state has no supported turn-resolution path. Singles use the local engine, and doubles still require future engine migration.'
       ),
       tone: 'accent',
     });
@@ -4644,24 +4609,8 @@ async function resolveTurn() {
   battle.resolvingTurn = false;
   renderBattle();
 }
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: performSwitch
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: triggerSwitchInEffects
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: rollHitCount
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: applyBoost
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: applyZStatusBonus
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: applyMaxMoveBonus
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: buildResolvedMove
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: performMove
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: canMove
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: resolveTargets
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: applyStatusMove
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: maybeApplySecondary
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: applyAilment
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: computeDamage
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: fillFaintedActives
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: endOfTurn
-// Extracted to src/legacy-custom-runtime-audit.js for Stage 20 audit isolation: determineWinner
 // Legacy fallback UI wiring removed during Stage 20 audit isolation.
+// Supported battle wiring: engine-backed singles only.
 function wireBattleEvents() {
   els.startBattleBtn.addEventListener('click', startBattle);
   els.backToBuilderBtn.addEventListener('click', () => {
@@ -4715,7 +4664,7 @@ async function bootstrap() {
   showRuntime(
     '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets, localized battle data, and form-aware sprite resolution are connected.',
     'ready',
-    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${showdownStatusNote}<br>${lang('이 빌드는 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. 이번 단계에서는 싱글을 로컬 Showdown 엔진 필수 경로로 고정했고, 더블과 레거시 커스텀 시작 경로는 정확도 우선 원칙 때문에 사용자용 정상 모드에서 차단했습니다.', 'This build loads vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex, and runs a stronger validator including event-only move bundle checks and profile-based Species Clause / Item Clause / level-50 enforcement. In this step, singles are locked to the local Showdown engine-required path, while doubles and legacy custom battle entry are blocked from user-facing normal mode until an accurate engine-backed route exists.')}`
+    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${showdownStatusNote}<br>${lang('이 빌드는 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. 이번 단계에서는 싱글을 로컬 Showdown 엔진 필수 경로로 고정했고, 더블은 엔진 기반 경로가 준비될 때까지 차단하며, 다른 지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드에 노출하지 않습니다.', 'This build loads vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex, and runs a stronger validator including event-only move bundle checks and profile-based Species Clause / Item Clause / level-50 enforcement. In this step, singles are locked to the local Showdown engine-required path, doubles stay blocked until an engine-backed route exists, and unsupported browser battle execution paths are kept out of user-facing normal mode.')}`
   );
   syncRuntimeModeUi();
 }
