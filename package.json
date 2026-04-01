@@ -1,8 +1,8 @@
 {
   "name": "pkb-showdown-local-migration",
   "private": true,
-  "version": "0.20.0-stage20-live-path-audit",
-  "description": "PKB engine-first live-path audit with isolated legacy runtime residue",
+  "version": "0.21.0-legacy-finalized",
+  "description": "PKB engine-first runtime with finalized legacy cleanup audit residue",
   "scripts": {
     "start": "node ./server/server.cjs"
   }

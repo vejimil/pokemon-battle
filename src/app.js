@@ -1184,8 +1184,6 @@ function getSelectedBattleRuntimeDescriptor() {
   return getBlockedDoublesRuntimeDescriptor();
 }
 
-// Legacy custom runtime is no longer a selectable user-facing battle rules path.
-
 function applyBattleRuntimeInfo(battle, descriptor) {
   if (!battle || !descriptor) return battle;
   battle.runtimeInfo = {
@@ -3111,8 +3109,8 @@ function implementedAbilityNote(name) {
   if (!slugify(name)) return lang('포켓몬을 선택하면 특성을 고를 수 있습니다.', "Select one of the Pokémon's native abilities.");
   if (runtime.id === 'engine-authoritative-singles') {
     return state.language === 'ko'
-      ? `${displayAbilityName(name)} 특성 판정은 현재 선택된 엔진 필수 싱글 경로에서 로컬 Showdown 엔진에 맡긴다. 레거시 커스텀 구현 메모는 현재 경로의 기준이 아니다.`
-      : `${displayAbilityName(name)} is resolved by the local Showdown engine in the current engine-required singles path. Legacy custom implementation notes are not the source of truth here.`;
+      ? `${displayAbilityName(name)} 특성 판정은 현재 선택된 엔진 필수 싱글 경로에서 로컬 Showdown 엔진이 담당한다. 팀 빌더 표시는 참고용이며 실제 전투 판정은 엔진 스냅샷과 요청을 따른다.`
+      : `${displayAbilityName(name)} is resolved by the local Showdown engine in the current engine-required singles path. Builder labels are informational only; real battle behavior follows the engine request and snapshot.`;
   }
   return state.language === 'ko'
     ? `${displayAbilityName(name)} 특성은 팀 빌더에서는 저장되고 검증되지만, 현재 선택된 런타임은 배틀 시작이 차단된 상태이다.`
@@ -3123,8 +3121,8 @@ function implementedItemNote(name) {
   if (!slugify(name)) return lang('지닌 도구가 없습니다.', 'No held item selected.');
   if (runtime.id === 'engine-authoritative-singles') {
     return state.language === 'ko'
-      ? `${displayItemName(name)} 도구 판정은 현재 선택된 엔진 필수 싱글 경로에서 로컬 Showdown 엔진에 맡긴다. 레거시 커스텀 구현 메모는 현재 경로의 기준이 아니다.`
-      : `${displayItemName(name)} is resolved by the local Showdown engine in the current engine-required singles path. Legacy custom implementation notes are not the source of truth here.`;
+      ? `${displayItemName(name)} 도구 판정은 현재 선택된 엔진 필수 싱글 경로에서 로컬 Showdown 엔진이 담당한다. 팀 빌더 표시는 참고용이며 실제 전투 판정은 엔진 스냅샷과 요청을 따른다.`
+      : `${displayItemName(name)} is resolved by the local Showdown engine in the current engine-required singles path. Builder labels are informational only; real battle behavior follows the engine request and snapshot.`;
   }
   return state.language === 'ko'
     ? `${displayItemName(name)} 도구는 팀 빌더에서는 저장되고 검증되지만, 현재 선택된 런타임은 배틀 시작이 차단된 상태이다.`
@@ -3416,8 +3414,8 @@ async function renderValidation() {
       els.startBattleBtn.title = localizeText(runtime.startBlockedReason || runtime.title);
     } else {
       els.validationSummary.textContent = state.builderWarnings.length
-        ? lang(`팀이 기본 검증을 통과했습니다. 엔진 우선 싱글 경로로 시작할 수 있으며, 고급 출처/런타임 주의 ${state.builderWarnings.length}개가 있습니다.`, `Teams pass validation. Engine-authoritative singles can start, with ${state.builderWarnings.length} advanced source/runtime warning${state.builderWarnings.length === 1 ? '' : 's'}.`)
-        : lang('양쪽 팀이 유효합니다. 엔진 우선 배틀을 시작할 수 있습니다.', 'Both teams are valid. Engine-authoritative battle start is ready.');
+        ? lang(`팀이 기본 검증을 통과했습니다. 엔진 필수 싱글 경로로 시작할 수 있으며, 고급 출처/런타임 주의 ${state.builderWarnings.length}개가 있습니다.`, `Teams pass validation. Engine-required singles can start, with ${state.builderWarnings.length} advanced source/runtime warning${state.builderWarnings.length === 1 ? '' : 's'}.`)
+        : lang('양쪽 팀이 유효합니다. 엔진 필수 싱글 배틀을 시작할 수 있습니다.', 'Both teams are valid. Engine-required singles battle start is ready.');
       els.startBattleBtn.disabled = false;
       els.startBattleBtn.title = '';
     }
@@ -3717,8 +3715,6 @@ async function startEngineAuthoritativeSinglesBattle() {
     getEngineAuthoritativeSinglesRuntimeDescriptor()
   );
 }
-// Legacy custom battle entry retained only as migration residue for audit/debug purposes.
-// Stage 19 no longer exposes this path to normal user-facing battle start.
 function cloneEngineBattleSnapshot(snapshot) {
   if (!snapshot) return null;
   return {
@@ -4021,7 +4017,7 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
     mega: Boolean(rawChoice.mega && moveRequest?.canMegaEvo),
     tera: Boolean(rawChoice.tera && moveRequest?.canTerastallize),
     z: Boolean(rawChoice.z && zInfo),
-    dynamax: Boolean(rawChoice.dynamax && moveRequest?.canDynamax),
+    dynamax: Boolean(rawChoice.dynamax && moveRequest?.canDynamax && runtimeSupportsDynamax()),
   };
   if (sanitized.z && sanitized.dynamax) sanitized.dynamax = false;
   setEnginePendingChoice(player, slot, sanitized, battle);
@@ -4035,7 +4031,7 @@ function canEngineSwitchNormally(player, requestSlot = 0, battle = state.battle)
   if (!moveRequest) return false;
   return !moveRequest.trapped && !moveRequest.maybeTrapped;
 }
-function getEngineSwitchOptions(player, activeIndex, battle = state.battle, {allowLegacyFallback = false} = {}) {
+function getEngineSwitchOptions(player, activeIndex, battle = state.battle) {
   const side = battle?.players?.[player];
   if (!side) return [];
 
@@ -4053,11 +4049,9 @@ function getEngineSwitchOptions(player, activeIndex, battle = state.battle, {all
       .map(({mon, index}) => ({mon, index}));
   }
 
-  if (isEngineActionableRequest(request) || !allowLegacyFallback) return [];
+  if (isEngineActionableRequest(request)) return [];
 
-  return side.team
-    .map((mon, index) => ({mon, index}))
-    .filter(({mon, index}) => mon && !mon.fainted && !side.active.includes(index) && index !== activeIndex);
+  return [];
 }
 function pruneEnginePendingChoices(battle = state.battle) {
   if (!isShowdownLocalBattle(battle)) return;
@@ -4325,7 +4319,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       toggles.appendChild(megaBtn);
     }
 
-    if (moveRequest?.canDynamax) {
+    if (moveRequest?.canDynamax && runtimeSupportsDynamax()) {
       const dynaBtn = document.createElement('button');
       dynaBtn.type = 'button';
       dynaBtn.className = `toggle-pill ${choice.dynamax ? 'active' : ''}`;
@@ -4609,7 +4603,6 @@ async function resolveTurn() {
   battle.resolvingTurn = false;
   renderBattle();
 }
-// Legacy fallback UI wiring removed during Stage 20 audit isolation.
 // Supported battle wiring: engine-backed singles only.
 function wireBattleEvents() {
   els.startBattleBtn.addEventListener('click', startBattle);
