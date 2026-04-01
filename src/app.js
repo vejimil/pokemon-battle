@@ -2861,8 +2861,31 @@ function normalizeBattleMonSprite(mon) {
   }
   return mon;
 }
+function parseEngineRequestEntryShiny(entry) {
+  if (!entry) return null;
+  if (typeof entry.shiny === 'boolean') return entry.shiny;
+  const details = String(entry.details || '').trim();
+  if (!details) return null;
+  return /(?:^|,\s*)shiny(?:,|$)/i.test(details);
+}
+function normalizeBattleShinyState(battle) {
+  if (!battle?.players) return battle;
+  battle.players.forEach((side, player) => {
+    const requestEntries = getEngineRequestSideEntries(player, battle);
+    if (!requestEntries.length) return;
+    requestEntries.forEach((entry, requestIndex) => {
+      const teamIndex = Number.isInteger(entry?.teamIndex) ? entry.teamIndex : requestIndex;
+      const mon = side?.team?.[teamIndex];
+      if (!mon) return;
+      const requestShiny = parseEngineRequestEntryShiny(entry);
+      if (typeof requestShiny === 'boolean') mon.shiny = requestShiny;
+    });
+  });
+  return battle;
+}
 function normalizeBattleSpriteState(battle) {
   if (!battle?.players) return battle;
+  normalizeBattleShinyState(battle);
   battle.players.forEach(side => {
     (side?.team || []).forEach(mon => normalizeBattleMonSprite(mon));
   });
@@ -4591,6 +4614,7 @@ function getBattleBadgeText(mon) {
 function renderBattle() {
   const battle = ensureBattleUiState(state.battle);
   if (!battle) return;
+  normalizeBattleSpriteState(battle);
   syncRuntimeModeUi();
   if (isShowdownLocalBattle(battle)) pruneEnginePendingChoices(battle);
   els.turnNumber.textContent = battle.turn;

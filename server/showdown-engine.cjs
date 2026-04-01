@@ -233,6 +233,10 @@ function createUiSourceMatcher(uiTeam = []) {
   };
 }
 
+function parseRequestPokemonShiny(details = '') {
+  return /(?:^|,\s*)shiny(?:,|$)/i.test(String(details || '').trim());
+}
+
 function reorderArrayByTargetIndices(items = [], targetIndices = [], fallbackLength = 0) {
   const size = Math.max(fallbackLength, items.length, targetIndices.reduce((max, index) => (
     Number.isInteger(index) ? Math.max(max, index + 1) : max
@@ -480,6 +484,7 @@ class ShowdownLocalSinglesSession {
                 ...entry,
                 teamIndex: stableSlotsByEngineIndex[engineOrderIndex] ?? engineOrderIndex,
                 engineOrderIndex,
+                shiny: parseRequestPokemonShiny(entry?.details || ''),
               }))
               : [],
             stableSlotsByEngineIndex,
