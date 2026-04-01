@@ -71,6 +71,11 @@ const NONSTANDARD_REASON_LABELS = {
   Unobtainable: 'is marked unobtainable in the loaded data.',
   Gigantamax: 'is Gigantamax-only battle content and should not be chosen directly here.',
 };
+const ASSET_BASE_SPECIES_ALIASES = Object.freeze({
+  NIDORANFE: 'Nidoran-F',
+  NIDORANMA: 'Nidoran-M',
+});
+const BUILDER_BATTLE_ONLY_FORM_SUFFIXES = new Set(['mega', 'megax', 'megay', 'primal', 'gmax']);
 const targetHints = {
   'selected-pokemon': 'single-opponent',
   'random-opponent': 'single-opponent',
@@ -290,6 +295,9 @@ function parseAssetFamilies(list = []) {
   const families = new Map();
   for (const rawId of list) {
     const id = String(rawId || '');
+    // Ignore rare numeric-form gender overlays such as SNEASEL_1_female here.
+    // They should not create a separate builder family or distort base-form truth.
+    if (/^.+?_\d+_(female|male)$/i.test(id)) continue;
     const match = /^(.+?)(?:_(female|male|\d+))?$/i.exec(id);
     if (!match) continue;
     const baseId = match[1];
@@ -313,6 +321,10 @@ function parseAssetFamilies(list = []) {
     family.rawAssetIds.sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
   }
   return families;
+}
+function resolveAssetBaseSpeciesName(assetBaseId, familyLookup = new Map()) {
+  const normalizedKey = normalizeAssetFamilyKey(assetBaseId);
+  return familyLookup.get(normalizedKey) || ASSET_BASE_SPECIES_ALIASES[normalizedKey] || humanizeSpriteId(assetBaseId);
 }
 function buildFamilyFormNames(baseSpeciesName, familySpeciesNames, baseEntry) {
   const ordered = [];
@@ -343,6 +355,9 @@ function buildAssetDex() {
     return;
   }
 
+  const frontIds = new Set(state.manifest.pokemon.front || []);
+  const backIds = new Set(state.manifest.pokemon.back || []);
+  const usableAssetIds = new Set(Array.from(frontIds).filter(id => id && backIds.has(id)));
   const frontFamilies = parseAssetFamilies(state.manifest.pokemon.front);
   const allSpecies = state.dex.species.all().filter(species => species?.exists);
   const familyLookup = new Map();
@@ -363,14 +378,15 @@ function buildAssetDex() {
   };
 
   for (const [assetBaseId, assetFamily] of frontFamilies.entries()) {
-    const baseSpeciesName = familyLookup.get(assetBaseId) || humanizeSpriteId(assetBaseId);
+    const baseSpeciesName = resolveAssetBaseSpeciesName(assetBaseId, familyLookup);
     const baseEntry = state.dex.species.get(baseSpeciesName);
+    if (!isDexSupported(baseEntry)) continue;
     const familySpeciesNames = uniqueNames([baseSpeciesName, ...(speciesByBase.get(baseSpeciesName) || [])]);
     const orderedForms = buildFamilyFormNames(baseSpeciesName, familySpeciesNames, baseEntry);
     const speciesToAsset = new Map();
     const assetToSpecies = new Map();
 
-    if (assetFamily.baseExists) {
+    if (assetFamily.baseExists && usableAssetIds.has(assetBaseId)) {
       speciesToAsset.set(baseSpeciesName, assetBaseId);
       assetToSpecies.set(assetBaseId, baseSpeciesName);
     }
@@ -378,7 +394,8 @@ function buildAssetDex() {
     if (!EXPLICIT_ONLY_FORM_FAMILIES.has(assetBaseId)) {
       const numericAssetIds = Array.from(assetFamily.numeric.entries())
         .sort((a, b) => a[0] - b[0])
-        .map(([, assetId]) => assetId);
+        .map(([, assetId]) => assetId)
+        .filter(assetId => usableAssetIds.has(assetId));
       for (const [index, formName] of orderedForms.entries()) {
         const assetId = numericAssetIds[index];
         if (assetId) {
@@ -392,52 +409,60 @@ function buildAssetDex() {
       const speciesData = state.dex.species.get(speciesName);
       const speciesBase = speciesData?.exists ? (speciesData.baseSpecies || speciesData.name) : speciesName.split('-')[0];
       if (toId(speciesBase) !== toId(baseSpeciesName)) continue;
+      if (!usableAssetIds.has(assetId)) continue;
       if (!assetFamily.rawAssetIds.includes(assetId)) continue;
       speciesToAsset.set(speciesName, assetId);
       assetToSpecies.set(assetId, speciesName);
     }
 
     const unresolvedFormOrder = orderedForms.filter(name => !speciesToAsset.has(name));
-    if (orderedForms.length === 1 && unresolvedFormOrder.length === 1 && assetFamily.numeric.size === 1) {
-      const onlyAssetId = Array.from(assetFamily.numeric.values())[0];
+    const usableNumericAssetIds = Array.from(assetFamily.numeric.values()).filter(assetId => usableAssetIds.has(assetId));
+    if (orderedForms.length === 1 && unresolvedFormOrder.length === 1 && usableNumericAssetIds.length === 1) {
+      const onlyAssetId = usableNumericAssetIds[0];
       speciesToAsset.set(unresolvedFormOrder[0], onlyAssetId);
       assetToSpecies.set(onlyAssetId, unresolvedFormOrder[0]);
     }
 
-    const allFormChoices = familySpeciesNames.map(speciesName => {
-      const speciesData = state.dex.species.get(speciesName);
-      const requirementLocked = Boolean(
-        speciesData?.requiredItem
-        || speciesData?.requiredItems?.length
-        || speciesData?.requiredMove
-        || speciesData?.requiredAbility
-        || speciesData?.requiredTeraType
-      );
-      const selectable = Boolean(speciesData?.exists) && !speciesData.battleOnly;
-      const selectableManual = Boolean(speciesData?.exists) && !speciesData?.battleOnly && (!requirementLocked || speciesName === baseSpeciesName);
-      const assetId = speciesToAsset.get(speciesName) || '';
-      const display = displaySpeciesName(speciesName);
-      return {
-        speciesName: speciesData?.name || speciesName,
-        display,
-        assetId,
-        selectable,
-        selectableManual,
-        hasAsset: Boolean(assetId),
-        battleOnly: Boolean(speciesData?.battleOnly),
-        requirementLocked,
-      };
-    });
-    const formChoices = allFormChoices.filter(choice => (choice.selectableManual || choice.speciesName === baseSpeciesName) && choice.hasAsset);
+    const allFormChoices = familySpeciesNames
+      .map(speciesName => {
+        const speciesData = state.dex.species.get(speciesName);
+        const supported = isDexSupported(speciesData);
+        const requirementLocked = isRequirementLockedBuilderForm(speciesData);
+        const assetId = speciesToAsset.get(speciesName) || '';
+        const display = displaySpeciesName(speciesName);
+        return {
+          speciesName: speciesData?.name || speciesName,
+          display,
+          assetId,
+          selectable: supported && !isBattleOnlyBuilderForm(speciesData),
+          selectableManual: isSelectableManualBuilderForm(speciesData, baseSpeciesName),
+          searchableManual: isSearchableManualBuilderForm(speciesData, baseSpeciesName),
+          autoResolvedItemForm: isAutoResolvedItemBuilderForm(speciesData),
+          hasAsset: Boolean(assetId),
+          battleOnly: isBattleOnlyBuilderForm(speciesData),
+          requirementLocked,
+          supported,
+        };
+      })
+      .filter(choice => choice.supported && (choice.hasAsset || choice.speciesName === baseSpeciesName));
+    const formChoices = allFormChoices.filter(choice => choice.hasAsset && choice.searchableManual && choice.speciesName !== baseSpeciesName);
+    const searchableFormChoices = allFormChoices.filter(choice => choice.hasAsset && choice.searchableManual);
+
+    if (!speciesToAsset.get(baseSpeciesName)) {
+      const fallbackBaseAssetId = searchableFormChoices.find(choice => choice.speciesName === baseSpeciesName)?.assetId || '';
+      if (!fallbackBaseAssetId) continue;
+    }
 
     const assetChoices = [];
-    if (assetFamily.baseExists) {
+    if (assetFamily.baseExists && usableAssetIds.has(assetBaseId)) {
       assetChoices.push({
         id: assetBaseId,
         display: `${displaySpeciesName(assetToSpecies.get(assetBaseId) || baseSpeciesName)} · ${assetBaseId}`,
       });
     }
-    const numericEntries = Array.from(assetFamily.numeric.entries()).sort((a, b) => a[0] - b[0]);
+    const numericEntries = Array.from(assetFamily.numeric.entries())
+      .filter(([, assetId]) => usableAssetIds.has(assetId))
+      .sort((a, b) => a[0] - b[0]);
     for (const [, assetId] of numericEntries) {
       assetChoices.push({
         id: assetId,
@@ -445,7 +470,7 @@ function buildAssetDex() {
       });
     }
     for (const genderKey of ['female', 'male']) {
-      if (assetFamily.genders[genderKey]) {
+      if (assetFamily.genders[genderKey] && usableAssetIds.has(assetFamily.genders[genderKey])) {
         assetChoices.push({
           id: assetFamily.genders[genderKey],
           display: `${displaySpeciesName(baseSpeciesName)} ${genderKey === 'female' ? '♀' : '♂'} · ${assetFamily.genders[genderKey]}`,
@@ -459,6 +484,7 @@ function buildAssetDex() {
       assetFamily,
       formChoices,
       allFormChoices,
+      searchableFormChoices,
       assetChoices,
       speciesToAsset,
       assetToSpecies,
@@ -468,7 +494,7 @@ function buildAssetDex() {
       assetDex.familyBySpecies.set(speciesName, family);
       if (speciesToAsset.has(speciesName)) assetDex.speciesToAsset.set(speciesName, speciesToAsset.get(speciesName));
       const speciesData = state.dex.species.get(speciesName);
-      if (speciesData?.exists && !speciesData.battleOnly && speciesToAsset.has(speciesData.name)) {
+      if (isSearchableManualBuilderForm(speciesData, baseSpeciesName) && speciesToAsset.has(speciesData.name)) {
         assetDex.allSpeciesChoices.push(makeChoice('species', speciesData.name, {
           family: baseSpeciesName,
           assetId: speciesToAsset.get(speciesData.name) || '',
@@ -478,10 +504,11 @@ function buildAssetDex() {
   }
 
   const baseChoices = Array.from(assetDex.families.values())
+    .filter(family => family.speciesToAsset.get(family.baseSpeciesName))
     .map(family => makeChoice('species', family.baseSpeciesName, {
       assetId: family.speciesToAsset.get(family.baseSpeciesName) || family.assetBaseId,
       family: family.baseSpeciesName,
-      formSearchTerms: uniqueNames((family.allFormChoices || []).flatMap(choice => [
+      formSearchTerms: uniqueNames((family.searchableFormChoices || []).flatMap(choice => [
         choice?.speciesName,
         displaySpeciesName(choice?.speciesName || ''),
       ])),
@@ -528,20 +555,32 @@ function isRequirementLockedBuilderForm(speciesData) {
     || speciesData?.requiredTeraType
   );
 }
-function isSelectableManualBuilderForm(speciesData, baseSpeciesName = '') {
+function isBattleOnlyBuilderForm(speciesData) {
   if (!speciesData?.exists) return false;
-  if (speciesData.battleOnly) return false;
+  if (speciesData.battleOnly) return true;
+  return BUILDER_BATTLE_ONLY_FORM_SUFFIXES.has(toId(speciesData.forme || ''));
+}
+function isAutoResolvedItemBuilderForm(speciesData) {
+  if (!isDexSupported(speciesData)) return false;
+  if (isBattleOnlyBuilderForm(speciesData)) return false;
+  const hasRequiredItem = Boolean(speciesData?.requiredItem || speciesData?.requiredItems?.length);
+  if (!hasRequiredItem) return false;
+  return Boolean(speciesData?.changesFrom || (speciesData?.baseSpecies && speciesData.baseSpecies !== speciesData.name));
+}
+function isSelectableManualBuilderForm(speciesData, baseSpeciesName = '') {
+  if (!isDexSupported(speciesData)) return false;
+  if (isBattleOnlyBuilderForm(speciesData)) return false;
   if ((speciesData.baseSpecies || speciesData.name) === speciesData.name) return true;
   if ((speciesData.name || '') === baseSpeciesName) return true;
   return !isRequirementLockedBuilderForm(speciesData);
 }
+function isSearchableManualBuilderForm(speciesData, baseSpeciesName = '') {
+  return isSelectableManualBuilderForm(speciesData, baseSpeciesName);
+}
 function getFormChoicesForSpecies(baseSpeciesName) {
   const family = getFamilyForSpecies(baseSpeciesName);
   if (!family) return [];
-  return (family.allFormChoices || family.formChoices || []).filter(choice => {
-    const speciesData = state.dex?.species?.get(choice.speciesName);
-    return choice.hasAsset && isSelectableManualBuilderForm(speciesData, family.baseSpeciesName);
-  });
+  return [...(family.formChoices || [])];
 }
 function sanitizeManualFormSpecies(mon, baseSpeciesName = '') {
   const choices = getFormChoicesForSpecies(baseSpeciesName);
@@ -550,19 +589,10 @@ function sanitizeManualFormSpecies(mon, baseSpeciesName = '') {
   return matched?.speciesName || baseSpeciesName;
 }
 function matchesAutomaticFormRequirements(speciesData, mon) {
-  if (!speciesData?.exists) return false;
+  if (!isAutoResolvedItemBuilderForm(speciesData)) return false;
   const requiredItems = [speciesData.requiredItem, ...(speciesData.requiredItems || [])].filter(Boolean);
-  const hasItemRequirement = requiredItems.length > 0;
-  const hasMoveRequirement = Boolean(speciesData.requiredMove);
-  const hasAbilityRequirement = Boolean(speciesData.requiredAbility);
-  const hasTeraRequirement = Boolean(speciesData.requiredTeraType);
-  if (!hasItemRequirement && !hasMoveRequirement && !hasAbilityRequirement && !hasTeraRequirement) return false;
-  if (speciesData.battleOnly && !hasItemRequirement) return false;
-  if (hasItemRequirement && !requiredItems.some(item => toId(item) === toId(mon?.item))) return false;
-  if (hasMoveRequirement && !(mon?.moves || []).some(move => toId(move) === toId(speciesData.requiredMove))) return false;
-  if (hasAbilityRequirement && toId(mon?.ability) !== toId(speciesData.requiredAbility)) return false;
-  if (hasTeraRequirement && toId(mon?.teraType) !== toId(speciesData.requiredTeraType)) return false;
-  return true;
+  if (!requiredItems.length) return false;
+  return requiredItems.some(item => toId(item) === toId(mon?.item));
 }
 function resolveAutomaticBuilderSpecies(mon, manualSpecies = '') {
   const family = getFamilyForSpecies(manualSpecies || mon?.baseSpecies || mon?.species || '');
@@ -619,7 +649,7 @@ function isMegaSpeciesName(speciesName = '') {
 function getMegaCandidateForMon(mon) {
   const family = getFamilyForSpecies(mon.baseSpecies || mon.species);
   if (!family || !mon?.item) return null;
-  const candidates = family.formChoices.filter(choice => /-mega/i.test(choice.speciesName));
+  const candidates = (family.allFormChoices || family.formChoices || []).filter(choice => /-mega/i.test(choice.speciesName));
   const matched = candidates.find(choice => {
     const species = state.dex.species.get(choice.speciesName);
     return species?.exists && species.requiredItem && toId(species.requiredItem) === toId(mon.item);
@@ -665,7 +695,7 @@ function findResolvedFormAsset(baseSpeciesName, formSuffix) {
   const family = getFamilyForSpecies(baseSpeciesName);
   if (!family) return null;
   const targetId = toId(`${baseSpeciesName}-${formSuffix}`);
-  return family.formChoices.find(choice => toId(choice.speciesName) === targetId && choice.assetId) || null;
+  return (family.allFormChoices || family.formChoices || []).find(choice => toId(choice.speciesName) === targetId && choice.assetId) || null;
 }
 function getGigantamaxAssetId(mon) {
   const resolved = findResolvedFormAsset(mon?.baseSpecies || mon?.species, 'Gmax');
