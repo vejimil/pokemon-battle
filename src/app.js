@@ -2827,6 +2827,58 @@ function iconPath(spriteId, shiny = false) {
   const folder = shiny ? 'Icons shiny' : 'Icons';
   return `${state.assetBase.pokemon}/${folder}/${spriteId}.png`;
 }
+function getBattleRenderSpeciesName(mon) {
+  if (!mon) return '';
+  return mon.formSpecies || mon.species || mon.displaySpecies || mon.originalData?.name || mon.baseSpecies || mon.originalData?.baseSpecies || '';
+}
+function doesSpriteIdMatchSpeciesFamily(spriteId, speciesName = '', baseSpeciesName = '') {
+  if (!spriteId) return false;
+  const family = getFamilyForSpecies(speciesName || baseSpeciesName);
+  if (!family?.assetFamily) return false;
+  const spriteIdKey = String(spriteId || '').trim();
+  if (!spriteIdKey) return false;
+  if (family.assetFamily.baseExists && family.assetBaseId === spriteIdKey) return true;
+  if (family.assetFamily.rawAssetIds?.includes(spriteIdKey)) return true;
+  return false;
+}
+function resolveBattleRenderSpriteId(mon) {
+  if (!mon) return '';
+  const speciesName = getBattleRenderSpeciesName(mon);
+  const baseSpeciesName = mon.baseSpecies || mon.originalData?.baseSpecies || speciesName;
+  const candidate = mon.spriteId || mon.spriteAutoId || '';
+  if (doesSpriteIdMatchSpeciesFamily(candidate, speciesName, baseSpeciesName)) return candidate;
+  const autoSpriteId = getAutoSpriteIdForSpecies(speciesName, mon.gender || '', baseSpeciesName);
+  if (autoSpriteId && doesSpriteIdMatchSpeciesFamily(autoSpriteId, speciesName, baseSpeciesName)) return autoSpriteId;
+  return candidate || autoSpriteId || '';
+}
+function normalizeBattleMonSprite(mon) {
+  if (!mon) return mon;
+  const resolvedSpriteId = resolveBattleRenderSpriteId(mon);
+  if (!resolvedSpriteId) return mon;
+  if (mon.spriteId !== resolvedSpriteId) mon.spriteId = resolvedSpriteId;
+  if (!mon.spriteAutoId || !doesSpriteIdMatchSpeciesFamily(mon.spriteAutoId, getBattleRenderSpeciesName(mon), mon.baseSpecies || mon.originalData?.baseSpecies || '')) {
+    mon.spriteAutoId = resolvedSpriteId;
+  }
+  return mon;
+}
+function normalizeBattleSpriteState(battle) {
+  if (!battle?.players) return battle;
+  battle.players.forEach(side => {
+    (side?.team || []).forEach(mon => normalizeBattleMonSprite(mon));
+  });
+  return battle;
+}
+function getBattleActiveIndices(player, battle = state.battle) {
+  const side = battle?.players?.[player];
+  if (!side) return [];
+  const requestEntries = getEngineRequestSideEntries(player, battle);
+  const requestActive = requestEntries
+    .filter(entry => entry?.active)
+    .map(entry => Number(entry.teamIndex))
+    .filter(index => Number.isInteger(index) && index >= 0);
+  if (requestActive.length) return requestActive;
+  return Array.isArray(side.active) ? side.active.filter(index => Number.isInteger(index) && index >= 0) : [];
+}
 function itemIconPath(itemName) {
   const slug = slugify(itemName);
   return slug ? `${state.assetBase.items}/${slug}.png` : '';
@@ -2878,11 +2930,16 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
   container.className = `sprite-shell ${size}`;
   const renderToken = (Number(container._spriteRenderToken || 0) + 1);
   container._spriteRenderToken = renderToken;
+  container.dataset.spriteId = spriteId || '';
+  container.dataset.spriteFacing = facing || 'front';
+  container.dataset.spriteShiny = shiny ? '1' : '0';
   if (!spriteId) {
+    delete container.dataset.spriteSrc;
     container.textContent = '—';
     return;
   }
   const url = spritePath(spriteId, facing, shiny);
+  container.dataset.spriteSrc = url;
   try {
     const info = await ensureImageInfo(url);
     if (container._spriteRenderToken !== renderToken) return;
@@ -3772,6 +3829,7 @@ function cloneEngineBattleSnapshot(snapshot) {
 function adoptEngineBattleSnapshot(snapshot) {
   const battle = ensureBattleUiState(cloneEngineBattleSnapshot(snapshot));
   if (!battle) return null;
+  normalizeBattleSpriteState(battle);
   clearEnginePendingChoices(battle);
   battle.resolvingTurn = false;
   applyBattleRuntimeInfo(battle, getEngineAuthoritativeSinglesRuntimeDescriptor());
@@ -4494,9 +4552,10 @@ function renderBattleFieldStatus() {
   parts.push(state.language === 'ko' ? `${battle.players[1].name} 진영: ${describeSideConditions(battle.players[1])}` : `${battle.players[1].name} Side: ${describeSideConditions(battle.players[1])}`);
   els.battleFieldStatus.textContent = parts.join(' · ');
 }
-function getActiveMons(player) {
-  const side = state.battle.players[player];
-  return side.active.map(idx => side.team[idx]).filter(Boolean);
+function getActiveMons(player, battle = state.battle) {
+  const side = battle?.players?.[player];
+  if (!side) return [];
+  return getBattleActiveIndices(player, battle).map(idx => side.team[idx]).filter(Boolean);
 }
 function getBattleBadgeText(mon) {
   if (!mon) return '';
@@ -4557,24 +4616,25 @@ function renderSideSprites(player, container, facing) {
       shell.appendChild(badge);
     }
     container.appendChild(shell);
-    renderAnimatedSprite(holder, {spriteId: mon.spriteId, facing, shiny: mon.shiny, size: 'large'});
+    renderAnimatedSprite(holder, {spriteId: resolveBattleRenderSpriteId(mon), facing, shiny: mon.shiny, size: 'large'});
   });
 }
 function renderBattleTeam(player, container) {
   const side = state.battle.players[player];
+  const activeIndices = new Set(getBattleActiveIndices(player));
   container.innerHTML = '';
   side.team.forEach((mon, index) => {
     const card = document.createElement('div');
     card.className = 'battle-team-card';
     const sprite = document.createElement('div');
     card.appendChild(sprite);
-    renderAnimatedSprite(sprite, {spriteId: mon.spriteId, facing:'front', shiny: mon.shiny, size:'small'});
+    renderAnimatedSprite(sprite, {spriteId: resolveBattleRenderSpriteId(mon), facing:'front', shiny: mon.shiny, size:'small'});
     const summary = document.createElement('div');
     summary.className = 'mon-summary';
     summary.innerHTML = `<div class="mon-name-line"><strong>${displaySpeciesName(mon.species)}</strong>${mon.status ? `<span class="status-badge">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
       ${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}
       <div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div>
-      <div class="mon-sub">HP ${mon.hp}/${mon.maxHp}${side.active.includes(index) ? ' · 전투 중 / Active' : ''}${mon.fainted ? ' · 기절 / Fainted' : ''}${mon.dynamaxed ? ` · ${mon.dynamaxTurns}턴 / ${mon.dynamaxTurns} turns` : ''}${mon.volatile?.substituteHp ? ` · 대타 ${mon.volatile.substituteHp} / Sub ${mon.volatile.substituteHp}` : ''}</div>`;
+      <div class="mon-sub">HP ${mon.hp}/${mon.maxHp}${activeIndices.has(index) ? ' · 전투 중 / Active' : ''}${mon.fainted ? ' · 기절 / Fainted' : ''}${mon.dynamaxed ? ` · ${mon.dynamaxTurns}턴 / ${mon.dynamaxTurns} turns` : ''}${mon.volatile?.substituteHp ? ` · 대타 ${mon.volatile.substituteHp} / Sub ${mon.volatile.substituteHp}` : ''}</div>`;
     card.appendChild(summary);
     container.appendChild(card);
   });
