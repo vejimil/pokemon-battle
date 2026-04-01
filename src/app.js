@@ -4081,6 +4081,9 @@ function isEngineSingleMoveRequest(moveRequest) {
   const onlyMove = moves[0] || null;
   return Boolean(onlyMove && !onlyMove.disabled && toId(onlyMove?.id || onlyMove?.move || ''));
 }
+function isEngineForcedContinuationRequest(moveRequest) {
+  return isEngineSingleMoveRequest(moveRequest);
+}
 function isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex = 0) {
   if (!moveInfo || moveInfo.disabled) return false;
   const isLockedSingleMove = isEngineSingleMoveRequest(moveRequest) && moveIndex === 0;
@@ -4099,6 +4102,67 @@ function getEngineForcedMoveChoice(moveRequest) {
     move: onlyMove?.move || 'Locked move',
     moveIndex: 0,
   };
+}
+function buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle = state.battle) {
+  const requestSlot = getEngineRequestSlotForActiveIndex(player, activeIndex, battle);
+  if (requestSlot < 0) return null;
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  const moveInfo = Array.isArray(moveRequest?.moves) ? (moveRequest.moves[moveIndex] || null) : null;
+  if (!isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex)) return null;
+  const previous = getEngineDraftChoice(player, activeIndex, battle);
+  const canZMove = Array.isArray(moveRequest?.canZMove) && Boolean(moveRequest.canZMove[moveIndex]);
+  const isForcedContinuation = isEngineForcedContinuationRequest(moveRequest);
+  return {
+    ...createEmptyBattleChoice(),
+    kind: 'move',
+    move: moveInfo?.move || previous?.move || '',
+    moveIndex,
+    switchTo: null,
+    target: null,
+    z: !isForcedContinuation && Boolean(previous?.z && canZMove),
+    mega: !isForcedContinuation && Boolean(previous?.mega && moveRequest?.canMegaEvo),
+    tera: !isForcedContinuation && Boolean(previous?.tera && moveRequest?.canTerastallize),
+    dynamax: !isForcedContinuation && Boolean(previous?.dynamax && moveRequest?.canDynamax),
+  };
+}
+function toggleEngineDraftFlag(player, activeIndex, flag, battle = state.battle) {
+  const requestSlot = getEngineRequestSlotForActiveIndex(player, activeIndex, battle);
+  if (requestSlot < 0) return false;
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  if (!moveRequest || isEngineForcedContinuationRequest(moveRequest)) return false;
+  const previous = getEngineDraftChoice(player, activeIndex, battle);
+  const next = {...previous};
+  if (flag === 'mega') {
+    if (!moveRequest?.canMegaEvo) return false;
+    next.mega = !previous.mega;
+  } else if (flag === 'tera') {
+    if (!moveRequest?.canTerastallize) return false;
+    next.tera = !previous.tera;
+  } else if (flag === 'dynamax') {
+    if (!moveRequest?.canDynamax || !runtimeSupportsDynamax()) return false;
+    next.dynamax = !previous.dynamax;
+    if (next.dynamax) next.z = false;
+  } else if (flag === 'z') {
+    if (!(previous.kind === 'move' && Number.isInteger(previous.moveIndex))) return false;
+    const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[previous.moveIndex] : null;
+    if (!zInfo) return false;
+    next.z = !previous.z;
+    if (next.z) next.dynamax = false;
+  } else {
+    return false;
+  }
+  setEnginePendingChoice(player, activeIndex, next, battle);
+  return true;
+}
+function seedEngineForcedPendingChoices(battle = state.battle) {
+  ensureBattleUiState(battle);
+  for (const player of [0, 1]) {
+    const request = getEngineRequestForPlayer(player, battle);
+    if (!isEngineActionableRequest(request)) continue;
+    for (const activeIndex of getEngineActionSlots(player, battle)) {
+      normalizeEnginePendingChoice(player, activeIndex, battle);
+    }
+  }
 }
 function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   const rawChoice = getEnginePendingChoice(player, slot, battle);
@@ -4275,6 +4339,7 @@ function getEnginePlayersNeedingAction(battle = state.battle) {
 function canAutoResolveEngineTurn(battle = state.battle) {
   if (!isShowdownLocalBattle(battle) || battle?.winner || battle?.resolvingTurn) return false;
   pruneEnginePendingChoices(battle);
+  seedEngineForcedPendingChoices(battle);
   const players = battle?.players || [];
   if (!players.length) return false;
   let actionableCount = 0;
@@ -4415,6 +4480,14 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       container.appendChild(section);
       return;
     }
+    const forcedContinuation = isEngineForcedContinuationRequest(moveRequest);
+    if (forcedContinuation) {
+      const forcedNote = document.createElement('div');
+      forcedNote.className = 'small-note';
+      forcedNote.style.marginTop = '8px';
+      forcedNote.textContent = '이 턴은 엔진이 강제한 연속 행동입니다. 별도 클릭 없이 자동으로 잠기며, 상대 선택이 끝나면 바로 진행됩니다. / This turn is an engine-locked continuation. It auto-locks without an extra click and advances as soon as the opposing side is ready.';
+      section.appendChild(forcedNote);
+    }
     const moveButtons = document.createElement('div');
     moveButtons.className = 'choice-buttons';
     (moveRequest?.moves || []).forEach((moveInfo, moveIndex) => {
@@ -4426,10 +4499,11 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? 0);
       const maxPp = Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? 0);
       const disabled = Boolean(moveInfo?.disabled);
-      const isLockedSingleMove = isEngineSingleMoveRequest(moveRequest) && moveIndex === 0;
+      const isLockedSingleMove = forcedContinuation && moveIndex === 0;
       const selectable = isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex);
-      btn.disabled = !selectable;
+      btn.disabled = !selectable || forcedContinuation;
       if (btn.disabled) btn.classList.add('disabled');
+      if (isLockedSingleMove && choice.kind === 'move' && choice.moveIndex === moveIndex) btn.classList.remove('disabled');
       const ppLabel = Number.isFinite(moveInfo?.pp) || Number.isFinite(slotInfo?.pp)
         ? `PP ${pp}/${maxPp}`
         : (isLockedSingleMove
@@ -4438,7 +4512,8 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>불러오는 중… / Loading… · ${ppLabel}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
       Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
         if (!btn.isConnected) return;
-        const preview = moveData ? describeMoveForBattle(mon, moveData, choice) : null;
+        const previewChoice = choice.kind === 'move' && choice.moveIndex === moveIndex ? choice : null;
+        const preview = moveData ? describeMoveForBattle(mon, moveData, previewChoice) : null;
         const ppLabel = Number.isFinite(moveInfo?.pp) || Number.isFinite(slotInfo?.pp)
           ? `PP ${pp}/${maxPp}`
           : (isLockedSingleMove
@@ -4448,20 +4523,9 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       });
       if (!btn.disabled) {
         btn.addEventListener('click', () => {
-          const previous = getEngineDraftChoice(player, activeIndex, battle);
-          const canZMove = Array.isArray(moveRequest?.canZMove) && Boolean(moveRequest.canZMove[moveIndex]);
-          setEnginePendingChoice(player, activeIndex, {
-            ...previous,
-            kind: 'move',
-            move: moveName,
-            moveIndex,
-            switchTo: null,
-            target: null,
-            z: previous.z && canZMove,
-            mega: previous.mega && Boolean(moveRequest?.canMegaEvo),
-            tera: previous.tera && Boolean(moveRequest?.canTerastallize),
-            dynamax: previous.dynamax && Boolean(moveRequest?.canDynamax),
-          }, battle);
+          const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle);
+          if (!nextChoice) return;
+          setEnginePendingChoice(player, activeIndex, nextChoice, battle);
           renderBattle();
         });
       }
@@ -4472,56 +4536,43 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
     const toggles = document.createElement('div');
     toggles.className = 'toggle-row';
 
-    if (moveRequest?.canTerastallize) {
+    if (!forcedContinuation && moveRequest?.canTerastallize) {
       const teraBtn = document.createElement('button');
       teraBtn.type = 'button';
       teraBtn.className = `toggle-pill ${choice.tera ? 'active' : ''}`;
       teraBtn.textContent = `테라스탈 / Terastallize (${displayType(moveRequest.canTerastallize)})`;
       teraBtn.addEventListener('click', () => {
-        const previous = getEngineDraftChoice(player, activeIndex, battle);
-        setEnginePendingChoice(player, activeIndex, {
-          ...previous,
-          tera: !previous.tera,
-        }, battle);
+        if (!toggleEngineDraftFlag(player, activeIndex, 'tera', battle)) return;
         renderBattle();
       });
       toggles.appendChild(teraBtn);
     }
 
-    if (moveRequest?.canMegaEvo) {
+    if (!forcedContinuation && moveRequest?.canMegaEvo) {
       const megaBtn = document.createElement('button');
       megaBtn.type = 'button';
       megaBtn.className = `toggle-pill ${choice.mega ? 'active' : ''}`;
       megaBtn.textContent = '메가진화 / Mega Evolution';
       megaBtn.addEventListener('click', () => {
-        const previous = getEngineDraftChoice(player, activeIndex, battle);
-        setEnginePendingChoice(player, activeIndex, {
-          ...previous,
-          mega: !previous.mega,
-        }, battle);
+        if (!toggleEngineDraftFlag(player, activeIndex, 'mega', battle)) return;
         renderBattle();
       });
       toggles.appendChild(megaBtn);
     }
 
-    if (moveRequest?.canDynamax && runtimeSupportsDynamax()) {
+    if (!forcedContinuation && moveRequest?.canDynamax && runtimeSupportsDynamax()) {
       const dynaBtn = document.createElement('button');
       dynaBtn.type = 'button';
       dynaBtn.className = `toggle-pill ${choice.dynamax ? 'active' : ''}`;
       dynaBtn.textContent = '다이맥스 / Dynamax';
       dynaBtn.addEventListener('click', () => {
-        const previous = getEngineDraftChoice(player, activeIndex, battle);
-        setEnginePendingChoice(player, activeIndex, {
-          ...previous,
-          dynamax: !previous.dynamax,
-          z: previous.z && previous.dynamax ? false : previous.z,
-        }, battle);
+        if (!toggleEngineDraftFlag(player, activeIndex, 'dynamax', battle)) return;
         renderBattle();
       });
       toggles.appendChild(dynaBtn);
     }
 
-    if (choice.kind === 'move' && Number.isInteger(choice.moveIndex)) {
+    if (!forcedContinuation && choice.kind === 'move' && Number.isInteger(choice.moveIndex)) {
       const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[choice.moveIndex] : null;
       if (zInfo) {
         const zBtn = document.createElement('button');
@@ -4529,19 +4580,14 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
         zBtn.className = `toggle-pill ${choice.z ? 'active' : ''}`;
         zBtn.textContent = `Z기술 / Z-Move (${displayMoveName(zInfo.move || 'Z-Move')})`;
         zBtn.addEventListener('click', () => {
-          const previous = getEngineDraftChoice(player, activeIndex, battle);
-          setEnginePendingChoice(player, activeIndex, {
-            ...previous,
-            z: !previous.z,
-            dynamax: previous.dynamax && previous.z ? false : previous.dynamax,
-          }, battle);
+          if (!toggleEngineDraftFlag(player, activeIndex, 'z', battle)) return;
           renderBattle();
         });
         toggles.appendChild(zBtn);
       }
     }
 
-    const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
+    const canSwitch = !forcedContinuation && canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
     const switchBtn = document.createElement('button');
     switchBtn.type = 'button';
     switchBtn.className = `toggle-pill ${choice.kind === 'switch' ? 'active' : ''}`;
@@ -4758,6 +4804,7 @@ function renderPendingChoices() {
 }
 async function resolveEngineTurn(battle = state.battle) {
   pruneEnginePendingChoices(battle);
+  seedEngineForcedPendingChoices(battle);
   const nextSnapshot = await submitShowdownLocalSinglesChoices({battleId: battle.id, battle});
   state.battle = adoptEngineBattleSnapshot(nextSnapshot);
 }

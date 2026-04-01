@@ -44,6 +44,23 @@ function getPendingChoiceForSide(battle, sideId, slot) {
   return battle?.pendingChoices?.[sideId]?.[slot] || null;
 }
 
+function getForcedChoiceFromRequest(request) {
+  const moves = Array.isArray(request?.active?.[0]?.moves) ? request.active[0].moves : [];
+  if (moves.length !== 1) return null;
+  const onlyMove = moves[0] || null;
+  if (!onlyMove || onlyMove.disabled || !toId(onlyMove.id || onlyMove.move || '')) return null;
+  return {
+    kind: 'move',
+    move: onlyMove.move || 'Locked move',
+    moveIndex: 0,
+    target: null,
+    mega: false,
+    tera: false,
+    z: false,
+    dynamax: false,
+  };
+}
+
 export async function probeShowdownLocalServer() {
   try {
     return await requestJson('/api/engine/status', {method: 'GET'});
@@ -72,7 +89,7 @@ export async function submitShowdownLocalSinglesChoices({battleId, battle}) {
       throw new Error(`Player ${playerIndex + 1} has an actionable request but no active slot.`);
     }
     const slot = actionSlots[0];
-    const choice = getPendingChoiceForSide(battle, sideId, slot);
+    const choice = getPendingChoiceForSide(battle, sideId, slot) || getForcedChoiceFromRequest(request);
     if (!choice) {
       throw new Error(`Player ${playerIndex + 1} choice is missing.`);
     }
