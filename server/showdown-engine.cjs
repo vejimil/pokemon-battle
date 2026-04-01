@@ -403,7 +403,7 @@ class ShowdownLocalSinglesSession {
             nickname: ui.nickname || (pokemon.name !== speciesName ? pokemon.name : ''),
             spriteId,
             spriteAutoId: ui.startSpriteId || spriteId,
-            shiny: Boolean(ui.shiny),
+            shiny: Boolean((pokemon?.set && typeof pokemon.set.shiny !== 'undefined') ? pokemon.set.shiny : ui.shiny),
             level: pokemon.level,
             nature: ui.nature || '',
             evs: ui.evs || {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0},

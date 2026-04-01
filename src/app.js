@@ -4052,16 +4052,28 @@ function getEngineMoveRequest(player, requestSlot = 0, battle = state.battle) {
   const request = getEngineRequestForPlayer(player, battle);
   return Array.isArray(request?.active) ? (request.active[requestSlot] || null) : null;
 }
-function getEngineForcedMoveChoice(moveRequest) {
+function isEngineSingleMoveRequest(moveRequest) {
   const moves = Array.isArray(moveRequest?.moves) ? moveRequest.moves : [];
-  if (moves.length !== 1) return null;
+  if (moves.length !== 1) return false;
   const onlyMove = moves[0] || null;
-  const moveId = toId(onlyMove?.id || onlyMove?.move || '');
-  if (moveId !== 'recharge') return null;
+  return Boolean(onlyMove && !onlyMove.disabled && toId(onlyMove?.id || onlyMove?.move || ''));
+}
+function isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex = 0) {
+  if (!moveInfo || moveInfo.disabled) return false;
+  const isLockedSingleMove = isEngineSingleMoveRequest(moveRequest) && moveIndex === 0;
+  if (isLockedSingleMove) return true;
+  const moveId = toId(moveInfo?.id || moveInfo?.move || '');
+  if (moveId === 'recharge') return true;
+  if (!Number.isFinite(moveInfo?.pp)) return false;
+  return moveInfo.pp > 0;
+}
+function getEngineForcedMoveChoice(moveRequest) {
+  if (!isEngineSingleMoveRequest(moveRequest)) return null;
+  const onlyMove = moveRequest.moves[0] || null;
   return {
     ...createEmptyBattleChoice(),
     kind: 'move',
-    move: onlyMove?.move || 'Recharge',
+    move: onlyMove?.move || 'Locked move',
     moveIndex: 0,
   };
 }
@@ -4140,9 +4152,7 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
 
   const moveInfo = Array.isArray(moveRequest?.moves) ? (moveRequest.moves[rawChoice.moveIndex] || null) : null;
   const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[rawChoice.moveIndex] : null;
-  const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : 0;
-  const isRechargeChoice = toId(moveInfo?.id || moveInfo?.move || '') === 'recharge';
-  if (!moveInfo || moveInfo.disabled || (!isRechargeChoice && pp <= 0)) {
+  if (!isEngineMoveButtonSelectable(moveRequest, moveInfo, rawChoice.moveIndex)) {
     clearEnginePendingChoice(player, slot, battle);
     return createEmptyBattleChoice();
   }
@@ -4393,14 +4403,25 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? 0);
       const maxPp = Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? 0);
       const disabled = Boolean(moveInfo?.disabled);
-      const isRechargeMove = toId(moveInfo?.id || moveInfo?.move || '') === 'recharge';
-      btn.disabled = disabled || (!isRechargeMove && pp <= 0);
+      const isLockedSingleMove = isEngineSingleMoveRequest(moveRequest) && moveIndex === 0;
+      const selectable = isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex);
+      btn.disabled = !selectable;
       if (btn.disabled) btn.classList.add('disabled');
-      btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>불러오는 중… / Loading… · PP ${pp}/${maxPp}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
+      const ppLabel = Number.isFinite(moveInfo?.pp) || Number.isFinite(slotInfo?.pp)
+        ? `PP ${pp}/${maxPp}`
+        : (isLockedSingleMove
+          ? lang('연속 행동 / Locked continuation', 'Locked continuation')
+          : 'PP —');
+      btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>불러오는 중… / Loading… · ${ppLabel}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
       Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
         if (!btn.isConnected) return;
         const preview = moveData ? describeMoveForBattle(mon, moveData, choice) : null;
-        btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>${displayType(preview?.type || moveData?.type || '')} · ${preview?.category || moveData?.category || '—'}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · PP ${pp}/${maxPp}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
+        const ppLabel = Number.isFinite(moveInfo?.pp) || Number.isFinite(slotInfo?.pp)
+          ? `PP ${pp}/${maxPp}`
+          : (isLockedSingleMove
+            ? lang('연속 행동 / Locked continuation', 'Locked continuation')
+            : 'PP —');
+        btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>${displayType(preview?.type || moveData?.type || '')} · ${preview?.category || moveData?.category || '—'}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · ${ppLabel}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
       });
       if (!btn.disabled) {
         btn.addEventListener('click', () => {
