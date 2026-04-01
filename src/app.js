@@ -161,6 +161,8 @@ const imageInfoCache = new Map();
 
 const FORM_ASSET_OVERRIDES = Object.freeze({
   'Eevee-Gmax': 'EEVEE_2',
+  'Xerneas': 'XERNEAS_1',
+  'Xerneas-Neutral': 'XERNEAS',
   'Greninja-Bond': 'GRENINJA_2',
   'Greninja-Ash': 'GRENINJA_2',
   'Greninja-Mega': 'GRENINJA_3',
@@ -426,7 +428,7 @@ function buildAssetDex() {
         requirementLocked,
       };
     });
-    const formChoices = allFormChoices.filter(choice => choice.selectableManual || choice.speciesName === baseSpeciesName);
+    const formChoices = allFormChoices.filter(choice => (choice.selectableManual || choice.speciesName === baseSpeciesName) && choice.hasAsset);
 
     const assetChoices = [];
     if (assetFamily.baseExists) {
@@ -466,7 +468,7 @@ function buildAssetDex() {
       assetDex.familyBySpecies.set(speciesName, family);
       if (speciesToAsset.has(speciesName)) assetDex.speciesToAsset.set(speciesName, speciesToAsset.get(speciesName));
       const speciesData = state.dex.species.get(speciesName);
-      if (speciesData?.exists && !speciesData.battleOnly) {
+      if (speciesData?.exists && !speciesData.battleOnly && speciesToAsset.has(speciesData.name)) {
         assetDex.allSpeciesChoices.push(makeChoice('species', speciesData.name, {
           family: baseSpeciesName,
           assetId: speciesToAsset.get(speciesData.name) || '',
@@ -477,7 +479,7 @@ function buildAssetDex() {
 
   const baseChoices = Array.from(assetDex.families.values())
     .map(family => makeChoice('species', family.baseSpeciesName, {
-      assetId: family.assetBaseId,
+      assetId: family.speciesToAsset.get(family.baseSpeciesName) || family.assetBaseId,
       family: family.baseSpeciesName,
       formSearchTerms: uniqueNames((family.allFormChoices || []).flatMap(choice => [
         choice?.speciesName,
@@ -538,7 +540,7 @@ function getFormChoicesForSpecies(baseSpeciesName) {
   if (!family) return [];
   return (family.allFormChoices || family.formChoices || []).filter(choice => {
     const speciesData = state.dex?.species?.get(choice.speciesName);
-    return isSelectableManualBuilderForm(speciesData, family.baseSpeciesName);
+    return choice.hasAsset && isSelectableManualBuilderForm(speciesData, family.baseSpeciesName);
   });
 }
 function sanitizeManualFormSpecies(mon, baseSpeciesName = '') {
@@ -592,12 +594,11 @@ function renderFormSelectors(mon) {
   const family = getFamilyForSpecies(mon.manualFormSpecies || mon.baseSpecies || mon.formSpecies || mon.species);
   const formChoices = family ? getFormChoicesForSpecies(family.baseSpeciesName) : [];
   els.formeSelect.innerHTML = formChoices.length
-    ? formChoices.map(choice => `<option value="${choice.speciesName}">${choice.display}${choice.hasAsset ? '' : ' · 에셋 없음 / no sprite'}</option>`).join('\n')
+    ? formChoices.map(choice => `<option value="${choice.speciesName}">${choice.display}</option>`).join('\n')
     : '<option value="">기본 폼만 사용 / Base form only</option>';
   els.formeSelect.disabled = !formChoices.length;
-  const selectedForm = formChoices.find(choice => toId(choice.speciesName) === toId(mon.manualFormSpecies || mon.baseSpecies || mon.species))
-    ? formChoices.find(choice => toId(choice.speciesName) === toId(mon.manualFormSpecies || mon.baseSpecies || mon.species)).speciesName
-    : (formChoices[0]?.speciesName || '');
+  const matchingChoice = formChoices.find(choice => toId(choice.speciesName) === toId(mon.manualFormSpecies || mon.baseSpecies || mon.species));
+  const selectedForm = matchingChoice ? matchingChoice.speciesName : (formChoices[0]?.speciesName || '');
   if (selectedForm) els.formeSelect.value = selectedForm;
   else if (!formChoices.length) els.formeSelect.value = '';
 }
@@ -1043,6 +1044,31 @@ function previewMoveForUi(mon, move) {
   }
   if (previewMon?.terastallized && teraPowerBoostApplies(previewMon, {...move, type})) power = Math.max(power, 60);
   return {name, type, category, power, accuracy};
+}
+function describeMoveForBattle(mon, move, choice = null) {
+  if (!move) return null;
+  const previewMon = {
+    ...(mon || {}),
+    terastallized: Boolean(choice?.tera || mon?.terastallized),
+    dynamaxed: Boolean(choice?.dynamax || mon?.dynamaxed),
+    gigantamaxed: Boolean(mon?.gigantamaxed),
+  };
+  let preview = previewMoveForUi(previewMon, move) || {
+    name: move.name,
+    type: move.type,
+    category: move.category,
+    power: move.power || 0,
+    accuracy: move.accuracy,
+  };
+  if (choice?.z && move.category !== 'status') {
+    preview = {
+      ...preview,
+      name: move.zMoveName || move.zMove?.name || preview.name,
+      power: move.zBasePower || getDefaultZMovePower(move.power || 0),
+      accuracy: 100,
+    };
+  }
+  return preview;
 }
 function canUseZMoveWithMove(mon, side, move, item) {
   if (!mon || !side || !move || !item) return false;
@@ -2850,6 +2876,8 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
   clearSpriteAnimation(container);
   container.innerHTML = '';
   container.className = `sprite-shell ${size}`;
+  const renderToken = (Number(container._spriteRenderToken || 0) + 1);
+  container._spriteRenderToken = renderToken;
   if (!spriteId) {
     container.textContent = '—';
     return;
@@ -2857,6 +2885,7 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
   const url = spritePath(spriteId, facing, shiny);
   try {
     const info = await ensureImageInfo(url);
+    if (container._spriteRenderToken !== renderToken) return;
     const canvas = document.createElement('canvas');
     const scale = size === 'large' ? Math.min(2.4, 190 / info.frame) : Math.min(1.4, 56 / info.frame);
     const width = Math.max(24, Math.floor(info.frame * scale));
@@ -2869,8 +2898,10 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
     ctx.imageSmoothingEnabled = false;
     const img = new Image();
     img.onload = () => {
+      if (container._spriteRenderToken !== renderToken) return;
       let frame = 0;
       const draw = () => {
+        if (container._spriteRenderToken !== renderToken) return;
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(img, frame * info.frame, 0, info.frame, info.height, 0, 0, width, height);
         frame = (frame + 1) % info.count;
@@ -2878,7 +2909,7 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
       draw();
       if (info.count > 1) {
         const timer = setInterval(() => {
-          if (!container.isConnected || canvas !== container.firstChild) {
+          if (!container.isConnected || canvas !== container.firstChild || container._spriteRenderToken !== renderToken) {
             clearInterval(timer);
             return;
           }
@@ -2888,6 +2919,7 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
       }
     };
     img.src = url;
+    if (container._spriteRenderToken !== renderToken) return;
     container.appendChild(canvas);
   } catch (error) {
     container.textContent = 'Sprite missing';
@@ -3964,12 +3996,33 @@ function getEngineMoveRequest(player, requestSlot = 0, battle = state.battle) {
 }
 function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   const rawChoice = getEnginePendingChoice(player, slot, battle);
-  if (!rawChoice?.kind) return createEmptyBattleChoice();
   const request = getEngineRequestForPlayer(player, battle);
   const requestSlot = getEngineRequestSlotForActiveIndex(player, slot, battle);
+  if (!rawChoice) return createEmptyBattleChoice();
   if (!isEngineActionableRequest(request) || requestSlot < 0) {
     clearEnginePendingChoice(player, slot, battle);
     return createEmptyBattleChoice();
+  }
+
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  if (!rawChoice.kind) {
+    if (isEngineForceSwitchRequest(request)) {
+      clearEnginePendingChoice(player, slot, battle);
+      return createEmptyBattleChoice();
+    }
+    const sanitizedDraft = {
+      ...createEmptyBattleChoice(),
+      mega: Boolean(rawChoice.mega && moveRequest?.canMegaEvo),
+      tera: Boolean(rawChoice.tera && moveRequest?.canTerastallize),
+      z: false,
+      dynamax: Boolean(rawChoice.dynamax && moveRequest?.canDynamax && runtimeSupportsDynamax()),
+    };
+    if (!sanitizedDraft.mega && !sanitizedDraft.tera && !sanitizedDraft.dynamax) {
+      clearEnginePendingChoice(player, slot, battle);
+      return createEmptyBattleChoice();
+    }
+    setEnginePendingChoice(player, slot, sanitizedDraft, battle);
+    return sanitizedDraft;
   }
 
   const switchOptions = getEngineSwitchOptions(player, slot, battle);
@@ -3999,7 +4052,6 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
     return createEmptyBattleChoice();
   }
 
-  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const moveInfo = Array.isArray(moveRequest?.moves) ? (moveRequest.moves[rawChoice.moveIndex] || null) : null;
   const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[rawChoice.moveIndex] : null;
   const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : 0;

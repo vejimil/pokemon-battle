@@ -63,6 +63,13 @@ function safeJoin(base, target) {
 
 function serveStatic(req, res) {
   let requestPath = req.url.split('?')[0];
+  try {
+    requestPath = decodeURIComponent(requestPath);
+  } catch (error) {
+    res.writeHead(400, {'Content-Type': 'text/plain; charset=utf-8'});
+    res.end('Bad request');
+    return;
+  }
   if (requestPath === '/') requestPath = '/index.html';
   const resolved = safeJoin(rootDir, requestPath);
   if (!resolved) {
