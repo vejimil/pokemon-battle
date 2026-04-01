@@ -171,6 +171,68 @@ function mapSideConditionTurns(sideConditions = {}) {
   };
 }
 
+function buildUiSourceMatchKey(entry = {}) {
+  const evs = entry?.evs || {};
+  const ivs = entry?.ivs || {};
+  return JSON.stringify({
+    species: toId(entry?.species || ''),
+    name: toId(entry?.name || entry?.nickname || entry?.species || ''),
+    item: toId(entry?.item || ''),
+    ability: toId(entry?.ability || ''),
+    moves: Array.isArray(entry?.moves) ? entry.moves.map(move => toId(move)).join('|') : '',
+    nature: toId(entry?.nature || ''),
+    gender: toId(entry?.gender || ''),
+    level: Number(entry?.level || 100),
+    shiny: Boolean(entry?.shiny),
+    teraType: toId(entry?.teraType || ''),
+    evs: ['hp', 'atk', 'def', 'spa', 'spd', 'spe'].map(stat => Number(evs?.[stat] || 0)).join(','),
+    ivs: ['hp', 'atk', 'def', 'spa', 'spd', 'spe'].map(stat => Number(ivs?.[stat] ?? 31)).join(','),
+  });
+}
+
+function buildPokemonUiMatchKey(pokemon) {
+  return buildUiSourceMatchKey({
+    species: pokemon?.set?.species || pokemon?.species?.name || '',
+    name: pokemon?.name || pokemon?.set?.name || pokemon?.species?.name || '',
+    item: pokemon?.item || pokemon?.set?.item || '',
+    ability: pokemon?.baseAbility || pokemon?.ability || pokemon?.set?.ability || '',
+    moves: Array.isArray(pokemon?.set?.moves) ? pokemon.set.moves : pokemon?.baseMoveSlots?.map(slot => slot?.move || slot?.id) || [],
+    nature: pokemon?.set?.nature || '',
+    gender: pokemon?.gender || pokemon?.set?.gender || '',
+    level: Number(pokemon?.level || pokemon?.set?.level || 100),
+    shiny: Boolean(pokemon?.set?.shiny),
+    teraType: pokemon?.teraType || pokemon?.set?.teraType || '',
+    evs: pokemon?.set?.evs || {},
+    ivs: pokemon?.set?.ivs || {},
+  });
+}
+
+function createUiSourceMatcher(uiTeam = []) {
+  const entries = uiTeam.map((sourceMon, sourceIndex) => ({
+    sourceMon,
+    sourceIndex,
+    key: buildUiSourceMatchKey(sourceMon),
+    used: false,
+  }));
+
+  return function matchUiSourceForPokemon(pokemon) {
+    const exactKey = buildPokemonUiMatchKey(pokemon);
+    let entry = entries.find(candidate => !candidate.used && candidate.key === exactKey) || null;
+    if (!entry) {
+      const speciesId = toId(pokemon?.species?.name || pokemon?.set?.species || '');
+      const nameId = toId(pokemon?.name || pokemon?.set?.name || pokemon?.species?.name || '');
+      entry = entries.find(candidate => {
+        if (candidate.used) return false;
+        const source = candidate.sourceMon || {};
+        return toId(source.species || '') === speciesId && toId(source.name || source.nickname || source.species || '') === nameId;
+      }) || null;
+    }
+    if (!entry) entry = entries.find(candidate => !candidate.used) || null;
+    if (entry) entry.used = true;
+    return entry?.sourceMon || {};
+  };
+}
+
 class ShowdownLocalSinglesSession {
   constructor(payload = {}) {
     this.id = randomUUID();
@@ -289,9 +351,10 @@ class ShowdownLocalSinglesSession {
     const battle = this.stream.battle;
     const players = battle.sides.slice(0, 2).map((side, playerIndex) => {
       const uiTeam = this.players[playerIndex]?.team || [];
+      const matchUiSourceForPokemon = createUiSourceMatcher(uiTeam);
       const activeIndices = side.active.map(active => side.pokemon.indexOf(active)).filter(index => index >= 0);
       const team = side.pokemon.map((pokemon, teamIndex) => {
-        const sourceMon = uiTeam[teamIndex] || {};
+        const sourceMon = matchUiSourceForPokemon(pokemon);
         const ui = sourceMon.ui || sourceMon || {};
         const dexItem = battle.dex.items.get(pokemon.item || ui.item || '');
         const dexAbility = battle.dex.abilities.get(pokemon.ability || ui.ability || '');

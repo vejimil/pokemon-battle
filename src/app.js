@@ -3994,17 +3994,35 @@ function getEngineMoveRequest(player, requestSlot = 0, battle = state.battle) {
   const request = getEngineRequestForPlayer(player, battle);
   return Array.isArray(request?.active) ? (request.active[requestSlot] || null) : null;
 }
+function getEngineForcedMoveChoice(moveRequest) {
+  const moves = Array.isArray(moveRequest?.moves) ? moveRequest.moves : [];
+  if (moves.length !== 1) return null;
+  const onlyMove = moves[0] || null;
+  const moveId = toId(onlyMove?.id || onlyMove?.move || '');
+  if (moveId !== 'recharge') return null;
+  return {
+    ...createEmptyBattleChoice(),
+    kind: 'move',
+    move: onlyMove?.move || 'Recharge',
+    moveIndex: 0,
+  };
+}
 function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   const rawChoice = getEnginePendingChoice(player, slot, battle);
   const request = getEngineRequestForPlayer(player, battle);
   const requestSlot = getEngineRequestSlotForActiveIndex(player, slot, battle);
-  if (!rawChoice) return createEmptyBattleChoice();
   if (!isEngineActionableRequest(request) || requestSlot < 0) {
     clearEnginePendingChoice(player, slot, battle);
     return createEmptyBattleChoice();
   }
 
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  const forcedMoveChoice = getEngineForcedMoveChoice(moveRequest);
+  if (forcedMoveChoice) {
+    setEnginePendingChoice(player, slot, forcedMoveChoice, battle);
+    return forcedMoveChoice;
+  }
+  if (!rawChoice) return createEmptyBattleChoice();
   if (!rawChoice.kind) {
     if (isEngineForceSwitchRequest(request)) {
       clearEnginePendingChoice(player, slot, battle);
@@ -4038,7 +4056,17 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   }
 
   if (rawChoice.kind === 'switch') {
-    if (!canEngineSwitchNormally(player, requestSlot, battle) || !hasSwitchTarget) {
+    const switchOptionsExist = switchOptions.length > 0;
+    if (!canEngineSwitchNormally(player, requestSlot, battle) || !switchOptionsExist) {
+      clearEnginePendingChoice(player, slot, battle);
+      return createEmptyBattleChoice();
+    }
+    if (!Number.isInteger(rawChoice.switchTo)) {
+      const sanitizedDraft = {...createEmptyBattleChoice(), kind: 'switch', switchTo: null};
+      setEnginePendingChoice(player, slot, sanitizedDraft, battle);
+      return sanitizedDraft;
+    }
+    if (!hasSwitchTarget) {
       clearEnginePendingChoice(player, slot, battle);
       return createEmptyBattleChoice();
     }
@@ -4055,7 +4083,8 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   const moveInfo = Array.isArray(moveRequest?.moves) ? (moveRequest.moves[rawChoice.moveIndex] || null) : null;
   const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[rawChoice.moveIndex] : null;
   const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : 0;
-  if (!moveInfo || moveInfo.disabled || pp <= 0) {
+  const isRechargeChoice = toId(moveInfo?.id || moveInfo?.move || '') === 'recharge';
+  if (!moveInfo || moveInfo.disabled || (!isRechargeChoice && pp <= 0)) {
     clearEnginePendingChoice(player, slot, battle);
     return createEmptyBattleChoice();
   }
@@ -4131,7 +4160,8 @@ function getEngineChoiceSummary(player, slot, battle = state.battle) {
   const choice = normalizeEnginePendingChoice(player, slot, battle);
   if (!choice?.kind) return lang('대기 중', 'Pending');
   const side = battle?.players?.[player];
-  if (choice.kind === 'switch' && Number.isInteger(choice.switchTo)) {
+  if (choice.kind === 'switch') {
+    if (!Number.isInteger(choice.switchTo)) return lang('교체 대상 선택 중', 'Choosing switch target');
     const target = side?.team?.[choice.switchTo];
     return state.language === 'ko' ? `교체 → ${displaySpeciesName(target?.species || '')}` : `Switch → ${displaySpeciesName(target?.species || '')}`;
   }
@@ -4305,7 +4335,8 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? 0);
       const maxPp = Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? 0);
       const disabled = Boolean(moveInfo?.disabled);
-      btn.disabled = disabled || pp <= 0;
+      const isRechargeMove = toId(moveInfo?.id || moveInfo?.move || '') === 'recharge';
+      btn.disabled = disabled || (!isRechargeMove && pp <= 0);
       if (btn.disabled) btn.classList.add('disabled');
       btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>불러오는 중… / Loading… · PP ${pp}/${maxPp}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
       Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
@@ -4411,7 +4442,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
     const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
     const switchBtn = document.createElement('button');
     switchBtn.type = 'button';
-    switchBtn.className = 'toggle-pill';
+    switchBtn.className = `toggle-pill ${choice.kind === 'switch' ? 'active' : ''}`;
     switchBtn.textContent = '교체 / Switch';
     switchBtn.disabled = !canSwitch;
     switchBtn.addEventListener('click', () => {
