@@ -76,7 +76,7 @@ export async function submitShowdownLocalSinglesChoices({battleId, battle}) {
     if (!choice) {
       throw new Error(`Player ${playerIndex + 1} choice is missing.`);
     }
-    choices[sideId] = serializeChoiceForShowdown(choice);
+    choices[sideId] = serializeChoiceForShowdown(choice, request);
   }
   if (!Object.keys(choices).length) {
     throw new Error('No actionable engine request is pending.');
@@ -88,11 +88,16 @@ export async function submitShowdownLocalSinglesChoices({battleId, battle}) {
   return data.snapshot;
 }
 
-export function serializeChoiceForShowdown(choice) {
+export function serializeChoiceForShowdown(choice, request = null) {
   if (!choice || !choice.kind) throw new Error('Choice is empty.');
   if (choice.kind === 'switch') {
     if (!Number.isInteger(choice.switchTo)) throw new Error('Switch target is missing.');
-    return `switch ${choice.switchTo + 1}`;
+    const requestEntries = Array.isArray(request?.side?.pokemon) ? request.side.pokemon : [];
+    const matchedEntry = requestEntries[choice.switchTo] || requestEntries.find(entry => Number(entry?.teamIndex) === choice.switchTo) || null;
+    const engineOrderIndex = Number.isInteger(matchedEntry?.engineOrderIndex)
+      ? matchedEntry.engineOrderIndex
+      : (Number.isInteger(matchedEntry?.teamIndex) ? matchedEntry.teamIndex : choice.switchTo);
+    return `switch ${engineOrderIndex + 1}`;
   }
   if (choice.kind === 'move') {
     if (!Number.isInteger(choice.moveIndex)) throw new Error('Move index is missing.');

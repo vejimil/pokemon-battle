@@ -229,8 +229,34 @@ function createUiSourceMatcher(uiTeam = []) {
     }
     if (!entry) entry = entries.find(candidate => !candidate.used) || null;
     if (entry) entry.used = true;
-    return entry?.sourceMon || {};
+    return entry || {sourceMon: {}, sourceIndex: -1, key: '', used: false};
   };
+}
+
+function reorderArrayByTargetIndices(items = [], targetIndices = [], fallbackLength = 0) {
+  const size = Math.max(fallbackLength, items.length, targetIndices.reduce((max, index) => (
+    Number.isInteger(index) ? Math.max(max, index + 1) : max
+  ), 0));
+  const out = new Array(size).fill(null);
+  const usedTargets = new Set();
+  const spill = [];
+
+  items.forEach((item, index) => {
+    const targetIndex = targetIndices[index];
+    if (Number.isInteger(targetIndex) && targetIndex >= 0 && !usedTargets.has(targetIndex) && !out[targetIndex]) {
+      out[targetIndex] = item;
+      usedTargets.add(targetIndex);
+      return;
+    }
+    spill.push(item);
+  });
+
+  for (let index = 0; index < out.length && spill.length; index += 1) {
+    if (!out[index]) out[index] = spill.shift();
+  }
+
+  while (spill.length) out.push(spill.shift());
+  return out;
 }
 
 class ShowdownLocalSinglesSession {
@@ -352,10 +378,11 @@ class ShowdownLocalSinglesSession {
     const players = battle.sides.slice(0, 2).map((side, playerIndex) => {
       const uiTeam = this.players[playerIndex]?.team || [];
       const matchUiSourceForPokemon = createUiSourceMatcher(uiTeam);
-      const activeIndices = side.active.map(active => side.pokemon.indexOf(active)).filter(index => index >= 0);
-      const team = side.pokemon.map((pokemon, teamIndex) => {
-        const sourceMon = matchUiSourceForPokemon(pokemon);
+      const mappedEntries = side.pokemon.map((pokemon, engineOrderIndex) => {
+        const match = matchUiSourceForPokemon(pokemon);
+        const sourceMon = match?.sourceMon || {};
         const ui = sourceMon.ui || sourceMon || {};
+        const stableSlot = Number.isInteger(match?.sourceIndex) && match.sourceIndex >= 0 ? match.sourceIndex : engineOrderIndex;
         const dexItem = battle.dex.items.get(pokemon.item || ui.item || '');
         const dexAbility = battle.dex.abilities.get(pokemon.ability || ui.ability || '');
         const speciesName = pokemon.species?.name || ui.displaySpecies || ui.species || '';
@@ -363,75 +390,107 @@ class ShowdownLocalSinglesSession {
           ? ui.megaSpriteId
           : (ui.displaySpecies === speciesName && ui.selectedSpriteId ? ui.selectedSpriteId : (ui.startSpriteId || ui.selectedSpriteId || ''));
         return {
-          id: ui.id || `${playerIndex}-${teamIndex}`,
-          player: playerIndex,
-          slot: teamIndex,
-          species: speciesName,
-          baseSpecies: pokemon.baseSpecies?.name || ui.baseSpecies || speciesName,
-          formSpecies: speciesName,
-          nickname: ui.nickname || (pokemon.name !== speciesName ? pokemon.name : ''),
-          spriteId,
-          spriteAutoId: ui.startSpriteId || spriteId,
-          shiny: Boolean(ui.shiny),
-          level: pokemon.level,
-          nature: ui.nature || '',
-          evs: ui.evs || {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0},
-          ivs: ui.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31},
-          item: dexItem?.exists ? dexItem.name : (ui.item || ''),
-          ability: dexAbility?.exists ? dexAbility.name : (ui.ability || ''),
-          teraType: pokemon.teraType || ui.teraType || '',
-          moves: pokemon.baseMoveSlots.map(slot => battle.dex.moves.get(slot.id)?.name || slot.move),
-          moveSlots: pokemon.moveSlots.map(slot => ({
-            name: battle.dex.moves.get(slot.id)?.name || slot.move,
-            pp: slot.pp,
-            maxPp: slot.maxpp,
-            target: mapTargetHint(slot.target),
-            disabled: Boolean(slot.disabled),
-          })),
-          baseMoves: pokemon.baseMoveSlots.map(slot => battle.dex.moves.get(slot.id)?.name || slot.move),
-          types: pokemon.getTypes().map(type => String(type).toLowerCase()),
-          originalTypes: (pokemon.baseTypes || []).map(type => String(type).toLowerCase()),
-          stats: {
-            hp: pokemon.baseMaxhp,
-            atk: pokemon.storedStats.atk,
-            def: pokemon.storedStats.def,
-            spa: pokemon.storedStats.spa,
-            spd: pokemon.storedStats.spd,
-            spe: pokemon.storedStats.spe,
+          engineOrderIndex,
+          stableSlot,
+          pokemon,
+          mon: {
+            id: ui.id || `${playerIndex}-${stableSlot}`,
+            player: playerIndex,
+            slot: stableSlot,
+            species: speciesName,
+            baseSpecies: pokemon.baseSpecies?.name || ui.baseSpecies || speciesName,
+            formSpecies: speciesName,
+            nickname: ui.nickname || (pokemon.name !== speciesName ? pokemon.name : ''),
+            spriteId,
+            spriteAutoId: ui.startSpriteId || spriteId,
+            shiny: Boolean(ui.shiny),
+            level: pokemon.level,
+            nature: ui.nature || '',
+            evs: ui.evs || {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0},
+            ivs: ui.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31},
+            item: dexItem?.exists ? dexItem.name : (ui.item || ''),
+            ability: dexAbility?.exists ? dexAbility.name : (ui.ability || ''),
+            teraType: pokemon.teraType || ui.teraType || '',
+            moves: pokemon.baseMoveSlots.map(slot => battle.dex.moves.get(slot.id)?.name || slot.move),
+            moveSlots: pokemon.moveSlots.map(slot => ({
+              name: battle.dex.moves.get(slot.id)?.name || slot.move,
+              pp: slot.pp,
+              maxPp: slot.maxpp,
+              target: mapTargetHint(slot.target),
+              disabled: Boolean(slot.disabled),
+            })),
+            baseMoves: pokemon.baseMoveSlots.map(slot => battle.dex.moves.get(slot.id)?.name || slot.move),
+            types: pokemon.getTypes().map(type => String(type).toLowerCase()),
+            originalTypes: (pokemon.baseTypes || []).map(type => String(type).toLowerCase()),
+            stats: {
+              hp: pokemon.baseMaxhp,
+              atk: pokemon.storedStats.atk,
+              def: pokemon.storedStats.def,
+              spa: pokemon.storedStats.spa,
+              spd: pokemon.storedStats.spd,
+              spe: pokemon.storedStats.spe,
+            },
+            baseMaxHp: pokemon.baseMaxhp,
+            maxHp: pokemon.maxhp,
+            hp: Math.max(0, pokemon.hp),
+            boosts: {...pokemon.boosts},
+            status: pokemon.status || '',
+            sleepTurns: Number(pokemon.statusState?.time || 0),
+            toxicCounter: Number(pokemon.statusState?.stage || 0),
+            protect: Boolean(pokemon.volatiles.protect),
+            protectCounter: Number(pokemon.volatiles.protect?.counter || 0),
+            usedProtectMoveThisTurn: toId(pokemon.moveThisTurn) === 'protect',
+            choiceLockMove: '',
+            choiceLockMoveIndex: null,
+            choiceLockSource: '',
+            fainted: Boolean(pokemon.fainted || pokemon.hp <= 0),
+            terastallized: Boolean(pokemon.terastallized),
+            teraUsed: side.pokemon.some(mon => Boolean(mon.terastallized)),
+            dynamaxed: Boolean(pokemon.volatiles.dynamax) || pokemon.maxhp > pokemon.baseMaxhp,
+            dynamaxTurns: Number(pokemon.volatiles.dynamax?.duration || 0),
+            gigantamaxed: Boolean(pokemon.gigantamax),
+            preDynamaxSpriteId: ui.startSpriteId || spriteId,
+            megaUsed: Boolean(pokemon.species?.isMega),
+            gmaxMove: pokemon.canGigantamax || '',
+            volatile: mapVolatiles(pokemon.volatiles),
+            lastMoveUsed: pokemon.lastMoveUsed ? (battle.dex.moves.get(pokemon.lastMoveUsed)?.name || pokemon.lastMoveUsed) : '',
+            lastMoveMeta: null,
+            lastMoveTurn: pokemon.activeTurns || 0,
+            originalData: ui.data || {name: speciesName, baseSpecies: pokemon.baseSpecies?.name || speciesName, types: (pokemon.baseTypes || []).map(type => String(type).toLowerCase()), canGigantamax: pokemon.canGigantamax || ''},
           },
-          baseMaxHp: pokemon.baseMaxhp,
-          maxHp: pokemon.maxhp,
-          hp: Math.max(0, pokemon.hp),
-          boosts: {...pokemon.boosts},
-          status: pokemon.status || '',
-          sleepTurns: Number(pokemon.statusState?.time || 0),
-          toxicCounter: Number(pokemon.statusState?.stage || 0),
-          protect: Boolean(pokemon.volatiles.protect),
-          protectCounter: Number(pokemon.volatiles.protect?.counter || 0),
-          usedProtectMoveThisTurn: toId(pokemon.moveThisTurn) === 'protect',
-          choiceLockMove: '',
-          choiceLockMoveIndex: null,
-          choiceLockSource: '',
-          fainted: Boolean(pokemon.fainted || pokemon.hp <= 0),
-          terastallized: Boolean(pokemon.terastallized),
-          teraUsed: side.pokemon.some(mon => Boolean(mon.terastallized)),
-          dynamaxed: Boolean(pokemon.volatiles.dynamax) || pokemon.maxhp > pokemon.baseMaxhp,
-          dynamaxTurns: Number(pokemon.volatiles.dynamax?.duration || 0),
-          gigantamaxed: Boolean(pokemon.gigantamax),
-          preDynamaxSpriteId: ui.startSpriteId || spriteId,
-          megaUsed: Boolean(pokemon.species?.isMega),
-          gmaxMove: pokemon.canGigantamax || '',
-          volatile: mapVolatiles(pokemon.volatiles),
-          lastMoveUsed: pokemon.lastMoveUsed ? (battle.dex.moves.get(pokemon.lastMoveUsed)?.name || pokemon.lastMoveUsed) : '',
-          lastMoveMeta: null,
-          lastMoveTurn: pokemon.activeTurns || 0,
-          originalData: ui.data || {name: speciesName, baseSpecies: pokemon.baseSpecies?.name || speciesName, types: (pokemon.baseTypes || []).map(type => String(type).toLowerCase()), canGigantamax: pokemon.canGigantamax || ''},
         };
       });
+      const stableSlotsByEngineIndex = mappedEntries.map(entry => entry.stableSlot);
+      const team = reorderArrayByTargetIndices(
+        mappedEntries.map(entry => entry.mon),
+        stableSlotsByEngineIndex,
+        Math.max(uiTeam.length, mappedEntries.length)
+      ).filter(Boolean);
+      const active = side.active
+        .map(activePokemon => mappedEntries.find(entry => entry.pokemon === activePokemon)?.stableSlot ?? -1)
+        .filter(index => index >= 0);
+      const rawRequest = this.requests[`p${playerIndex + 1}`] || null;
+      const request = rawRequest ? {
+        ...rawRequest,
+        side: rawRequest.side ? {
+          ...rawRequest.side,
+          pokemon: reorderArrayByTargetIndices(
+            Array.isArray(rawRequest.side.pokemon)
+              ? rawRequest.side.pokemon.map((entry, engineOrderIndex) => ({
+                ...entry,
+                teamIndex: stableSlotsByEngineIndex[engineOrderIndex] ?? engineOrderIndex,
+                engineOrderIndex,
+              }))
+              : [],
+            stableSlotsByEngineIndex,
+            team.length
+          ).filter(Boolean),
+        } : rawRequest.side,
+      } : null;
       return {
         name: side.name,
         team,
-        active: activeIndices,
+        active,
         choices: {},
         mustSwitch: [],
         megaUsed: team.some(mon => mon.megaUsed),
@@ -440,7 +499,7 @@ class ShowdownLocalSinglesSession {
         dynamaxUsed: false,
         hazards: mapHazards(side.sideConditions),
         sideConditions: mapSideConditionTurns(side.sideConditions),
-        request: this.requests[`p${playerIndex + 1}`] || null,
+        request,
       };
     });
 
