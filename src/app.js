@@ -383,6 +383,17 @@ function buildAssetDex() {
     if (!isDexSupported(baseEntry)) continue;
     const familySpeciesNames = uniqueNames([baseSpeciesName, ...(speciesByBase.get(baseSpeciesName) || [])]);
     const orderedForms = buildFamilyFormNames(baseSpeciesName, familySpeciesNames, baseEntry);
+    const orderedSupportedForms = orderedForms.filter(speciesName => isDexSupported(state.dex.species.get(speciesName)));
+    const manualAssignableForms = orderedSupportedForms.filter(speciesName => {
+      const speciesData = state.dex.species.get(speciesName);
+      return isSelectableManualBuilderForm(speciesData, baseSpeciesName);
+    });
+    const autoAssignableForms = orderedSupportedForms.filter(speciesName => {
+      const speciesData = state.dex.species.get(speciesName);
+      return !manualAssignableForms.includes(speciesName) && isAutoResolvedBuilderForm(speciesData);
+    });
+    const hiddenAssignableForms = orderedSupportedForms.filter(speciesName => !manualAssignableForms.includes(speciesName) && !autoAssignableForms.includes(speciesName));
+    const assetAssignmentOrder = uniqueNames([...manualAssignableForms, ...autoAssignableForms, ...hiddenAssignableForms]);
     const speciesToAsset = new Map();
     const assetToSpecies = new Map();
 
@@ -396,7 +407,7 @@ function buildAssetDex() {
         .sort((a, b) => a[0] - b[0])
         .map(([, assetId]) => assetId)
         .filter(assetId => usableAssetIds.has(assetId));
-      for (const [index, formName] of orderedForms.entries()) {
+      for (const [index, formName] of assetAssignmentOrder.entries()) {
         const assetId = numericAssetIds[index];
         if (assetId) {
           speciesToAsset.set(formName, assetId);
@@ -415,9 +426,9 @@ function buildAssetDex() {
       assetToSpecies.set(assetId, speciesName);
     }
 
-    const unresolvedFormOrder = orderedForms.filter(name => !speciesToAsset.has(name));
+    const unresolvedFormOrder = assetAssignmentOrder.filter(name => !speciesToAsset.has(name));
     const usableNumericAssetIds = Array.from(assetFamily.numeric.values()).filter(assetId => usableAssetIds.has(assetId));
-    if (orderedForms.length === 1 && unresolvedFormOrder.length === 1 && usableNumericAssetIds.length === 1) {
+    if (assetAssignmentOrder.length === 1 && unresolvedFormOrder.length === 1 && usableNumericAssetIds.length === 1) {
       const onlyAssetId = usableNumericAssetIds[0];
       speciesToAsset.set(unresolvedFormOrder[0], onlyAssetId);
       assetToSpecies.set(onlyAssetId, unresolvedFormOrder[0]);
@@ -445,7 +456,8 @@ function buildAssetDex() {
         };
       })
       .filter(choice => choice.supported && (choice.hasAsset || choice.speciesName === baseSpeciesName));
-    const formChoices = allFormChoices.filter(choice => choice.hasAsset && choice.searchableManual && choice.speciesName !== baseSpeciesName);
+    const manualFormChoices = allFormChoices.filter(choice => choice.hasAsset && choice.selectableManual);
+    const formChoices = manualFormChoices.filter(choice => choice.speciesName !== baseSpeciesName);
     const searchableFormChoices = allFormChoices.filter(choice => choice.hasAsset && choice.searchableManual);
 
     if (!speciesToAsset.get(baseSpeciesName)) {
@@ -483,6 +495,7 @@ function buildAssetDex() {
       baseSpeciesName,
       assetFamily,
       formChoices,
+      manualFormChoices,
       allFormChoices,
       searchableFormChoices,
       assetChoices,
@@ -567,32 +580,45 @@ function isAutoResolvedItemBuilderForm(speciesData) {
   if (!hasRequiredItem) return false;
   return Boolean(speciesData?.changesFrom || (speciesData?.baseSpecies && speciesData.baseSpecies !== speciesData.name));
 }
+function isAutoResolvedMoveBuilderForm(speciesData) {
+  if (!isDexSupported(speciesData)) return false;
+  if (isBattleOnlyBuilderForm(speciesData)) return false;
+  if (!speciesData?.requiredMove) return false;
+  return Boolean(speciesData?.changesFrom || (speciesData?.baseSpecies && speciesData.baseSpecies !== speciesData.name));
+}
+function isAutoResolvedBuilderForm(speciesData) {
+  return isAutoResolvedItemBuilderForm(speciesData) || isAutoResolvedMoveBuilderForm(speciesData);
+}
 function isSelectableManualBuilderForm(speciesData, baseSpeciesName = '') {
   if (!isDexSupported(speciesData)) return false;
   if (isBattleOnlyBuilderForm(speciesData)) return false;
   if ((speciesData.baseSpecies || speciesData.name) === speciesData.name) return true;
   if ((speciesData.name || '') === baseSpeciesName) return true;
+  if (isAutoResolvedBuilderForm(speciesData)) return false;
   return !isRequirementLockedBuilderForm(speciesData);
 }
 function isSearchableManualBuilderForm(speciesData, baseSpeciesName = '') {
   return isSelectableManualBuilderForm(speciesData, baseSpeciesName);
 }
-function getFormChoicesForSpecies(baseSpeciesName) {
+function getFormChoicesForSpecies(baseSpeciesName, {includeBase = true} = {}) {
   const family = getFamilyForSpecies(baseSpeciesName);
   if (!family) return [];
-  return [...(family.formChoices || [])];
+  const choices = includeBase ? (family.manualFormChoices || family.formChoices || []) : (family.formChoices || []);
+  return [...choices];
 }
 function sanitizeManualFormSpecies(mon, baseSpeciesName = '') {
-  const choices = getFormChoicesForSpecies(baseSpeciesName);
+  const choices = getFormChoicesForSpecies(baseSpeciesName, {includeBase: true});
   const raw = normalizeLocalizedInput('species', mon?.manualFormSpecies || mon?.formSpecies || mon?.species || baseSpeciesName, state.allSpeciesChoices || state.speciesChoices || []);
   const matched = choices.find(choice => toId(choice.speciesName) === toId(raw));
   return matched?.speciesName || baseSpeciesName;
 }
 function matchesAutomaticFormRequirements(speciesData, mon) {
-  if (!isAutoResolvedItemBuilderForm(speciesData)) return false;
+  if (!isAutoResolvedBuilderForm(speciesData)) return false;
   const requiredItems = [speciesData.requiredItem, ...(speciesData.requiredItems || [])].filter(Boolean);
-  if (!requiredItems.length) return false;
-  return requiredItems.some(item => toId(item) === toId(mon?.item));
+  if (requiredItems.length && !requiredItems.some(item => toId(item) === toId(mon?.item))) return false;
+  const requiredMove = speciesData?.requiredMove || '';
+  if (requiredMove && !((mon?.moves || []).some(move => toId(move) === toId(requiredMove)))) return false;
+  return Boolean(requiredItems.length || requiredMove);
 }
 function resolveAutomaticBuilderSpecies(mon, manualSpecies = '') {
   const family = getFamilyForSpecies(manualSpecies || mon?.baseSpecies || mon?.species || '');
@@ -622,15 +648,16 @@ function syncMonSprite(mon) {
 function renderFormSelectors(mon) {
   if (!els.formeSelect) return;
   const family = getFamilyForSpecies(mon.manualFormSpecies || mon.baseSpecies || mon.formSpecies || mon.species);
-  const formChoices = family ? getFormChoicesForSpecies(family.baseSpeciesName) : [];
-  els.formeSelect.innerHTML = formChoices.length
+  const formChoices = family ? getFormChoicesForSpecies(family.baseSpeciesName, {includeBase: true}) : [];
+  const hasAlternates = formChoices.length > 1;
+  els.formeSelect.innerHTML = hasAlternates
     ? formChoices.map(choice => `<option value="${choice.speciesName}">${choice.display}</option>`).join('\n')
     : '<option value="">기본 폼만 사용 / Base form only</option>';
-  els.formeSelect.disabled = !formChoices.length;
+  els.formeSelect.disabled = !hasAlternates;
   const matchingChoice = formChoices.find(choice => toId(choice.speciesName) === toId(mon.manualFormSpecies || mon.baseSpecies || mon.species));
-  const selectedForm = matchingChoice ? matchingChoice.speciesName : (formChoices[0]?.speciesName || '');
+  const selectedForm = matchingChoice ? matchingChoice.speciesName : (hasAlternates ? (formChoices[0]?.speciesName || '') : '');
   if (selectedForm) els.formeSelect.value = selectedForm;
-  else if (!formChoices.length) els.formeSelect.value = '';
+  else if (!hasAlternates) els.formeSelect.value = '';
 }
 function applySpeciesSelection(mon, speciesName) {
   const resolved = resolveSpeciesSelection(speciesName);
