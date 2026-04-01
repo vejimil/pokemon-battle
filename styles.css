@@ -356,6 +356,14 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   overflow: hidden;
 }
 .item-icon img { width: 36px; height: 36px; image-rendering: pixelated; }
+.item-icon.missing {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.2;
+  text-align: center;
+  padding: 4px;
+  white-space: normal;
+}
 .checkbox-row {
   display: flex;
   gap: 12px;

@@ -4,6 +4,8 @@
   "version": "0.21.0-legacy-finalized",
   "description": "PKB engine-first runtime with finalized legacy cleanup audit residue",
   "scripts": {
-    "start": "node ./server/server.cjs"
-  }
+    "start": "node ./server/server.cjs",
+    "audit:items": "node ./scripts/audit-item-support.mjs"
+  },
+  "type": "module"
 }

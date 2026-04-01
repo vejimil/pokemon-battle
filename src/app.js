@@ -1158,6 +1158,7 @@ const state = {
   builderErrors: [],
   builderWarnings: [],
   itemChoices: [],
+  itemManifestSet: null,
   natureChoices: [],
   allMoveChoices: [],
   currentMoveChoices: [],
@@ -1528,6 +1529,7 @@ const LOCALIZED_NAME_MAPS = {
   items: {
     ...(KO_NAME_MAPS?.items || {}),
     ...Object.fromEntries(Object.entries(OFFICIAL_KO_ITEMS || {}).filter(([, value]) => value)),
+    'Berserk Gene': '버서크유전자',
   },
 };
 const FORM_SUFFIX_TRANSLATIONS = {
@@ -1880,6 +1882,13 @@ function buildPickerSubtitle(option, mode) {
     const details = [option.meta.type && displayType(option.meta.type), option.meta.categoryLabel, option.meta.powerLabel, option.meta.accuracyLabel].filter(Boolean);
     return [alternate, details.join(' · ')].filter(Boolean).join(' · ');
   }
+  if (mode === 'item') {
+    const support = getItemUiSupport(option.english);
+    const supportNote = support.hasLocalIcon
+      ? (support.iconState === 'direct' ? '' : describeItemIconSupport(support))
+      : describeItemIconSupport(support);
+    return [alternate, supportNote].filter(Boolean).join(' · ');
+  }
   return alternate;
 }
 function rankPickerOption(option, rawQuery = '') {
@@ -2048,11 +2057,13 @@ function isPickerOptionSelected(option, picker = state.picker || {}, mon = getSe
 function resetPickerDetail() {
   if (!els.pickerDetail) return;
   if (state.picker) state.picker.detailOption = null;
-  const isMoveMode = (state.picker?.mode === 'move');
-  els.pickerDetail.classList.toggle('hidden', !isMoveMode);
+  const mode = state.picker?.mode || '';
+  const detailEnabled = mode === 'move' || mode === 'item';
+  els.pickerDetail.classList.toggle('hidden', !detailEnabled);
   if (els.pickerDetailPlaceholder) {
-    els.pickerDetailPlaceholder.textContent = lang('기술 상세를 보려면 기술의 정보 버튼을 누르세요.', 'Press a move info button to inspect its details.');
-    els.pickerDetailPlaceholder.classList.toggle('hidden', !isMoveMode ? true : false);
+    if (mode === 'item') els.pickerDetailPlaceholder.textContent = lang('도구 상세를 보려면 도구의 정보 버튼을 누르세요.', 'Press an item info button to inspect its details.');
+    else els.pickerDetailPlaceholder.textContent = lang('기술 상세를 보려면 기술의 정보 버튼을 누르세요.', 'Press a move info button to inspect its details.');
+    els.pickerDetailPlaceholder.classList.toggle('hidden', !detailEnabled);
   }
   els.pickerDetailContent?.classList.add('hidden');
   if (els.pickerDetailName) els.pickerDetailName.textContent = '—';
@@ -2174,12 +2185,13 @@ function refreshOpenPickerForCurrentLanguage() {
   };
   if (els.pickerTitle) els.pickerTitle.textContent = config.title;
   renderPickerOptions();
-  if (config.mode === 'move') {
+  if (config.mode === 'move' || config.mode === 'item') {
     const detailEnglish = previousPicker.detailOption?.english;
     if (detailEnglish) {
       const matched = (state.picker.options || []).find(option => toId(option?.english) === toId(detailEnglish));
-      const detailOption = matched || makeChoice('moves', detailEnglish);
-      renderMoveDetail(detailOption);
+      const detailOption = matched || makeChoice(config.mode === 'move' ? 'moves' : 'items', detailEnglish);
+      if (config.mode === 'move') renderMoveDetail(detailOption);
+      else renderItemDetail(detailOption);
     } else {
       resetPickerDetail();
     }
@@ -2258,7 +2270,7 @@ function renderPickerOptions() {
       }
       hidePicker();
     };
-    if (picker.mode === 'move') {
+    if (picker.mode === 'move' || picker.mode === 'item') {
       wrap.innerHTML = `
         <div class="picker-option-row">
           <div class="picker-option-main">
@@ -2277,7 +2289,8 @@ function renderPickerOptions() {
       detailBtn?.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        renderMoveDetail(option);
+        if (picker.mode === 'move') renderMoveDetail(option);
+        else renderItemDetail(option);
       });
     } else {
       wrap.innerHTML = `<button type="button" class="picker-option-select">${subtitle ? `<strong>${option.display}</strong><small>${subtitle}</small>` : `<strong>${option.display}</strong>`}</button>`;
@@ -2286,8 +2299,10 @@ function renderPickerOptions() {
     els.pickerList.appendChild(wrap);
   }
   const detailStillVisible = picker.detailOption && filtered.some(option => toId(option.english) === toId(picker.detailOption.english));
-  if (detailStillVisible) renderMoveDetail(picker.detailOption);
-  else if (picker.mode === 'move') resetPickerDetail();
+  if (detailStillVisible) {
+    if (picker.mode === 'move') renderMoveDetail(picker.detailOption);
+    else if (picker.mode === 'item') renderItemDetail(picker.detailOption);
+  } else if (picker.mode === 'move' || picker.mode === 'item') resetPickerDetail();
 }
 function dataSourceLabel() {
   return state.dex ? `Local Dex ${state.dexVersion || ''}`.trim() : state.dataProvider;
@@ -2482,6 +2497,7 @@ async function fetchJson(url) {
 }
 async function loadManifest() {
   state.manifest = await fetchJson('./assets/manifest.json');
+  state.itemManifestSet = null;
 }
 async function pathExists(url) {
   try {
@@ -2959,9 +2975,135 @@ function getBattleActiveIndices(player, battle = state.battle) {
   if (requestActive.length) return requestActive;
   return Array.isArray(side.active) ? side.active.filter(index => Number.isInteger(index) && index >= 0) : [];
 }
+function getItemManifestSet() {
+  if (state.itemManifestSet instanceof Set && state.itemManifestSet.size) return state.itemManifestSet;
+  state.itemManifestSet = new Set((state.manifest?.items || []).map(id => String(id || '').trim()).filter(Boolean));
+  return state.itemManifestSet;
+}
+function getItemUiSupport(itemName = '') {
+  const english = normalizeLocalizedInput('items', itemName, state.itemChoices || []) || String(itemName || '').trim();
+  const slug = slugify(english);
+  const manifestItems = getItemManifestSet();
+  let assetId = '';
+  let iconState = 'none';
+  if (slug && manifestItems.has(slug)) {
+    assetId = slug;
+    iconState = 'direct';
+  } else if (slug && manifestItems.has(`${slug}--held`)) {
+    assetId = `${slug}--held`;
+    iconState = 'held-variant';
+  } else if (slug && manifestItems.has(`${slug}--bag`)) {
+    assetId = `${slug}--bag`;
+    iconState = 'bag-variant';
+  }
+  const item = state.dex?.items?.get?.(english || itemName || '') || null;
+  const existsInDex = Boolean(item?.exists);
+  const isExposed = Boolean((state.itemChoices || []).some(choice => toId(choice?.english) === toId(english)));
+  const isZCrystal = Boolean(item?.zMove || item?.zMoveType || item?.zMoveFrom);
+  const isMegaStone = Boolean(item?.megaStone);
+  const isFormLinked = Boolean(item?.itemUser?.length || /(?:plate|memory|drive|mask|orb|core|globe|rusted|griseous)/i.test(String(item?.id || slug)));
+  return {
+    english,
+    slug,
+    assetId,
+    iconState,
+    hasLocalIcon: Boolean(assetId),
+    existsInDex,
+    isExposed,
+    isZCrystal,
+    isMegaStone,
+    isFormLinked,
+    isNonstandard: item?.isNonstandard || '',
+    item,
+  };
+}
+function describeItemIconSupport(support = getItemUiSupport()) {
+  switch (support?.iconState) {
+    case 'direct':
+      return lang('직접 아이콘', 'Direct icon');
+    case 'held-variant':
+      return lang('held 변형 아이콘', 'Held variant icon');
+    case 'bag-variant':
+      return lang('bag 변형 아이콘', 'Bag variant icon');
+    default:
+      return lang('로컬 아이콘 없음', 'No local icon');
+  }
+}
+function buildItemSupportSummary(itemName = '') {
+  const support = getItemUiSupport(itemName);
+  if (!slugify(itemName)) return lang('지닌 도구가 없습니다.', 'No held item selected.');
+  const lines = [];
+  if (support.hasLocalIcon) {
+    lines.push(state.language === 'ko'
+      ? `UI 아이콘: ${describeItemIconSupport(support)}.`
+      : `UI icon: ${describeItemIconSupport(support)}.`);
+  } else {
+    lines.push(lang(
+      '이 아이템은 로컬 Dex 데이터에는 있지만, 현재 업로드된 item icon 자산에는 대응 이미지가 없습니다.',
+      'This item exists in the local Dex, but the current uploaded item icon assets do not contain a matching image.'
+    ));
+  }
+  if (support.isNonstandard === 'Past') {
+    lines.push(lang(
+      '이 항목은 로컬 데이터에서 Past로 분류되어 현재 빌더 허용 범위에 포함되어 계속 노출됩니다.',
+      'This item is marked Past in the local data and remains exposed because the current builder allows Past content.'
+    ));
+  }
+  if (support.isZCrystal) {
+    lines.push(lang('Z기술 조건이 연결된 Z크리스탈 계열 아이템입니다.', 'This is a Z-Crystal item with Z-Move linkage in the local data.'));
+  }
+  if (support.isMegaStone) {
+    lines.push(lang('메가진화와 연결된 메가스톤 계열 아이템입니다.', 'This is a Mega Stone item linked to Mega Evolution.'));
+  }
+  if (support.isFormLinked && !support.isZCrystal && !support.isMegaStone) {
+    lines.push(lang('폼/종족 전용 조건이 연결된 지닌 도구일 수 있습니다.', 'This may be a form- or species-linked held item.'));
+  }
+  return lines.join(' ');
+}
+function renderItemDetail(option) {
+  if (!els.pickerDetail || state.picker?.mode !== 'item') return;
+  const item = state.dex?.items?.get?.(option?.english || '');
+  if (!item?.exists) {
+    resetPickerDetail();
+    if (els.pickerDetailPlaceholder) {
+      els.pickerDetailPlaceholder.textContent = lang('도구 상세 데이터를 불러오지 못했습니다.', 'Item detail data could not be loaded.');
+      els.pickerDetailPlaceholder.classList.remove('hidden');
+    }
+    return;
+  }
+  const support = getItemUiSupport(item.name);
+  state.picker.detailOption = option;
+  els.pickerDetail.classList.remove('hidden');
+  els.pickerDetailPlaceholder?.classList.add('hidden');
+  els.pickerDetailContent?.classList.remove('hidden');
+  if (els.pickerDetailName) els.pickerDetailName.textContent = option.display || displayItemName(item.name);
+  if (els.pickerDetailAlt) {
+    const alternate = state.language === 'en'
+      ? (option.korean && option.korean !== option.english ? option.korean : '')
+      : (option.english && option.english !== option.korean ? option.english : '');
+    els.pickerDetailAlt.textContent = alternate || lang('도구 상세', 'Item details');
+  }
+  const statusLabel = item.isNonstandard
+    ? (item.isNonstandard === 'Past' ? lang('Past 허용', 'Past allowed') : item.isNonstandard)
+    : lang('표준', 'Standard');
+  const metaChips = [
+    `${lang('아이콘', 'Icon')}: ${describeItemIconSupport(support)}`,
+    `${lang('상태', 'Status')}: ${statusLabel}`,
+    `${lang('세대', 'Gen')}: ${item.gen || '—'}`,
+    `${lang('번호', 'Num')}: ${item.num || '—'}`,
+  ];
+  els.pickerDetailMeta.innerHTML = metaChips.map(text => `<span class="picker-detail-chip">${text}</span>`).join('');
+  els.pickerDetailDesc.textContent = buildItemSupportSummary(item.name);
+  const flagChips = [];
+  if (support.isZCrystal) flagChips.push(lang('Z크리스탈', 'Z-Crystal'));
+  if (support.isMegaStone) flagChips.push(lang('메가스톤', 'Mega Stone'));
+  if (support.isFormLinked && !support.isZCrystal && !support.isMegaStone) flagChips.push(lang('폼 연동 가능', 'Form-linked'));
+  if (!support.hasLocalIcon) flagChips.push(lang('아이콘 자산 없음', 'No icon asset'));
+  els.pickerDetailFlags.innerHTML = flagChips.map(text => `<span class="picker-detail-chip">${text}</span>`).join('');
+}
 function itemIconPath(itemName) {
-  const slug = slugify(itemName);
-  return slug ? `${state.assetBase.items}/${slug}.png` : '';
+  const support = getItemUiSupport(itemName);
+  return support.assetId ? `${state.assetBase.items}/${support.assetId}.png` : '';
 }
 function typeIconPath(typeName, small = false) {
   const idx = typeIds[typeName];
@@ -3186,17 +3328,24 @@ function buildStaticLists() {
 function renderItemIcon(itemName) {
   if (!els.itemIcon) return;
   els.itemIcon.innerHTML = '';
+  els.itemIcon.classList.remove('missing');
+  els.itemIcon.removeAttribute('title');
   const url = itemIconPath(itemName);
   if (!url || !itemName) {
-    els.itemIcon.textContent = '—';
+    els.itemIcon.classList.add('missing');
+    els.itemIcon.textContent = itemName ? lang('아이콘 없음', 'No icon') : '—';
+    if (itemName) els.itemIcon.title = buildItemSupportSummary(itemName);
     return;
   }
   const img = document.createElement('img');
   img.src = url;
   img.alt = displayItemName(itemName);
   img.loading = 'lazy';
+  img.title = buildItemSupportSummary(itemName);
   img.onerror = () => {
-    els.itemIcon.textContent = '—';
+    els.itemIcon.classList.add('missing');
+    els.itemIcon.textContent = lang('아이콘 없음', 'No icon');
+    els.itemIcon.title = buildItemSupportSummary(itemName);
   };
   els.itemIcon.appendChild(img);
 }
@@ -3288,14 +3437,15 @@ function implementedAbilityNote(name) {
 function implementedItemNote(name) {
   const runtime = getSelectedBattleRuntimeDescriptor();
   if (!slugify(name)) return lang('지닌 도구가 없습니다.', 'No held item selected.');
-  if (runtime.id === 'engine-authoritative-singles') {
-    return state.language === 'ko'
+  const supportSummary = buildItemSupportSummary(name);
+  const runtimeSummary = runtime.id === 'engine-authoritative-singles'
+    ? (state.language === 'ko'
       ? `${displayItemName(name)} 도구 판정은 현재 선택된 엔진 필수 싱글 경로에서 로컬 Showdown 엔진이 담당한다. 팀 빌더 표시는 참고용이며 실제 전투 판정은 엔진 스냅샷과 요청을 따른다.`
-      : `${displayItemName(name)} is resolved by the local Showdown engine in the current engine-required singles path. Builder labels are informational only; real battle behavior follows the engine request and snapshot.`;
-  }
-  return state.language === 'ko'
-    ? `${displayItemName(name)} 도구는 팀 빌더에서는 저장되고 검증되지만, 현재 선택된 런타임은 배틀 시작이 차단된 상태이다.`
-    : `${displayItemName(name)} is stored and validated in the team builder, but the currently selected runtime is blocked from battle start.`;
+      : `${displayItemName(name)} is resolved by the local Showdown engine in the current engine-required singles path. Builder labels are informational only; real battle behavior follows the engine request and snapshot.`)
+    : (state.language === 'ko'
+      ? `${displayItemName(name)} 도구는 팀 빌더에서는 저장되고 검증되지만, 현재 선택된 런타임은 배틀 시작이 차단된 상태이다.`
+      : `${displayItemName(name)} is stored and validated in the team builder, but the currently selected runtime is blocked from battle start.`);
+  return [supportSummary, runtimeSummary].filter(Boolean).join(' ');
 }
 async function hydrateSelectedSpecies() {
   const mon = getSelectedMon();
