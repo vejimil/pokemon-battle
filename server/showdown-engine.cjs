@@ -11,6 +11,16 @@ const weatherMap = Object.freeze({
   snowscape: 'snow',
 });
 
+const BOOST_LABELS = Object.freeze({
+  atk: '공격 / Attack',
+  def: '방어 / Defense',
+  spa: '특수공격 / Sp. Atk',
+  spd: '특수방어 / Sp. Def',
+  spe: '스피드 / Speed',
+  accuracy: '명중 / Accuracy',
+  evasion: '회피 / Evasion',
+});
+
 const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
   'Meganium-Mega': 'Mega Sol',
   'Emboar-Mega': 'Mold Breaker',
@@ -233,6 +243,23 @@ function normalizeLogTextFromLine(line) {
       return {text: `${displayNameForPokemonProtocol(a)} 상태이상: ${b} / status ${b}`, tone: ''};
     case '-curestatus':
       return {text: `${displayNameForPokemonProtocol(a)} 상태 회복 / cured ${b}`, tone: ''};
+    case '-ability': {
+      const source = displayNameForPokemonProtocol(a);
+      const detail = c ? ` (${c})` : '';
+      return {text: `${source} 특성 발동: ${b}${detail} / ${source} ability activated: ${b}${detail}.`, tone: 'accent'};
+    }
+    case '-boost': {
+      const source = displayNameForPokemonProtocol(a);
+      const stat = BOOST_LABELS[toId(b)] || b;
+      const amount = Number(c || 0);
+      return {text: `${source} ${stat} +${amount} / ${source} ${stat} rose by ${amount}.`, tone: 'accent'};
+    }
+    case '-unboost': {
+      const source = displayNameForPokemonProtocol(a);
+      const stat = BOOST_LABELS[toId(b)] || b;
+      const amount = Number(c || 0);
+      return {text: `${source} ${stat} -${amount} / ${source} ${stat} fell by ${amount}.`, tone: 'accent'};
+    }
     case '-weather':
       return {text: `날씨: ${b || a} / Weather: ${b || a}`, tone: 'accent'};
     case '-fieldstart':

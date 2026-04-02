@@ -780,7 +780,11 @@ function resolveAutomaticBuilderSpecies(mon, manualSpecies = '') {
   const family = getFamilyForSpecies(manualSpecies || mon?.baseSpecies || mon?.species || '');
   if (!family || !state.dex) return manualSpecies || mon?.baseSpecies || '';
   const specialLinkedSpecies = resolveSpecialLinkedFormSpeciesForMon(mon, family.baseSpeciesName);
-  if (specialLinkedSpecies) return specialLinkedSpecies;
+  if (specialLinkedSpecies) {
+    const specialSpeciesData = state.dex.species.get(specialLinkedSpecies);
+    if (specialSpeciesData?.exists && !isBattleOnlyBuilderForm(specialSpeciesData)) return specialSpeciesData.name;
+    return manualSpecies || family.baseSpeciesName;
+  }
   const candidates = (family.allFormChoices || family.formChoices || [])
     .map(choice => state.dex.species.get(choice.speciesName))
     .filter(speciesData => speciesData?.exists && matchesAutomaticFormRequirements(speciesData, mon));
@@ -2813,6 +2817,19 @@ function isFutureMegaSpeciesData(species) {
   const formeId = toId(species.forme || '');
   return formeId === 'mega' || /-mega/i.test(species.name || '');
 }
+function applyFutureMegaSpeciesMetadataPatches(dex) {
+  if (!dex?.species?.all) return;
+  for (const species of dex.species.all()) {
+    if (!isFutureMegaSpeciesData(species)) continue;
+    const battleOnly = species.battleOnly || species.changesFrom || species.baseSpecies || species.name;
+    species.isMega = true;
+    if (!species.battleOnly && battleOnly) species.battleOnly = battleOnly;
+    if (species.id && dex?.data?.Pokedex?.[species.id]) {
+      dex.data.Pokedex[species.id].isMega = true;
+      if (!dex.data.Pokedex[species.id].battleOnly && battleOnly) dex.data.Pokedex[species.id].battleOnly = battleOnly;
+    }
+  }
+}
 function resolveProjectMegaAbilityName(dex, species) {
   if (!species?.exists) return '';
   const official = OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES[species.name];
@@ -2838,6 +2855,7 @@ function applyProjectMegaAbilityRulesToDex(dex) {
 async function loadDataProvider() {
   const runtime = await loadLocalDex();
   state.dex = runtime.Dex.mod ? runtime.Dex.mod('gen9') : runtime.Dex;
+  applyFutureMegaSpeciesMetadataPatches(state.dex);
   applyProjectMegaAbilityRulesToDex(state.dex);
   speciesDataCache.clear();
   state.dexSource = runtime.source;
@@ -4236,9 +4254,23 @@ function normalizeShowdownStartSpecies(mon) {
   return chosen;
 }
 
+function resolveShowdownStartAbility(mon, startSpeciesData) {
+  const selectedAbility = String(mon?.ability || '').trim();
+  if (!startSpeciesData?.exists) return selectedAbility;
+  const allowed = uniqueNames([
+    ...Object.values(startSpeciesData.abilities || {}).filter(Boolean),
+    startSpeciesData.requiredAbility || '',
+  ].filter(Boolean));
+  if (!allowed.length) return selectedAbility;
+  if (!selectedAbility) return allowed[0] || '';
+  if (allowed.some(name => toId(name) === toId(selectedAbility))) return selectedAbility;
+  return allowed[0] || selectedAbility;
+}
+
 async function buildShowdownPayloadMon(mon, player, slot) {
   const startSpecies = normalizeShowdownStartSpecies(mon);
   const startSpeciesData = startSpecies ? await getSpeciesData(startSpecies).catch(() => null) : null;
+  const startAbility = resolveShowdownStartAbility(mon, startSpeciesData);
   const battleBaseSpecies = startSpeciesData?.baseSpecies || mon.baseSpecies || mon.data?.baseSpecies || startSpecies || mon.species;
   const startSpriteId = getAutoSpriteIdForSpecies(startSpecies, mon.gender || '', battleBaseSpecies) || mon.spriteAutoId || mon.spriteId || '';
   const megaCandidate = getMegaCandidateForMon(mon);
@@ -4257,7 +4289,7 @@ async function buildShowdownPayloadMon(mon, player, slot) {
     species: startSpecies,
     name: mon.nickname || startSpecies,
     item: mon.item || '',
-    ability: mon.ability || '',
+    ability: startAbility,
     moves: deepClone(mon.moves || []),
     nature: mon.nature || '',
     gender: mon.gender || '',
@@ -4285,7 +4317,7 @@ async function buildShowdownPayloadMon(mon, player, slot) {
       spriteAutoId: mon.spriteAutoId || startSpriteId,
       shiny: Boolean(mon.shiny),
       item: mon.item || '',
-      ability: mon.ability || '',
+      ability: startAbility,
       nature: mon.nature || '',
       gender: mon.gender || '',
       level: Number(mon.level || 100),
