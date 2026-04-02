@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node ./server/server.cjs",
     "audit:items": "node ./scripts/audit-item-support.mjs",
-    "audit:item-truth": "node ./scripts/audit-battle-form-and-item-truth.mjs"
+    "audit:item-truth": "node ./scripts/audit-battle-form-and-item-truth.mjs",
+    "verify:passb": "node ./scripts/verify-passb-form-truth.mjs"
   },
   "type": "module"
 }

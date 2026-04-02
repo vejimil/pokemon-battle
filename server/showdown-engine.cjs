@@ -378,7 +378,7 @@ class ShowdownLocalSinglesSession {
   constructor(payload = {}) {
     this.id = randomUUID();
     this.mode = 'singles';
-    this.formatid = payload.formatid || 'gen9customgame';
+    this.formatid = payload.formatid || 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
     this.players = payload.players || [];
     this.stream = new BattleStreams.BattleStream({keepAlive: true});
     this.requests = {p1: null, p2: null};
@@ -668,7 +668,7 @@ class ShowdownEngineService {
       engine: '@pkmn/sim vendored local package',
       version: '0.10.7',
       modeSupport: ['singles'],
-      formatid: 'gen9customgame',
+      formatid: 'gen9customgame@@@+pokemontag:past,+pokemontag:future',
       note: 'Local Node-backed Showdown-family singles engine is available.',
     };
   }

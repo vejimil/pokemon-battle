@@ -77,6 +77,7 @@ const ASSET_BASE_SPECIES_ALIASES = Object.freeze({
   NIDORANMA: 'Nidoran-M',
 });
 const BUILDER_BATTLE_ONLY_FORM_SUFFIXES = new Set(['mega', 'megax', 'megay', 'primal', 'gmax']);
+const ENGINE_AUTHORITATIVE_SINGLES_FORMAT = 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
 const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
   'Meganium-Mega': 'Mega Sol',
   'Emboar-Mega': 'Mold Breaker',
@@ -842,7 +843,7 @@ function resolveMegaSpeciesNameFromItem(mon) {
   return '';
 }
 function getMegaCandidateForMon(mon) {
-  if (!mon?.item || !state.dex) return null;
+  if (!state.dex) return null;
   const resolvedMegaSpecies = resolveMegaSpeciesNameFromItem(mon);
   if (resolvedMegaSpecies) {
     const species = state.dex.species.get(resolvedMegaSpecies);
@@ -856,10 +857,18 @@ function getMegaCandidateForMon(mon) {
   }
   const family = getFamilyForSpecies(mon.baseSpecies || mon.species);
   if (!family) return null;
+  const heldItem = state.dex.items.get(mon?.item || '');
+  const heldItemIsZCrystal = Boolean(heldItem?.exists && (heldItem.zMove || heldItem.zMoveType || heldItem.zMoveFrom));
   const candidates = (family.allFormChoices || family.formChoices || []).filter(choice => /-mega/i.test(choice.speciesName));
   const matched = candidates.find(choice => {
     const species = state.dex.species.get(choice.speciesName);
-    return species?.exists && species.requiredItem && toId(species.requiredItem) === toId(mon.item);
+    if (!species?.exists) return false;
+    if (species.requiredItem) return toId(species.requiredItem) === toId(mon.item);
+    if (species.requiredMove) {
+      if (heldItemIsZCrystal) return false;
+      return (mon?.moves || []).some(move => toId(move) === toId(species.requiredMove));
+    }
+    return false;
   });
   if (!matched) return null;
   const species = state.dex.species.get(matched.speciesName);
@@ -3160,15 +3169,17 @@ function resolveBattleRenderSpriteId(mon) {
   if (!mon) return '';
   const speciesName = getBattleRenderSpeciesName(mon);
   const baseSpeciesName = mon.baseSpecies || mon.originalData?.baseSpecies || speciesName;
+  const isTransformedSpecies = Boolean(toId(speciesName) && toId(baseSpeciesName) && toId(speciesName) !== toId(baseSpeciesName));
   const megaSnapshotSprite = mon.megaUsed && mon.megaSpriteId && (!mon.megaSpecies || toId(mon.megaSpecies) === toId(speciesName))
     ? mon.megaSpriteId
     : '';
+  const exactAutoSpriteId = getAutoSpriteIdForSpecies(speciesName, mon.gender || '', baseSpeciesName);
+  if (isTransformedSpecies && exactAutoSpriteId && doesSpriteIdMatchSpeciesFamily(exactAutoSpriteId, speciesName, baseSpeciesName)) return exactAutoSpriteId;
   if (megaSnapshotSprite && doesSpriteIdMatchSpeciesFamily(megaSnapshotSprite, speciesName, baseSpeciesName)) return megaSnapshotSprite;
   const candidate = mon.spriteId || mon.spriteAutoId || '';
   if (doesSpriteIdMatchSpeciesFamily(candidate, speciesName, baseSpeciesName)) return candidate;
-  const autoSpriteId = getAutoSpriteIdForSpecies(speciesName, mon.gender || '', baseSpeciesName);
-  if (autoSpriteId && doesSpriteIdMatchSpeciesFamily(autoSpriteId, speciesName, baseSpeciesName)) return autoSpriteId;
-  return megaSnapshotSprite || candidate || autoSpriteId || '';
+  if (exactAutoSpriteId && doesSpriteIdMatchSpeciesFamily(exactAutoSpriteId, speciesName, baseSpeciesName)) return exactAutoSpriteId;
+  return megaSnapshotSprite || candidate || exactAutoSpriteId || '';
 }
 function normalizeBattleMonSprite(mon) {
   if (!mon) return mon;
@@ -4227,6 +4238,7 @@ async function buildShowdownPayloadMon(mon, player, slot) {
 async function buildShowdownBattlePayload() {
   return {
     mode: 'singles',
+    formatid: ENGINE_AUTHORITATIVE_SINGLES_FORMAT,
     players: await Promise.all([0, 1].map(async player => ({
       name: state.playerNames[player],
       team: await Promise.all(state.teams[player].map((mon, slot) => buildShowdownPayloadMon(mon, player, slot))),
@@ -4413,7 +4425,7 @@ function getPendingChoiceForMon(mon) {
   return side.choices?.[index] || null;
 }
 function createEmptyBattleChoice() {
-  return {kind:'', move:'', moveIndex:null, target:null, switchTo:null, tera:false, mega:false, z:false, dynamax:false};
+  return {kind:'', move:'', moveIndex:null, target:null, switchTo:null, tera:false, mega:false, ultra:false, z:false, dynamax:false};
 }
 function ensureBattleUiState(battle = state.battle) {
   if (!battle) return null;
@@ -4535,6 +4547,7 @@ function buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle =
     target: null,
     z: !isForcedContinuation && Boolean(previous?.z && canZMove),
     mega: !isForcedContinuation && Boolean(previous?.mega && moveRequest?.canMegaEvo),
+    ultra: !isForcedContinuation && Boolean(previous?.ultra && moveRequest?.canUltraBurst),
     tera: !isForcedContinuation && Boolean(previous?.tera && moveRequest?.canTerastallize),
     dynamax: !isForcedContinuation && Boolean(previous?.dynamax && moveRequest?.canDynamax),
   };
@@ -4549,13 +4562,26 @@ function toggleEngineDraftFlag(player, activeIndex, flag, battle = state.battle)
   if (flag === 'mega') {
     if (!moveRequest?.canMegaEvo) return false;
     next.mega = !previous.mega;
+    if (next.mega) next.ultra = false;
+  } else if (flag === 'ultra') {
+    if (!moveRequest?.canUltraBurst) return false;
+    next.ultra = !previous.ultra;
+    if (next.ultra) {
+      next.mega = false;
+      next.tera = false;
+      next.z = false;
+      next.dynamax = false;
+    }
   } else if (flag === 'tera') {
     if (!moveRequest?.canTerastallize) return false;
     next.tera = !previous.tera;
   } else if (flag === 'dynamax') {
     if (!moveRequest?.canDynamax || !runtimeSupportsDynamax()) return false;
     next.dynamax = !previous.dynamax;
-    if (next.dynamax) next.z = false;
+    if (next.dynamax) {
+      next.z = false;
+      next.ultra = false;
+    }
   } else if (flag === 'z') {
     if (!(previous.kind === 'move' && Number.isInteger(previous.moveIndex))) return false;
     const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[previous.moveIndex] : null;
@@ -4602,11 +4628,12 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
     const sanitizedDraft = {
       ...createEmptyBattleChoice(),
       mega: Boolean(rawChoice.mega && moveRequest?.canMegaEvo),
+      ultra: Boolean(rawChoice.ultra && moveRequest?.canUltraBurst),
       tera: Boolean(rawChoice.tera && moveRequest?.canTerastallize),
       z: false,
       dynamax: Boolean(rawChoice.dynamax && moveRequest?.canDynamax && runtimeSupportsDynamax()),
     };
-    if (!sanitizedDraft.mega && !sanitizedDraft.tera && !sanitizedDraft.dynamax) {
+    if (!sanitizedDraft.mega && !sanitizedDraft.ultra && !sanitizedDraft.tera && !sanitizedDraft.dynamax) {
       clearEnginePendingChoice(player, slot, battle);
       return createEmptyBattleChoice();
     }
@@ -4665,6 +4692,7 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
     moveIndex: rawChoice.moveIndex,
     target: null,
     mega: Boolean(rawChoice.mega && moveRequest?.canMegaEvo),
+    ultra: Boolean(rawChoice.ultra && moveRequest?.canUltraBurst),
     tera: Boolean(rawChoice.tera && moveRequest?.canTerastallize),
     z: Boolean(rawChoice.z && zInfo),
     dynamax: Boolean(rawChoice.dynamax && moveRequest?.canDynamax && runtimeSupportsDynamax()),
@@ -4740,6 +4768,7 @@ function getEngineChoiceSummary(player, slot, battle = state.battle) {
     const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[choice.moveIndex] : null;
     let text = choice.z && zInfo?.move ? displayMoveName(zInfo.move) : displayMoveName(choice.move);
     if (choice.mega) text += state.language === 'ko' ? ' · 메가진화' : ' · Mega';
+    if (choice.ultra) text += state.language === 'ko' ? ' · 울트라버스트' : ' · Ultra Burst';
     if (choice.tera) text += state.language === 'ko' ? ' · 테라' : ' · Tera';
     if (choice.z) text += ' · Z';
     if (choice.dynamax) text += state.language === 'ko' ? ' · 다이맥스' : ' · Dynamax';
@@ -4974,6 +5003,18 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       toggles.appendChild(megaBtn);
     }
 
+    if (!forcedContinuation && moveRequest?.canUltraBurst) {
+      const ultraBtn = document.createElement('button');
+      ultraBtn.type = 'button';
+      ultraBtn.className = `toggle-pill ${choice.ultra ? 'active' : ''}`;
+      ultraBtn.textContent = '울트라버스트 / Ultra Burst';
+      ultraBtn.addEventListener('click', () => {
+        if (!toggleEngineDraftFlag(player, activeIndex, 'ultra', battle)) return;
+        renderBattle();
+      });
+      toggles.appendChild(ultraBtn);
+    }
+
     if (!forcedContinuation && moveRequest?.canDynamax && runtimeSupportsDynamax()) {
       const dynaBtn = document.createElement('button');
       dynaBtn.type = 'button';
@@ -5065,6 +5106,8 @@ function getBattleBadgeText(mon) {
   if (!mon) return '';
   const parts = [];
   if (mon.megaUsed || /-mega/i.test(mon.species || '')) parts.push(lang('메가', 'Mega'));
+  if (/-primal/i.test(mon.species || '')) parts.push(lang('원시회귀', 'Primal'));
+  if (/-ultra/i.test(mon.species || '')) parts.push(lang('울트라버스트', 'Ultra Burst'));
   if (mon.terastallized) parts.push(lang(`테라 ${displayType(mon.teraType || '')}`, `Tera ${displayType(mon.teraType || '')}`));
   if (mon.dynamaxed) parts.push(mon.gigantamaxed ? lang('거다이맥스', 'G-Max') : lang('다이맥스', 'Dynamax'));
   if (parts.length) return parts.join(' · ');

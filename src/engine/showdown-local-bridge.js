@@ -123,6 +123,7 @@ export function serializeChoiceForShowdown(choice, request = null) {
       parts.push(String(choice.target.slot + 1));
     }
     if (choice.mega) parts.push('mega');
+    if (choice.ultra) parts.push('ultra');
     if (choice.tera) parts.push('terastallize');
     if (choice.z) parts.push('zmove');
     if (choice.dynamax) parts.push('dynamax');

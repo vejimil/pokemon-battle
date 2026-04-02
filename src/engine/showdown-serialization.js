@@ -102,6 +102,7 @@ export function buildShowdownChoice(choice) {
   const moveIndex = choice.moveIndex === -1 ? 1 : (Number(choice.moveIndex) + 1);
   let command = `move ${moveIndex}`;
   if (choice.mega) command += ' mega';
+  if (choice.ultra) command += ' ultra';
   if (choice.z) command += ' zmove';
   if (choice.dynamax) command += ' dynamax';
   if (choice.tera) command += ' terastallize';
