@@ -390,7 +390,8 @@ class ShowdownLocalSinglesSession {
         const dexItem = battle.dex.items.get(pokemon.item || ui.item || '');
         const dexAbility = battle.dex.abilities.get(pokemon.ability || ui.ability || '');
         const speciesName = pokemon.species?.name || ui.displaySpecies || ui.species || '';
-        const spriteId = ui.megaSpecies === speciesName && ui.megaSpriteId
+        const isMegaSpecies = Boolean(pokemon.species?.isMega || /-Mega/i.test(speciesName));
+        const spriteId = isMegaSpecies && ui.megaSpriteId
           ? ui.megaSpriteId
           : (ui.displaySpecies === speciesName && ui.selectedSpriteId ? ui.selectedSpriteId : (ui.startSpriteId || ui.selectedSpriteId || ''));
         return {
@@ -406,7 +407,10 @@ class ShowdownLocalSinglesSession {
             formSpecies: speciesName,
             nickname: ui.nickname || (pokemon.name !== speciesName ? pokemon.name : ''),
             spriteId,
-            spriteAutoId: ui.startSpriteId || spriteId,
+            spriteAutoId: isMegaSpecies && ui.megaSpriteId ? ui.megaSpriteId : (ui.startSpriteId || spriteId),
+            startSpriteId: ui.startSpriteId || ui.selectedSpriteId || spriteId,
+            megaSpecies: ui.megaSpecies || '',
+            megaSpriteId: ui.megaSpriteId || '',
             shiny: Boolean((pokemon?.set && typeof pokemon.set.shiny !== 'undefined') ? pokemon.set.shiny : ui.shiny),
             level: pokemon.level,
             nature: ui.nature || '',

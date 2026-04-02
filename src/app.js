@@ -674,9 +674,45 @@ function applySpeciesSelection(mon, speciesName) {
 function isMegaSpeciesName(speciesName = '') {
   return /-mega/i.test(speciesName);
 }
+function resolveMegaSpeciesNameFromItem(mon) {
+  const item = state.dex?.items?.get?.(mon?.item || '');
+  if (!item?.exists || !item.megaStone) return '';
+  if (typeof item.megaStone === 'string') return item.megaStone;
+  const candidateKeys = uniqueNames([
+    mon?.formSpecies,
+    mon?.species,
+    mon?.manualFormSpecies,
+    mon?.baseSpecies,
+    mon?.originalData?.baseSpecies,
+    mon?.originalData?.name,
+  ]).map(name => normalizeLocalizedInput('species', name, state.allSpeciesChoices || state.speciesChoices || []) || name);
+  for (const key of candidateKeys) {
+    const direct = item.megaStone[key];
+    if (direct) return direct;
+    const speciesData = state.dex?.species?.get?.(key);
+    const baseSpecies = speciesData?.exists ? (speciesData.baseSpecies || speciesData.name) : '';
+    if (baseSpecies && item.megaStone[baseSpecies]) return item.megaStone[baseSpecies];
+  }
+  for (const value of Object.values(item.megaStone || {})) {
+    if (value) return value;
+  }
+  return '';
+}
 function getMegaCandidateForMon(mon) {
+  if (!mon?.item || !state.dex) return null;
+  const resolvedMegaSpecies = resolveMegaSpeciesNameFromItem(mon);
+  if (resolvedMegaSpecies) {
+    const species = state.dex.species.get(resolvedMegaSpecies);
+    if (species?.exists) {
+      const family = getFamilyForSpecies(species.name) || getFamilyForSpecies(species.baseSpecies || mon.baseSpecies || mon.species);
+      const assetId = getAutoSpriteIdForSpecies(species.name, mon.gender, species.baseSpecies || mon.baseSpecies || mon.species || '')
+        || family?.speciesToAsset?.get?.(species.name)
+        || '';
+      return {speciesName: species.name, assetId};
+    }
+  }
   const family = getFamilyForSpecies(mon.baseSpecies || mon.species);
-  if (!family || !mon?.item) return null;
+  if (!family) return null;
   const candidates = (family.allFormChoices || family.formChoices || []).filter(choice => /-mega/i.test(choice.speciesName));
   const matched = candidates.find(choice => {
     const species = state.dex.species.get(choice.speciesName);
@@ -1159,7 +1195,6 @@ const state = {
   builderErrors: [],
   builderWarnings: [],
   itemChoices: [],
-  itemManifestSet: null,
   natureChoices: [],
   allMoveChoices: [],
   currentMoveChoices: [],
@@ -1325,7 +1360,7 @@ const UI_STRINGS = Object.freeze({
   ko: {
     title: 'PKB — 포켓몬 로컬 배틀 빌더',
     hero_eyebrow: '로컬 2인 배틀 프로토타입',
-    hero_copy: '업로드한 스프라이트와 아이콘, 로컬 배틀 데이터를 불러와 두 팀을 직접 만든 뒤, 브라우저에서 바로 번갈아 조작하는 배틀을 플레이합니다.',
+    hero_copy: '업로드한 스프라이트와 로컬 배틀 데이터를 불러와 두 팀을 직접 만든 뒤, 브라우저에서 바로 번갈아 조작하는 배틀을 플레이합니다.',
     lang_label: '언어',
     meta_mode: '배틀 모드',
     meta_engine: '엔진',
@@ -1910,10 +1945,13 @@ function buildPickerSubtitle(option, mode) {
   }
   if (mode === 'item') {
     const support = getItemUiSupport(option.english);
-    const supportNote = support.hasLocalIcon
-      ? (support.iconState === 'direct' ? '' : describeItemIconSupport(support))
-      : describeItemIconSupport(support);
-    return [alternate, supportNote].filter(Boolean).join(' · ');
+    const tags = [];
+    if (support.isCurrentOfficialOverride) tags.push(lang('최신 공식 반영', 'Current official'));
+    if (support.isMegaStone) tags.push(lang('메가스톤', 'Mega Stone'));
+    if (support.isZCrystal) tags.push(lang('Z크리스탈', 'Z-Crystal'));
+    if (support.isFormLinked && !support.isMegaStone && !support.isZCrystal) tags.push(lang('폼 연동', 'Form-linked'));
+    if (support.isNonstandard === 'Past') tags.push(lang('Past 허용', 'Past allowed'));
+    return [alternate, tags.join(' · ')].filter(Boolean).join(' · ');
   }
   return alternate;
 }
@@ -2527,7 +2565,6 @@ async function fetchJson(url) {
 }
 async function loadManifest() {
   state.manifest = await fetchJson('./assets/manifest.json');
-  state.itemManifestSet = null;
 }
 async function pathExists(url) {
   try {
@@ -2948,11 +2985,15 @@ function resolveBattleRenderSpriteId(mon) {
   if (!mon) return '';
   const speciesName = getBattleRenderSpeciesName(mon);
   const baseSpeciesName = mon.baseSpecies || mon.originalData?.baseSpecies || speciesName;
+  const megaSnapshotSprite = mon.megaUsed && mon.megaSpriteId && (!mon.megaSpecies || toId(mon.megaSpecies) === toId(speciesName))
+    ? mon.megaSpriteId
+    : '';
+  if (megaSnapshotSprite && doesSpriteIdMatchSpeciesFamily(megaSnapshotSprite, speciesName, baseSpeciesName)) return megaSnapshotSprite;
   const candidate = mon.spriteId || mon.spriteAutoId || '';
   if (doesSpriteIdMatchSpeciesFamily(candidate, speciesName, baseSpeciesName)) return candidate;
   const autoSpriteId = getAutoSpriteIdForSpecies(speciesName, mon.gender || '', baseSpeciesName);
   if (autoSpriteId && doesSpriteIdMatchSpeciesFamily(autoSpriteId, speciesName, baseSpeciesName)) return autoSpriteId;
-  return candidate || autoSpriteId || '';
+  return megaSnapshotSprite || candidate || autoSpriteId || '';
 }
 function normalizeBattleMonSprite(mon) {
   if (!mon) return mon;
@@ -3005,27 +3046,9 @@ function getBattleActiveIndices(player, battle = state.battle) {
   if (requestActive.length) return requestActive;
   return Array.isArray(side.active) ? side.active.filter(index => Number.isInteger(index) && index >= 0) : [];
 }
-function getItemManifestSet() {
-  if (state.itemManifestSet instanceof Set && state.itemManifestSet.size) return state.itemManifestSet;
-  state.itemManifestSet = new Set((state.manifest?.items || []).map(id => String(id || '').trim()).filter(Boolean));
-  return state.itemManifestSet;
-}
 function getItemUiSupport(itemName = '') {
   const english = normalizeLocalizedInput('items', itemName, state.itemChoices || []) || String(itemName || '').trim();
   const slug = slugify(english);
-  const manifestItems = getItemManifestSet();
-  let assetId = '';
-  let iconState = 'none';
-  if (slug && manifestItems.has(slug)) {
-    assetId = slug;
-    iconState = 'direct';
-  } else if (slug && manifestItems.has(`${slug}--held`)) {
-    assetId = `${slug}--held`;
-    iconState = 'held-variant';
-  } else if (slug && manifestItems.has(`${slug}--bag`)) {
-    assetId = `${slug}--bag`;
-    iconState = 'bag-variant';
-  }
   const item = state.dex?.items?.get?.(english || itemName || '') || null;
   const existsInDex = Boolean(item?.exists);
   const isExposed = Boolean((state.itemChoices || []).some(choice => toId(choice?.english) === toId(english)));
@@ -3037,9 +3060,6 @@ function getItemUiSupport(itemName = '') {
   return {
     english,
     slug,
-    assetId,
-    iconState,
-    hasLocalIcon: Boolean(assetId),
     existsInDex,
     isExposed,
     isZCrystal,
@@ -3051,45 +3071,39 @@ function getItemUiSupport(itemName = '') {
     item,
   };
 }
-function describeItemIconSupport(support = getItemUiSupport()) {
-  switch (support?.iconState) {
-    case 'direct':
-      return lang('직접 아이콘', 'Direct icon');
-    case 'held-variant':
-      return lang('held 변형 아이콘', 'Held variant icon');
-    case 'bag-variant':
-      return lang('bag 변형 아이콘', 'Bag variant icon');
-    default:
-      return lang('로컬 아이콘 없음', 'No local icon');
-  }
-}
 function buildItemSupportSummary(itemName = '') {
   const support = getItemUiSupport(itemName);
   if (!slugify(itemName)) return lang('지닌 도구가 없습니다.', 'No held item selected.');
   const lines = [];
-  if (support.hasLocalIcon) {
-    lines.push(state.language === 'ko'
-      ? `UI 아이콘: ${describeItemIconSupport(support)}.`
-      : `UI icon: ${describeItemIconSupport(support)}.`);
+  if (support.existsInDex) {
+    lines.push(lang(
+      '이 아이템은 현재 로컬 Dex 데이터에 존재하며 빌더와 엔진 필수 싱글 경로에서 그대로 사용됩니다.',
+      'This item exists in the current local Dex data and is used directly by the builder and the engine-required singles path.'
+    ));
+  } else if (support.isKnownCurrentButAbsentLocally) {
+    lines.push(lang(
+      '이 아이템은 외부 기준으로 현재 아이템으로 분류되지만, 현재 로컬 데이터 번들에는 아직 없어 빌더에서 노출되지 않습니다.',
+      'This item is treated as a current item by the external verification list, but it is not yet present in the local data bundle and therefore is not exposed in the builder.'
+    ));
   } else {
     lines.push(lang(
-      '이 아이템은 로컬 Dex 데이터에는 있지만, 현재 업로드된 item icon 자산에는 대응 이미지가 없습니다.',
-      'This item exists in the local Dex, but the current uploaded item icon assets do not contain a matching image.'
+      '이 아이템은 현재 로컬 Dex 데이터에서 확인되지 않았습니다.',
+      'This item could not be confirmed in the current local Dex data.'
     ));
   }
   if (support.isCurrentOfficialOverride) {
     lines.push(lang(
-      '이 아이템은 로컬 데이터에는 아직 Future로 남아 있지만, 외부 검증 기준으로는 현재 공식 아이템이라 빌더에서 허용됩니다.',
-      'This item is still tagged Future in the local data, but it has been externally verified as a current official item and is now allowed in the builder.'
+      '로컬 데이터에는 아직 Future로 남아 있지만, 외부 검증 기준으로 현재 공식 아이템으로 분류되어 빌더에서 허용됩니다.',
+      'It is still tagged Future in the local data, but it is treated as a current official item by the external verification baseline and is therefore allowed in the builder.'
     ));
   } else if (support.isNonstandard === 'Past') {
     lines.push(lang(
-      '이 항목은 로컬 데이터에서 Past로 분류되어 현재 빌더 허용 범위에 포함되어 계속 노출됩니다.',
-      'This item is marked Past in the local data and remains exposed because the current builder allows Past content.'
+      '로컬 데이터에서 Past로 분류되어 있으며, 현재 빌더 정책상 계속 허용됩니다.',
+      'It is marked Past in the local data and remains allowed under the current builder policy.'
     ));
   }
   if (support.isZCrystal) {
-    lines.push(lang('Z기술 조건이 연결된 Z크리스탈 계열 아이템입니다.', 'This is a Z-Crystal item with Z-Move linkage in the local data.'));
+    lines.push(lang('Z기술 조건이 연결된 Z크리스탈 계열 아이템입니다.', 'This is a Z-Crystal item linked to Z-Move behavior.'));
   }
   if (support.isMegaStone) {
     lines.push(lang('메가진화와 연결된 메가스톤 계열 아이템입니다.', 'This is a Mega Stone item linked to Mega Evolution.'));
@@ -3128,8 +3142,9 @@ function renderItemDetail(option) {
       ? (item.isNonstandard === 'Past' ? lang('Past 허용', 'Past allowed') : item.isNonstandard)
       : lang('표준', 'Standard'));
   const metaChips = [
-    `${lang('아이콘', 'Icon')}: ${describeItemIconSupport(support)}`,
     `${lang('상태', 'Status')}: ${statusLabel}`,
+    `${lang('데이터', 'Data')}: ${support.existsInDex ? lang('로컬 Dex 존재', 'Present in local Dex') : lang('로컬 Dex 없음', 'Missing from local Dex')}`,
+    `${lang('노출', 'Exposure')}: ${support.isExposed ? lang('빌더 표시', 'Shown in builder') : lang('빌더 숨김', 'Hidden from builder')}`,
     `${lang('세대', 'Gen')}: ${item.gen || '—'}`,
     `${lang('번호', 'Num')}: ${item.num || '—'}`,
   ];
@@ -3140,12 +3155,7 @@ function renderItemDetail(option) {
   if (support.isMegaStone) flagChips.push(lang('메가스톤', 'Mega Stone'));
   if (support.isFormLinked && !support.isZCrystal && !support.isMegaStone) flagChips.push(lang('폼 연동 가능', 'Form-linked'));
   if (support.isCurrentOfficialOverride) flagChips.push(lang('최신 공식 반영', 'Current official'));
-  if (!support.hasLocalIcon) flagChips.push(lang('아이콘 자산 없음', 'No icon asset'));
   els.pickerDetailFlags.innerHTML = flagChips.map(text => `<span class="picker-detail-chip">${text}</span>`).join('');
-}
-function itemIconPath(itemName) {
-  const support = getItemUiSupport(itemName);
-  return support.assetId ? `${state.assetBase.items}/${support.assetId}.png` : '';
 }
 function typeIconPath(typeName, small = false) {
   const idx = typeIds[typeName];
@@ -3288,7 +3298,6 @@ function bindElements() {
     genderSelect: document.getElementById('gender-select'),
     itemInput: document.getElementById('item-input'),
     browseItemBtn: document.getElementById('browse-item-btn'),
-    itemIcon: document.getElementById('item-icon'),
     levelInput: document.getElementById('level-input'),
     teraSelect: document.getElementById('tera-select'),
     shinyCheckbox: document.getElementById('shiny-checkbox'),
@@ -3366,30 +3375,6 @@ function buildStaticLists() {
   }
   els.natureSelect.innerHTML = state.natureChoices.map(choice => `<option value="${choice.english}">${choice.display}</option>`).join('\n');
   els.teraSelect.innerHTML = TYPES.map(type => `<option value="${type}">${displayType(type)}</option>`).join('\n');
-}
-function renderItemIcon(itemName) {
-  if (!els.itemIcon) return;
-  els.itemIcon.innerHTML = '';
-  els.itemIcon.classList.remove('missing');
-  els.itemIcon.removeAttribute('title');
-  const url = itemIconPath(itemName);
-  if (!url || !itemName) {
-    els.itemIcon.classList.add('missing');
-    els.itemIcon.textContent = itemName ? lang('아이콘 없음', 'No icon') : '—';
-    if (itemName) els.itemIcon.title = buildItemSupportSummary(itemName);
-    return;
-  }
-  const img = document.createElement('img');
-  img.src = url;
-  img.alt = displayItemName(itemName);
-  img.loading = 'lazy';
-  img.title = buildItemSupportSummary(itemName);
-  img.onerror = () => {
-    els.itemIcon.classList.add('missing');
-    els.itemIcon.textContent = lang('아이콘 없음', 'No icon');
-    els.itemIcon.title = buildItemSupportSummary(itemName);
-  };
-  els.itemIcon.appendChild(img);
 }
 function renderEditorFlags(mon) {
   if (!els.editorFlags) return;
@@ -3570,7 +3555,6 @@ function renderEditor() {
   els.editorTypeRow.innerHTML = '';
   (mon.data?.types || []).forEach(type => els.editorTypeRow.appendChild(createTypePill(type)));
   renderEditorFlags(mon);
-  renderItemIcon(mon.item);
   syncMonSprite(mon);
   renderFormSelectors(mon);
   if (els.speciesStatus) {
@@ -5147,7 +5131,7 @@ async function bootstrap() {
   showRuntime(
     '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets, localized battle data, and form-aware sprite resolution are connected.',
     'ready',
-    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${lang(`외부 검증 기준 현재 공식이지만 로컬 데이터에 아직 없는 아이템 수 / current official items still absent from the local data bundle: ${EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.length}`, `Current official items verified externally but still absent from the local data bundle: ${EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.length}`)}<br>${showdownStatusNote}<br>${lang('이 빌드는 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. 이번 단계에서는 싱글을 로컬 Showdown 엔진 필수 경로로 고정했고, 더블은 엔진 기반 경로가 준비될 때까지 차단하며, 다른 지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드에 노출하지 않습니다.', 'This build loads vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex, and runs a stronger validator including event-only move bundle checks and profile-based Species Clause / Item Clause / level-50 enforcement. In this step, singles are locked to the local Showdown engine-required path, doubles stay blocked until an engine-backed route exists, and unsupported browser battle execution paths are kept out of user-facing normal mode.')}`
+    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${lang(`외부 검증 기준 현재 공식이지만 로컬 데이터에 아직 없는 아이템 수 / current official items still absent from the local data bundle: ${EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.length}`, `Current official items verified externally but still absent from the local data bundle: ${EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.length}`)}<br>${showdownStatusNote}<br>${lang('이 빌드는 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. 아이템 표시는 이제 텍스트 전용으로 정리되어, 사용자용 UI에서 아이콘 누락 여부를 더 이상 노출하지 않습니다. 이번 단계에서는 싱글을 로컬 Showdown 엔진 필수 경로로 고정했고, 더블은 엔진 기반 경로가 준비될 때까지 차단하며, 다른 지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드에 노출하지 않습니다.', 'This build loads vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex, and runs a stronger validator including event-only move bundle checks and profile-based Species Clause / Item Clause / level-50 enforcement. Item presentation is now text-only, so missing-icon state is no longer exposed in the normal user-facing UI. In this step, singles are locked to the local Showdown engine-required path, doubles stay blocked until an engine-backed route exists, and unsupported browser battle execution paths are kept out of user-facing normal mode.')}`
   );
   syncRuntimeModeUi();
 }

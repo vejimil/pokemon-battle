@@ -340,29 +340,10 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   align-items: center;
 }
 .compound-input-picker {
-  grid-template-columns: minmax(0, 1fr) 52px;
+  grid-template-columns: minmax(0, 1fr);
 }
 .compound-input-picker .picker-input-row {
   min-width: 0;
-}
-.item-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 12px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.08);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-.item-icon img { width: 36px; height: 36px; image-rendering: pixelated; }
-.item-icon.missing {
-  color: var(--muted);
-  font-size: 0.72rem;
-  line-height: 1.2;
-  text-align: center;
-  padding: 4px;
-  white-space: normal;
 }
 .checkbox-row {
   display: flex;
