@@ -170,6 +170,57 @@ const moveDataCache = new Map();
 const itemDataCache = new Map();
 const imageInfoCache = new Map();
 
+const SPECIAL_ITEM_LINKED_FORM_OVERRIDES = Object.freeze({
+  arceus: Object.freeze({
+    fistplate: 'Arceus-Fighting',
+    skyplate: 'Arceus-Flying',
+    toxicplate: 'Arceus-Poison',
+    earthplate: 'Arceus-Ground',
+    stoneplate: 'Arceus-Rock',
+    insectplate: 'Arceus-Bug',
+    spookyplate: 'Arceus-Ghost',
+    ironplate: 'Arceus-Steel',
+    flameplate: 'Arceus-Fire',
+    splashplate: 'Arceus-Water',
+    meadowplate: 'Arceus-Grass',
+    zapplate: 'Arceus-Electric',
+    mindplate: 'Arceus-Psychic',
+    icicleplate: 'Arceus-Ice',
+    dracoplate: 'Arceus-Dragon',
+    dreadplate: 'Arceus-Dark',
+    pixieplate: 'Arceus-Fairy',
+  }),
+  genesect: Object.freeze({
+    shockdrive: 'Genesect-Shock',
+    burndrive: 'Genesect-Burn',
+    chilldrive: 'Genesect-Chill',
+    dousedrive: 'Genesect-Douse',
+  }),
+  silvally: Object.freeze({
+    fightingmemory: 'Silvally-Fighting',
+    flyingmemory: 'Silvally-Flying',
+    poisonmemory: 'Silvally-Poison',
+    groundmemory: 'Silvally-Ground',
+    rockmemory: 'Silvally-Rock',
+    bugmemory: 'Silvally-Bug',
+    ghostmemory: 'Silvally-Ghost',
+    steelmemory: 'Silvally-Steel',
+    firememory: 'Silvally-Fire',
+    watermemory: 'Silvally-Water',
+    grassmemory: 'Silvally-Grass',
+    electricmemory: 'Silvally-Electric',
+    psychicmemory: 'Silvally-Psychic',
+    icememory: 'Silvally-Ice',
+    dragonmemory: 'Silvally-Dragon',
+    darkmemory: 'Silvally-Dark',
+    fairymemory: 'Silvally-Fairy',
+  }),
+});
+const SPECIAL_MOVE_LINKED_FORM_OVERRIDES = Object.freeze({
+  keldeo: Object.freeze({
+    secretsword: 'Keldeo-Resolute',
+  }),
+});
 const FORM_ASSET_OVERRIDES = Object.freeze({
   'Eevee-Gmax': 'EEVEE_2',
   'Xerneas': 'XERNEAS_1',
@@ -186,6 +237,27 @@ const FORM_ASSET_OVERRIDES = Object.freeze({
   'Zygarde-10%': 'ZYGARDE_1',
   'Zygarde-Complete': 'ZYGARDE_3',
   'Zygarde-Mega': 'ZYGARDE_5',
+  'Arceus-Fighting': 'ARCEUS_1',
+  'Arceus-Flying': 'ARCEUS_2',
+  'Arceus-Poison': 'ARCEUS_3',
+  'Arceus-Ground': 'ARCEUS_4',
+  'Arceus-Rock': 'ARCEUS_5',
+  'Arceus-Bug': 'ARCEUS_6',
+  'Arceus-Ghost': 'ARCEUS_7',
+  'Arceus-Steel': 'ARCEUS_8',
+  'Arceus-Fire': 'ARCEUS_10',
+  'Arceus-Water': 'ARCEUS_11',
+  'Arceus-Grass': 'ARCEUS_12',
+  'Arceus-Electric': 'ARCEUS_13',
+  'Arceus-Psychic': 'ARCEUS_14',
+  'Arceus-Ice': 'ARCEUS_15',
+  'Arceus-Dragon': 'ARCEUS_16',
+  'Arceus-Dark': 'ARCEUS_17',
+  'Arceus-Fairy': 'ARCEUS_18',
+  'Genesect-Shock': 'GENESECT_1',
+  'Genesect-Burn': 'GENESECT_2',
+  'Genesect-Chill': 'GENESECT_3',
+  'Genesect-Douse': 'GENESECT_4',
 });
 const EXPLICIT_ONLY_FORM_FAMILIES = new Set(['EEVEE', 'GRENINJA', 'PIKACHU']);
 
@@ -440,6 +512,11 @@ function buildAssetDex() {
       assetToSpecies.set(onlyAssetId, unresolvedFormOrder[0]);
     }
 
+    assetToSpecies.clear();
+    for (const [speciesName, assignedAssetId] of speciesToAsset.entries()) {
+      if (assignedAssetId) assetToSpecies.set(assignedAssetId, speciesName);
+    }
+
     const allFormChoices = familySpeciesNames
       .map(speciesName => {
         const speciesData = state.dex.species.get(speciesName);
@@ -584,14 +661,26 @@ function isBattleOnlyBuilderForm(speciesData) {
 function isAutoResolvedItemBuilderForm(speciesData) {
   if (!isDexSupported(speciesData)) return false;
   if (isBattleOnlyBuilderForm(speciesData)) return false;
-  const hasRequiredItem = Boolean(speciesData?.requiredItem || speciesData?.requiredItems?.length);
+  const baseSpeciesName = speciesData?.baseSpecies || speciesData?.name || '';
+  const isSpecialItemLinkedFamily = Boolean(
+    speciesData?.name
+    && speciesData?.name !== baseSpeciesName
+    && SPECIAL_ITEM_LINKED_FORM_OVERRIDES[toId(baseSpeciesName)]
+  );
+  const hasRequiredItem = Boolean(speciesData?.requiredItem || speciesData?.requiredItems?.length || isSpecialItemLinkedFamily);
   if (!hasRequiredItem) return false;
   return Boolean(speciesData?.changesFrom || (speciesData?.baseSpecies && speciesData.baseSpecies !== speciesData.name));
 }
 function isAutoResolvedMoveBuilderForm(speciesData) {
   if (!isDexSupported(speciesData)) return false;
   if (isBattleOnlyBuilderForm(speciesData)) return false;
-  if (!speciesData?.requiredMove) return false;
+  const baseSpeciesName = speciesData?.baseSpecies || speciesData?.name || '';
+  const isSpecialMoveLinkedFamily = Boolean(
+    speciesData?.name
+    && speciesData?.name !== baseSpeciesName
+    && SPECIAL_MOVE_LINKED_FORM_OVERRIDES[toId(baseSpeciesName)]
+  );
+  if (!speciesData?.requiredMove && !isSpecialMoveLinkedFamily) return false;
   return Boolean(speciesData?.changesFrom || (speciesData?.baseSpecies && speciesData.baseSpecies !== speciesData.name));
 }
 function isAutoResolvedBuilderForm(speciesData) {
@@ -636,8 +725,37 @@ function sanitizeManualFormSpecies(mon, baseSpeciesName = '') {
   const matched = choices.find(choice => toId(choice.speciesName) === toId(raw));
   return matched?.speciesName || baseSpeciesName;
 }
+function getSpecialLinkedFormSpecies(baseSpeciesName = '', {item = '', moves = []} = {}) {
+  const baseId = toId(baseSpeciesName);
+  if (!baseId) return '';
+  const itemId = toId(item);
+  const itemLinked = SPECIAL_ITEM_LINKED_FORM_OVERRIDES[baseId];
+  if (itemLinked && itemId && itemLinked[itemId]) return itemLinked[itemId];
+  const moveLinked = SPECIAL_MOVE_LINKED_FORM_OVERRIDES[baseId];
+  if (moveLinked) {
+    for (const moveName of moves || []) {
+      const moveId = toId(moveName);
+      if (moveId && moveLinked[moveId]) return moveLinked[moveId];
+    }
+  }
+  return '';
+}
+function resolveSpecialLinkedFormSpeciesForMon(mon, baseSpeciesName = '') {
+  const explicitBase = baseSpeciesName
+    || mon?.baseSpecies
+    || mon?.originalData?.baseSpecies
+    || mon?.data?.baseSpecies
+    || mon?.species
+    || mon?.formSpecies
+    || mon?.displaySpecies
+    || '';
+  return getSpecialLinkedFormSpecies(explicitBase, {item: mon?.item || '', moves: mon?.moves || []});
+}
 function matchesAutomaticFormRequirements(speciesData, mon) {
   if (!isAutoResolvedBuilderForm(speciesData)) return false;
+  const baseSpeciesName = speciesData?.baseSpecies || speciesData?.name || '';
+  const specialLinkedSpecies = resolveSpecialLinkedFormSpeciesForMon(mon, baseSpeciesName);
+  if (specialLinkedSpecies) return toId(speciesData?.name) === toId(specialLinkedSpecies);
   const requiredItems = [speciesData.requiredItem, ...(speciesData.requiredItems || [])].filter(Boolean);
   if (requiredItems.length && !requiredItems.some(item => toId(item) === toId(mon?.item))) return false;
   const requiredMove = speciesData?.requiredMove || '';
@@ -647,6 +765,8 @@ function matchesAutomaticFormRequirements(speciesData, mon) {
 function resolveAutomaticBuilderSpecies(mon, manualSpecies = '') {
   const family = getFamilyForSpecies(manualSpecies || mon?.baseSpecies || mon?.species || '');
   if (!family || !state.dex) return manualSpecies || mon?.baseSpecies || '';
+  const specialLinkedSpecies = resolveSpecialLinkedFormSpeciesForMon(mon, family.baseSpeciesName);
+  if (specialLinkedSpecies) return specialLinkedSpecies;
   const candidates = (family.allFormChoices || family.formChoices || [])
     .map(choice => state.dex.species.get(choice.speciesName))
     .filter(speciesData => speciesData?.exists && matchesAutomaticFormRequirements(speciesData, mon));
@@ -3022,7 +3142,9 @@ function iconPath(spriteId, shiny = false) {
 }
 function getBattleRenderSpeciesName(mon) {
   if (!mon) return '';
-  return mon.formSpecies || mon.species || mon.displaySpecies || mon.originalData?.name || mon.baseSpecies || mon.originalData?.baseSpecies || '';
+  const directSpecies = mon.formSpecies || mon.species || mon.displaySpecies || mon.originalData?.name || mon.baseSpecies || mon.originalData?.baseSpecies || '';
+  const specialLinkedSpecies = resolveSpecialLinkedFormSpeciesForMon(mon, mon.baseSpecies || mon.originalData?.baseSpecies || directSpecies);
+  return specialLinkedSpecies || directSpecies;
 }
 function doesSpriteIdMatchSpeciesFamily(spriteId, speciesName = '', baseSpeciesName = '') {
   if (!spriteId) return false;
@@ -4697,7 +4819,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
     const choice = getEngineDraftChoice(player, activeIndex, battle);
     const section = document.createElement('div');
     section.className = 'choice-section';
-    section.innerHTML = `<h4>${displaySpeciesName(mon?.species || 'Pokémon')}</h4>${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}`;
+    section.innerHTML = `<h4>${displaySpeciesName(getBattleRenderSpeciesName(mon) || 'Pokémon')}</h4>${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}`;
 
     const statusHints = [];
     if (mon?.volatile?.substituteHp > 0) statusHints.push(`대타출동 / Substitute ${mon.volatile.substituteHp} HP`);
@@ -4722,7 +4844,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = `choice-btn ${choice.kind === 'switch' && choice.switchTo === index ? 'selected' : ''}`;
-        btn.innerHTML = `<strong>${displaySpeciesName(option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
+        btn.innerHTML = `<strong>${displaySpeciesName(getBattleRenderSpeciesName(option) || option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
         btn.addEventListener('click', () => {
           setEnginePendingChoice(player, activeIndex, {
             ...createEmptyBattleChoice(),
@@ -4904,7 +5026,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = `choice-btn ${choice.switchTo === index ? 'selected' : ''}`;
-        btn.innerHTML = `<strong>${displaySpeciesName(option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
+        btn.innerHTML = `<strong>${displaySpeciesName(getBattleRenderSpeciesName(option) || option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
         btn.addEventListener('click', () => {
           setEnginePendingChoice(player, activeIndex, {
             ...createEmptyBattleChoice(),
@@ -5014,7 +5136,7 @@ function renderBattleTeam(player, container) {
     renderAnimatedSprite(sprite, {spriteId: resolveBattleRenderSpriteId(mon), facing:'front', shiny: mon.shiny, size:'small'});
     const summary = document.createElement('div');
     summary.className = 'mon-summary';
-    summary.innerHTML = `<div class="mon-name-line"><strong>${displaySpeciesName(mon.species)}</strong>${mon.status ? `<span class="status-badge">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
+    summary.innerHTML = `<div class="mon-name-line"><strong>${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species)}</strong>${mon.status ? `<span class="status-badge">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
       ${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}
       <div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div>
       <div class="mon-sub">HP ${mon.hp}/${mon.maxHp}${activeIndices.has(index) ? ' · 전투 중 / Active' : ''}${mon.fainted ? ' · 기절 / Fainted' : ''}${mon.dynamaxed ? ` · ${mon.dynamaxTurns}턴 / ${mon.dynamaxTurns} turns` : ''}${mon.volatile?.substituteHp ? ` · 대타 ${mon.volatile.substituteHp} / Sub ${mon.volatile.substituteHp}` : ''}</div>`;
