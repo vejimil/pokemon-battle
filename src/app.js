@@ -77,6 +77,11 @@ const ASSET_BASE_SPECIES_ALIASES = Object.freeze({
   NIDORANMA: 'Nidoran-M',
 });
 const BUILDER_BATTLE_ONLY_FORM_SUFFIXES = new Set(['mega', 'megax', 'megay', 'primal', 'gmax']);
+const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
+  'Meganium-Mega': 'Mega Sol',
+  'Emboar-Mega': 'Mold Breaker',
+  'Feraligatr-Mega': 'Dragonize',
+});
 const targetHints = {
   'selected-pokemon': 'single-opponent',
   'random-opponent': 'single-opponent',
@@ -2600,9 +2605,39 @@ async function detectAssetBases() {
     }
   }
 }
+function isFutureMegaSpeciesData(species) {
+  if (!species?.exists) return false;
+  if (species.isNonstandard !== 'Future') return false;
+  const formeId = toId(species.forme || '');
+  return formeId === 'mega' || /-mega/i.test(species.name || '');
+}
+function resolveProjectMegaAbilityName(dex, species) {
+  if (!species?.exists) return '';
+  const official = OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES[species.name];
+  if (official) return official;
+  const baseSpeciesName = species.baseSpecies || species.changesFrom || species.name;
+  const baseSpecies = dex?.species?.get?.(baseSpeciesName);
+  const hiddenAbility = baseSpecies?.exists ? String(baseSpecies.abilities?.H || '').trim() : '';
+  if (hiddenAbility) return hiddenAbility;
+  return Object.values(species.abilities || {}).find(Boolean) || '';
+}
+function applyProjectMegaAbilityRulesToDex(dex) {
+  if (!dex?.species?.all) return;
+  for (const species of dex.species.all()) {
+    if (!isFutureMegaSpeciesData(species)) continue;
+    const nextAbility = resolveProjectMegaAbilityName(dex, species);
+    if (!nextAbility) continue;
+    species.abilities = {0: nextAbility};
+    if (species.id && dex?.data?.Pokedex?.[species.id]) {
+      dex.data.Pokedex[species.id].abilities = {0: nextAbility};
+    }
+  }
+}
 async function loadDataProvider() {
   const runtime = await loadLocalDex();
   state.dex = runtime.Dex.mod ? runtime.Dex.mod('gen9') : runtime.Dex;
+  applyProjectMegaAbilityRulesToDex(state.dex);
+  speciesDataCache.clear();
   state.dexSource = runtime.source;
   state.dexVersion = runtime.version;
   state.dataProvider = 'Local Showdown data';
@@ -2623,7 +2658,7 @@ async function getSpeciesData(speciesName) {
   const species = state.dex.species.get(speciesName);
   if (!species?.exists) throw new Error(`Species not found in local data: ${speciesName}`);
 
-  const abilityNames = Object.values(species.abilities || {}).filter(Boolean);
+  const abilityNames = uniqueNames(Object.values(species.abilities || {}).filter(Boolean));
   const fullLearnset = state.dex.species.getFullLearnset(species.id) || {};
   const learnsetSources = Object.fromEntries(Object.entries(fullLearnset).map(([moveId, sources]) => [toId(moveId), Array.isArray(sources) ? [...sources] : []]));
   const data = {

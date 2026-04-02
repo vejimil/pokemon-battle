@@ -5,7 +5,8 @@
   "description": "PKB engine-first runtime with finalized legacy cleanup audit residue",
   "scripts": {
     "start": "node ./server/server.cjs",
-    "audit:items": "node ./scripts/audit-item-support.mjs"
+    "audit:items": "node ./scripts/audit-item-support.mjs",
+    "audit:item-truth": "node ./scripts/audit-battle-form-and-item-truth.mjs"
   },
   "type": "module"
 }

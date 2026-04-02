@@ -1,4 +1,4 @@
-const {BattleStreams, Dex} = require('../node_modules/@pkmn/sim');
+const {BattleStreams, Dex, Pokemon} = require('../node_modules/@pkmn/sim');
 const {randomUUID} = require('crypto');
 
 const weatherMap = Object.freeze({
@@ -7,6 +7,61 @@ const weatherMap = Object.freeze({
   sandstorm: 'sand',
   snowscape: 'snow',
 });
+
+const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
+  'Meganium-Mega': 'Mega Sol',
+  'Emboar-Mega': 'Mold Breaker',
+  'Feraligatr-Mega': 'Dragonize',
+});
+
+const RUNTIME_FUTURE_ABILITY_PATCHES = Object.freeze({
+  dragonize: {
+    isNonstandard: 'Future',
+    onModifyTypePriority: -1,
+    onModifyType(move, pokemon) {
+      const noModifyType = ['judgment', 'multiattack', 'naturalgift', 'revelationdance', 'technoblast', 'terrainpulse', 'weatherball'];
+      if (move.type === 'Normal' && (!noModifyType.includes(move.id) || this.activeMove?.isMax) && !(move.isZ && move.category !== 'Status') && !(move.name === 'Tera Blast' && pokemon.terastallized)) {
+        move.type = 'Dragon';
+        move.typeChangerBoosted = this.effect;
+      }
+    },
+    onBasePowerPriority: 23,
+    onBasePower(basePower, pokemon, target, move) {
+      if (move.typeChangerBoosted === this.effect) return this.chainModify([4915, 4096]);
+    },
+    flags: {},
+    name: 'Dragonize',
+    rating: 4,
+    num: 312,
+  },
+  megasol: {
+    isNonstandard: 'Future',
+    flags: {},
+    name: 'Mega Sol',
+    rating: 3,
+    num: 311,
+  },
+});
+
+let futureAbilityRuntimePatched = false;
+
+function applyFutureAbilityRuntimePatches(dex) {
+  if (!dex?.data?.Abilities) return;
+  for (const [abilityId, definition] of Object.entries(RUNTIME_FUTURE_ABILITY_PATCHES)) {
+    dex.data.Abilities[abilityId] = {...definition};
+  }
+}
+
+function patchPokemonEffectiveWeatherForMegaSol() {
+  if (futureAbilityRuntimePatched) return;
+  const original = Pokemon.prototype.effectiveWeather;
+  Pokemon.prototype.effectiveWeather = function patchedEffectiveWeather() {
+    let weather = original.call(this);
+    if (!weather && this?.hasAbility?.('megasol')) weather = 'desolateland';
+    return weather;
+  };
+  futureAbilityRuntimePatched = true;
+}
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -44,6 +99,48 @@ function battleOnlyShouldNormalize(mon, chosen) {
   if (mon?.data?.battleOnly) return true;
   return id.includes('mega') || id.includes('primal') || id.endsWith('gmax');
 }
+
+function isFutureMegaSpecies(species) {
+  if (!species?.exists) return false;
+  if (species.isNonstandard !== 'Future') return false;
+  const formeId = toId(species.forme || '');
+  return formeId === 'mega' || /-mega/i.test(species.name || '');
+}
+
+function resolveProjectMegaAbilityName(dex, species) {
+  if (!species?.exists) return '';
+  const official = OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES[species.name];
+  if (official) return official;
+  const baseSpeciesName = species.baseSpecies || species.changesFrom || species.name;
+  const baseSpecies = dex?.species?.get?.(baseSpeciesName);
+  const hiddenAbility = baseSpecies?.exists ? String(baseSpecies.abilities?.H || '').trim() : '';
+  if (hiddenAbility) return hiddenAbility;
+  return Object.values(species.abilities || {}).find(Boolean) || '';
+}
+
+function applyProjectMegaAbilityRulesToDex(dex) {
+  if (!dex?.species?.all) return;
+  for (const species of dex.species.all()) {
+    if (!isFutureMegaSpecies(species)) continue;
+    const nextAbility = resolveProjectMegaAbilityName(dex, species);
+    if (!nextAbility) continue;
+    species.abilities = {0: nextAbility};
+    if (species.id && dex?.data?.Pokedex?.[species.id]) {
+      dex.data.Pokedex[species.id].abilities = {0: nextAbility};
+    }
+  }
+}
+
+function resolveSnapshotBaseSpeciesName(pokemon, ui = {}) {
+  return pokemon?.species?.baseSpecies
+    || pokemon?.baseSpecies?.baseSpecies
+    || (pokemon?.baseSpecies?.name && pokemon.baseSpecies.name !== pokemon?.species?.name ? pokemon.baseSpecies.name : '')
+    || ui?.baseSpecies
+    || pokemon?.species?.name
+    || ui?.displaySpecies
+    || '';
+}
+
 
 function normalizeLogTextFromLine(line) {
   const parts = String(line || '').split('|');
@@ -403,7 +500,7 @@ class ShowdownLocalSinglesSession {
             player: playerIndex,
             slot: stableSlot,
             species: speciesName,
-            baseSpecies: pokemon.baseSpecies?.name || ui.baseSpecies || speciesName,
+            baseSpecies: resolveSnapshotBaseSpeciesName(pokemon, ui),
             formSpecies: speciesName,
             nickname: ui.nickname || (pokemon.name !== speciesName ? pokemon.name : ''),
             spriteId,
@@ -539,6 +636,14 @@ class ShowdownLocalSinglesSession {
 class ShowdownEngineService {
   constructor() {
     this.sessions = new Map();
+    applyFutureAbilityRuntimePatches(Dex);
+    patchPokemonEffectiveWeatherForMegaSol();
+    applyProjectMegaAbilityRulesToDex(Dex);
+    try {
+      const gen9Dex = Dex.mod('gen9');
+      applyFutureAbilityRuntimePatches(gen9Dex);
+      applyProjectMegaAbilityRulesToDex(gen9Dex);
+    } catch {}
   }
 
   status() {
