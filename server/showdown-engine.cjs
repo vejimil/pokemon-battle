@@ -4,6 +4,9 @@ const {randomUUID} = require('crypto');
 const weatherMap = Object.freeze({
   raindance: 'rain',
   sunnyday: 'sun',
+  primordialsea: 'primordialsea',
+  desolateland: 'desolateland',
+  deltastream: 'deltastream',
   sandstorm: 'sand',
   snowscape: 'snow',
 });
@@ -12,6 +15,14 @@ const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
   'Meganium-Mega': 'Mega Sol',
   'Emboar-Mega': 'Mold Breaker',
   'Feraligatr-Mega': 'Dragonize',
+});
+
+const SNAPSHOT_FORM_SPRITE_OVERRIDES = Object.freeze({
+  'Kyogre-Primal': 'KYOGRE_1',
+  'Groudon-Primal': 'GROUDON_1',
+  'Necrozma-Dusk-Mane': 'NECROZMA_1',
+  'Necrozma-Dawn-Wings': 'NECROZMA_2',
+  'Necrozma-Ultra': 'NECROZMA_3',
 });
 
 const RUNTIME_FUTURE_ABILITY_PATCHES = Object.freeze({
@@ -36,9 +47,27 @@ const RUNTIME_FUTURE_ABILITY_PATCHES = Object.freeze({
   },
   megasol: {
     isNonstandard: 'Future',
+    onStart(source) {
+      this.field.setWeather('desolateland');
+    },
+    onAnySetWeather(target, source, weather) {
+      const strongWeathers = ['desolateland', 'primordialsea', 'deltastream'];
+      if (this.field.getWeather().id === 'desolateland' && !strongWeathers.includes(weather.id)) return false;
+    },
+    onEnd(pokemon) {
+      if (this.field.weatherState.source !== pokemon) return;
+      for (const target of this.getAllActive()) {
+        if (target === pokemon) continue;
+        if (target.hasAbility('megasol')) {
+          this.field.weatherState.source = target;
+          return;
+        }
+      }
+      this.field.clearWeather();
+    },
     flags: {},
     name: 'Mega Sol',
-    rating: 3,
+    rating: 4.5,
     num: 311,
   },
 });
@@ -92,6 +121,18 @@ function mapTargetHint(target) {
   if (id === 'alladjacent') return 'all-other-pokemon';
   if (id === 'all') return 'all-pokemon';
   return 'single-opponent';
+}
+
+function resolveBattleFormUiSpriteId(speciesName, ui = {}) {
+  const speciesId = toId(speciesName);
+  if (!speciesId) return ui.startSpriteId || ui.selectedSpriteId || '';
+  if (ui.megaSpriteId && ui.megaSpecies && toId(ui.megaSpecies) === speciesId) return ui.megaSpriteId;
+  if (ui.primalSpriteId && ui.primalSpecies && toId(ui.primalSpecies) === speciesId) return ui.primalSpriteId;
+  if (ui.ultraSpriteId && ui.ultraSpecies && toId(ui.ultraSpecies) === speciesId) return ui.ultraSpriteId;
+  const explicitSprite = SNAPSHOT_FORM_SPRITE_OVERRIDES[speciesName];
+  if (explicitSprite) return explicitSprite;
+  if (ui.displaySpecies === speciesName && ui.selectedSpriteId) return ui.selectedSpriteId;
+  return ui.startSpriteId || ui.selectedSpriteId || '';
 }
 
 function battleOnlyShouldNormalize(mon, chosen) {
@@ -502,9 +543,7 @@ class ShowdownLocalSinglesSession {
         const dexAbility = battle.dex.abilities.get(pokemon.ability || ui.ability || '');
         const speciesName = pokemon.species?.name || ui.displaySpecies || ui.species || '';
         const isMegaSpecies = Boolean(pokemon.species?.isMega || /-Mega/i.test(speciesName));
-        const spriteId = isMegaSpecies && ui.megaSpriteId
-          ? ui.megaSpriteId
-          : (ui.displaySpecies === speciesName && ui.selectedSpriteId ? ui.selectedSpriteId : (ui.startSpriteId || ui.selectedSpriteId || ''));
+        const spriteId = resolveBattleFormUiSpriteId(speciesName, ui);
         return {
           engineOrderIndex,
           stableSlot,
@@ -518,10 +557,14 @@ class ShowdownLocalSinglesSession {
             formSpecies: speciesName,
             nickname: ui.nickname || (pokemon.name !== speciesName ? pokemon.name : ''),
             spriteId,
-            spriteAutoId: isMegaSpecies && ui.megaSpriteId ? ui.megaSpriteId : (ui.startSpriteId || spriteId),
+            spriteAutoId: spriteId || ui.startSpriteId || ui.selectedSpriteId || '',
             startSpriteId: ui.startSpriteId || ui.selectedSpriteId || spriteId,
             megaSpecies: ui.megaSpecies || '',
             megaSpriteId: ui.megaSpriteId || '',
+            primalSpecies: ui.primalSpecies || '',
+            primalSpriteId: ui.primalSpriteId || '',
+            ultraSpecies: ui.ultraSpecies || '',
+            ultraSpriteId: ui.ultraSpriteId || '',
             shiny: Boolean((pokemon?.set && typeof pokemon.set.shiny !== 'undefined') ? pokemon.set.shiny : ui.shiny),
             level: pokemon.level,
             nature: ui.nature || '',

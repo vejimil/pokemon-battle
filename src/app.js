@@ -238,6 +238,11 @@ const FORM_ASSET_OVERRIDES = Object.freeze({
   'Zygarde-10%': 'ZYGARDE_1',
   'Zygarde-Complete': 'ZYGARDE_3',
   'Zygarde-Mega': 'ZYGARDE_5',
+  'Kyogre-Primal': 'KYOGRE_1',
+  'Groudon-Primal': 'GROUDON_1',
+  'Necrozma-Dusk-Mane': 'NECROZMA_1',
+  'Necrozma-Dawn-Wings': 'NECROZMA_2',
+  'Necrozma-Ultra': 'NECROZMA_3',
   'Arceus-Fighting': 'ARCEUS_1',
   'Arceus-Flying': 'ARCEUS_2',
   'Arceus-Poison': 'ARCEUS_3',
@@ -873,6 +878,48 @@ function getMegaCandidateForMon(mon) {
   if (!matched) return null;
   const species = state.dex.species.get(matched.speciesName);
   return species?.exists ? {speciesName: species.name, assetId: matched.assetId || getAutoSpriteIdForSpecies(species.name, mon.gender, family.baseSpeciesName)} : null;
+}
+function getPrimalCandidateForMon(mon) {
+  if (!state.dex) return null;
+  const itemId = toId(mon?.item || '');
+  const baseSpecies = uniqueNames([
+    mon?.baseSpecies,
+    mon?.species,
+    mon?.formSpecies,
+    mon?.manualFormSpecies,
+    mon?.originalData?.baseSpecies,
+    mon?.originalData?.name,
+  ]).find(Boolean) || '';
+  let primalSpeciesName = '';
+  if (itemId === 'blueorb' && toId(baseSpecies) === 'kyogre') primalSpeciesName = 'Kyogre-Primal';
+  if (itemId === 'redorb' && toId(baseSpecies) === 'groudon') primalSpeciesName = 'Groudon-Primal';
+  if (!primalSpeciesName) return null;
+  const species = state.dex.species.get(primalSpeciesName);
+  if (!species?.exists) return null;
+  return {
+    speciesName: species.name,
+    assetId: getAutoSpriteIdForSpecies(species.name, mon.gender, species.baseSpecies || baseSpecies || mon.species || ''),
+  };
+}
+function getUltraBurstCandidateForMon(mon) {
+  if (!state.dex) return null;
+  if (toId(mon?.item || '') !== 'ultranecroziumz') return null;
+  const candidateKeys = uniqueNames([
+    mon?.formSpecies,
+    mon?.species,
+    mon?.manualFormSpecies,
+    mon?.baseSpecies,
+    mon?.originalData?.name,
+    mon?.originalData?.baseSpecies,
+  ]).map(name => normalizeLocalizedInput('species', name, state.allSpeciesChoices || state.speciesChoices || []) || name);
+  const canUltraBurst = candidateKeys.some(name => ['necrozmaduskmane', 'necrozmadawnwings', 'necrozma'].includes(toId(name)));
+  if (!canUltraBurst) return null;
+  const species = state.dex.species.get('Necrozma-Ultra');
+  if (!species?.exists) return null;
+  return {
+    speciesName: species.name,
+    assetId: getAutoSpriteIdForSpecies(species.name, mon.gender, species.baseSpecies || 'Necrozma'),
+  };
 }
 function calcStatsForSpeciesData(mon, speciesData) {
   return calcStats({
@@ -3170,16 +3217,18 @@ function resolveBattleRenderSpriteId(mon) {
   const speciesName = getBattleRenderSpeciesName(mon);
   const baseSpeciesName = mon.baseSpecies || mon.originalData?.baseSpecies || speciesName;
   const isTransformedSpecies = Boolean(toId(speciesName) && toId(baseSpeciesName) && toId(speciesName) !== toId(baseSpeciesName));
-  const megaSnapshotSprite = mon.megaUsed && mon.megaSpriteId && (!mon.megaSpecies || toId(mon.megaSpecies) === toId(speciesName))
-    ? mon.megaSpriteId
-    : '';
+  const snapshotFormSprite = [
+    mon.megaUsed && mon.megaSpriteId && (!mon.megaSpecies || toId(mon.megaSpecies) === toId(speciesName)) ? mon.megaSpriteId : '',
+    mon.primalSpriteId && (!mon.primalSpecies || toId(mon.primalSpecies) === toId(speciesName)) ? mon.primalSpriteId : '',
+    mon.ultraSpriteId && (!mon.ultraSpecies || toId(mon.ultraSpecies) === toId(speciesName)) ? mon.ultraSpriteId : '',
+  ].find(Boolean) || '';
   const exactAutoSpriteId = getAutoSpriteIdForSpecies(speciesName, mon.gender || '', baseSpeciesName);
   if (isTransformedSpecies && exactAutoSpriteId && doesSpriteIdMatchSpeciesFamily(exactAutoSpriteId, speciesName, baseSpeciesName)) return exactAutoSpriteId;
-  if (megaSnapshotSprite && doesSpriteIdMatchSpeciesFamily(megaSnapshotSprite, speciesName, baseSpeciesName)) return megaSnapshotSprite;
+  if (snapshotFormSprite && doesSpriteIdMatchSpeciesFamily(snapshotFormSprite, speciesName, baseSpeciesName)) return snapshotFormSprite;
   const candidate = mon.spriteId || mon.spriteAutoId || '';
   if (doesSpriteIdMatchSpeciesFamily(candidate, speciesName, baseSpeciesName)) return candidate;
   if (exactAutoSpriteId && doesSpriteIdMatchSpeciesFamily(exactAutoSpriteId, speciesName, baseSpeciesName)) return exactAutoSpriteId;
-  return megaSnapshotSprite || candidate || exactAutoSpriteId || '';
+  return snapshotFormSprite || candidate || exactAutoSpriteId || '';
 }
 function normalizeBattleMonSprite(mon) {
   if (!mon) return mon;
@@ -4185,8 +4234,16 @@ async function buildShowdownPayloadMon(mon, player, slot) {
   const battleBaseSpecies = startSpeciesData?.baseSpecies || mon.baseSpecies || mon.data?.baseSpecies || startSpecies || mon.species;
   const startSpriteId = getAutoSpriteIdForSpecies(startSpecies, mon.gender || '', battleBaseSpecies) || mon.spriteAutoId || mon.spriteId || '';
   const megaCandidate = getMegaCandidateForMon(mon);
+  const primalCandidate = getPrimalCandidateForMon(mon);
+  const ultraBurstCandidate = getUltraBurstCandidateForMon(mon);
   const megaSpriteId = megaCandidate?.speciesName
     ? (megaCandidate.assetId || getAutoSpriteIdForSpecies(megaCandidate.speciesName, mon.gender || '', mon.baseSpecies || mon.species || battleBaseSpecies))
+    : '';
+  const primalSpriteId = primalCandidate?.speciesName
+    ? (primalCandidate.assetId || getAutoSpriteIdForSpecies(primalCandidate.speciesName, mon.gender || '', mon.baseSpecies || mon.species || battleBaseSpecies))
+    : '';
+  const ultraSpriteId = ultraBurstCandidate?.speciesName
+    ? (ultraBurstCandidate.assetId || getAutoSpriteIdForSpecies(ultraBurstCandidate.speciesName, mon.gender || '', mon.baseSpecies || mon.species || battleBaseSpecies))
     : '';
   return {
     species: startSpecies,
@@ -4213,6 +4270,10 @@ async function buildShowdownPayloadMon(mon, player, slot) {
       startSpriteId,
       megaSpecies: megaCandidate?.speciesName || '',
       megaSpriteId: megaSpriteId || '',
+      primalSpecies: primalCandidate?.speciesName || '',
+      primalSpriteId: primalSpriteId || '',
+      ultraSpecies: ultraBurstCandidate?.speciesName || '',
+      ultraSpriteId: ultraSpriteId || '',
       spriteAutoId: mon.spriteAutoId || startSpriteId,
       shiny: Boolean(mon.shiny),
       item: mon.item || '',
@@ -4947,12 +5008,13 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       btn.disabled = !selectable || forcedContinuation;
       if (btn.disabled) btn.classList.add('disabled');
       if (isLockedSingleMove && choice.kind === 'move' && choice.moveIndex === moveIndex) btn.classList.remove('disabled');
+      const canZHere = Boolean(Array.isArray(moveRequest?.canZMove) && moveRequest.canZMove[moveIndex]);
       const ppLabel = Number.isFinite(moveInfo?.pp) || Number.isFinite(slotInfo?.pp)
         ? `PP ${pp}/${maxPp}`
         : (isLockedSingleMove
           ? lang('연속 행동 / Locked continuation', 'Locked continuation')
           : 'PP —');
-      btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>불러오는 중… / Loading… · ${ppLabel}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
+      btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>불러오는 중… / Loading… · ${ppLabel}${canZHere ? ' · Z 가능 / Z ready' : ''}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
       Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
         if (!btn.isConnected) return;
         const previewChoice = choice.kind === 'move' && choice.moveIndex === moveIndex ? choice : null;
@@ -4962,7 +5024,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
           : (isLockedSingleMove
             ? lang('연속 행동 / Locked continuation', 'Locked continuation')
             : 'PP —');
-        btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>${displayType(preview?.type || moveData?.type || '')} · ${preview?.category || moveData?.category || '—'}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · ${ppLabel}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
+        btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>${displayType(preview?.type || moveData?.type || '')} · ${preview?.category || moveData?.category || '—'}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · ${ppLabel}${canZHere ? ' · Z 가능 / Z ready' : ''}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
       });
       if (!btn.disabled) {
         btn.addEventListener('click', () => {
@@ -4975,6 +5037,22 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       moveButtons.appendChild(btn);
     });
     section.appendChild(moveButtons);
+
+    if (!forcedContinuation && !(choice.kind === 'move' && Number.isInteger(choice.moveIndex))) {
+      const availableZMoves = Array.isArray(moveRequest?.canZMove)
+        ? moveRequest.canZMove.filter(Boolean)
+        : [];
+      if (availableZMoves.length) {
+        const zHint = document.createElement('div');
+        zHint.className = 'small-note';
+        zHint.style.marginTop = '8px';
+        zHint.textContent = lang(
+          '이 포켓몬은 Z기술을 사용할 수 있습니다. 먼저 호환되는 기술을 선택하면 Z기술 토글이 나타납니다.',
+          'This Pokémon can use a Z-Move. Select a compatible move first to reveal the Z-Move toggle.'
+        );
+        section.appendChild(zHint);
+      }
+    }
 
     const toggles = document.createElement('div');
     toggles.className = 'toggle-row';
