@@ -216,6 +216,12 @@ const SPECIAL_ITEM_LINKED_FORM_OVERRIDES = Object.freeze({
     darkmemory: 'Silvally-Dark',
     fairymemory: 'Silvally-Fairy',
   }),
+  zacian: Object.freeze({
+    rustedsword: 'Zacian-Crowned',
+  }),
+  zamazenta: Object.freeze({
+    rustedshield: 'Zamazenta-Crowned',
+  }),
 });
 const SPECIAL_MOVE_LINKED_FORM_OVERRIDES = Object.freeze({
   keldeo: Object.freeze({
@@ -264,6 +270,8 @@ const FORM_ASSET_OVERRIDES = Object.freeze({
   'Genesect-Burn': 'GENESECT_2',
   'Genesect-Chill': 'GENESECT_3',
   'Genesect-Douse': 'GENESECT_4',
+  'Zacian-Crowned': 'ZACIAN_1',
+  'Zamazenta-Crowned': 'ZAMAZENTA_1',
 });
 const EXPLICIT_ONLY_FORM_FAMILIES = new Set(['EEVEE', 'GRENINJA', 'PIKACHU']);
 
@@ -4590,6 +4598,11 @@ function getEngineForcedMoveChoice(moveRequest) {
     moveIndex: 0,
   };
 }
+function getAvailableEngineZMoveOptions(moveRequest) {
+  return Array.isArray(moveRequest?.canZMove)
+    ? moveRequest.canZMove.map((info, index) => info ? {index, info} : null).filter(Boolean)
+    : [];
+}
 function buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle = state.battle) {
   const requestSlot = getEngineRequestSlotForActiveIndex(player, activeIndex, battle);
   if (requestSlot < 0) return null;
@@ -4599,6 +4612,7 @@ function buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle =
   const previous = getEngineDraftChoice(player, activeIndex, battle);
   const canZMove = Array.isArray(moveRequest?.canZMove) && Boolean(moveRequest.canZMove[moveIndex]);
   const isForcedContinuation = isEngineForcedContinuationRequest(moveRequest);
+  const zModeActive = !isForcedContinuation && Boolean(previous?.z) && getAvailableEngineZMoveOptions(moveRequest).length > 0;
   return {
     ...createEmptyBattleChoice(),
     kind: 'move',
@@ -4606,7 +4620,7 @@ function buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle =
     moveIndex,
     switchTo: null,
     target: null,
-    z: !isForcedContinuation && Boolean(previous?.z && canZMove),
+    z: Boolean(zModeActive && canZMove),
     mega: !isForcedContinuation && Boolean(previous?.mega && moveRequest?.canMegaEvo),
     ultra: !isForcedContinuation && Boolean(previous?.ultra && moveRequest?.canUltraBurst),
     tera: !isForcedContinuation && Boolean(previous?.tera && moveRequest?.canTerastallize),
@@ -4644,11 +4658,22 @@ function toggleEngineDraftFlag(player, activeIndex, flag, battle = state.battle)
       next.ultra = false;
     }
   } else if (flag === 'z') {
-    if (!(previous.kind === 'move' && Number.isInteger(previous.moveIndex))) return false;
-    const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[previous.moveIndex] : null;
-    if (!zInfo) return false;
+    const availableZMoves = getAvailableEngineZMoveOptions(moveRequest);
+    if (!availableZMoves.length) return false;
     next.z = !previous.z;
-    if (next.z) next.dynamax = false;
+    if (next.z) {
+      next.dynamax = false;
+      const selectedMoveCanBecomeZ = previous.kind === 'move'
+        && Number.isInteger(previous.moveIndex)
+        && Boolean(Array.isArray(moveRequest?.canZMove) && moveRequest.canZMove[previous.moveIndex]);
+      if (!selectedMoveCanBecomeZ) {
+        next.kind = '';
+        next.move = '';
+        next.moveIndex = null;
+        next.target = null;
+        next.switchTo = null;
+      }
+    }
   } else {
     return false;
   }
@@ -4691,10 +4716,10 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
       mega: Boolean(rawChoice.mega && moveRequest?.canMegaEvo),
       ultra: Boolean(rawChoice.ultra && moveRequest?.canUltraBurst),
       tera: Boolean(rawChoice.tera && moveRequest?.canTerastallize),
-      z: false,
+      z: Boolean(rawChoice.z && getAvailableEngineZMoveOptions(moveRequest).length),
       dynamax: Boolean(rawChoice.dynamax && moveRequest?.canDynamax && runtimeSupportsDynamax()),
     };
-    if (!sanitizedDraft.mega && !sanitizedDraft.ultra && !sanitizedDraft.tera && !sanitizedDraft.dynamax) {
+    if (!sanitizedDraft.mega && !sanitizedDraft.ultra && !sanitizedDraft.tera && !sanitizedDraft.z && !sanitizedDraft.dynamax) {
       clearEnginePendingChoice(player, slot, battle);
       return createEmptyBattleChoice();
     }
@@ -4816,7 +4841,14 @@ function pruneEnginePendingChoices(battle = state.battle) {
 }
 function getEngineChoiceSummary(player, slot, battle = state.battle) {
   const choice = normalizeEnginePendingChoice(player, slot, battle);
-  if (!choice?.kind) return lang('대기 중', 'Pending');
+  if (!choice?.kind) {
+    const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, slot, battle));
+    const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+    if (choice?.z && getAvailableEngineZMoveOptions(moveRequest).length) {
+      return lang('Z기술 선택 모드', 'Z-Move mode');
+    }
+    return lang('대기 중', 'Pending');
+  }
   const side = battle?.players?.[player];
   if (choice.kind === 'switch') {
     if (!Number.isInteger(choice.switchTo)) return lang('교체 대상 선택 중', 'Choosing switch target');
@@ -4992,67 +5024,8 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       forcedNote.textContent = '이 턴은 엔진이 강제한 연속 행동입니다. 별도 클릭 없이 자동으로 잠기며, 상대 선택이 끝나면 바로 진행됩니다. / This turn is an engine-locked continuation. It auto-locks without an extra click and advances as soon as the opposing side is ready.';
       section.appendChild(forcedNote);
     }
-    const moveButtons = document.createElement('div');
-    moveButtons.className = 'choice-buttons';
-    (moveRequest?.moves || []).forEach((moveInfo, moveIndex) => {
-      const slotInfo = mon.moveSlots?.[moveIndex] || null;
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `choice-btn ${choice.kind === 'move' && choice.moveIndex === moveIndex ? 'selected' : ''}`;
-      const moveName = moveInfo?.move || slotInfo?.name || '';
-      const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? 0);
-      const maxPp = Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? 0);
-      const disabled = Boolean(moveInfo?.disabled);
-      const isLockedSingleMove = forcedContinuation && moveIndex === 0;
-      const selectable = isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex);
-      btn.disabled = !selectable || forcedContinuation;
-      if (btn.disabled) btn.classList.add('disabled');
-      if (isLockedSingleMove && choice.kind === 'move' && choice.moveIndex === moveIndex) btn.classList.remove('disabled');
-      const canZHere = Boolean(Array.isArray(moveRequest?.canZMove) && moveRequest.canZMove[moveIndex]);
-      const ppLabel = Number.isFinite(moveInfo?.pp) || Number.isFinite(slotInfo?.pp)
-        ? `PP ${pp}/${maxPp}`
-        : (isLockedSingleMove
-          ? lang('연속 행동 / Locked continuation', 'Locked continuation')
-          : 'PP —');
-      btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>불러오는 중… / Loading… · ${ppLabel}${canZHere ? ' · Z 가능 / Z ready' : ''}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
-      Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
-        if (!btn.isConnected) return;
-        const previewChoice = choice.kind === 'move' && choice.moveIndex === moveIndex ? choice : null;
-        const preview = moveData ? describeMoveForBattle(mon, moveData, previewChoice) : null;
-        const ppLabel = Number.isFinite(moveInfo?.pp) || Number.isFinite(slotInfo?.pp)
-          ? `PP ${pp}/${maxPp}`
-          : (isLockedSingleMove
-            ? lang('연속 행동 / Locked continuation', 'Locked continuation')
-            : 'PP —');
-        btn.innerHTML = `<strong>${displayMoveName(moveName)}</strong><small>${displayType(preview?.type || moveData?.type || '')} · ${preview?.category || moveData?.category || '—'}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · ${ppLabel}${canZHere ? ' · Z 가능 / Z ready' : ''}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
-      });
-      if (!btn.disabled) {
-        btn.addEventListener('click', () => {
-          const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle);
-          if (!nextChoice) return;
-          setEnginePendingChoice(player, activeIndex, nextChoice, battle);
-          renderBattle();
-        });
-      }
-      moveButtons.appendChild(btn);
-    });
-    section.appendChild(moveButtons);
-
-    if (!forcedContinuation && !(choice.kind === 'move' && Number.isInteger(choice.moveIndex))) {
-      const availableZMoves = Array.isArray(moveRequest?.canZMove)
-        ? moveRequest.canZMove.filter(Boolean)
-        : [];
-      if (availableZMoves.length) {
-        const zHint = document.createElement('div');
-        zHint.className = 'small-note';
-        zHint.style.marginTop = '8px';
-        zHint.textContent = lang(
-          '이 포켓몬은 Z기술을 사용할 수 있습니다. 먼저 호환되는 기술을 선택하면 Z기술 토글이 나타납니다.',
-          'This Pokémon can use a Z-Move. Select a compatible move first to reveal the Z-Move toggle.'
-        );
-        section.appendChild(zHint);
-      }
-    }
+    const availableZMoves = getAvailableEngineZMoveOptions(moveRequest);
+    const zModeActive = !forcedContinuation && Boolean(choice.z && availableZMoves.length);
 
     const toggles = document.createElement('div');
     toggles.className = 'toggle-row';
@@ -5067,6 +5040,20 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
         renderBattle();
       });
       toggles.appendChild(teraBtn);
+    }
+
+    if (!forcedContinuation && availableZMoves.length) {
+      const zBtn = document.createElement('button');
+      zBtn.type = 'button';
+      zBtn.className = `toggle-pill ${choice.z ? 'active' : ''}`;
+      zBtn.textContent = zModeActive
+        ? 'Z기술 선택 중 / Z-Move Mode'
+        : `Z기술 / Z-Move (${availableZMoves.length})`;
+      zBtn.addEventListener('click', () => {
+        if (!toggleEngineDraftFlag(player, activeIndex, 'z', battle)) return;
+        renderBattle();
+      });
+      toggles.appendChild(zBtn);
     }
 
     if (!forcedContinuation && moveRequest?.canMegaEvo) {
@@ -5105,21 +5092,6 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       toggles.appendChild(dynaBtn);
     }
 
-    if (!forcedContinuation && choice.kind === 'move' && Number.isInteger(choice.moveIndex)) {
-      const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[choice.moveIndex] : null;
-      if (zInfo) {
-        const zBtn = document.createElement('button');
-        zBtn.type = 'button';
-        zBtn.className = `toggle-pill ${choice.z ? 'active' : ''}`;
-        zBtn.textContent = `Z기술 / Z-Move (${displayMoveName(zInfo.move || 'Z-Move')})`;
-        zBtn.addEventListener('click', () => {
-          if (!toggleEngineDraftFlag(player, activeIndex, 'z', battle)) return;
-          renderBattle();
-        });
-        toggles.appendChild(zBtn);
-      }
-    }
-
     const canSwitch = !forcedContinuation && canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
     const switchBtn = document.createElement('button');
     switchBtn.type = 'button';
@@ -5137,6 +5109,75 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
     });
     toggles.appendChild(switchBtn);
     section.appendChild(toggles);
+
+    if (!forcedContinuation && availableZMoves.length) {
+      const zHint = document.createElement('div');
+      zHint.className = 'small-note';
+      zHint.style.marginTop = '8px';
+      zHint.textContent = zModeActive
+        ? lang(
+          'Z모드가 활성화되었습니다. 지금 Z기술로 바뀔 수 있는 기술만 선택할 수 있습니다. 다시 누르면 일반 기술 목록으로 돌아갑니다.',
+          'Z mode is active. Only moves that can become Z-Moves are selectable now. Tap the toggle again to return to the normal move list.'
+        )
+        : lang(
+          '이 포켓몬은 Z기술을 사용할 수 있습니다. 먼저 Z 버튼을 누른 뒤, 호환되는 기술을 선택하세요.',
+          'This Pokémon can use a Z-Move. Activate Z mode first, then choose one of the compatible moves.'
+        );
+      section.appendChild(zHint);
+    }
+
+    const moveButtons = document.createElement('div');
+    moveButtons.className = 'choice-buttons';
+    (moveRequest?.moves || []).forEach((moveInfo, moveIndex) => {
+      const slotInfo = mon.moveSlots?.[moveIndex] || null;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `choice-btn ${choice.kind === 'move' && choice.moveIndex === moveIndex ? 'selected' : ''}`;
+      const moveName = moveInfo?.move || slotInfo?.name || '';
+      const pp = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? 0);
+      const maxPp = Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? 0);
+      const disabled = Boolean(moveInfo?.disabled);
+      const isLockedSingleMove = forcedContinuation && moveIndex === 0;
+      const canZHere = Boolean(Array.isArray(moveRequest?.canZMove) && moveRequest.canZMove[moveIndex]);
+      const selectable = isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex) && (!zModeActive || canZHere);
+      const zInfo = canZHere ? moveRequest.canZMove[moveIndex] : null;
+      const displayMove = zModeActive && zInfo?.move ? zInfo.move : moveName;
+      btn.disabled = !selectable || forcedContinuation;
+      if (btn.disabled) btn.classList.add('disabled');
+      if (isLockedSingleMove && choice.kind === 'move' && choice.moveIndex === moveIndex) btn.classList.remove('disabled');
+      const ppLabel = Number.isFinite(moveInfo?.pp) || Number.isFinite(slotInfo?.pp)
+        ? `PP ${pp}/${maxPp}`
+        : (isLockedSingleMove
+          ? lang('연속 행동 / Locked continuation', 'Locked continuation')
+          : 'PP —');
+      const zLabel = zModeActive
+        ? (canZHere ? ' · Z 선택 / Z armed' : ' · Z 불가 / Z unavailable')
+        : (canZHere ? ' · Z 가능 / Z ready' : '');
+      btn.innerHTML = `<strong>${displayMoveName(displayMove)}</strong><small>불러오는 중… / Loading… · ${ppLabel}${zLabel}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
+      Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
+        if (!btn.isConnected) return;
+        const previewChoice = zModeActive && canZHere
+          ? {...choice, kind: 'move', move: moveName, moveIndex, z: true}
+          : (choice.kind === 'move' && choice.moveIndex === moveIndex ? choice : null);
+        const preview = moveData ? describeMoveForBattle(mon, moveData, previewChoice) : null;
+        const ppLabel = Number.isFinite(moveInfo?.pp) || Number.isFinite(slotInfo?.pp)
+          ? `PP ${pp}/${maxPp}`
+          : (isLockedSingleMove
+            ? lang('연속 행동 / Locked continuation', 'Locked continuation')
+            : 'PP —');
+        btn.innerHTML = `<strong>${displayMoveName(displayMove)}</strong><small>${displayType(preview?.type || moveData?.type || '')} · ${preview?.category || moveData?.category || '—'}${preview?.power ? ` · ${preview.power} BP` : ''}${preview?.accuracy ? ` · ${preview.accuracy}%` : ''} · ${ppLabel}${zLabel}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
+      });
+      if (!btn.disabled) {
+        btn.addEventListener('click', () => {
+          const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle);
+          if (!nextChoice) return;
+          setEnginePendingChoice(player, activeIndex, nextChoice, battle);
+          renderBattle();
+        });
+      }
+      moveButtons.appendChild(btn);
+    });
+    section.appendChild(moveButtons);
 
     if (choice.kind === 'switch') {
       const switchWrap = document.createElement('div');

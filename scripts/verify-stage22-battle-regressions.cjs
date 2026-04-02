@@ -64,27 +64,36 @@ function makeMon(species, item, ability, moves, teraType, ui) {
     ui,
   };
 }
-function foeMon() {
+function foeMon(overrides = {}) {
+  const species = overrides.species || 'Bulbasaur';
+  const item = overrides.item || '';
+  const ability = overrides.ability || 'Overgrow';
+  const moves = overrides.moves || ['Protect', 'Growl', 'Tackle', 'Sunny Day'];
+  const teraType = overrides.teraType || 'Grass';
+  const types = overrides.types || ['grass', 'poison'];
+  const spriteId = overrides.spriteId || species.toUpperCase().replace(/[^A-Z0-9]+/g, '_');
   return makeMon(
-    'Bulbasaur',
-    '',
-    'Overgrow',
-    ['Protect', 'Growl', 'Tackle', 'Sunny Day'],
-    'Grass',
-    makeUi(1, 0, 'Bulbasaur', 'Bulbasaur', 'BULBASAUR', {
-      ability: 'Overgrow',
-      teraType: 'Grass',
-      types: ['grass', 'poison'],
+    species,
+    item,
+    ability,
+    moves,
+    teraType,
+    makeUi(1, 0, species, overrides.baseSpecies || species, spriteId, {
+      item,
+      ability,
+      teraType,
+      types,
+      ...(overrides.ui || {}),
     })
   );
 }
-async function runBattle(p1Mon, p1Choice, p2Choice = 'move 1') {
+async function runBattle(p1Mon, p1Choice, p2Choice = 'move 1', p2Mon = foeMon()) {
   const service = new ShowdownEngineService();
   let snapshot = await service.startSingles({
     formatid: FORMAT,
     players: [
       {name: 'P1', team: [p1Mon]},
-      {name: 'P2', team: [foeMon()]},
+      {name: 'P2', team: [p2Mon]},
     ],
   });
   const request = snapshot.players?.[0]?.request?.active?.[0] || {};
@@ -130,6 +139,75 @@ function printBlock(title, checks) {
       printCheck('Mega sprite asset exists locally', hasSprite('MEGANIUM_1', 'front') && hasSprite('MEGANIUM_1', 'back')),
     ];
     results.push(printBlock('Mega Meganium runtime effect', checks));
+  }
+
+
+  {
+    const feraligatr = makeMon(
+      'Feraligatr',
+      'Feraligite',
+      'Torrent',
+      ['Tackle', 'Protect', 'Crunch', 'Dragon Dance'],
+      'Water',
+      makeUi(0, 0, 'Feraligatr', 'Feraligatr', 'FERALIGATR', {
+        item: 'Feraligite',
+        ability: 'Torrent',
+        teraType: 'Water',
+        types: ['water'],
+        megaSpecies: 'Feraligatr-Mega',
+        megaSpriteId: 'FERALIGATR_1',
+      })
+    );
+    const gastly = foeMon({
+      species: 'Gastly',
+      ability: 'Levitate',
+      moves: ['Lick', 'Confuse Ray', 'Mean Look', 'Spite'],
+      teraType: 'Ghost',
+      types: ['ghost', 'poison'],
+      spriteId: 'GASTLY',
+    });
+    const {request, mon, foe} = await runBattle(feraligatr, 'move 1 mega', 'move 1', gastly);
+    const checks = [
+      printCheck('request exposes canMegaEvo for Feraligatr', Boolean(request.canMegaEvo)),
+      printCheck('species becomes Feraligatr-Mega', toId(mon?.species) === 'feraligatrmega', mon?.species),
+      printCheck('ability becomes Dragonize', toId(mon?.ability) === 'dragonize', mon?.ability),
+      printCheck('Dragonize lets Tackle hit Gastly', (foe?.hp || 0) < (foe?.maxHp || 0), `${foe?.hp}/${foe?.maxHp}`),
+    ];
+    results.push(printBlock('Mega Feraligatr runtime effect', checks));
+  }
+
+  {
+    const emboar = makeMon(
+      'Emboar',
+      'Emboarite',
+      'Blaze',
+      ['Earthquake', 'Protect', 'Flare Blitz', 'Wild Charge'],
+      'Fire',
+      makeUi(0, 0, 'Emboar', 'Emboar', 'EMBOAR', {
+        item: 'Emboarite',
+        ability: 'Blaze',
+        teraType: 'Fire',
+        types: ['fire', 'fighting'],
+        megaSpecies: 'Emboar-Mega',
+        megaSpriteId: 'EMBOAR_1',
+      })
+    );
+    const rotom = foeMon({
+      species: 'Rotom',
+      ability: 'Levitate',
+      moves: ['Thunderbolt', 'Will-O-Wisp', 'Protect', 'Hex'],
+      teraType: 'Electric',
+      types: ['electric', 'ghost'],
+      spriteId: 'ROTOM',
+    });
+    const {request, mon, foe} = await runBattle(emboar, 'move 1 mega', 'move 1', rotom);
+    const checks = [
+      printCheck('request exposes canMegaEvo for Emboar', Boolean(request.canMegaEvo)),
+      printCheck('species becomes Emboar-Mega', toId(mon?.species) === 'emboarmega', mon?.species),
+      printCheck('ability becomes Mold Breaker', toId(mon?.ability) === 'moldbreaker', mon?.ability),
+      printCheck('Mold Breaker lets Earthquake hit Levitate Rotom', (foe?.hp || 0) < (foe?.maxHp || 0), `${foe?.hp}/${foe?.maxHp}`),
+    ];
+    results.push(printBlock('Mega Emboar runtime effect', checks));
   }
 
   for (const [title, species, item, expectedSpecies, expectedAbility, expectedSprite] of [

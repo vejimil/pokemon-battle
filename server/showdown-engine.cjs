@@ -92,6 +92,13 @@ function patchPokemonEffectiveWeatherForMegaSol() {
   futureAbilityRuntimePatched = true;
 }
 
+function applyProjectFuturePatchesToDex(dex) {
+  if (!dex) return;
+  applyFutureAbilityRuntimePatches(dex);
+  applyFutureMegaSpeciesMetadataPatches(dex);
+  applyProjectMegaAbilityRulesToDex(dex);
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -489,6 +496,8 @@ class ShowdownLocalSinglesSession {
 
   start() {
     this.write(`>start ${JSON.stringify({formatid: this.formatid, debug: true})}`);
+    applyProjectFuturePatchesToDex(this.stream?.dex);
+    applyProjectFuturePatchesToDex(this.stream?.battle?.dex);
     this.players.forEach((player, index) => {
       const slot = `p${index + 1}`;
       const team = (player.team || []).map(mon => ({
@@ -693,15 +702,10 @@ class ShowdownLocalSinglesSession {
 class ShowdownEngineService {
   constructor() {
     this.sessions = new Map();
-    applyFutureAbilityRuntimePatches(Dex);
     patchPokemonEffectiveWeatherForMegaSol();
-    applyFutureMegaSpeciesMetadataPatches(Dex);
-    applyProjectMegaAbilityRulesToDex(Dex);
+    applyProjectFuturePatchesToDex(Dex);
     try {
-      const gen9Dex = Dex.mod('gen9');
-      applyFutureAbilityRuntimePatches(gen9Dex);
-      applyFutureMegaSpeciesMetadataPatches(gen9Dex);
-      applyProjectMegaAbilityRulesToDex(gen9Dex);
+      applyProjectFuturePatchesToDex(Dex.mod('gen9'));
     } catch {}
   }
 
