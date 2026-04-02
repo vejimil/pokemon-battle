@@ -131,6 +131,20 @@ function applyProjectMegaAbilityRulesToDex(dex) {
   }
 }
 
+function applyFutureMegaSpeciesMetadataPatches(dex) {
+  if (!dex?.species?.all) return;
+  for (const species of dex.species.all()) {
+    if (!isFutureMegaSpecies(species)) continue;
+    const battleOnly = species.battleOnly || species.changesFrom || species.baseSpecies || species.name;
+    species.isMega = true;
+    if (!species.battleOnly && battleOnly) species.battleOnly = battleOnly;
+    if (species.id && dex?.data?.Pokedex?.[species.id]) {
+      dex.data.Pokedex[species.id].isMega = true;
+      if (!dex.data.Pokedex[species.id].battleOnly && battleOnly) dex.data.Pokedex[species.id].battleOnly = battleOnly;
+    }
+  }
+}
+
 function resolveSnapshotBaseSpeciesName(pokemon, ui = {}) {
   return pokemon?.species?.baseSpecies
     || pokemon?.baseSpecies?.baseSpecies
@@ -555,7 +569,7 @@ class ShowdownLocalSinglesSession {
             dynamaxTurns: Number(pokemon.volatiles.dynamax?.duration || 0),
             gigantamaxed: Boolean(pokemon.gigantamax),
             preDynamaxSpriteId: ui.startSpriteId || spriteId,
-            megaUsed: Boolean(pokemon.species?.isMega),
+            megaUsed: Boolean(isMegaSpecies),
             gmaxMove: pokemon.canGigantamax || '',
             volatile: mapVolatiles(pokemon.volatiles),
             lastMoveUsed: pokemon.lastMoveUsed ? (battle.dex.moves.get(pokemon.lastMoveUsed)?.name || pokemon.lastMoveUsed) : '',
@@ -638,10 +652,12 @@ class ShowdownEngineService {
     this.sessions = new Map();
     applyFutureAbilityRuntimePatches(Dex);
     patchPokemonEffectiveWeatherForMegaSol();
+    applyFutureMegaSpeciesMetadataPatches(Dex);
     applyProjectMegaAbilityRulesToDex(Dex);
     try {
       const gen9Dex = Dex.mod('gen9');
       applyFutureAbilityRuntimePatches(gen9Dex);
+      applyFutureMegaSpeciesMetadataPatches(gen9Dex);
       applyProjectMegaAbilityRulesToDex(gen9Dex);
     } catch {}
   }
