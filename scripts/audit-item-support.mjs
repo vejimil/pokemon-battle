@@ -4,6 +4,7 @@ import {fileURLToPath} from 'url';
 import {loadLocalDex} from '../src/local-dex.js';
 import {KO_NAME_MAPS} from '../src/i18n-ko-data.js';
 import {OFFICIAL_KO_ITEMS} from '../src/i18n-ko-official.js';
+import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA, EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA} from '../src/current-official-items.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
@@ -21,6 +22,8 @@ const commonItems = [
 
 const slugify = (text) => String(text || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
 const toId = (text) => String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+const CURRENT_OFFICIAL_ITEM_ID_SET = new Set(EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA.map(name => toId(name)));
+const CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET = new Set(EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.map(name => toId(name)));
 const hasHangul = (text) => /[\u3131-\u318E\uAC00-\uD7A3]/.test(String(text || ''));
 const ITEM_LOCALIZATION_OVERRIDES = {'Berserk Gene': '버서크유전자'};
 const getLocalizedItem = (name) => ITEM_LOCALIZATION_OVERRIDES[name] || OFFICIAL_KO_ITEMS?.[name] || KO_NAME_MAPS?.items?.[name] || '';
@@ -30,7 +33,7 @@ const isSuspiciousLocalization = (english, localized) => {
   if (!hasHangul(localized) && !/[♀♂]/.test(String(localized || ''))) return true;
   return false;
 };
-const isDexSupported = (entry) => Boolean(entry?.exists) && (!entry?.isNonstandard || BUILDER_ALLOWED_NONSTANDARD.has(entry?.isNonstandard)) && !entry?.tier?.includes?.('Unreleased');
+const isDexSupported = (entry) => Boolean(entry?.exists) && (!entry?.isNonstandard || BUILDER_ALLOWED_NONSTANDARD.has(entry?.isNonstandard) || (entry?.isNonstandard === 'Future' && CURRENT_OFFICIAL_ITEM_ID_SET.has(toId(entry?.name || '')))) && !entry?.tier?.includes?.('Unreleased');
 const classifyIcon = (name) => {
   const slug = slugify(name);
   if (!slug) return {iconState: 'none', assetId: ''};
@@ -54,6 +57,8 @@ for (const item of supported) {
   if (isSuspiciousLocalization(item.name, localized)) suspiciousLocalization.push({name: item.name, localized});
 }
 
+const verifiedCurrentFuturePresent = EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA.filter(name => { const entry = Dex.items.get(name); return entry?.exists; }).map(name => ({name, icon: classifyIcon(name).iconState}));
+const verifiedCurrentAbsent = EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.filter(name => !Dex.items.get(name)?.exists).map(name => ({name, classifiedAs: CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET.has(toId(name)) ? 'absent-from-local-data' : 'unknown'}));
 const summary = {
   counts: {
     allItems: allItems.length,
@@ -66,6 +71,8 @@ const summary = {
     bagVariantIcons: iconBuckets['bag-variant'].length,
     missingIcons: iconBuckets.none.length,
     suspiciousLocalization: suspiciousLocalization.length,
+    externallyVerifiedCurrentPresentInLocalData: verifiedCurrentFuturePresent.length,
+    externallyVerifiedCurrentAbsentFromLocalData: verifiedCurrentAbsent.length,
   },
   samples: {
     filteredOut: filteredOut.slice(0, 20),
@@ -73,6 +80,8 @@ const summary = {
     bagVariantIcons: iconBuckets['bag-variant'].slice(0, 20),
     missingIcons: iconBuckets.none.slice(0, 60),
     suspiciousLocalization: suspiciousLocalization.slice(0, 20),
+    externallyVerifiedCurrentPresentInLocalData: verifiedCurrentFuturePresent,
+    externallyVerifiedCurrentAbsentFromLocalData: verifiedCurrentAbsent,
   },
 };
 console.log(JSON.stringify(summary, null, 2));

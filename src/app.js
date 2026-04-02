@@ -3,6 +3,7 @@ import {KO_NAME_MAPS} from './i18n-ko-data.js';
 import {OFFICIAL_KO_SPECIES, OFFICIAL_KO_ITEMS} from './i18n-ko-official.js';
 import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdownLocalSinglesChoices, isShowdownLocalBattle} from './engine/showdown-local-bridge.js';
 import {Aliases} from './data/aliases.js';
+import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA, EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
 const SHOWDOWN_TARGET_HINTS = {
@@ -1472,6 +1473,9 @@ function slugify(text) {
 function toId(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
+const CURRENT_OFFICIAL_ITEM_ID_SET = new Set(EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA.map(toId));
+const CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET = new Set(EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.map(toId));
+const EXPLICIT_ITEM_ALIAS_REVERSE = new Map(Object.entries(EXTERNALLY_VERIFIED_ITEM_KO_ALIASES || {}).flatMap(([english, aliases]) => (aliases || []).map(alias => [normalizeSearchKey(alias), english])));
 function titleCase(text) {
   return String(text || '').split(/[-\s]+/).filter(Boolean).map(part => part[0]?.toUpperCase() + part.slice(1)).join('\n');
 }
@@ -1621,6 +1625,21 @@ function getAliasNamesForEntity(english = '') {
   }
   return uniqueNames(out);
 }
+function getGeneratedItemSearchAliases(english = '') {
+  const aliases = new Set(EXTERNALLY_VERIFIED_ITEM_KO_ALIASES?.[english] || []);
+  const item = state.dex?.items?.get?.(english);
+  if (item?.exists && item.megaStone) {
+    const itemUsers = Array.isArray(item.itemUser) ? item.itemUser.filter(Boolean) : [];
+    const candidateUser = itemUsers[0] || Object.keys(item.megaStone || {})[0] || '';
+    const userSpecies = candidateUser ? state.dex?.species?.get?.(candidateUser) : null;
+    const baseSpecies = userSpecies?.exists ? (userSpecies.baseSpecies || userSpecies.name) : candidateUser;
+    const baseKorean = getLocalizedName('species', baseSpecies || '');
+    const suffixMatch = String(english || '').match(/\s*([XYZ])$/i);
+    const suffix = suffixMatch ? suffixMatch[1].toUpperCase() : '';
+    if (baseKorean && hasHangul(baseKorean)) aliases.add(`${baseKorean}나이트${suffix}`);
+  }
+  return Array.from(aliases);
+}
 function buildChoiceSearchTerms(kind, english, choice = {}) {
   const candidates = new Set([
     english,
@@ -1637,6 +1656,9 @@ function buildChoiceSearchTerms(kind, english, choice = {}) {
     for (const alias of getAliasNamesForEntity(english)) candidates.add(alias);
     for (const formName of choice.formSearchTerms || []) candidates.add(formName);
     for (const extra of choice.extraSearchTerms || []) candidates.add(extra);
+  }
+  if (kind === 'items') {
+    for (const alias of getGeneratedItemSearchAliases(english)) candidates.add(alias);
   }
   return Array.from(candidates).map(value => String(value || '').trim()).filter(Boolean);
 }
@@ -1798,7 +1820,7 @@ function getLocalizedName(kind, english) {
   if (!english) return '';
   const localized = LOCALIZED_NAME_MAPS?.[kind]?.[english] || KO_NAME_MAPS?.[kind]?.[english] || '';
   if (kind === 'species' && isSuspiciousLocalization(english, localized)) return getLocalizedSpeciesFallback(english) || english;
-  if (kind === 'items' && isSuspiciousLocalization(english, localized)) return localized || english;
+  if (kind === 'items' && isSuspiciousLocalization(english, localized)) return EXTERNALLY_VERIFIED_ITEM_KO_ALIASES?.[english]?.[0] || localized || english;
   return localized || english;
 }
 function displayEntity(kind, english) {
@@ -1834,6 +1856,10 @@ function normalizeLocalizedInput(kind, value, fallbackChoices = []) {
   if (!raw) return '';
   const direct = reverseNameMaps[kind]?.get(normalizeSearchKey(raw));
   if (direct) return direct;
+  if (kind === 'items') {
+    const extra = EXPLICIT_ITEM_ALIAS_REVERSE.get(normalizeSearchKey(raw));
+    if (extra) return extra;
+  }
   const split = raw.split('/').map(part => part.trim()).filter(Boolean);
   for (const piece of split) {
     const fromSplit = reverseNameMaps[kind]?.get(normalizeSearchKey(piece));
@@ -2307,14 +2333,18 @@ function renderPickerOptions() {
 function dataSourceLabel() {
   return state.dex ? `Local Dex ${state.dexVersion || ''}`.trim() : state.dataProvider;
 }
-function isAllowedNonstandard(value) {
-  return !value || BUILDER_ALLOWED_NONSTANDARD.has(value);
+function isAllowedNonstandard(value, entry = null, kind = '') {
+  if (!value) return true;
+  if (BUILDER_ALLOWED_NONSTANDARD.has(value)) return true;
+  const entryName = typeof entry === 'string' ? entry : (entry?.name || '');
+  if (kind === 'items' && value === 'Future' && CURRENT_OFFICIAL_ITEM_ID_SET.has(toId(entryName))) return true;
+  return false;
 }
 function explainNonstandard(value) {
   return NONSTANDARD_REASON_LABELS[value] || `is marked as ${value} in the loaded data.`;
 }
-function isDexSupported(entry) {
-  return Boolean(entry?.exists) && isAllowedNonstandard(entry?.isNonstandard) && !entry?.tier?.includes?.('Unreleased');
+function isDexSupported(entry, kind = '') {
+  return Boolean(entry?.exists) && isAllowedNonstandard(entry?.isNonstandard, entry, kind) && !entry?.tier?.includes?.('Unreleased');
 }
 function getDexSpeciesEntry(name) {
   if (!state.dex) return null;
@@ -2999,6 +3029,8 @@ function getItemUiSupport(itemName = '') {
   const item = state.dex?.items?.get?.(english || itemName || '') || null;
   const existsInDex = Boolean(item?.exists);
   const isExposed = Boolean((state.itemChoices || []).some(choice => toId(choice?.english) === toId(english)));
+  const isCurrentOfficialOverride = Boolean(item?.isNonstandard === 'Future' && CURRENT_OFFICIAL_ITEM_ID_SET.has(toId(item?.name || english)));
+  const isKnownCurrentButAbsentLocally = !existsInDex && CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET.has(slug);
   const isZCrystal = Boolean(item?.zMove || item?.zMoveType || item?.zMoveFrom);
   const isMegaStone = Boolean(item?.megaStone);
   const isFormLinked = Boolean(item?.itemUser?.length || /(?:plate|memory|drive|mask|orb|core|globe|rusted|griseous)/i.test(String(item?.id || slug)));
@@ -3012,6 +3044,8 @@ function getItemUiSupport(itemName = '') {
     isExposed,
     isZCrystal,
     isMegaStone,
+    isCurrentOfficialOverride,
+    isKnownCurrentButAbsentLocally,
     isFormLinked,
     isNonstandard: item?.isNonstandard || '',
     item,
@@ -3043,7 +3077,12 @@ function buildItemSupportSummary(itemName = '') {
       'This item exists in the local Dex, but the current uploaded item icon assets do not contain a matching image.'
     ));
   }
-  if (support.isNonstandard === 'Past') {
+  if (support.isCurrentOfficialOverride) {
+    lines.push(lang(
+      '이 아이템은 로컬 데이터에는 아직 Future로 남아 있지만, 외부 검증 기준으로는 현재 공식 아이템이라 빌더에서 허용됩니다.',
+      'This item is still tagged Future in the local data, but it has been externally verified as a current official item and is now allowed in the builder.'
+    ));
+  } else if (support.isNonstandard === 'Past') {
     lines.push(lang(
       '이 항목은 로컬 데이터에서 Past로 분류되어 현재 빌더 허용 범위에 포함되어 계속 노출됩니다.',
       'This item is marked Past in the local data and remains exposed because the current builder allows Past content.'
@@ -3083,9 +3122,11 @@ function renderItemDetail(option) {
       : (option.english && option.english !== option.korean ? option.english : '');
     els.pickerDetailAlt.textContent = alternate || lang('도구 상세', 'Item details');
   }
-  const statusLabel = item.isNonstandard
-    ? (item.isNonstandard === 'Past' ? lang('Past 허용', 'Past allowed') : item.isNonstandard)
-    : lang('표준', 'Standard');
+  const statusLabel = support.isCurrentOfficialOverride
+    ? lang('외부 검증으로 현재 공식 허용', 'Externally verified current official')
+    : (item.isNonstandard
+      ? (item.isNonstandard === 'Past' ? lang('Past 허용', 'Past allowed') : item.isNonstandard)
+      : lang('표준', 'Standard'));
   const metaChips = [
     `${lang('아이콘', 'Icon')}: ${describeItemIconSupport(support)}`,
     `${lang('상태', 'Status')}: ${statusLabel}`,
@@ -3098,6 +3139,7 @@ function renderItemDetail(option) {
   if (support.isZCrystal) flagChips.push(lang('Z크리스탈', 'Z-Crystal'));
   if (support.isMegaStone) flagChips.push(lang('메가스톤', 'Mega Stone'));
   if (support.isFormLinked && !support.isZCrystal && !support.isMegaStone) flagChips.push(lang('폼 연동 가능', 'Form-linked'));
+  if (support.isCurrentOfficialOverride) flagChips.push(lang('최신 공식 반영', 'Current official'));
   if (!support.hasLocalIcon) flagChips.push(lang('아이콘 자산 없음', 'No icon asset'));
   els.pickerDetailFlags.innerHTML = flagChips.map(text => `<span class="picker-detail-chip">${text}</span>`).join('');
 }
@@ -3311,7 +3353,7 @@ function buildStaticLists() {
   relocalizeChoiceCaches();
   setDatalistOptions(els.speciesList, state.speciesChoices);
   const dexItems = state.dex
-    ? state.dex.items.all().filter(item => isDexSupported(item)).map(item => item.name)
+    ? state.dex.items.all().filter(item => isDexSupported(item, 'items')).map(item => item.name)
     : [];
   const allItems = Array.from(new Set([...commonItems, ...dexItems]));
   state.itemChoices = sortChoicesForLanguage(allItems.map(item => makeChoice('items', item)));
@@ -3599,7 +3641,7 @@ async function validateMon(mon, playerIndex, slotIndex) {
   validateGenderChoice(mon, prefix, errors);
 
   if (mon.data) {
-    if (mon.data.isNonstandard && !isAllowedNonstandard(mon.data.isNonstandard)) {
+    if (mon.data.isNonstandard && !isAllowedNonstandard(mon.data.isNonstandard, mon.data, 'species')) {
       errors.push(`${prefix}: ${speciesLabel} ${explainNonstandard(mon.data.isNonstandard)}`);
     }
     if (mon.data.battleOnly) {
@@ -3625,14 +3667,20 @@ async function validateMon(mon, playerIndex, slotIndex) {
 
   if (state.dex && mon.item) {
     const item = state.dex.items.get(mon.item);
-    if (!item?.exists) errors.push(`${prefix}: ${itemLabel} 도구는 유효하지 않습니다. / ${mon.item} is not a valid item.`);
-    else if (!isAllowedNonstandard(item.isNonstandard)) errors.push(`${prefix}: ${displayItemName(item.name)} ${explainNonstandard(item.isNonstandard)}`);
+    if (!item?.exists) {
+      if (CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET.has(toId(mon.item))) {
+        errors.push(`${prefix}: ${displayItemName(mon.item)} 은(는) 현재 공식 아이템으로 외부 검증되었지만, 이 로컬 데이터 번들에는 아직 포함되지 않았습니다. / ${mon.item} is a currently official item verified externally, but it is still absent from this local data bundle.`);
+      } else {
+        errors.push(`${prefix}: ${itemLabel} 도구는 유효하지 않습니다. / ${mon.item} is not a valid item.`);
+      }
+    }
+    else if (!isAllowedNonstandard(item.isNonstandard, item, 'items')) errors.push(`${prefix}: ${displayItemName(item.name)} ${explainNonstandard(item.isNonstandard)}`);
   }
 
   if (state.dex && mon.ability) {
     const ability = state.dex.abilities.get(mon.ability);
     if (!ability?.exists) errors.push(`${prefix}: ${abilityLabel} 특성은 유효하지 않습니다. / ${mon.ability} is not a valid ability.`);
-    else if (!isAllowedNonstandard(ability.isNonstandard)) errors.push(`${prefix}: ${displayAbilityName(ability.name)} ${explainNonstandard(ability.isNonstandard)}`);
+    else if (!isAllowedNonstandard(ability.isNonstandard, ability, 'abilities')) errors.push(`${prefix}: ${displayAbilityName(ability.name)} ${explainNonstandard(ability.isNonstandard)}`);
   }
 
   const chosenMoves = mon.moves.filter(Boolean);
@@ -3648,7 +3696,7 @@ async function validateMon(mon, playerIndex, slotIndex) {
       if (loadedMove.isZ || loadedMove.isMax) {
         errors.push(`${prefix}: ${displayMoveName(loadedMove.name)} 기술은 전투 중 생성되는 특수 기술이므로 기본 기술칸에 넣을 수 없습니다. / ${loadedMove.name} is battle-generated special move content and should not be selected as a base moveslot.`);
       }
-      if (!isAllowedNonstandard(loadedMove.isNonstandard)) {
+      if (!isAllowedNonstandard(loadedMove.isNonstandard, loadedMove, 'moves')) {
         errors.push(`${prefix}: ${displayMoveName(loadedMove.name)} ${explainNonstandard(loadedMove.isNonstandard)}`);
       }
       if (state.dex && learnsetIds.size && !learnsetIds.has(moveId)) {
@@ -5099,7 +5147,7 @@ async function bootstrap() {
   showRuntime(
     '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets, localized battle data, and form-aware sprite resolution are connected.',
     'ready',
-    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${showdownStatusNote}<br>${lang('이 빌드는 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. 이번 단계에서는 싱글을 로컬 Showdown 엔진 필수 경로로 고정했고, 더블은 엔진 기반 경로가 준비될 때까지 차단하며, 다른 지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드에 노출하지 않습니다.', 'This build loads vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex, and runs a stronger validator including event-only move bundle checks and profile-based Species Clause / Item Clause / level-50 enforcement. In this step, singles are locked to the local Showdown engine-required path, doubles stay blocked until an engine-backed route exists, and unsupported browser battle execution paths are kept out of user-facing normal mode.')}`
+    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>아이템 아이콘 경로 / Item icon base: ${state.assetBase.items}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${lang(`외부 검증 기준 현재 공식이지만 로컬 데이터에 아직 없는 아이템 수 / current official items still absent from the local data bundle: ${EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.length}`, `Current official items verified externally but still absent from the local data bundle: ${EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.length}`)}<br>${showdownStatusNote}<br>${lang('이 빌드는 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. 이번 단계에서는 싱글을 로컬 Showdown 엔진 필수 경로로 고정했고, 더블은 엔진 기반 경로가 준비될 때까지 차단하며, 다른 지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드에 노출하지 않습니다.', 'This build loads vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex, and runs a stronger validator including event-only move bundle checks and profile-based Species Clause / Item Clause / level-50 enforcement. In this step, singles are locked to the local Showdown engine-required path, doubles stay blocked until an engine-backed route exists, and unsupported browser battle execution paths are kept out of user-facing normal mode.')}`
   );
   syncRuntimeModeUi();
 }
