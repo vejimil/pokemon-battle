@@ -2843,3 +2843,340 @@ label > span { font-size: 0.9rem; color: var(--muted); }
     grid-template-columns: 1fr;
   }
 }
+
+/* --- April 2026 Pokerogue correction pass --- */
+.pkbattle-bottom {
+  position: relative;
+  overflow: visible;
+}
+
+.pkbattle-message-stack.is-command {
+  padding-right: calc(var(--pkbattle-command-window-pad) + 18px);
+}
+
+.pkbattle-message-stack.is-command .pkbattle-message-primary {
+  max-width: 54ch;
+}
+
+.pkbattle-state-window {
+  background: transparent;
+  box-shadow: none;
+}
+
+.pkbattle-command-shell,
+.pkbattle-fight-shell,
+.pkbattle-party-layout-rogue {
+  color: rgba(255,255,255,0.96);
+}
+
+.pkbattle-command-shell::before,
+.pkbattle-fight-main::before,
+.pkbattle-fight-detail::before,
+.pkbattle-party-grid-wrap::before,
+.pkbattle-party-layout-rogue::before {
+  opacity: 1;
+}
+
+.pkbattle-command-shell {
+  min-height: 100%;
+  padding: 12px 10px 10px 12px;
+}
+
+.pkbattle-command-grid {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 10px;
+  align-content: center;
+  min-height: 100%;
+}
+
+.pkbattle-command-btn {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  text-align: left;
+  justify-items: start;
+  position: relative;
+}
+
+.pkbattle-command-btn::before,
+.pkbattle-command-btn::after {
+  display: none;
+}
+
+.pkbattle-command-btn strong {
+  display: inline-block;
+  font-size: 0.92rem;
+  letter-spacing: 0.02em;
+  font-weight: 700;
+}
+
+.pkbattle-command-btn small {
+  display: none;
+}
+
+.pkbattle-command-btn.active strong,
+.pkbattle-command-btn:hover strong,
+.pkbattle-command-btn:focus-visible strong {
+  color: #fff6a8;
+  text-shadow: 0 0 10px rgba(255, 240, 152, 0.25);
+}
+
+.pkbattle-command-btn.active {
+  transform: none;
+}
+
+.pkbattle-command-btn.active::marker {
+  content: '';
+}
+
+.pkbattle-command-btn.active strong::before,
+.pkbattle-command-btn:hover strong::before,
+.pkbattle-command-btn:focus-visible strong::before {
+  content: '▶ ';
+  color: #fff6a8;
+}
+
+.pkbattle-command-btn:disabled strong {
+  color: rgba(255,255,255,0.46);
+  text-shadow: none;
+}
+
+.pkbattle-command-tera-btn {
+  left: -36px;
+  bottom: 12px;
+}
+
+.pkbattle-window-layout-fight {
+  grid-template-columns: minmax(0, 243fr) minmax(80px, 80fr);
+}
+
+.pkbattle-fight-main,
+.pkbattle-fight-detail {
+  min-height: 100%;
+}
+
+.pkbattle-fight-main {
+  padding: 10px 12px 10px 12px;
+}
+
+.pkbattle-move-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+  align-content: start;
+}
+
+.pkbattle-move-card,
+.pkbattle-move-textline {
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  text-align: left;
+}
+
+.pkbattle-move-card::before,
+.pkbattle-move-card::after {
+  display: none;
+}
+
+.pkbattle-move-textline strong {
+  display: block;
+  font-size: 0.86rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pkbattle-move-textline small {
+  display: block;
+  margin-top: 2px;
+  color: rgba(255,255,255,0.68);
+  font-size: 0.66rem;
+  line-height: 1.2;
+}
+
+.pkbattle-move-textline.active strong,
+.pkbattle-move-textline:hover strong,
+.pkbattle-move-textline:focus-visible strong {
+  color: #fff6a8;
+  text-shadow: 0 0 10px rgba(255, 240, 152, 0.25);
+}
+
+.pkbattle-move-textline.active strong::before,
+.pkbattle-move-textline:hover strong::before,
+.pkbattle-move-textline:focus-visible strong::before {
+  content: '▶ ';
+  color: #fff6a8;
+}
+
+.pkbattle-fight-detail {
+  padding: 10px 11px 9px;
+  gap: 7px;
+}
+
+.pkbattle-detail-top strong {
+  display: block;
+  font-size: 0.84rem;
+  line-height: 1.25;
+}
+
+.pkbattle-detail-type {
+  font-size: 0.66rem;
+}
+
+.pkbattle-detail-stat {
+  font-size: 0.7rem;
+}
+
+.pkbattle-detail-desc {
+  max-height: 70px;
+  font-size: 0.68rem;
+}
+
+.pkbattle-fight-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.pkbattle-inline-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0.22rem 0.46rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.05);
+  color: rgba(255,255,255,0.92);
+  font-size: 0.68rem;
+  line-height: 1;
+}
+
+.pkbattle-inline-action .pkbattle-tera-icon {
+  width: 16px;
+  height: 18px;
+}
+
+.pkbattle-inline-action.active,
+.pkbattle-inline-action:hover,
+.pkbattle-inline-action:focus-visible {
+  border-color: rgba(255, 240, 152, 0.38);
+  color: #fff6a8;
+}
+
+.pkbattle-inline-action:disabled {
+  opacity: 0.48;
+}
+
+.pkbattle-party-layout-rogue {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto 1fr auto;
+  min-height: clamp(176px, 18vw, 214px);
+  padding: 10px 12px 8px;
+  background-image: url('./assets/pokerogue/ui/party_bg.png');
+  background-repeat: no-repeat;
+  background-size: cover;
+  gap: 8px;
+}
+
+.pkbattle-party-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.pkbattle-party-heading strong {
+  font-size: 0.88rem;
+}
+
+.pkbattle-party-heading small {
+  font-size: 0.68rem;
+  color: rgba(255,255,255,0.72);
+}
+
+.pkbattle-party-grid-wrap {
+  position: relative;
+  padding: 8px;
+}
+
+.pkbattle-party-grid-wrap::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('./assets/pokerogue/ui/party_bg.png');
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0.24;
+  pointer-events: none;
+}
+
+.pkbattle-party-grid {
+  position: relative;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+}
+
+.pkbattle-party-card {
+  min-height: 70px;
+  padding: 8px 10px;
+}
+
+.pkbattle-party-card::before {
+  display: none;
+}
+
+.pkbattle-party-card strong {
+  font-size: 0.8rem;
+}
+
+.pkbattle-party-card .sprite-shell.small {
+  width: 48px;
+  height: 48px;
+}
+
+.pkbattle-party-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 920px) {
+  .pkbattle-window-layout-fight {
+    grid-template-columns: 1fr;
+  }
+
+  .pkbattle-fight-detail {
+    min-height: 108px;
+  }
+}
+
+@media (max-width: 720px) {
+  .pkbattle-message-stack.is-command {
+    padding-right: 18px;
+  }
+
+  .pkbattle-command-grid,
+  .pkbattle-party-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .pkbattle-window-layout-fight {
+    grid-template-columns: 1fr;
+  }
+}
