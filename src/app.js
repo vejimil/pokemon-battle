@@ -5705,7 +5705,7 @@ function renderBattleFightWindow(battle, player) {
 
   const backBtn = document.createElement('button');
   backBtn.type = 'button';
-  backBtn.className = 'pkbattle-action-btn';
+  backBtn.className = 'pkbattle-action-btn pkbattle-action-btn-back';
   backBtn.innerHTML = `<strong>${lang('뒤로', 'Back')}</strong><small>${lang('명령 창으로 돌아갑니다.', 'Return to the command window.')}</small>`;
   backBtn.addEventListener('click', () => setBattleUiMode(player, 'command'));
   actionRow.appendChild(backBtn);
@@ -5928,7 +5928,7 @@ function renderBattlePartyWindow(battle, player) {
   if (!forced) {
     const backBtn = document.createElement('button');
     backBtn.type = 'button';
-    backBtn.className = 'pkbattle-action-btn';
+    backBtn.className = 'pkbattle-action-btn pkbattle-action-btn-back';
     backBtn.innerHTML = `<strong>${lang('뒤로', 'Back')}</strong><small>${lang('명령 창으로 돌아갑니다.', 'Return to the command window.')}</small>`;
     backBtn.addEventListener('click', () => setBattleUiMode(player, 'command'));
     actions.appendChild(backBtn);
@@ -5973,7 +5973,7 @@ function renderBattleTargetWindow(battle, player) {
           '현재 엔진 필수 싱글 경로에서는 대상 선택이 별도 화면으로 노출되지 않습니다. 구조만 유지하고 실제 전투 진실은 엔진 요청을 따릅니다.',
           'The current engine-required singles path does not expose a separate target-select screen. The structural role is preserved while battle truth still comes from engine requests.'
         )}</div>
-        <div class="pkbattle-action-row"><button type="button" class="pkbattle-action-btn"><strong>${lang('뒤로', 'Back')}</strong><small>${lang('명령 창으로 돌아갑니다.', 'Return to the command window.')}</small></button></div>
+        <div class="pkbattle-action-row"><button type="button" class="pkbattle-action-btn pkbattle-action-btn-back"><strong>${lang('뒤로', 'Back')}</strong><small>${lang('명령 창으로 돌아갑니다.', 'Return to the command window.')}</small></button></div>
       </div>
       <div class="pkbattle-party-grid-wrap">
         <div class="pkbattle-target-placeholder">${lang('향후 더블 배틀의 대상 선택 모드를 위해 이 자리와 역할을 남겨 둡니다.', 'This role and space are kept for future doubles target-selection flow.')}</div>
