@@ -4,6 +4,7 @@ import {OFFICIAL_KO_SPECIES, OFFICIAL_KO_ITEMS} from './i18n-ko-official.js';
 import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdownLocalSinglesChoices, isShowdownLocalBattle} from './engine/showdown-local-bridge.js';
 import {Aliases} from './data/aliases.js';
 import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA, EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
+import {resolveItemIconUrl, applyPokerogueAtlasFrameToElement, POKEROGUE_ASSET_PATHS} from './pokerogue-assets.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
 const SHOWDOWN_TARGET_HINTS = {
@@ -2343,6 +2344,7 @@ function resetPickerDetail() {
   els.pickerDetailContent?.classList.add('hidden');
   if (els.pickerDetailName) els.pickerDetailName.textContent = '—';
   if (els.pickerDetailAlt) els.pickerDetailAlt.textContent = '—';
+  clearPickerDetailIcon();
   if (els.pickerDetailMeta) els.pickerDetailMeta.innerHTML = '';
   if (els.pickerDetailDesc) els.pickerDetailDesc.textContent = '';
   if (els.pickerDetailFlags) els.pickerDetailFlags.innerHTML = '';
@@ -3332,6 +3334,85 @@ function getItemUiSupport(itemName = '') {
     item,
   };
 }
+
+function renderItemIconPreview(container, itemName, options = {}) {
+  if (!container) return;
+  const cleanName = String(itemName || '').trim();
+  const token = `${cleanName}|${Date.now()}|${Math.random().toString(36).slice(2)}`;
+  container.dataset.itemIconToken = token;
+  container.innerHTML = '';
+  container.hidden = !cleanName || /^no item$/i.test(cleanName);
+  if (container.hidden) return;
+
+  const iconWrap = document.createElement('span');
+  iconWrap.className = 'item-chip-media';
+  iconWrap.textContent = '…';
+  container.appendChild(iconWrap);
+
+  const labelText = options.label || '';
+  if (labelText) {
+    const label = document.createElement('span');
+    label.className = 'item-chip-label';
+    label.textContent = labelText;
+    container.appendChild(label);
+  }
+
+  resolveItemIconUrl(cleanName).then(url => {
+    if (!container.isConnected || container.dataset.itemIconToken !== token) return;
+    iconWrap.innerHTML = '';
+    if (!url) {
+      iconWrap.classList.add('missing');
+      iconWrap.textContent = '?';
+      if (options.hideWhenMissing) container.hidden = true;
+      return;
+    }
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = options.alt || displayItemName(cleanName);
+    image.loading = 'lazy';
+    iconWrap.classList.remove('missing');
+    iconWrap.appendChild(image);
+  });
+}
+
+function renderSelectedItemPreview(mon) {
+  if (!els.editorItemPreview) return;
+  renderItemIconPreview(els.editorItemPreview, mon?.item || '', {
+    label: mon?.item ? displayItemName(mon.item) : '',
+    hideWhenMissing: false,
+  });
+}
+
+function clearPickerDetailIcon() {
+  if (!els.pickerDetailIcon) return;
+  els.pickerDetailIcon.innerHTML = '';
+  els.pickerDetailIcon.hidden = true;
+}
+
+async function renderTeraButtonIcon(element, teraType = '') {
+  if (!element) return;
+  const typeId = toId(teraType || 'unknown') || 'unknown';
+  element.classList.remove('missing');
+  element.textContent = '';
+  const ok = await applyPokerogueAtlasFrameToElement(element, 'button_tera', typeId, {width: 24, height: 28});
+  if (!ok) {
+    element.classList.add('missing');
+    element.textContent = 'T';
+  }
+}
+
+function getPokerogueAssetAuditSummary() {
+  return {
+    items: POKEROGUE_ASSET_PATHS.pokerogueItems.slice(),
+    ui: POKEROGUE_ASSET_PATHS.ui.slice(),
+    effects: POKEROGUE_ASSET_PATHS.effects.slice(),
+    arenas: POKEROGUE_ASSET_PATHS.arenas.slice(),
+    battleAnims: POKEROGUE_ASSET_PATHS.battleAnims.slice(),
+    animData: POKEROGUE_ASSET_PATHS.animData.slice(),
+    fonts: POKEROGUE_ASSET_PATHS.fonts.slice(),
+  };
+}
+
 function buildItemSupportSummary(itemName = '') {
   const support = getItemUiSupport(itemName);
   if (!slugify(itemName)) return lang('지닌 도구가 없습니다.', 'No held item selected.');
@@ -3391,6 +3472,7 @@ function renderItemDetail(option) {
   els.pickerDetailPlaceholder?.classList.add('hidden');
   els.pickerDetailContent?.classList.remove('hidden');
   if (els.pickerDetailName) els.pickerDetailName.textContent = option.display || displayItemName(item.name);
+  renderItemIconPreview(els.pickerDetailIcon, item.name, {hideWhenMissing: true, alt: displayItemName(item.name)});
   if (els.pickerDetailAlt) {
     const alternate = state.language === 'en'
       ? (option.korean && option.korean !== option.english ? option.korean : '')
@@ -3616,6 +3698,8 @@ function bindElements() {
     pickerDetailMeta: document.getElementById('picker-detail-meta'),
     pickerDetailDesc: document.getElementById('picker-detail-desc'),
     pickerDetailFlags: document.getElementById('picker-detail-flags'),
+    pickerDetailIcon: document.getElementById('picker-detail-icon'),
+    editorItemPreview: document.getElementById('editor-item-preview'),
     pickerCloseBtn: document.getElementById('picker-close-btn'),
   });
 }
@@ -3699,6 +3783,15 @@ function renderRoster() {
         ? `${species} · ${abilityLabel} · ${lang('기술', 'Moves')} ${moveCount}/4`
         : `${abilityLabel} · ${lang('기술', 'Moves')} ${moveCount}/4`;
       meta.innerHTML = `<div class="slot-name">${title}</div><div class="slot-sub">${subline}</div>`;
+      const slotBadges = document.createElement('div');
+      slotBadges.className = 'slot-badges';
+      if (mon.item) {
+        const itemBadge = document.createElement('div');
+        itemBadge.className = 'item-mini-badge';
+        renderItemIconPreview(itemBadge, mon.item, {label: displayItemName(mon.item), hideWhenMissing: false});
+        slotBadges.appendChild(itemBadge);
+      }
+      if (slotBadges.childElementCount) meta.appendChild(slotBadges);
       button.appendChild(meta);
       container.appendChild(button);
     });
@@ -3834,6 +3927,7 @@ function renderEditor() {
   }
   els.editorAbilityNote.textContent = mon.ability ? implementedAbilityNote(mon.ability) : lang('포켓몬을 선택하면 특성 목록이 로드됩니다.', 'Select a species to load its ability list.');
   els.editorAbilityEffect.textContent = implementedItemNote(mon.item);
+  renderSelectedItemPreview(mon);
   els.abilitySelect.innerHTML = getCurrentAbilityChoices(mon).map(choice => `<option value="${choice.english}">${choice.display}</option>`).join('') || `<option value="">${lang('특성 없음', 'No abilities loaded')}</option>`;
   els.abilitySelect.value = mon.ability || '';
   renderAnimatedSprite(els.editorSprite, {spriteId: mon.spriteId, facing: 'front', shiny: mon.shiny, size: 'large'});
@@ -5065,8 +5159,15 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
     if (!forcedContinuation && moveRequest?.canTerastallize) {
       const teraBtn = document.createElement('button');
       teraBtn.type = 'button';
-      teraBtn.className = `toggle-pill ${choice.tera ? 'active' : ''}`;
-      teraBtn.textContent = `테라스탈 / Terastallize (${displayType(moveRequest.canTerastallize)})`;
+      teraBtn.className = `toggle-pill toggle-pill-tera ${choice.tera ? 'active' : ''}`;
+      const teraIcon = document.createElement('span');
+      teraIcon.className = 'tera-toggle-icon';
+      teraBtn.appendChild(teraIcon);
+      const teraCopy = document.createElement('span');
+      teraCopy.className = 'toggle-pill-copy';
+      teraCopy.innerHTML = `<span>테라스탈 / Terastallize</span><small>${displayType(moveRequest.canTerastallize)}</small>`;
+      teraBtn.appendChild(teraCopy);
+      renderTeraButtonIcon(teraIcon, moveRequest.canTerastallize);
       teraBtn.addEventListener('click', () => {
         if (!toggleEngineDraftFlag(player, activeIndex, 'tera', battle)) return;
         renderBattle();
@@ -5314,6 +5415,19 @@ function renderSideSprites(player, container, facing) {
       badge.textContent = badgeText;
       shell.appendChild(badge);
     }
+    const abilityBar = document.createElement('div');
+    abilityBar.className = 'battle-ability-bar';
+    const abilityLabel = document.createElement('span');
+    abilityLabel.className = 'battle-ability-label';
+    abilityLabel.textContent = displayAbilityName(mon?.ability || '') || lang('특성 없음', 'No ability');
+    abilityBar.appendChild(abilityLabel);
+    if (mon?.item) {
+      const itemBadge = document.createElement('span');
+      itemBadge.className = 'battle-ability-item';
+      renderItemIconPreview(itemBadge, mon.item, {hideWhenMissing: true, alt: displayItemName(mon.item)});
+      abilityBar.appendChild(itemBadge);
+    }
+    shell.appendChild(abilityBar);
     container.appendChild(shell);
     renderAnimatedSprite(holder, {spriteId: resolveBattleRenderSpriteId(mon), facing, shiny: mon.shiny, size: 'large'});
   });
@@ -5334,6 +5448,15 @@ function renderBattleTeam(player, container) {
       ${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}
       <div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div>
       <div class="mon-sub">HP ${mon.hp}/${mon.maxHp}${activeIndices.has(index) ? ' · 전투 중 / Active' : ''}${mon.fainted ? ' · 기절 / Fainted' : ''}${mon.dynamaxed ? ` · ${mon.dynamaxTurns}턴 / ${mon.dynamaxTurns} turns` : ''}${mon.volatile?.substituteHp ? ` · 대타 ${mon.volatile.substituteHp} / Sub ${mon.volatile.substituteHp}` : ''}</div>`;
+    if (mon.item) {
+      const badges = document.createElement('div');
+      badges.className = 'mon-badges';
+      const itemBadge = document.createElement('div');
+      itemBadge.className = 'battle-item-badge';
+      renderItemIconPreview(itemBadge, mon.item, {label: displayItemName(mon.item), hideWhenMissing: false});
+      badges.appendChild(itemBadge);
+      summary.appendChild(badges);
+    }
     card.appendChild(summary);
     container.appendChild(card);
   });
@@ -5482,6 +5605,7 @@ async function bootstrap() {
   applyLanguageToStaticUi();
   syncLanguageControls();
   showRuntime('업로드한 에셋과 현지화된 전투 데이터를 불러오는 중… / Loading uploaded assets and fully localized battle data…', 'loading');
+  window.__PKB_POKEROGUE_ASSET_AUDIT__ = getPokerogueAssetAuditSummary();
   resetTeams();
   await loadManifest();
   await detectAssetBases();

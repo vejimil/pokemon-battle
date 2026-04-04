@@ -1,3 +1,14 @@
+@font-face {
+  font-family: "emerald";
+  src: url("./assets/pokerogue/fonts/pokemon-bw.ttf") format("truetype");
+  font-display: swap;
+}
+@font-face {
+  font-family: "pkmnems";
+  src: url("./assets/pokerogue/fonts/pokemon-emerald-pro.ttf") format("truetype");
+  font-display: swap;
+}
+
 :root {
   --bg: #0b1020;
   --bg-soft: #121a31;
@@ -159,6 +170,242 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   transform: none;
 }
 .ghost-btn.small { padding: 0.5rem 0.75rem; font-size: 0.9rem; }
+
+.item-preview,
+.item-chip,
+.item-mini-badge,
+.battle-item-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.item-preview[hidden],
+.picker-detail-icon[hidden] {
+  display: none !important;
+}
+.item-preview-inline {
+  margin-top: 8px;
+}
+.item-chip-media,
+.picker-detail-icon,
+.tera-toggle-icon {
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  display: inline-grid;
+  place-items: center;
+  overflow: hidden;
+}
+.item-chip-media {
+  width: 32px;
+  height: 32px;
+  padding: 3px;
+}
+.item-chip-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+.item-chip-media.missing,
+.tera-toggle-icon.missing {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.item-chip-label {
+  min-width: 0;
+  font-size: 0.84rem;
+  line-height: 1.25;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slot-badges,
+.mon-badges {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.item-mini-badge .item-chip-media,
+.battle-item-badge .item-chip-media {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+}
+.picker-detail-icon {
+  width: 52px;
+  height: 52px;
+  padding: 6px;
+  border-radius: 16px;
+}
+.picker-detail-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.battle-panel,
+.battle-panel button,
+.battle-panel input,
+.battle-panel select {
+  font-family: "emerald", "pkmnems", "Malgun Gothic", "Apple SD Gothic Neo", Inter, ui-sans-serif, system-ui, sans-serif;
+}
+.battle-panel .battle-turn-banner,
+.battle-panel .turn-chip,
+.battle-panel .choice-head h3,
+.battle-panel .side-header h3 {
+  letter-spacing: 0.02em;
+}
+.battle-panel .battle-sidebar-card,
+.battle-panel .choice-panel,
+.battle-panel .side-card {
+  background: linear-gradient(180deg, rgba(13, 25, 50, 0.92), rgba(10, 16, 29, 0.94));
+  border-color: rgba(168, 197, 255, 0.18);
+}
+.side-header {
+  position: relative;
+  min-height: 46px;
+  padding: 10px 14px 10px 18px;
+  border-radius: 16px;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+.side-card.enemy .side-header {
+  background-image: url("./assets/pokerogue/ui/pbinfo_enemy_mini.png");
+}
+.side-card.ally .side-header {
+  background-image: url("./assets/pokerogue/ui/pbinfo_player_mini.png");
+}
+.battle-team-grid {
+  position: relative;
+  padding: 10px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  overflow: hidden;
+}
+.battle-team-grid::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("./assets/pokerogue/ui/party_bg.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  opacity: 0.24;
+  pointer-events: none;
+}
+.battle-team-grid > * {
+  position: relative;
+  z-index: 1;
+}
+.battle-team-card {
+  background: linear-gradient(180deg, rgba(23, 37, 68, 0.88), rgba(14, 22, 38, 0.92));
+  border: 1px solid rgba(163, 191, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+}
+.hp-bar {
+  position: relative;
+  height: 10px;
+  background: rgba(7, 11, 24, 0.7);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.hp-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("./assets/pokerogue/ui/party_slot_hp_overlay.png");
+  background-repeat: repeat-x;
+  background-position: center;
+  background-size: auto 100%;
+  opacity: 0.8;
+  pointer-events: none;
+}
+.battle-ability-bar {
+  position: relative;
+  min-width: min(260px, 94%);
+  max-width: 320px;
+  min-height: 31px;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 16px 5px 14px;
+  color: #eaf2ff;
+}
+.battle-ability-bar::before,
+.battle-ability-bar::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  pointer-events: none;
+}
+.battle-ability-bar::before {
+  left: 0;
+  background-image: url("./assets/pokerogue/ui/ability_bar_left.png");
+}
+.battle-ability-bar::after {
+  right: 0;
+  background-image: url("./assets/pokerogue/ui/ability_bar_right.png");
+}
+.battle-ability-label,
+.battle-ability-item {
+  position: relative;
+  z-index: 1;
+}
+.battle-ability-label {
+  min-width: 0;
+  font-size: 0.78rem;
+  font-family: "pkmnems", "Malgun Gothic", "Apple SD Gothic Neo", Inter, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.battle-ability-item .item-chip-media {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+}
+.toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.toggle-pill.toggle-pill-tera {
+  border-color: rgba(130, 193, 255, 0.28);
+  background: linear-gradient(180deg, rgba(49, 80, 121, 0.56), rgba(23, 39, 72, 0.72));
+}
+.toggle-pill.toggle-pill-tera.active {
+  border-color: rgba(94, 234, 212, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(94, 234, 212, 0.18);
+}
+.tera-toggle-icon {
+  width: 24px;
+  height: 28px;
+  border-radius: 8px;
+  background-color: rgba(255,255,255,0.06);
+}
+.toggle-pill-copy {
+  min-width: 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.1;
+}
+.toggle-pill-copy small {
+  color: var(--muted);
+}
 
 .runtime-status {
   border-radius: 16px;
