@@ -249,69 +249,58 @@
             </div>
           </div>
 
-          <div class="battle-layout">
-            <div class="battle-main">
-              <div class="battle-field">
-                <div class="side-card enemy">
-                  <div class="side-header">
-                    <h3 id="battle-p2-name">Player 2</h3>
-                    <span id="battle-p2-turn" class="turn-chip" data-i18n="turn_waiting">대기 중</span>
-                  </div>
-                  <div id="battle-side-p2" class="side-sprite-row"></div>
-                  <div id="battle-team-p2" class="battle-team-grid"></div>
-                </div>
+          <div class="pkbattle-shell">
+            <section class="pkbattle-stage-layer" aria-label="Battle stage">
+              <div class="pkbattle-perspective-tabs" role="tablist" aria-label="Battle perspective">
+                <button id="battle-perspective-p1" class="pkbattle-perspective-btn active" type="button">P1</button>
+                <button id="battle-perspective-p2" class="pkbattle-perspective-btn" type="button">P2</button>
+                <div id="battle-perspective-banner" class="pkbattle-perspective-banner"></div>
+              </div>
 
-                <div class="arena-log-panel">
-                  <div class="arena-center">
-                    <div class="arena-backdrop"></div>
-                  </div>
+              <div class="pkbattle-stage">
+                <div class="pkbattle-stage-backdrop"></div>
+                <div class="pkbattle-stage-topbar">
                   <div class="battle-turn-banner"><span data-i18n="turn_label">턴</span> <span id="turn-number">0</span></div>
-                  <div id="battle-field-status" class="battle-field-status" data-i18n="battle_field_status_none">날씨 없음 · 지형 없음</div>
+                  <div id="battle-field-status" class="pkbattle-field-status" data-i18n="battle_field_status_none">날씨 없음 · 지형 없음</div>
                 </div>
 
-                <div class="side-card ally">
-                  <div class="side-header">
-                    <h3 id="battle-p1-name">Player 1</h3>
-                    <span id="battle-p1-turn" class="turn-chip" data-i18n="turn_waiting">대기 중</span>
-                  </div>
-                  <div id="battle-side-p1" class="side-sprite-row"></div>
-                  <div id="battle-team-p1" class="battle-team-grid"></div>
-                </div>
-              </div>
+                <div id="battle-ability-flyout" class="pkbattle-ability-flyout hidden" aria-live="polite"></div>
 
-              <div class="choice-grid">
-                <div class="choice-panel">
-                  <div class="choice-head">
-                    <h3 id="choice-p1-title" data-i18n="choice_title_p1">플레이어 1 행동 선택</h3>
-                    <span id="choice-p1-status" class="small-note" data-i18n="choice_status_none">아직 선택 없음</span>
-                  </div>
-                  <div id="choice-p1" class="choice-body"></div>
+                <div class="pkbattle-enemy-side">
+                  <div id="battle-tray-p2" class="pkbattle-pbtray enemy" aria-label="Opponent party tray"></div>
+                  <div id="battle-info-p2" class="pkbattle-info enemy" aria-live="polite"></div>
+                  <div id="battle-side-p2" class="pkbattle-battler-anchor enemy"></div>
                 </div>
-                <div class="choice-panel">
-                  <div class="choice-head">
-                    <h3 id="choice-p2-title" data-i18n="choice_title_p2">플레이어 2 행동 선택</h3>
-                    <span id="choice-p2-status" class="small-note" data-i18n="choice_status_none">아직 선택 없음</span>
-                  </div>
-                  <div id="choice-p2" class="choice-body"></div>
-                </div>
-              </div>
-            </div>
 
-            <aside class="battle-sidebar">
-              <div class="battle-sidebar-card">
-                <div class="panel-header compact">
-                  <h3 data-i18n="battle_log_title">배틀 로그</h3>
-                  <button id="clear-log-btn" class="ghost-btn small" type="button" data-i18n="clear_btn">지우기</button>
+                <div class="pkbattle-player-side">
+                  <div id="battle-side-p1" class="pkbattle-battler-anchor ally"></div>
+                  <div id="battle-info-p1" class="pkbattle-info ally" aria-live="polite"></div>
+                  <div id="battle-tray-p1" class="pkbattle-pbtray ally" aria-label="Player party tray"></div>
                 </div>
-                <div id="battle-log" class="battle-log"></div>
               </div>
-              <div class="battle-sidebar-card">
-                <div class="panel-header compact">
-                  <h3 data-i18n="current_selections_title">현재 선택</h3>
-                </div>
-                <div id="pending-choices" class="pending-choices"></div>
+            </section>
+
+            <section class="pkbattle-bottom" aria-label="Battle UI">
+              <div id="battle-message-window" class="pkbattle-window pkbattle-message-window" aria-live="polite"></div>
+
+              <div class="pkbattle-controls-shell">
+                <div id="battle-command-window" class="pkbattle-window pkbattle-command-window"></div>
+                <div id="battle-fight-window" class="pkbattle-window pkbattle-fight-window hidden"></div>
+                <div id="battle-party-window" class="pkbattle-window pkbattle-party-window hidden"></div>
+                <div id="battle-target-window" class="pkbattle-window pkbattle-target-window hidden"></div>
               </div>
-            </aside>
+            </section>
+
+            <details class="pkbattle-debug">
+              <summary>Debug</summary>
+              <div id="battle-debug-summary" class="pkbattle-debug-summary"></div>
+              <div class="pkbattle-debug-toolbar">
+                <div class="small-note">Secondary debug output only. The main battle view stays single-screen.</div>
+                <button id="clear-log-btn" class="ghost-btn small" type="button" data-i18n="clear_btn">지우기</button>
+              </div>
+              <div id="pending-choices" class="pending-choices"></div>
+              <div id="battle-log" class="battle-log"></div>
+            </details>
           </div>
         </section>
       </main>

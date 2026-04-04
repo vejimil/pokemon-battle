@@ -1,7 +1,7 @@
 const POKEROGUE_ASSET_PATHS = Object.freeze({
   currentItems: ['./assets/items'],
   pokerogueItems: ['./assets/pokerogue/items', './assets/pokerogue/images/items'],
-  ui: ['./assets/pokerogue/ui', './assets/pokerogue/images/ui'],
+  ui: ['./assets/pokerogue/ui', './assets/pokerogue/ui/misc', './assets/pokerogue/images/ui', './assets/pokerogue/images/ui/misc'],
   effects: ['./assets/pokerogue/effects', './assets/pokerogue/images/effects'],
   arenas: ['./assets/pokerogue/arenas', './assets/pokerogue/images/arenas'],
   animData: ['./assets/pokerogue/anim-data', './assets/pokerogue/battle-anims', './assets/pokerogue/images/battle-anims', './assets/pokerogue/images/battle_anims'],

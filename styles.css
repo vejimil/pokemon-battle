@@ -1175,3 +1175,751 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 .lang-card { min-width: 220px; }
 .lang-toggle-group { gap: 8px; }
 .lang-toggle-group .seg-btn { min-width: 92px; }
+
+@font-face {
+  font-family: 'PokerogueBW';
+  src: url('./assets/pokerogue/fonts/pokemon-bw.ttf') format('truetype');
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'PokerogueEMS';
+  src: url('./assets/pokerogue/fonts/pkmnems.ttf') format('truetype');
+  font-display: swap;
+}
+
+.battle-panel {
+  font-family: 'PokerogueBW', system-ui, sans-serif;
+}
+
+.battle-panel .inline-actions {
+  align-items: center;
+}
+
+.pkbattle-shell {
+  display: grid;
+  gap: 18px;
+}
+
+.pkbattle-stage-layer {
+  display: grid;
+  gap: 10px;
+}
+
+.pkbattle-perspective-tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pkbattle-perspective-btn {
+  min-width: 64px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.04);
+  color: var(--muted);
+  font-family: inherit;
+}
+
+.pkbattle-perspective-btn.active {
+  color: var(--text);
+  border-color: rgba(125, 211, 252, 0.42);
+  background: rgba(125, 211, 252, 0.12);
+}
+
+.pkbattle-perspective-banner {
+  min-height: 1.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.pkbattle-stage {
+  position: relative;
+  min-height: 620px;
+  border-radius: 28px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #77d5ff 0%, #d1f2ff 37%, #88d36d 37%, #6dc15b 100%);
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+.pkbattle-stage-backdrop {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 68%, rgba(255,255,255,0.36), transparent 18%),
+    linear-gradient(180deg, rgba(255,255,255,0.12), transparent 32%),
+    linear-gradient(180deg, transparent 54%, rgba(255,255,255,0.16) 54%, rgba(255,255,255,0.16) 56%, transparent 56%);
+  pointer-events: none;
+}
+
+.pkbattle-stage-topbar {
+  position: absolute;
+  top: 18px;
+  left: 22px;
+  right: 22px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  z-index: 2;
+}
+
+.pkbattle-field-status {
+  max-width: min(92%, 980px);
+  text-align: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(6, 12, 22, 0.34);
+  color: rgba(255,255,255,0.88);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.pkbattle-enemy-side,
+.pkbattle-player-side {
+  position: absolute;
+  inset: 0;
+}
+
+.pkbattle-battler-anchor {
+  position: absolute;
+  z-index: 1;
+}
+
+.pkbattle-battler-anchor.enemy {
+  top: 124px;
+  right: 70px;
+}
+
+.pkbattle-battler-anchor.ally {
+  left: 70px;
+  bottom: 122px;
+}
+
+.pkbattle-battler-anchor .battle-sprite-shell {
+  justify-items: center;
+}
+
+.pkbattle-battler-anchor .sprite-shell.large {
+  width: 232px;
+  height: 232px;
+}
+
+.pkbattle-battler-anchor.enemy .sprite-shell.large canvas {
+  transform: scale(1);
+}
+
+.pkbattle-battler-anchor.ally .sprite-shell.large canvas {
+  transform: scale(1);
+}
+
+.pkbattle-info {
+  position: absolute;
+  z-index: 2;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  color: #ffffff;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.6);
+}
+
+.pkbattle-info.enemy {
+  top: 124px;
+  left: 30px;
+  width: 260px;
+  min-height: 62px;
+  background-image: url('./assets/pokerogue/ui/pbinfo_enemy_mini.png');
+}
+
+.pkbattle-info.ally {
+  right: 28px;
+  bottom: 96px;
+  width: 260px;
+  min-height: 84px;
+  background-image: url('./assets/pokerogue/ui/pbinfo_player.png');
+}
+
+.pkbattle-info-inner {
+  padding: 12px 16px 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.pkbattle-info.enemy .pkbattle-info-inner {
+  padding-top: 10px;
+}
+
+.pkbattle-name-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.92rem;
+}
+
+.pkbattle-name-row strong {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.pkbattle-level {
+  font-size: 0.82rem;
+  color: rgba(255,255,255,0.92);
+}
+
+.pkbattle-subrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 18px;
+  font-size: 0.72rem;
+}
+
+.pkbattle-subrow-left,
+.pkbattle-subrow-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pkbattle-type-icons {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.pkbattle-type-icon {
+  width: 32px;
+  height: 14px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.pkbattle-hp-row {
+  display: grid;
+  gap: 4px;
+}
+
+.pkbattle-hp-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.72rem;
+}
+
+.pkbattle-hp-track,
+.pkbattle-exp-track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.34);
+}
+
+.pkbattle-exp-track {
+  height: 6px;
+  background: rgba(0,0,0,0.26);
+}
+
+.pkbattle-hp-fill,
+.pkbattle-exp-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+}
+
+.pkbattle-hp-fill.high { background: linear-gradient(90deg, #48d86f, #6bff83); }
+.pkbattle-hp-fill.mid { background: linear-gradient(90deg, #f6c543, #f8dc69); }
+.pkbattle-hp-fill.low { background: linear-gradient(90deg, #ff6e73, #ff9a91); }
+.pkbattle-exp-fill { background: linear-gradient(90deg, #43afff, #8fd7ff); }
+
+.pkbattle-badge-line {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pkbattle-mini-badge {
+  border-radius: 999px;
+  padding: 0.1rem 0.42rem;
+  background: rgba(0,0,0,0.32);
+  font-size: 0.66rem;
+  color: rgba(255,255,255,0.95);
+}
+
+.pkbattle-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 0.12rem 0.44rem;
+  background: rgba(0,0,0,0.36);
+  font-size: 0.68rem;
+}
+
+.pkbattle-status-pill img {
+  width: 14px;
+  height: 14px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.pkbattle-pbtray {
+  position: absolute;
+  z-index: 2;
+  width: 208px;
+  min-height: 18px;
+  padding-top: 8px;
+  background-repeat: no-repeat;
+  background-size: 100% 8px;
+}
+
+.pkbattle-pbtray.enemy {
+  top: 100px;
+  left: 32px;
+  background-image: url('./assets/pokerogue/ui/pb_tray_overlay_enemy.png');
+}
+
+.pkbattle-pbtray.ally {
+  right: 32px;
+  bottom: 72px;
+  background-image: url('./assets/pokerogue/ui/pb_tray_overlay_player.png');
+}
+
+.pkbattle-pbtray-balls {
+  display: flex;
+  gap: 8px;
+  padding: 2px 8px 0;
+}
+
+.pkbattle-pbtray.enemy .pkbattle-pbtray-balls {
+  justify-content: flex-start;
+}
+
+.pkbattle-pbtray.ally .pkbattle-pbtray-balls {
+  justify-content: flex-end;
+}
+
+.pkbattle-pbball {
+  width: 14px;
+  height: 14px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,0.45));
+}
+
+.pkbattle-pbball.active {
+  outline: 2px solid rgba(255,255,255,0.9);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+
+.pkbattle-ability-flyout {
+  position: absolute;
+  top: 260px;
+  min-width: 240px;
+  max-width: min(48vw, 440px);
+  padding: 8px 16px 8px 18px;
+  color: #fff;
+  z-index: 4;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  font-size: 0.84rem;
+  text-shadow: 1px 1px 0 rgba(0,0,0,0.65);
+  opacity: 0;
+  transform: translateX(-12px);
+  transition: opacity 180ms ease, transform 180ms ease;
+  pointer-events: none;
+}
+
+.pkbattle-ability-flyout.show {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.pkbattle-ability-flyout.player {
+  left: 18px;
+  background-image: url('./assets/pokerogue/ui/ability_bar_left.png');
+}
+
+.pkbattle-ability-flyout.enemy {
+  right: 18px;
+  background-image: url('./assets/pokerogue/ui/ability_bar_right.png');
+}
+
+.pkbattle-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.pkbattle-controls-shell {
+  min-width: 0;
+  display: grid;
+}
+
+.pkbattle-window {
+  position: relative;
+  min-height: 96px;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(11,18,30,0.92);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+.pkbattle-bottom .hidden,
+.pkbattle-stage .hidden {
+  display: none !important;
+}
+
+.pkbattle-message-window {
+  min-height: 118px;
+  background:
+    linear-gradient(180deg, rgba(10,14,24,0.82), rgba(10,14,24,0.96)),
+    url('./assets/pokerogue/ui/overlay_message.png');
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.pkbattle-message-stack {
+  padding: 14px 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.pkbattle-message-line {
+  color: rgba(255,255,255,0.94);
+  line-height: 1.4;
+  font-size: 0.92rem;
+}
+
+.pkbattle-message-line.secondary {
+  color: rgba(255,255,255,0.72);
+}
+
+.pkbattle-message-line.accent {
+  color: #cdeaff;
+}
+
+.pkbattle-window-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.pkbattle-window-heading h3 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.pkbattle-window-note {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.pkbattle-command-body,
+.pkbattle-party-body,
+.pkbattle-target-body {
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.pkbattle-command-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pkbattle-command-btn,
+.pkbattle-action-btn,
+.pkbattle-party-card,
+.pkbattle-move-card {
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  padding: 12px;
+  text-align: left;
+  font-family: inherit;
+}
+
+.pkbattle-command-btn {
+  min-height: 72px;
+  display: grid;
+  gap: 6px;
+}
+
+.pkbattle-command-btn strong,
+.pkbattle-move-card strong,
+.pkbattle-party-card strong {
+  font-size: 0.92rem;
+}
+
+.pkbattle-command-btn small,
+.pkbattle-move-card small,
+.pkbattle-party-card small,
+.pkbattle-action-btn small {
+  color: var(--muted);
+  display: block;
+  line-height: 1.35;
+}
+
+.pkbattle-command-btn.active,
+.pkbattle-action-btn.active,
+.pkbattle-party-card.active,
+.pkbattle-move-card.active {
+  border-color: rgba(125,211,252,0.42);
+  background: rgba(125,211,252,0.12);
+}
+
+.pkbattle-command-btn:disabled,
+.pkbattle-action-btn:disabled,
+.pkbattle-party-card:disabled,
+.pkbattle-move-card:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.pkbattle-command-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.pkbattle-tera-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+}
+
+.pkbattle-tera-chip.active {
+  border-color: rgba(192,132,252,0.45);
+  background: rgba(192,132,252,0.14);
+}
+
+.pkbattle-tera-icon {
+  width: 24px;
+  height: 28px;
+}
+
+.pkbattle-fight-window {
+  min-height: 220px;
+}
+
+.pkbattle-fight-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) 180px;
+  min-height: 220px;
+}
+
+.pkbattle-fight-main {
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+  border-right: 1px solid rgba(255,255,255,0.08);
+}
+
+.pkbattle-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pkbattle-action-btn {
+  padding: 8px 12px;
+  min-height: 0;
+}
+
+.pkbattle-move-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.pkbattle-move-card {
+  min-height: 84px;
+}
+
+.pkbattle-move-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.pkbattle-category-icon {
+  width: 28px;
+  height: 11px;
+  flex: 0 0 auto;
+}
+
+.pkbattle-fight-detail {
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  background: rgba(0,0,0,0.14);
+}
+
+.pkbattle-fight-detail h4 {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.pkbattle-detail-chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pkbattle-detail-chip {
+  padding: 0.16rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.07);
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.pkbattle-party-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.pkbattle-party-card {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.pkbattle-party-card .sprite-shell.small {
+  width: 56px;
+  height: 56px;
+  background: rgba(255,255,255,0.06);
+}
+
+.pkbattle-debug {
+  border-radius: 18px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(10,14,24,0.72);
+  overflow: hidden;
+}
+
+.pkbattle-debug summary {
+  cursor: pointer;
+  padding: 12px 16px;
+  user-select: none;
+}
+
+.pkbattle-debug-summary,
+.pkbattle-debug-toolbar,
+.pkbattle-debug .pending-choices,
+.pkbattle-debug .battle-log {
+  padding: 0 16px 14px;
+}
+
+.pkbattle-debug-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.pkbattle-debug .battle-log {
+  max-height: 320px;
+}
+
+@media (max-width: 1180px) {
+  .pkbattle-stage {
+    min-height: 700px;
+  }
+
+  .pkbattle-bottom {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 920px) {
+  .pkbattle-stage {
+    min-height: 760px;
+  }
+
+  .pkbattle-battler-anchor.enemy {
+    right: 18px;
+    top: 150px;
+  }
+
+  .pkbattle-battler-anchor.ally {
+    left: 18px;
+    bottom: 150px;
+  }
+
+  .pkbattle-info.enemy {
+    left: 14px;
+    top: 108px;
+    width: 230px;
+  }
+
+  .pkbattle-info.ally {
+    right: 14px;
+    bottom: 110px;
+    width: 230px;
+  }
+
+  .pkbattle-pbtray.enemy {
+    left: 14px;
+    top: 86px;
+  }
+
+  .pkbattle-pbtray.ally {
+    right: 14px;
+    bottom: 86px;
+  }
+
+  .pkbattle-fight-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .pkbattle-fight-main {
+    border-right: 0;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+}
+
+@media (max-width: 720px) {
+  .pkbattle-stage {
+    min-height: 820px;
+  }
+
+  .pkbattle-battler-anchor .sprite-shell.large {
+    width: 190px;
+    height: 190px;
+  }
+
+  .pkbattle-message-window {
+    min-height: 132px;
+  }
+
+  .pkbattle-command-grid,
+  .pkbattle-move-grid {
+    grid-template-columns: 1fr;
+  }
+}
