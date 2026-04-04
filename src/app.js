@@ -5695,6 +5695,44 @@ function buildMoveDetailFallback(mon, moveInfo, moveRequest, choice, moveData, m
   };
 }
 
+
+function buildLocalMoveUiData(moveName = '') {
+  const move = state.dex?.moves?.get?.(moveName);
+  if (!move?.exists) return null;
+  return {
+    id: move.id,
+    name: move.name,
+    type: String(move.type || '').toLowerCase(),
+    category: String(move.category || '').toLowerCase(),
+    power: move.basePower || 0,
+    accuracy: move.accuracy === true ? 100 : (move.accuracy || 100),
+    shortDesc: move.shortDesc || move.desc || '',
+    desc: move.desc || move.shortDesc || '',
+    zMoveName: move.zMove?.name || '',
+    zBasePower: move.zMove?.basePower || move.zMovePower || getDefaultZMovePower(move.basePower || 0),
+  };
+}
+
+function buildPhaserMoveDetailModel(mon, moveInfo, slotInfo, moveRequest, choice, moveIndex) {
+  const moveName = moveInfo?.move || slotInfo?.name || '';
+  const moveData = buildLocalMoveUiData(moveName);
+  const preview = buildMoveDetailFallback(mon, moveInfo, moveRequest, choice, moveData, moveIndex) || {};
+  const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[moveIndex] : null;
+  const resolvedType = toId(preview?.type || moveData?.type || '') || 'unknown';
+  const resolvedCategory = toId(preview?.category || moveData?.category || 'status') || 'status';
+  const accuracyValue = preview?.accuracy ?? moveData?.accuracy;
+  return {
+    name: displayMoveName((choice?.z && zInfo?.move) ? zInfo.move : moveName || lang('기술 없음', 'No move')),
+    type: resolvedType,
+    typeLabel: displayType(preview?.type || moveData?.type || '') || '—',
+    category: ['physical', 'special', 'status'].includes(resolvedCategory) ? resolvedCategory : 'status',
+    ppLabel: `${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}`,
+    powerLabel: `${preview?.power ?? moveData?.power ?? '—'}`,
+    accuracyLabel: `${accuracyValue ?? '—'}`,
+    description: localizeText(moveData?.shortDesc || moveData?.desc || lang('설명 없음', 'No move description available.')),
+  };
+}
+
 function renderBattleFightWindow(battle, player) {
   const container = els.battleStateWindow;
   if (!container) return;
@@ -6164,7 +6202,12 @@ function buildPhaserFightWindowModel(battle, player) {
   const availableZMoves = getAvailableEngineZMoveOptions(moveRequest);
   const forcedContinuation = isEngineForcedContinuationRequest(moveRequest);
   const canSwitch = !forcedContinuation && canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
-  const moves = (moveRequest?.moves || []).slice(0, 4).map((moveInfo, moveIndex) => {
+  const ui = getBattleUiState(battle);
+  ui.moveDetailByPlayer = ui.moveDetailByPlayer || {0: {}, 1: {}};
+  if (!Number.isInteger(ui.moveDetailByPlayer[player]?.[activeIndex])) ui.moveDetailByPlayer[player][activeIndex] = 0;
+  const moveEntries = (moveRequest?.moves || []).slice(0, 4);
+  const detailIndex = clamp(Number(ui.moveDetailByPlayer[player][activeIndex] || 0), 0, Math.max(moveEntries.length - 1, 0));
+  const moves = moveEntries.map((moveInfo, moveIndex) => {
     const slotInfo = mon?.moveSlots?.[moveIndex];
     const moveName = moveInfo?.move || slotInfo?.name || '—';
     const useZLabel = choice.z && moveRequest?.canZMove?.[moveIndex]?.move;
@@ -6173,27 +6216,30 @@ function buildPhaserFightWindowModel(battle, player) {
       sublabel: `${displayType(moveInfo?.type || slotInfo?.type || '') || '—'} · PP ${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}`,
       disabled: !isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex),
       active: choice.kind === 'move' && choice.moveIndex === moveIndex,
+      focused: detailIndex === moveIndex,
       action: {type: 'move', moveIndex},
+      focusAction: {type: 'focus-move', moveIndex},
     };
   });
   const toggles = [];
-  if (!forcedContinuation && moveRequest?.canTerastallize) toggles.push({label: 'Tera', active: Boolean(choice.tera), disabled: false, action: {type: 'toggle', flag: 'tera'}});
-  if (!forcedContinuation && availableZMoves.length) toggles.push({label: 'Z', active: Boolean(choice.z), disabled: false, action: {type: 'toggle', flag: 'z'}});
-  if (!forcedContinuation && moveRequest?.canMegaEvo) toggles.push({label: lang('메가', 'Mega'), active: Boolean(choice.mega), disabled: false, action: {type: 'toggle', flag: 'mega'}});
-  if (!forcedContinuation && moveRequest?.canUltraBurst) toggles.push({label: lang('울트라', 'Ultra'), active: Boolean(choice.ultra), disabled: false, action: {type: 'toggle', flag: 'ultra'}});
-  if (!forcedContinuation && moveRequest?.canDynamax && runtimeSupportsDynamax()) toggles.push({label: 'Dmax', active: Boolean(choice.dynamax), disabled: false, action: {type: 'toggle', flag: 'dynamax'}});
-  const detailIndex = clamp(Number(choice.kind === 'move' && Number.isInteger(choice.moveIndex) ? choice.moveIndex : 0), 0, Math.max(moves.length - 1, 0));
-  const currentMove = moves[detailIndex];
+  if (!forcedContinuation && moveRequest?.canTerastallize) toggles.push({label: 'Tera', active: Boolean(choice.tera), disabled: false, action: {type: 'toggle', flag: 'tera'}, kind: 'tera', type: toId(moveRequest.canTerastallize) || 'unknown'});
+  if (!forcedContinuation && availableZMoves.length) toggles.push({label: 'Z', active: Boolean(choice.z), disabled: false, action: {type: 'toggle', flag: 'z'}, kind: 'text'});
+  if (!forcedContinuation && moveRequest?.canMegaEvo) toggles.push({label: lang('메가', 'Mega'), active: Boolean(choice.mega), disabled: false, action: {type: 'toggle', flag: 'mega'}, kind: 'text'});
+  if (!forcedContinuation && moveRequest?.canUltraBurst) toggles.push({label: lang('울트라', 'Ultra'), active: Boolean(choice.ultra), disabled: false, action: {type: 'toggle', flag: 'ultra'}, kind: 'text'});
+  if (!forcedContinuation && moveRequest?.canDynamax && runtimeSupportsDynamax()) toggles.push({label: 'Dmax', active: Boolean(choice.dynamax), disabled: false, action: {type: 'toggle', flag: 'dynamax'}, kind: 'text'});
+  const detailMoveInfo = moveEntries[detailIndex] || null;
+  const detailSlotInfo = mon?.moveSlots?.[detailIndex] || null;
+  const detail = buildPhaserMoveDetailModel(mon, detailMoveInfo, detailSlotInfo, moveRequest, choice, detailIndex);
   return {
     mode: 'fight',
     title: `${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')} · ${lang('기술', 'Moves')}`,
     moves,
     toggles,
+    detail,
     footerActions: [
       {label: lang('뒤로', 'Back'), disabled: false, action: {type: 'command', key: 'command'}},
       {label: lang('교체', 'Switch'), disabled: !canSwitch, action: {type: 'command', key: 'party'}},
     ],
-    detailText: currentMove ? `${lang('현재 강조', 'Current focus')}: ${currentMove.label}` : '',
   };
 }
 
@@ -6249,6 +6295,8 @@ function buildPhaserMessageWindowModel(battle, player) {
 function buildPhaserBattleViewModel(battle) {
   const ui = syncBattleUiState(battle);
   const perspective = ui?.perspective ?? 0;
+  const allyPlayer = perspective;
+  const enemyPlayer = perspective === 0 ? 1 : 0;
   const mode = ui?.modeByPlayer?.[perspective] || getDefaultBattleUiModeForPlayer(perspective, battle);
   const bannerChip = isShowdownLocalBattle(battle) ? getEngineTurnChipState(perspective, battle) : {text: ''};
   let stateWindow = buildPhaserMessageWindowModel(battle, perspective);
@@ -6256,19 +6304,32 @@ function buildPhaserBattleViewModel(battle) {
   else if (mode === 'fight') stateWindow = buildPhaserFightWindowModel(battle, perspective);
   else if (mode === 'party') stateWindow = buildPhaserPartyWindowModel(battle, perspective);
   else if (mode === 'target') stateWindow = buildPhaserTargetWindowModel(battle, perspective);
+  const enemyInfo = buildBattleInfoModel(enemyPlayer, battle);
+  const playerInfo = buildBattleInfoModel(allyPlayer, battle);
+  const rawAbilityBar = updateBattleAbilityBarState(battle);
+  const abilityBar = rawAbilityBar?.visible ? {
+    ...rawAbilityBar,
+    side: perspective === 0 ? rawAbilityBar.side : (rawAbilityBar.side === 'player' ? 'enemy' : 'player'),
+  } : rawAbilityBar;
   return {
     turn: battle.turn,
+    perspective,
+    language: state.language || 'ko',
+    perspectiveOptions: [
+      {label: battle.players?.[0]?.name || 'P1', active: perspective === 0, action: {type: 'perspective', player: 0}},
+      {label: battle.players?.[1]?.name || 'P2', active: perspective === 1, action: {type: 'perspective', player: 1}},
+    ],
     turnChip: `${lang('턴', 'Turn')} ${battle.turn}`,
     bannerText: ui?.passPrompt || `${battle.players?.[perspective]?.name || `P${perspective + 1}`} · ${bannerChip.text || lang('배틀 화면', 'Battle screen')}`,
     fieldStatus: getBattleFieldStatusText(battle),
     message: buildBattleMessageModel(battle, perspective),
-    enemyInfo: buildBattleInfoModel(1, battle),
-    playerInfo: buildBattleInfoModel(0, battle),
-    enemySprite: {url: buildBattleInfoModel(1, battle).spriteUrl || ''},
-    playerSprite: {url: buildBattleInfoModel(0, battle).spriteUrl || ''},
-    enemyTray: buildBattleTrayModel(1, battle),
-    playerTray: buildBattleTrayModel(0, battle),
-    abilityBar: updateBattleAbilityBarState(battle),
+    enemyInfo,
+    playerInfo,
+    enemySprite: {url: enemyInfo.spriteUrl || ''},
+    playerSprite: {url: playerInfo.spriteUrl || ''},
+    enemyTray: buildBattleTrayModel(enemyPlayer, battle),
+    playerTray: buildBattleTrayModel(allyPlayer, battle),
+    abilityBar,
     stateWindow,
   };
 }
@@ -6279,9 +6340,19 @@ function handlePhaserBattleAction(action) {
   const ui = getBattleUiState(battle);
   const player = ui?.perspective ?? 0;
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  if (action.type === 'perspective') {
+    setBattlePerspective(action.player);
+    return;
+  }
   if (action.type === 'command') {
     const nextMode = action.key === 'party' ? 'party' : action.key === 'fight' ? 'fight' : 'command';
     setBattleUiMode(player, nextMode);
+    return;
+  }
+  if (action.type === 'focus-move') {
+    ui.moveDetailByPlayer = ui.moveDetailByPlayer || {0: {}, 1: {}};
+    ui.moveDetailByPlayer[player][activeIndex] = clamp(Number(action.moveIndex || 0), 0, 3);
+    renderBattle();
     return;
   }
   if (action.type === 'toggle') {
