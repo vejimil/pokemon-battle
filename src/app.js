@@ -3677,11 +3677,9 @@ function bindElements() {
     battleTrayP1: document.getElementById('battle-tray-p1'),
     battleTrayP2: document.getElementById('battle-tray-p2'),
     battleAbilityFlyout: document.getElementById('battle-ability-flyout'),
+    battleBottom: document.getElementById('battle-bottom'),
     battleMessageWindow: document.getElementById('battle-message-window'),
-    battleCommandWindow: document.getElementById('battle-command-window'),
-    battleFightWindow: document.getElementById('battle-fight-window'),
-    battlePartyWindow: document.getElementById('battle-party-window'),
-    battleTargetWindow: document.getElementById('battle-target-window'),
+    battleStateWindow: document.getElementById('battle-state-window'),
     battleDebugSummary: document.getElementById('battle-debug-summary'),
     turnNumber: document.getElementById('turn-number'),
     battleFieldStatus: document.getElementById('battle-field-status'),
@@ -5645,7 +5643,7 @@ function buildMoveDetailFallback(mon, moveInfo, moveRequest, choice, moveData, m
 }
 
 function renderBattleFightWindow(battle, player) {
-  const container = els.battleFightWindow;
+  const container = els.battleStateWindow;
   if (!container) return;
   const side = battle.players[player];
   const request = getEngineRequestForPlayer(player, battle);
@@ -5790,7 +5788,7 @@ function renderBattleFightWindow(battle, player) {
 }
 
 function renderBattleCommandWindow(battle, player) {
-  const container = els.battleCommandWindow;
+  const container = els.battleStateWindow;
   if (!container) return;
   const side = battle.players[player];
   const request = getEngineRequestForPlayer(player, battle);
@@ -5800,11 +5798,11 @@ function renderBattleCommandWindow(battle, player) {
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   container.innerHTML = `
-    <div class="pkbattle-window-heading">
-      <h3>${side?.name || `P${player + 1}`} · ${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}</h3>
-      <span class="pkbattle-window-note">${request?.wait ? lang('대기 중', 'Waiting') : lang('명령', 'Command')}</span>
-    </div>
-    <div class="pkbattle-command-body">
+    <div class="pkbattle-command-body pkbattle-command-shell">
+      <div class="pkbattle-command-summary">
+        <strong>${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}</strong>
+        <small>${side?.name || `P${player + 1}`} · ${request?.wait ? lang('대기 중', 'Waiting') : lang('명령 선택', 'Choose command')}</small>
+      </div>
       <div class="pkbattle-command-meta" id="pkbattle-command-meta"></div>
       <div class="pkbattle-command-grid" id="pkbattle-command-grid"></div>
     </div>`;
@@ -5862,7 +5860,7 @@ function renderBattleCommandWindow(battle, player) {
   commands.forEach(command => {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `pkbattle-command-btn ${command.active ? 'active' : ''}`;
+    button.className = `pkbattle-command-btn pkbattle-command-${command.key} ${command.active ? 'active' : ''}`;
     button.disabled = command.disabled;
     button.innerHTML = `<strong>${command.title}</strong><small>${command.desc}</small>`;
     if (command.onClick) button.addEventListener('click', command.onClick);
@@ -5871,7 +5869,7 @@ function renderBattleCommandWindow(battle, player) {
 }
 
 function renderBattlePartyWindow(battle, player) {
-  const container = els.battlePartyWindow;
+  const container = els.battleStateWindow;
   if (!container) return;
   const side = battle.players[player];
   const request = getEngineRequestForPlayer(player, battle);
@@ -5928,7 +5926,7 @@ function renderBattlePartyWindow(battle, player) {
 }
 
 function renderBattleTargetWindow(battle, player) {
-  const container = els.battleTargetWindow;
+  const container = els.battleStateWindow;
   if (!container) return;
   container.innerHTML = `
     <div class="pkbattle-window-heading">
@@ -5947,26 +5945,32 @@ function renderBattleTargetWindow(battle, player) {
 
 function renderBattleBottomWindows(battle, player) {
   const ui = getBattleUiState(battle);
-  if (!ui) return;
+  const bottom = els.battleBottom;
+  const container = els.battleStateWindow;
+  if (!ui || !bottom || !container) return;
   const mode = ui.modeByPlayer[player] || getDefaultBattleUiModeForPlayer(player, battle);
-  [els.battleCommandWindow, els.battleFightWindow, els.battlePartyWindow, els.battleTargetWindow].forEach(windowEl => windowEl?.classList.add('hidden'));
-  if (mode === 'message') return;
+  bottom.classList.remove('mode-message', 'mode-command', 'mode-fight', 'mode-party', 'mode-target');
+  bottom.classList.add(`mode-${mode}`);
+  container.className = 'pkbattle-window pkbattle-state-window';
+  container.dataset.mode = mode;
+  container.innerHTML = '';
+  if (mode === 'message') {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
   if (mode === 'fight') {
-    els.battleFightWindow?.classList.remove('hidden');
     renderBattleFightWindow(battle, player);
     return;
   }
   if (mode === 'party') {
-    els.battlePartyWindow?.classList.remove('hidden');
     renderBattlePartyWindow(battle, player);
     return;
   }
   if (mode === 'target') {
-    els.battleTargetWindow?.classList.remove('hidden');
     renderBattleTargetWindow(battle, player);
     return;
   }
-  els.battleCommandWindow?.classList.remove('hidden');
   renderBattleCommandWindow(battle, player);
 }
 
