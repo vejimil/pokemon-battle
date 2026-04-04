@@ -5,6 +5,7 @@ import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdow
 import {Aliases} from './data/aliases.js';
 import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA, EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
 import {resolveItemIconUrl, applyPokerogueAtlasFrameToElement, POKEROGUE_ASSET_PATHS} from './pokerogue-assets.js';
+import {createPhaserBattleController} from './phaser-battle-controller.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
 const SHOWDOWN_TARGET_HINTS = {
@@ -1426,6 +1427,7 @@ const state = {
 
 const els = {};
 let pickerReturnFocusEl = null;
+let phaserBattleRenderer = null;
 
 function getBundledServerContext() {
   const raw = window.__PKB_SERVER_CONTEXT__ || {};
@@ -3683,6 +3685,9 @@ function bindElements() {
     battleDebugSummary: document.getElementById('battle-debug-summary'),
     turnNumber: document.getElementById('turn-number'),
     battleFieldStatus: document.getElementById('battle-field-status'),
+    battlePhaserRoot: document.getElementById('battle-phaser-root'),
+    battlePhaserMount: document.getElementById('battle-phaser-mount'),
+    battlePhaserStatus: document.getElementById('battle-phaser-status'),
     battleLog: document.getElementById('battle-log'),
     pendingChoices: document.getElementById('pending-choices'),
     clearLogBtn: document.getElementById('clear-log-btn'),
@@ -6004,6 +6009,331 @@ function renderBattleBottomWindows(battle, player) {
   renderBattleCommandWindow(battle, player);
 }
 
+
+function getBattleFieldStatusText(battle = state.battle) {
+  if (!battle) return lang('날씨 없음 · 지형 없음', 'No weather · No terrain');
+  const parts = [];
+  if (battle.weather) parts.push(`${weatherDisplayLabel(battle.weather)} (${battle.weatherTurns})`);
+  if (battle.terrain) parts.push(`${terrainDisplayLabel(battle.terrain)} (${battle.terrainTurns})`);
+  if (battle.trickRoomTurns > 0) parts.push(lang(`트릭룸 (${battle.trickRoomTurns})`, `Trick Room (${battle.trickRoomTurns})`));
+  const p1Hazards = describeHazards(battle.players[0]);
+  const p2Hazards = describeHazards(battle.players[1]);
+  const p1Side = describeSideConditions(battle.players[0]);
+  const p2Side = describeSideConditions(battle.players[1]);
+  if (p1Hazards && !/^없음$/i.test(p1Hazards) && !/^none$/i.test(p1Hazards)) parts.push(state.language === 'ko' ? `${battle.players[0].name} 함정 ${p1Hazards}` : `${battle.players[0].name} hazards ${p1Hazards}`);
+  if (p2Hazards && !/^없음$/i.test(p2Hazards) && !/^none$/i.test(p2Hazards)) parts.push(state.language === 'ko' ? `${battle.players[1].name} 함정 ${p2Hazards}` : `${battle.players[1].name} hazards ${p2Hazards}`);
+  if (p1Side && !/^없음$/i.test(p1Side) && !/^none$/i.test(p1Side)) parts.push(state.language === 'ko' ? `${battle.players[0].name} 진영 ${p1Side}` : `${battle.players[0].name} side ${p1Side}`);
+  if (p2Side && !/^없음$/i.test(p2Side) && !/^none$/i.test(p2Side)) parts.push(state.language === 'ko' ? `${battle.players[1].name} 진영 ${p2Side}` : `${battle.players[1].name} side ${p2Side}`);
+  return parts.join(' · ') || lang('날씨 없음 · 지형 없음', 'No weather · No terrain');
+}
+function updateBattleAbilityBarState(battle) {
+  const ui = getBattleUiState(battle);
+  if (!ui) return {visible: false, text: '', side: 'player'};
+  const now = Date.now();
+  const latest = battle?.log?.[0];
+  const text = localizeText(latest?.rawText || latest?.text || '').trim();
+  if (text) {
+    const looksLikeFlyout = latest?.tone === 'accent' || /ability|특성|intimidate|download|sword|shield|drive|burst|tera|mega|ultra|dynamax|불요의 검|특성/i.test(text);
+    const key = `${battle.turn}|${text}`;
+    if (looksLikeFlyout && ui.lastFlyoutKey !== key) {
+      ui.lastFlyoutKey = key;
+      const lower = text.toLowerCase();
+      const playerName = (battle.players?.[0]?.name || '').toLowerCase();
+      const enemyName = (battle.players?.[1]?.name || '').toLowerCase();
+      const playerMonNames = getActiveMons(0, battle).map(mon => String(displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || '')).toLowerCase());
+      const enemyMonNames = getActiveMons(1, battle).map(mon => String(displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || '')).toLowerCase());
+      const playerSide = [playerName, ...playerMonNames].some(token => token && lower.includes(token));
+      const enemySide = [enemyName, ...enemyMonNames].some(token => token && lower.includes(token));
+      ui.currentFlyout = {
+        text,
+        side: enemySide && !playerSide ? 'enemy' : 'player',
+        expiresAt: now + 1800,
+      };
+    }
+  }
+  if (ui.currentFlyout?.expiresAt > now) return {visible: true, text: ui.currentFlyout.text, side: ui.currentFlyout.side || 'player'};
+  ui.currentFlyout = null;
+  return {visible: false, text: '', side: 'player'};
+}
+
+function buildBattleMessageModel(battle, player) {
+  const request = getEngineRequestForPlayer(player, battle);
+  const currentMode = state.battleUi?.modeByPlayer?.[player] || 'message';
+  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
+  const pokemonName = displaySpeciesName(getBattleRenderSpeciesName(activeMon) || activeMon?.species || 'Pokémon');
+  const promptText = battle.winner
+    ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
+    : !request
+      ? lang('엔진 요청을 기다리는 중입니다.', 'Waiting for an engine request.')
+      : request.wait
+        ? lang('상대의 입력 또는 턴 진행을 기다리는 중입니다.', 'Waiting for the opposing input or turn resolution.')
+        : isEngineForceSwitchRequest(request)
+          ? lang('교체할 포켓몬을 선택하세요.', 'Choose a replacement Pokémon.')
+          : currentMode === 'command'
+            ? lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`)
+            : currentMode === 'fight'
+              ? lang('기술을 선택하세요.', 'Choose a move.')
+              : currentMode === 'party'
+                ? lang('교체할 포켓몬을 선택하세요.', 'Choose a Pokémon to switch in.')
+                : currentMode === 'target'
+                  ? lang('대상을 선택하세요.', 'Choose a target.')
+                  : lang('행동을 선택하세요.', 'Choose an action.');
+  const messageLines = (battle.log || []).slice(0, 2).map(line => localizeText(line.rawText || line.text || '').trim()).filter(Boolean);
+  const usePromptAsPrimary = currentMode === 'command' || !messageLines.length;
+  const primaryText = usePromptAsPrimary ? promptText : messageLines[0];
+  const secondaryText = usePromptAsPrimary ? (messageLines[0] || '') : (messageLines[1] || (promptText !== primaryText ? promptText : ''));
+  return {primary: primaryText, secondary: secondaryText};
+}
+
+function buildBattleInfoModel(player, battle = state.battle) {
+  const mon = getActiveMons(player, battle)[0] || null;
+  if (!mon) {
+    return {
+      displayName: lang('빈 자리', 'No battler'),
+      levelLabel: '',
+      types: [],
+      statusLabel: '',
+      hpLabel: '',
+      hpPercent: 0,
+      expPercent: 0,
+      badges: [],
+      fainted: false,
+    };
+  }
+  const expPct = Number.isFinite(mon.levelExp) && Number.isFinite(mon.levelTotalExp) && mon.levelTotalExp > 0
+    ? clamp((mon.levelExp / mon.levelTotalExp) * 100, 0, 100)
+    : 0;
+  return {
+    displayName: displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species || 'Pokémon'),
+    levelLabel: Number.isFinite(mon.level) ? `Lv ${mon.level}` : '',
+    types: (mon.types || []).map(type => displayType(type)),
+    statusLabel: mon.status ? displayStatus(mon.status) : '',
+    hpLabel: `HP ${mon.hp}/${mon.maxHp}`,
+    hpPercent: hpPercent(mon),
+    expPercent: expPct,
+    badges: getBattleBadgeText(mon) ? getBattleBadgeText(mon).split(' · ') : [],
+    fainted: Boolean(mon.fainted),
+    spriteUrl: spritePath(resolveBattleRenderSpriteId(mon), player === 0 ? 'back' : 'front', mon.shiny),
+  };
+}
+
+function buildBattleTrayModel(player, battle = state.battle) {
+  const side = battle?.players?.[player];
+  const activeSet = new Set(getBattleActiveIndices(player, battle));
+  return Array.from({length: 6}, (_, index) => {
+    const mon = side?.team?.[index];
+    const stateLabel = !mon ? 'empty' : activeSet.has(index) ? 'active' : (!mon.hp || mon.fainted) ? 'faint' : mon.status ? 'status' : 'ball';
+    return {state: stateLabel};
+  });
+}
+
+function buildPhaserCommandWindowModel(battle, player) {
+  const side = battle.players[player];
+  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const mon = side?.team?.[activeIndex];
+  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
+  const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
+  return {
+    mode: 'command',
+    title: `${side?.name || `P${player + 1}`} · ${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}`,
+    commands: [
+      {label: lang('싸운다', 'Fight'), sublabel: lang('기술 선택', 'Choose a move'), disabled: false, active: true, action: {type: 'command', key: 'fight'}},
+      {label: lang('볼', 'Ball'), sublabel: lang('사용 안 함', 'Unused'), disabled: true, action: null},
+      {label: lang('포켓몬', 'Pokémon'), sublabel: canSwitch ? lang('교체', 'Switch') : lang('불가', 'Unavailable'), disabled: !canSwitch, action: {type: 'command', key: 'party'}},
+      {label: lang('도망', 'Run'), sublabel: lang('사용 안 함', 'Unused'), disabled: true, action: null},
+    ],
+    teraToggle: moveRequest?.canTerastallize ? {
+      label: 'Tera',
+      active: Boolean(selectedChoice.tera),
+      disabled: false,
+      action: {type: 'toggle', flag: 'tera'},
+    } : null,
+  };
+}
+
+function buildPhaserFightWindowModel(battle, player) {
+  const side = battle.players[player];
+  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
+  const mon = side?.team?.[activeIndex];
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  const choice = getEngineDraftChoice(player, activeIndex, battle);
+  const availableZMoves = getAvailableEngineZMoveOptions(moveRequest);
+  const forcedContinuation = isEngineForcedContinuationRequest(moveRequest);
+  const canSwitch = !forcedContinuation && canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
+  const moves = (moveRequest?.moves || []).slice(0, 4).map((moveInfo, moveIndex) => {
+    const slotInfo = mon?.moveSlots?.[moveIndex];
+    const moveName = moveInfo?.move || slotInfo?.name || '—';
+    const useZLabel = choice.z && moveRequest?.canZMove?.[moveIndex]?.move;
+    return {
+      label: displayMoveName(useZLabel ? moveRequest.canZMove[moveIndex].move : moveName),
+      sublabel: `${displayType(moveInfo?.type || slotInfo?.type || '') || '—'} · PP ${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}`,
+      disabled: !isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex),
+      active: choice.kind === 'move' && choice.moveIndex === moveIndex,
+      action: {type: 'move', moveIndex},
+    };
+  });
+  const toggles = [];
+  if (!forcedContinuation && moveRequest?.canTerastallize) toggles.push({label: 'Tera', active: Boolean(choice.tera), disabled: false, action: {type: 'toggle', flag: 'tera'}});
+  if (!forcedContinuation && availableZMoves.length) toggles.push({label: 'Z', active: Boolean(choice.z), disabled: false, action: {type: 'toggle', flag: 'z'}});
+  if (!forcedContinuation && moveRequest?.canMegaEvo) toggles.push({label: lang('메가', 'Mega'), active: Boolean(choice.mega), disabled: false, action: {type: 'toggle', flag: 'mega'}});
+  if (!forcedContinuation && moveRequest?.canUltraBurst) toggles.push({label: lang('울트라', 'Ultra'), active: Boolean(choice.ultra), disabled: false, action: {type: 'toggle', flag: 'ultra'}});
+  if (!forcedContinuation && moveRequest?.canDynamax && runtimeSupportsDynamax()) toggles.push({label: 'Dmax', active: Boolean(choice.dynamax), disabled: false, action: {type: 'toggle', flag: 'dynamax'}});
+  const detailIndex = clamp(Number(choice.kind === 'move' && Number.isInteger(choice.moveIndex) ? choice.moveIndex : 0), 0, Math.max(moves.length - 1, 0));
+  const currentMove = moves[detailIndex];
+  return {
+    mode: 'fight',
+    title: `${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')} · ${lang('기술', 'Moves')}`,
+    moves,
+    toggles,
+    footerActions: [
+      {label: lang('뒤로', 'Back'), disabled: false, action: {type: 'command', key: 'command'}},
+      {label: lang('교체', 'Switch'), disabled: !canSwitch, action: {type: 'command', key: 'party'}},
+    ],
+    detailText: currentMove ? `${lang('현재 강조', 'Current focus')}: ${currentMove.label}` : '',
+  };
+}
+
+function buildPhaserPartyWindowModel(battle, player) {
+  const side = battle.players[player];
+  const request = getEngineRequestForPlayer(player, battle);
+  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const forced = isEngineForceSwitchRequest(request);
+  const options = getEngineSwitchOptions(player, activeIndex, battle);
+  const currentChoice = getEngineDraftChoice(player, activeIndex, battle);
+  return {
+    mode: 'party',
+    title: `${side?.name || `P${player + 1}`} · ${forced ? lang('강제 교체', 'Forced switch') : lang('교체', 'Switch')}`,
+    subtitle: forced
+      ? lang('엔진이 교체를 요구하고 있습니다.', 'The engine requires a replacement.')
+      : lang('교체할 포켓몬을 선택하세요.', 'Choose the Pokémon to switch in.'),
+    partyOptions: options.map(({mon, index}) => ({
+      label: displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species),
+      sublabel: `HP ${mon.hp}/${mon.maxHp}${mon.status ? ` · ${displayStatus(mon.status)}` : ''}`,
+      disabled: false,
+      active: currentChoice.kind === 'switch' && currentChoice.switchTo === index,
+      action: {type: 'switch', switchTo: index},
+    })),
+    footerActions: forced ? [] : [{label: lang('뒤로', 'Back'), disabled: false, action: {type: 'command', key: 'command'}}],
+  };
+}
+
+function buildPhaserTargetWindowModel() {
+  return {
+    mode: 'target',
+    title: lang('대상 선택', 'Target select'),
+    placeholder: lang(
+      '현재 엔진 필수 싱글 경로에서는 대상 선택이 별도 화면으로 노출되지 않습니다. 이 자리는 향후 더블용 구조 자리만 남겨 둔 상태입니다.',
+      'The current engine-required singles path does not expose a separate target-select screen. This space is kept as honest structure for future doubles support.'
+    ),
+    footerActions: [{label: lang('뒤로', 'Back'), disabled: false, action: {type: 'command', key: 'command'}}],
+  };
+}
+
+function buildPhaserMessageWindowModel(battle, player) {
+  const request = getEngineRequestForPlayer(player, battle);
+  return {
+    mode: 'message',
+    title: `${battle.players?.[player]?.name || `P${player + 1}`}`,
+    placeholder: battle.winner
+      ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
+      : request?.wait
+        ? lang('상대 선택 또는 턴 진행을 기다리는 중입니다.', 'Waiting for the opposing side or turn resolution.')
+        : lang('엔진 요청을 기다리는 중입니다.', 'Waiting for an engine request.'),
+  };
+}
+
+function buildPhaserBattleViewModel(battle) {
+  const ui = syncBattleUiState(battle);
+  const perspective = ui?.perspective ?? 0;
+  const mode = ui?.modeByPlayer?.[perspective] || getDefaultBattleUiModeForPlayer(perspective, battle);
+  const bannerChip = isShowdownLocalBattle(battle) ? getEngineTurnChipState(perspective, battle) : {text: ''};
+  let stateWindow = buildPhaserMessageWindowModel(battle, perspective);
+  if (mode === 'command') stateWindow = buildPhaserCommandWindowModel(battle, perspective);
+  else if (mode === 'fight') stateWindow = buildPhaserFightWindowModel(battle, perspective);
+  else if (mode === 'party') stateWindow = buildPhaserPartyWindowModel(battle, perspective);
+  else if (mode === 'target') stateWindow = buildPhaserTargetWindowModel(battle, perspective);
+  return {
+    turn: battle.turn,
+    turnChip: `${lang('턴', 'Turn')} ${battle.turn}`,
+    bannerText: ui?.passPrompt || `${battle.players?.[perspective]?.name || `P${perspective + 1}`} · ${bannerChip.text || lang('배틀 화면', 'Battle screen')}`,
+    fieldStatus: getBattleFieldStatusText(battle),
+    message: buildBattleMessageModel(battle, perspective),
+    enemyInfo: buildBattleInfoModel(1, battle),
+    playerInfo: buildBattleInfoModel(0, battle),
+    enemySprite: {url: buildBattleInfoModel(1, battle).spriteUrl || ''},
+    playerSprite: {url: buildBattleInfoModel(0, battle).spriteUrl || ''},
+    enemyTray: buildBattleTrayModel(1, battle),
+    playerTray: buildBattleTrayModel(0, battle),
+    abilityBar: updateBattleAbilityBarState(battle),
+    stateWindow,
+  };
+}
+
+function handlePhaserBattleAction(action) {
+  const battle = ensureBattleUiState(state.battle);
+  if (!battle || !action) return;
+  const ui = getBattleUiState(battle);
+  const player = ui?.perspective ?? 0;
+  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  if (action.type === 'command') {
+    const nextMode = action.key === 'party' ? 'party' : action.key === 'fight' ? 'fight' : 'command';
+    setBattleUiMode(player, nextMode);
+    return;
+  }
+  if (action.type === 'toggle') {
+    if (!toggleEngineDraftFlag(player, activeIndex, action.flag, battle)) return;
+    renderBattle();
+    return;
+  }
+  if (action.type === 'move') {
+    const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, action.moveIndex, battle);
+    if (!nextChoice) return;
+    setEnginePendingChoice(player, activeIndex, nextChoice, battle);
+    handleBattleChoiceCommitted(player, battle);
+    renderBattle();
+    return;
+  }
+  if (action.type === 'switch') {
+    setEnginePendingChoice(player, activeIndex, {...createEmptyBattleChoice(), kind: 'switch', switchTo: action.switchTo}, battle);
+    handleBattleChoiceCommitted(player, battle);
+    renderBattle();
+  }
+}
+
+async function syncPhaserBattleRenderer(battle) {
+  if (!els.battlePanel) return false;
+  if (!battle) {
+    els.battlePanel.classList.remove('is-phaser-active');
+    if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = true;
+    phaserBattleRenderer?.hide();
+    return false;
+  }
+  if (!phaserBattleRenderer && els.battlePhaserMount) {
+    phaserBattleRenderer = createPhaserBattleController({mount: els.battlePhaserMount, statusEl: els.battlePhaserStatus});
+  }
+  if (!phaserBattleRenderer) return false;
+  try {
+    const model = buildPhaserBattleViewModel(battle);
+    if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = false;
+    await phaserBattleRenderer.show(model, {onAction: handlePhaserBattleAction});
+    els.battlePanel.classList.add('is-phaser-active');
+    return true;
+  } catch (error) {
+    console.error('Phaser battle renderer activation failed.', error);
+    if (els.battlePhaserStatus) {
+      els.battlePhaserStatus.hidden = false;
+      els.battlePhaserStatus.dataset.tone = 'error';
+      els.battlePhaserStatus.textContent = `Phaser battle renderer error: ${error.message}`;
+    }
+    els.battlePanel.classList.remove('is-phaser-active');
+    return false;
+  }
+}
+
 function renderBattle() {
   const battle = ensureBattleUiState(state.battle);
   if (!battle) return;
@@ -6014,17 +6344,24 @@ function renderBattle() {
   const perspective = ui?.perspective ?? 0;
   if (els.turnNumber) els.turnNumber.textContent = battle.turn;
   renderBattlePerspectiveTabs(battle);
-  renderSideSprites(0, els.battleSideP1, 'back');
-  renderSideSprites(1, els.battleSideP2, 'front');
-  renderBattleInfoBox(0, els.battleInfoP1, getActiveMons(0, battle)[0] || null);
-  renderBattleInfoBox(1, els.battleInfoP2, getActiveMons(1, battle)[0] || null);
-  renderBattlePokeballTray(0, els.battleTrayP1, battle);
-  renderBattlePokeballTray(1, els.battleTrayP2, battle);
-  renderBattleMessagesWindow(battle, perspective);
   renderBattleFieldStatus();
-  renderBattleBottomWindows(battle, perspective);
   renderBattleDebugPanel(battle);
-  maybeShowBattleAbilityFlyout(battle);
+
+  syncPhaserBattleRenderer(battle).then(active => {
+    if (active) return;
+    renderSideSprites(0, els.battleSideP1, 'back');
+    renderSideSprites(1, els.battleSideP2, 'front');
+    renderBattleInfoBox(0, els.battleInfoP1, getActiveMons(0, battle)[0] || null);
+    renderBattleInfoBox(1, els.battleInfoP2, getActiveMons(1, battle)[0] || null);
+    renderBattlePokeballTray(0, els.battleTrayP1, battle);
+    renderBattlePokeballTray(1, els.battleTrayP2, battle);
+    renderBattleMessagesWindow(battle, perspective);
+    renderBattleBottomWindows(battle, perspective);
+    maybeShowBattleAbilityFlyout(battle);
+  }).catch(error => {
+    console.error('Battle renderer sync failed.', error);
+  });
+
   const allSet = isShowdownLocalBattle(battle)
     ? canAutoResolveEngineTurn(battle)
     : [0, 1].every(player => isPlayerReady(player));
@@ -6193,6 +6530,9 @@ function wireBattleEvents() {
   els.backToBuilderBtn.addEventListener('click', () => {
     state.battle = null;
     resetBattlePresentationState();
+    phaserBattleRenderer?.hide();
+    if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = true;
+    els.battlePanel.classList.remove('is-phaser-active');
     els.battlePanel.classList.add('hidden');
     syncRuntimeModeUi();
   });
@@ -6227,6 +6567,7 @@ function renderAll() {
 }
 async function bootstrap() {
   bindElements();
+  phaserBattleRenderer = createPhaserBattleController({mount: els.battlePhaserMount, statusEl: els.battlePhaserStatus});
   applyLanguageToStaticUi();
   syncLanguageControls();
   showRuntime('업로드한 에셋과 현지화된 전투 데이터를 불러오는 중… / Loading uploaded assets and fully localized battle data…', 'loading');

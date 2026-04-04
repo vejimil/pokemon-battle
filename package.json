@@ -10,5 +10,8 @@
     "verify:passb": "node ./scripts/verify-passb-form-truth.mjs",
     "verify:stage22": "node ./scripts/verify-stage22-battle-regressions.cjs"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "phaser": "^3.90.0"
+  }
 }
