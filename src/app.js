@@ -3763,10 +3763,8 @@ function getSelectedMon() {
 }
 function syncPlayerNames() {
   state.playerNames = [els.player1Name.value.trim() || 'Player 1', els.player2Name.value.trim() || 'Player 2'];
-  els.rosterP1Name.textContent = state.playerNames[0];
-  els.rosterP2Name.textContent = state.playerNames[1];
-  els.battleP1Name.textContent = state.playerNames[0];
-  els.battleP2Name.textContent = state.playerNames[1];
+  if (els.rosterP1Name) els.rosterP1Name.textContent = state.playerNames[0];
+  if (els.rosterP2Name) els.rosterP2Name.textContent = state.playerNames[1];
   saveState();
 }
 function renderRoster() {
