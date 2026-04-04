@@ -5712,7 +5712,7 @@ function renderBattleFightWindow(battle, player) {
 
   const switchBtn = document.createElement('button');
   switchBtn.type = 'button';
-  switchBtn.className = `pkbattle-action-btn ${choice.kind === 'switch' ? 'active' : ''}`;
+  switchBtn.className = `pkbattle-action-btn pkbattle-action-btn-switch ${choice.kind === 'switch' ? 'active' : ''}`;
   switchBtn.disabled = !canSwitch;
   switchBtn.innerHTML = `<strong>${lang('포켓몬', 'Pokémon')}</strong><small>${canSwitch ? lang('교체 후보 보기', 'Open switch selection') : lang('지금은 교체할 수 없습니다.', 'Switching is unavailable right now.')}</small>`;
   switchBtn.addEventListener('click', () => setBattleUiMode(player, 'party'));
@@ -5741,7 +5741,7 @@ function renderBattleFightWindow(battle, player) {
     if (!enabled || forcedContinuation) return;
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = `pkbattle-action-btn ${choice[flag] ? 'active' : ''}`;
+    btn.className = `pkbattle-action-btn pkbattle-action-btn-gimmick ${choice[flag] ? 'active' : ''}`;
     btn.innerHTML = `<strong>${label}</strong><small>${lang('이 기술 선택에 적용합니다.', 'Apply to the selected move.')}</small>`;
     btn.addEventListener('click', () => {
       if (!toggleEngineDraftFlag(player, activeIndex, flag, battle)) return;
@@ -5761,18 +5761,25 @@ function renderBattleFightWindow(battle, player) {
       if (!detailPanel.isConnected) return;
       const preview = buildMoveDetailFallback(mon, moveInfo, moveRequest, activeChoice, moveData, idx);
       const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[idx] : null;
+      const resolvedCategory = preview?.category || moveData?.category || '—';
       detailPanel.innerHTML = `
-        <h4>${displayMoveName((activeChoice.z && zInfo?.move) ? zInfo.move : moveName || lang('기술 없음', 'No move'))}</h4>
-        <div class="pkbattle-detail-chip-row">
-          <span class="pkbattle-detail-chip">${displayType(preview?.type || moveData?.type || '') || '—'}</span>
-          <span class="pkbattle-detail-chip">${preview?.category || moveData?.category || '—'}</span>
-          <span class="pkbattle-detail-chip">PP ${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}</span>
+        <div class="pkbattle-detail-head">
+          <div class="pkbattle-detail-title-wrap">
+            <h4>${displayMoveName((activeChoice.z && zInfo?.move) ? zInfo.move : moveName || lang('기술 없음', 'No move'))}</h4>
+            <div class="pkbattle-detail-chip-row">
+              <span class="pkbattle-detail-chip">${displayType(preview?.type || moveData?.type || '') || '—'}</span>
+              <span class="pkbattle-detail-chip">PP ${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}</span>
+            </div>
+          </div>
+          <span class="pkbattle-category-icon pkbattle-detail-category" aria-hidden="true"></span>
         </div>
-        <div class="pkbattle-detail-chip-row">
+        <div class="pkbattle-detail-chip-row pkbattle-detail-stats-row">
+          <span class="pkbattle-detail-chip">${resolvedCategory}</span>
           <span class="pkbattle-detail-chip">${lang('위력', 'Power')}: ${preview?.power ?? moveData?.basePower ?? '—'}</span>
           <span class="pkbattle-detail-chip">${lang('명중', 'Accuracy')}: ${preview?.accuracy ?? moveData?.accuracy ?? '—'}</span>
         </div>
-        <div class="pkbattle-window-note">${localizeText(moveData?.shortDesc || moveData?.desc || lang('설명 없음', 'No move description available.'))}</div>`;
+        <div class="pkbattle-detail-desc">${localizeText(moveData?.shortDesc || moveData?.desc || lang('설명 없음', 'No move description available.'))}</div>`;
+      renderPokerogueCategoryIcon(detailPanel.querySelector('.pkbattle-detail-category'), resolvedCategory);
     });
   }
 
@@ -5946,9 +5953,11 @@ function renderBattlePartyWindow(battle, player) {
     button.appendChild(sprite);
     renderAnimatedSprite(sprite, {spriteId: resolveBattleRenderSpriteId(mon), facing: 'front', shiny: mon.shiny, size: 'small'});
     const content = document.createElement('div');
-    content.innerHTML = `<strong>${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species)}</strong>
-      <small>HP ${mon.hp}/${mon.maxHp}${mon.status ? ` · ${displayStatus(mon.status)}` : ''}${getBattleBadgeText(mon) ? ` · ${getBattleBadgeText(mon)}` : ''}</small>
-      <div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div>`;
+    content.className = 'pkbattle-party-card-body';
+    const badgeText = getBattleBadgeText(mon);
+    content.innerHTML = `<div class="pkbattle-party-card-topline"><strong>${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species)}</strong>${mon.status ? `<span class="pkbattle-status-pill">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
+      <div class="pkbattle-party-card-meta">${badgeText ? `<span class="pkbattle-mini-badge">${badgeText}</span>` : `<span class="pkbattle-mini-badge">${lang('교체 가능', 'Ready to switch')}</span>`}</div>
+      <div class="pkbattle-party-card-hp-row"><span class="pkbattle-party-card-hptext">HP ${mon.hp}/${mon.maxHp}</span><div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div></div>`;
     button.appendChild(content);
     button.addEventListener('click', () => {
       setEnginePendingChoice(player, activeIndex, {...createEmptyBattleChoice(), kind: 'switch', switchTo: index}, battle);
