@@ -104,14 +104,16 @@ async function renderAnimatedSpriteToHost(host, spriteModel = {}, size = 'large'
   }
 }
 
-class PhaserBattleScene {
-  constructor(controller, Phaser) {
-    this.controller = controller;
-    this.Phaser = Phaser;
-    this.sceneKey = 'pkb-phaser-battle-scene';
-  }
+function createPhaserBattleSceneClass(Phaser) {
+  return class PhaserBattleScene extends Phaser.Scene {
+    constructor(controller) {
+      super({ key: 'pkb-phaser-battle-scene' });
+      this.controller = controller;
+      this.Phaser = Phaser;
+      this.sceneKey = 'pkb-phaser-battle-scene';
+    }
 
-  preload() {}
+    preload() {}
 
   create() {
     const { Phaser } = this;
@@ -593,6 +595,7 @@ class PhaserBattleScene {
     renderAnimatedSpriteToHost(this.enemySprite.host, model.enemySprite || {}, 'large');
     renderAnimatedSpriteToHost(this.playerSprite.host, model.playerSprite || {}, 'large');
   }
+  };
 }
 
 export class PhaserBattleController {
@@ -637,7 +640,8 @@ export class PhaserBattleController {
     if (!this.ready) {
       this.setStatus('Loading Phaser battle renderer…', 'loading');
       const Phaser = await loadPhaserModule();
-      const scene = new PhaserBattleScene(this, Phaser);
+      const PhaserBattleScene = createPhaserBattleSceneClass(Phaser);
+      const scene = new PhaserBattleScene(this);
       this.scene = scene;
       this.game = new Phaser.Game({
         type: Phaser.AUTO,
@@ -656,7 +660,10 @@ export class PhaserBattleController {
       this.ready = true;
       this.mount.hidden = false;
     }
-    await this.sceneReadyPromise;
+    await Promise.race([
+      this.sceneReadyPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Phaser scene startup timed out before create() completed.')), 5000)),
+    ]);
   }
 
   async show(model, callbacks = {}) {
