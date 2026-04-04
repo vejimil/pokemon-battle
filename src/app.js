@@ -5350,11 +5350,26 @@ function renderBattleFieldStatus() {
   if (battle.weather) parts.push(`${weatherDisplayLabel(battle.weather)} (${battle.weatherTurns})`);
   if (battle.terrain) parts.push(`${terrainDisplayLabel(battle.terrain)} (${battle.terrainTurns})`);
   if (battle.trickRoomTurns > 0) parts.push(lang(`트릭룸 (${battle.trickRoomTurns})`, `Trick Room (${battle.trickRoomTurns})`));
-  parts.push(state.language === 'ko' ? `${battle.players[0].name} 함정: ${describeHazards(battle.players[0])}` : `${battle.players[0].name} Hazards: ${describeHazards(battle.players[0])}`);
-  parts.push(state.language === 'ko' ? `${battle.players[1].name} 함정: ${describeHazards(battle.players[1])}` : `${battle.players[1].name} Hazards: ${describeHazards(battle.players[1])}`);
-  parts.push(state.language === 'ko' ? `${battle.players[0].name} 진영: ${describeSideConditions(battle.players[0])}` : `${battle.players[0].name} Side: ${describeSideConditions(battle.players[0])}`);
-  parts.push(state.language === 'ko' ? `${battle.players[1].name} 진영: ${describeSideConditions(battle.players[1])}` : `${battle.players[1].name} Side: ${describeSideConditions(battle.players[1])}`);
-  els.battleFieldStatus.textContent = parts.join(' · ');
+
+  const p1Hazards = describeHazards(battle.players[0]);
+  const p2Hazards = describeHazards(battle.players[1]);
+  const p1Side = describeSideConditions(battle.players[0]);
+  const p2Side = describeSideConditions(battle.players[1]);
+
+  if (p1Hazards && !/^없음$/i.test(p1Hazards) && !/^none$/i.test(p1Hazards)) {
+    parts.push(state.language === 'ko' ? `${battle.players[0].name} 함정 ${p1Hazards}` : `${battle.players[0].name} hazards ${p1Hazards}`);
+  }
+  if (p2Hazards && !/^없음$/i.test(p2Hazards) && !/^none$/i.test(p2Hazards)) {
+    parts.push(state.language === 'ko' ? `${battle.players[1].name} 함정 ${p2Hazards}` : `${battle.players[1].name} hazards ${p2Hazards}`);
+  }
+  if (p1Side && !/^없음$/i.test(p1Side) && !/^none$/i.test(p1Side)) {
+    parts.push(state.language === 'ko' ? `${battle.players[0].name} 진영 ${p1Side}` : `${battle.players[0].name} side ${p1Side}`);
+  }
+  if (p2Side && !/^없음$/i.test(p2Side) && !/^none$/i.test(p2Side)) {
+    parts.push(state.language === 'ko' ? `${battle.players[1].name} 진영 ${p2Side}` : `${battle.players[1].name} side ${p2Side}`);
+  }
+
+  els.battleFieldStatus.textContent = parts.join(' · ') || lang('날씨 없음 · 지형 없음', 'No weather · No terrain');
 }
 function getActiveMons(player, battle = state.battle) {
   const side = battle?.players?.[player];
@@ -5499,7 +5514,7 @@ function renderBattleMessagesWindow(battle, player) {
       : request.wait
         ? lang('상대의 입력 또는 턴 진행을 기다리는 중입니다.', 'Waiting for the opposing input or turn resolution.')
         : isEngineForceSwitchRequest(request)
-          ? lang('기절한 포켓몬의 교체 대상을 선택하세요.', 'Choose a replacement for the fainted Pokémon.')
+          ? lang('교체할 포켓몬을 선택하세요.', 'Choose a replacement Pokémon.')
           : (currentMode === 'fight'
             ? lang('기술을 선택하세요.', 'Choose a move.')
             : currentMode === 'party'
@@ -5507,18 +5522,17 @@ function renderBattleMessagesWindow(battle, player) {
               : currentMode === 'target'
                 ? lang('대상을 선택하세요.', 'Choose a target.')
                 : lang('행동을 선택하세요.', 'Choose an action.'));
-  const messageLines = (battle.log || []).slice(0, 2);
-  const lineHtml = messageLines.length
-    ? messageLines.map((line, index) => `<div class="pkbattle-message-line ${line.tone || ''} ${index > 0 ? 'secondary' : ''}">${localizeText(line.rawText || line.text)}</div>`).join('')
-    : `<div class="pkbattle-message-line secondary">${lang('아직 표시할 메시지가 없습니다.', 'No battle message yet.')}</div>`;
+  const messageLines = (battle.log || []).slice(0, 2).map(line => localizeText(line.rawText || line.text || '').trim()).filter(Boolean);
+  const primaryText = messageLines[0] || promptText;
+  const secondaryText = messageLines[0]
+    ? (messageLines[1] || (promptText !== primaryText ? promptText : ''))
+    : '';
   const showPromptIcon = !battle.winner && Boolean(request) && !request.wait;
   els.battleMessageWindow.innerHTML = `
     <div class="pkbattle-message-stack">
-      <div class="pkbattle-message-head">
-        <div class="pkbattle-message-line accent">${promptText}</div>
-        ${showPromptIcon ? '<span class="pkbattle-message-prompt-icon" aria-hidden="true"></span>' : ''}
-      </div>
-      ${lineHtml}
+      <div class="pkbattle-message-primary">${primaryText}</div>
+      ${secondaryText ? `<div class="pkbattle-message-secondary">${secondaryText}</div>` : ''}
+      ${showPromptIcon ? '<span class="pkbattle-message-prompt-icon" aria-hidden="true"></span>' : ''}
     </div>`;
   if (showPromptIcon) {
     renderPokeroguePromptIcon(els.battleMessageWindow.querySelector('.pkbattle-message-prompt-icon'));
@@ -5687,10 +5701,6 @@ function renderBattleFightWindow(battle, player) {
   const detailIndex = clamp(Number(ui.moveDetailByPlayer[player][activeIndex] || 0), 0, Math.max(((moveRequest?.moves || []).length || 1) - 1, 0));
   const canSwitch = !forcedContinuation && canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   container.innerHTML = `
-    <div class="pkbattle-window-heading">
-      <h3>${side?.name || `P${player + 1}`} · ${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}</h3>
-      <span class="pkbattle-window-note">${forcedContinuation ? lang('연속행동 고정', 'Locked continuation') : lang('기술 선택', 'Move selection')}</span>
-    </div>
     <div class="pkbattle-fight-shell">
       <div class="pkbattle-fight-main">
         <div class="pkbattle-action-row" id="pkbattle-action-row"></div>
@@ -5706,7 +5716,7 @@ function renderBattleFightWindow(battle, player) {
   const backBtn = document.createElement('button');
   backBtn.type = 'button';
   backBtn.className = 'pkbattle-action-btn pkbattle-action-btn-back';
-  backBtn.innerHTML = `<strong>${lang('뒤로', 'Back')}</strong><small>${lang('명령 창으로 돌아갑니다.', 'Return to the command window.')}</small>`;
+  backBtn.innerHTML = `<strong>${lang('뒤로', 'Back')}</strong><small>${lang('명령 창', 'Commands')}</small>`;
   backBtn.addEventListener('click', () => setBattleUiMode(player, 'command'));
   actionRow.appendChild(backBtn);
 
@@ -5714,7 +5724,7 @@ function renderBattleFightWindow(battle, player) {
   switchBtn.type = 'button';
   switchBtn.className = `pkbattle-action-btn pkbattle-action-btn-switch ${choice.kind === 'switch' ? 'active' : ''}`;
   switchBtn.disabled = !canSwitch;
-  switchBtn.innerHTML = `<strong>${lang('포켓몬', 'Pokémon')}</strong><small>${canSwitch ? lang('교체 후보 보기', 'Open switch selection') : lang('지금은 교체할 수 없습니다.', 'Switching is unavailable right now.')}</small>`;
+  switchBtn.innerHTML = `<strong>${lang('포켓몬', 'Pokémon')}</strong><small>${canSwitch ? lang('교체', 'Switch') : lang('지금 불가', 'Unavailable')}</small>`;
   switchBtn.addEventListener('click', () => setBattleUiMode(player, 'party'));
   actionRow.appendChild(switchBtn);
 
@@ -5742,7 +5752,7 @@ function renderBattleFightWindow(battle, player) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = `pkbattle-action-btn pkbattle-action-btn-gimmick ${choice[flag] ? 'active' : ''}`;
-    btn.innerHTML = `<strong>${label}</strong><small>${lang('이 기술 선택에 적용합니다.', 'Apply to the selected move.')}</small>`;
+    btn.innerHTML = `<strong>${label}</strong><small>${lang('현재 선택에 적용', 'Apply')}</small>`;
     btn.addEventListener('click', () => {
       if (!toggleEngineDraftFlag(player, activeIndex, flag, battle)) return;
       renderBattle();
@@ -5762,21 +5772,20 @@ function renderBattleFightWindow(battle, player) {
       const preview = buildMoveDetailFallback(mon, moveInfo, moveRequest, activeChoice, moveData, idx);
       const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[idx] : null;
       const resolvedCategory = preview?.category || moveData?.category || '—';
+      const resolvedName = displayMoveName((activeChoice.z && zInfo?.move) ? zInfo.move : moveName || lang('기술 없음', 'No move'));
       detailPanel.innerHTML = `
-        <div class="pkbattle-detail-head">
-          <div class="pkbattle-detail-title-wrap">
-            <h4>${displayMoveName((activeChoice.z && zInfo?.move) ? zInfo.move : moveName || lang('기술 없음', 'No move'))}</h4>
-            <div class="pkbattle-detail-chip-row">
-              <span class="pkbattle-detail-chip">${displayType(preview?.type || moveData?.type || '') || '—'}</span>
-              <span class="pkbattle-detail-chip">PP ${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}</span>
-            </div>
+        <div class="pkbattle-detail-top">
+          <div class="pkbattle-detail-name-wrap">
+            <strong>${resolvedName}</strong>
+            <span class="pkbattle-detail-type">${displayType(preview?.type || moveData?.type || '') || '—'}</span>
           </div>
           <span class="pkbattle-category-icon pkbattle-detail-category" aria-hidden="true"></span>
         </div>
-        <div class="pkbattle-detail-chip-row pkbattle-detail-stats-row">
-          <span class="pkbattle-detail-chip">${resolvedCategory}</span>
-          <span class="pkbattle-detail-chip">${lang('위력', 'Power')}: ${preview?.power ?? moveData?.basePower ?? '—'}</span>
-          <span class="pkbattle-detail-chip">${lang('명중', 'Accuracy')}: ${preview?.accuracy ?? moveData?.accuracy ?? '—'}</span>
+        <div class="pkbattle-detail-stats">
+          <div class="pkbattle-detail-stat"><span class="pkbattle-detail-stat-label">PP</span><span>${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}</span></div>
+          <div class="pkbattle-detail-stat"><span class="pkbattle-detail-stat-label">${lang('위력', 'Power')}</span><span>${preview?.power ?? moveData?.basePower ?? '—'}</span></div>
+          <div class="pkbattle-detail-stat"><span class="pkbattle-detail-stat-label">${lang('명중', 'Accuracy')}</span><span>${preview?.accuracy ?? moveData?.accuracy ?? '—'}</span></div>
+          <div class="pkbattle-detail-stat"><span class="pkbattle-detail-stat-label">${lang('분류', 'Category')}</span><span>${resolvedCategory}</span></div>
         </div>
         <div class="pkbattle-detail-desc">${localizeText(moveData?.shortDesc || moveData?.desc || lang('설명 없음', 'No move description available.'))}</div>`;
       renderPokerogueCategoryIcon(detailPanel.querySelector('.pkbattle-detail-category'), resolvedCategory);
@@ -5794,7 +5803,8 @@ function renderBattleFightWindow(battle, player) {
     const head = document.createElement('div');
     head.className = 'pkbattle-move-card-head';
     const titleWrap = document.createElement('div');
-    titleWrap.innerHTML = `<strong>${displayMoveName((choice.z && moveRequest?.canZMove?.[moveIndex]?.move) ? moveRequest.canZMove[moveIndex].move : moveName)}</strong><small>${lang('불러오는 중…', 'Loading…')}</small>`;
+    titleWrap.className = 'pkbattle-move-title-wrap';
+    titleWrap.innerHTML = `<strong>${displayMoveName((choice.z && moveRequest?.canZMove?.[moveIndex]?.move) ? moveRequest.canZMove[moveIndex].move : moveName)}</strong><small>PP ${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}</small>`;
     head.appendChild(titleWrap);
     const category = document.createElement('span');
     category.className = 'pkbattle-category-icon';
@@ -5804,7 +5814,7 @@ function renderBattleFightWindow(battle, player) {
     Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
       if (!button.isConnected) return;
       const preview = buildMoveDetailFallback(mon, moveInfo, moveRequest, choice, moveData, moveIndex);
-      titleWrap.innerHTML = `<strong>${displayMoveName((choice.z && moveRequest?.canZMove?.[moveIndex]?.move) ? moveRequest.canZMove[moveIndex].move : moveName)}</strong><small>${displayType(preview?.type || moveData?.type || '')} · ${preview?.category || moveData?.category || '—'} · ${lang('위력', 'Power')} ${preview?.power ?? moveData?.basePower ?? '—'} · ${lang('명중', 'Accuracy')} ${preview?.accuracy ?? moveData?.accuracy ?? '—'}</small>`;
+      titleWrap.innerHTML = `<strong>${displayMoveName((choice.z && moveRequest?.canZMove?.[moveIndex]?.move) ? moveRequest.canZMove[moveIndex].move : moveName)}</strong><small>${displayType(preview?.type || moveData?.type || '') || '—'} · PP ${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}</small>`;
     });
     button.addEventListener('mouseenter', () => updateMoveDetail(moveIndex));
     button.addEventListener('focus', () => updateMoveDetail(moveIndex));
@@ -5833,30 +5843,26 @@ function renderBattleCommandWindow(battle, player) {
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   container.innerHTML = `
-    <div class="pkbattle-command-body pkbattle-command-shell">
-      <div class="pkbattle-command-topline">
-        <div class="pkbattle-command-summary">
-          <strong>${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}</strong>
-          <small>${side?.name || `P${player + 1}`} · ${request?.wait ? lang('대기 중', 'Waiting') : lang('명령 선택', 'Choose command')}</small>
-        </div>
-        <div class="pkbattle-command-meta" id="pkbattle-command-meta"></div>
-      </div>
+    <div class="pkbattle-command-body pkbattle-command-shell" data-species="${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}">
       <div class="pkbattle-command-grid" id="pkbattle-command-grid"></div>
     </div>`;
   const grid = container.querySelector('#pkbattle-command-grid');
-  const meta = container.querySelector('#pkbattle-command-meta');
+  const shell = container.querySelector('.pkbattle-command-shell');
 
-  if (moveRequest?.canTerastallize) {
+  if (moveRequest?.canTerastallize && shell) {
     const teraChip = document.createElement('button');
     teraChip.type = 'button';
-    teraChip.className = `pkbattle-tera-chip ${getEngineDraftChoice(player, activeIndex, battle).tera ? 'active' : ''}`;
-    teraChip.innerHTML = `<span class="pkbattle-tera-icon"></span><span>${displayType(moveRequest.canTerastallize)}</span>`;
+    teraChip.className = `pkbattle-command-tera-btn ${getEngineDraftChoice(player, activeIndex, battle).tera ? 'active' : ''}`;
+    teraChip.title = `${lang('테라스탈', 'Terastallize')} · ${displayType(moveRequest.canTerastallize)}`;
+    teraChip.setAttribute('aria-label', teraChip.title);
+    teraChip.innerHTML = `<span class="pkbattle-tera-icon"></span>`;
     renderTeraButtonIcon(teraChip.querySelector('.pkbattle-tera-icon'), moveRequest.canTerastallize);
     teraChip.addEventListener('click', () => {
       if (!toggleEngineDraftFlag(player, activeIndex, 'tera', battle)) return;
       setBattleUiMode(player, 'fight');
+      renderBattle();
     });
-    meta.appendChild(teraChip);
+    shell.appendChild(teraChip);
   }
 
   const commands = [
@@ -5879,7 +5885,7 @@ function renderBattleCommandWindow(battle, player) {
     {
       key: 'pokemon',
       title: lang('포켓몬', 'Pokémon'),
-      desc: canSwitch ? lang('교체 선택', 'Switch') : lang('지금 불가', 'Unavailable now'),
+      desc: canSwitch ? lang('교체', 'Switch') : lang('지금 불가', 'Unavailable'),
       active: false,
       disabled: !canSwitch,
       onClick: () => setBattleUiMode(player, 'party'),
@@ -6002,6 +6008,10 @@ function renderBattleBottomWindows(battle, player) {
   container.className = 'pkbattle-window pkbattle-state-window';
   container.dataset.mode = mode;
   container.innerHTML = '';
+
+  const showMessageWindow = mode === 'message' || mode === 'command';
+  els.battleMessageWindow?.classList.toggle('hidden', !showMessageWindow);
+
   if (mode === 'message') {
     container.classList.add('hidden');
     return;
