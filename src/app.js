@@ -5491,6 +5491,7 @@ function renderBattlePerspectiveTabs(battle) {
 function renderBattleMessagesWindow(battle, player) {
   if (!els.battleMessageWindow) return;
   const request = getEngineRequestForPlayer(player, battle);
+  const currentMode = state.battleUi?.modeByPlayer?.[player] || 'message';
   const promptText = battle.winner
     ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
     : !request
@@ -5499,20 +5500,29 @@ function renderBattleMessagesWindow(battle, player) {
         ? lang('상대의 입력 또는 턴 진행을 기다리는 중입니다.', 'Waiting for the opposing input or turn resolution.')
         : isEngineForceSwitchRequest(request)
           ? lang('기절한 포켓몬의 교체 대상을 선택하세요.', 'Choose a replacement for the fainted Pokémon.')
-          : (state.battleUi?.modeByPlayer?.[player] === 'fight'
+          : (currentMode === 'fight'
             ? lang('기술을 선택하세요.', 'Choose a move.')
-            : state.battleUi?.modeByPlayer?.[player] === 'party'
+            : currentMode === 'party'
               ? lang('교체할 포켓몬을 선택하세요.', 'Choose a Pokémon to switch in.')
-              : lang('행동을 선택하세요.', 'Choose an action.'));
-  const messageLines = (battle.log || []).slice(0, 3);
+              : currentMode === 'target'
+                ? lang('대상을 선택하세요.', 'Choose a target.')
+                : lang('행동을 선택하세요.', 'Choose an action.'));
+  const messageLines = (battle.log || []).slice(0, 2);
   const lineHtml = messageLines.length
     ? messageLines.map((line, index) => `<div class="pkbattle-message-line ${line.tone || ''} ${index > 0 ? 'secondary' : ''}">${localizeText(line.rawText || line.text)}</div>`).join('')
     : `<div class="pkbattle-message-line secondary">${lang('아직 표시할 메시지가 없습니다.', 'No battle message yet.')}</div>`;
+  const showPromptIcon = !battle.winner && Boolean(request) && !request.wait;
   els.battleMessageWindow.innerHTML = `
     <div class="pkbattle-message-stack">
-      <div class="pkbattle-message-line accent">${promptText}</div>
+      <div class="pkbattle-message-head">
+        <div class="pkbattle-message-line accent">${promptText}</div>
+        ${showPromptIcon ? '<span class="pkbattle-message-prompt-icon" aria-hidden="true"></span>' : ''}
+      </div>
       ${lineHtml}
     </div>`;
+  if (showPromptIcon) {
+    renderPokeroguePromptIcon(els.battleMessageWindow.querySelector('.pkbattle-message-prompt-icon'));
+  }
 }
 
 function maybeShowBattleAbilityFlyout(battle) {
@@ -5550,6 +5560,24 @@ function renderPokerogueTypeIcon(element, typeName = '') {
   const normalized = toId(typeName || '') || 'unknown';
   applyPokerogueAtlasFrameToElement(element, 'types', normalized, {width: 32, height: 14}).catch(() => {
     element.textContent = displayType(typeName || 'unknown');
+  });
+}
+
+function renderBattleInfoTypeIcon(element, typeName = '', {player = false, slot = 0} = {}) {
+  if (!element) return;
+  const normalized = toId(typeName || '') || 'unknown';
+  const atlasName = player
+    ? (slot > 0 ? 'pbinfo_player_type2' : 'pbinfo_player_type1')
+    : (slot > 0 ? 'pbinfo_enemy_type2' : 'pbinfo_enemy_type1');
+  applyPokerogueAtlasFrameToElement(element, atlasName, normalized, {width: 20, height: 12}).catch(() => {
+    renderPokerogueTypeIcon(element, typeName);
+  });
+}
+
+function renderPokeroguePromptIcon(element, frame = '1') {
+  if (!element) return;
+  applyPokerogueAtlasFrameToElement(element, 'prompt', String(frame || '1'), {width: 7, height: 8}).catch(() => {
+    element.textContent = '›';
   });
 }
 
@@ -5591,11 +5619,11 @@ function renderBattleInfoBox(player, container, mon) {
       ${badgeText ? `<div class="pkbattle-badge-line">${badgeText.split(' · ').map(text => `<span class="pkbattle-mini-badge">${text}</span>`).join('')}</div>` : ''}
     </div>`;
   const typeRow = container.querySelector('.pkbattle-type-icons');
-  (mon.types || []).slice(0, 2).forEach(typeName => {
+  (mon.types || []).slice(0, 2).forEach((typeName, index) => {
     const icon = document.createElement('span');
     icon.className = 'pkbattle-type-icon';
     typeRow?.appendChild(icon);
-    renderPokerogueTypeIcon(icon, typeName);
+    renderBattleInfoTypeIcon(icon, typeName, {player: player === 0, slot: index});
   });
 }
 
@@ -5799,11 +5827,13 @@ function renderBattleCommandWindow(battle, player) {
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   container.innerHTML = `
     <div class="pkbattle-command-body pkbattle-command-shell">
-      <div class="pkbattle-command-summary">
-        <strong>${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}</strong>
-        <small>${side?.name || `P${player + 1}`} · ${request?.wait ? lang('대기 중', 'Waiting') : lang('명령 선택', 'Choose command')}</small>
+      <div class="pkbattle-command-topline">
+        <div class="pkbattle-command-summary">
+          <strong>${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}</strong>
+          <small>${side?.name || `P${player + 1}`} · ${request?.wait ? lang('대기 중', 'Waiting') : lang('명령 선택', 'Choose command')}</small>
+        </div>
+        <div class="pkbattle-command-meta" id="pkbattle-command-meta"></div>
       </div>
-      <div class="pkbattle-command-meta" id="pkbattle-command-meta"></div>
       <div class="pkbattle-command-grid" id="pkbattle-command-grid"></div>
     </div>`;
   const grid = container.querySelector('#pkbattle-command-grid');
@@ -5826,7 +5856,7 @@ function renderBattleCommandWindow(battle, player) {
     {
       key: 'fight',
       title: lang('싸운다', 'Fight'),
-      desc: lang('기술 선택 창으로 이동합니다.', 'Open the move-selection window.'),
+      desc: lang('기술 선택', 'Move list'),
       active: false,
       disabled: false,
       onClick: () => setBattleUiMode(player, 'fight'),
@@ -5834,7 +5864,7 @@ function renderBattleCommandWindow(battle, player) {
     {
       key: 'ball',
       title: lang('볼', 'Ball'),
-      desc: lang('현재 프로젝트 범위에서는 지원하지 않습니다.', 'This is not supported in the current project scope.'),
+      desc: lang('현재 미지원', 'Unavailable'),
       active: false,
       disabled: true,
       onClick: null,
@@ -5842,7 +5872,7 @@ function renderBattleCommandWindow(battle, player) {
     {
       key: 'pokemon',
       title: lang('포켓몬', 'Pokémon'),
-      desc: canSwitch ? lang('교체 창으로 이동합니다.', 'Open the switch-selection window.') : lang('지금은 교체할 수 없습니다.', 'Switching is unavailable right now.'),
+      desc: canSwitch ? lang('교체 선택', 'Switch') : lang('지금 불가', 'Unavailable now'),
       active: false,
       disabled: !canSwitch,
       onClick: () => setBattleUiMode(player, 'party'),
@@ -5850,7 +5880,7 @@ function renderBattleCommandWindow(battle, player) {
     {
       key: 'run',
       title: lang('도망', 'Run'),
-      desc: lang('로컬 대전/엔진 경로에서는 비활성화합니다.', 'Disabled for the local battle/engine path.'),
+      desc: lang('로컬 대전 비활성', 'Disabled'),
       active: false,
       disabled: true,
       onClick: null,
@@ -5877,17 +5907,21 @@ function renderBattlePartyWindow(battle, player) {
   const forced = isEngineForceSwitchRequest(request);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
   container.innerHTML = `
-    <div class="pkbattle-window-heading">
-      <h3>${side?.name || `P${player + 1}`} · ${lang('포켓몬 교체', 'Switch Pokémon')}</h3>
-      <span class="pkbattle-window-note">${forced ? lang('강제 교체', 'Forced switch') : lang('일반 교체', 'Optional switch')}</span>
-    </div>
-    <div class="pkbattle-party-body">
-      <div class="pkbattle-window-note">${forced
-        ? lang('기절 또는 강제 교체 요청 때문에 취소할 수 없습니다.', 'This cannot be cancelled because the engine requires a replacement.')
-        : lang('기존 명령으로 돌아가려면 뒤로 버튼을 사용하세요.', 'Use Back to return to the command window.')}
+    <div class="pkbattle-party-body pkbattle-party-layout">
+      <div class="pkbattle-party-sidebar">
+        <div class="pkbattle-command-summary">
+          <strong>${side?.name || `P${player + 1}`}</strong>
+          <small>${forced ? lang('강제 교체', 'Forced switch') : lang('포켓몬 교체', 'Switch Pokémon')}</small>
+        </div>
+        <div class="pkbattle-window-note">${forced
+          ? lang('기절 또는 강제 교체 요청 때문에 취소할 수 없습니다.', 'This cannot be cancelled because the engine requires a replacement.')
+          : lang('기존 명령으로 돌아가려면 뒤로 버튼을 사용하세요.', 'Use Back to return to the command window.')}
+        </div>
+        <div class="pkbattle-action-row" id="pkbattle-party-actions"></div>
       </div>
-      <div class="pkbattle-action-row" id="pkbattle-party-actions"></div>
-      <div class="pkbattle-party-grid" id="pkbattle-party-grid"></div>
+      <div class="pkbattle-party-grid-wrap">
+        <div class="pkbattle-party-grid" id="pkbattle-party-grid"></div>
+      </div>
     </div>`;
   const actions = container.querySelector('#pkbattle-party-actions');
   const grid = container.querySelector('#pkbattle-party-grid');
@@ -5929,16 +5963,21 @@ function renderBattleTargetWindow(battle, player) {
   const container = els.battleStateWindow;
   if (!container) return;
   container.innerHTML = `
-    <div class="pkbattle-window-heading">
-      <h3>${battle.players?.[player]?.name || `P${player + 1}`} · ${lang('대상 선택', 'Target select')}</h3>
-      <span class="pkbattle-window-note">${lang('향후 더블 확장용 구조를 유지합니다.', 'Kept structurally for future doubles support.')}</span>
-    </div>
-    <div class="pkbattle-target-body">
-      <div class="pkbattle-window-note">${lang(
-        '현재 엔진 필수 싱글 경로에서는 대상 선택이 별도 화면으로 노출되지 않습니다. 구조만 유지하고 실제 전투 진실은 엔진 요청을 따릅니다.',
-        'The current engine-required singles path does not expose a separate target-select screen. The structural role is preserved while battle truth still comes from engine requests.'
-      )}</div>
-      <div class="pkbattle-action-row"><button type="button" class="pkbattle-action-btn"><strong>${lang('뒤로', 'Back')}</strong><small>${lang('명령 창으로 돌아갑니다.', 'Return to the command window.')}</small></button></div>
+    <div class="pkbattle-target-body pkbattle-party-layout">
+      <div class="pkbattle-party-sidebar">
+        <div class="pkbattle-command-summary">
+          <strong>${battle.players?.[player]?.name || `P${player + 1}`}</strong>
+          <small>${lang('대상 선택', 'Target select')}</small>
+        </div>
+        <div class="pkbattle-window-note">${lang(
+          '현재 엔진 필수 싱글 경로에서는 대상 선택이 별도 화면으로 노출되지 않습니다. 구조만 유지하고 실제 전투 진실은 엔진 요청을 따릅니다.',
+          'The current engine-required singles path does not expose a separate target-select screen. The structural role is preserved while battle truth still comes from engine requests.'
+        )}</div>
+        <div class="pkbattle-action-row"><button type="button" class="pkbattle-action-btn"><strong>${lang('뒤로', 'Back')}</strong><small>${lang('명령 창으로 돌아갑니다.', 'Return to the command window.')}</small></button></div>
+      </div>
+      <div class="pkbattle-party-grid-wrap">
+        <div class="pkbattle-target-placeholder">${lang('향후 더블 배틀의 대상 선택 모드를 위해 이 자리와 역할을 남겨 둡니다.', 'This role and space are kept for future doubles target-selection flow.')}</div>
+      </div>
     </div>`;
   container.querySelector('button')?.addEventListener('click', () => setBattleUiMode(player, 'command'));
 }

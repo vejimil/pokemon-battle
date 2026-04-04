@@ -1327,15 +1327,15 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 
 .pkbattle-info.enemy {
   top: 124px;
-  left: 30px;
+  left: 26px;
   width: 260px;
   min-height: 62px;
   background-image: url('./assets/pokerogue/ui/pbinfo_enemy_mini.png');
 }
 
 .pkbattle-info.ally {
-  right: 28px;
-  bottom: 96px;
+  right: 24px;
+  bottom: 94px;
   width: 260px;
   min-height: 84px;
   background-image: url('./assets/pokerogue/ui/pbinfo_player.png');
@@ -1393,8 +1393,8 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-type-icon {
-  width: 32px;
-  height: 14px;
+  width: 20px;
+  height: 12px;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
@@ -1481,13 +1481,13 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 
 .pkbattle-pbtray.enemy {
   top: 100px;
-  left: 32px;
+  left: 26px;
   background-image: url('./assets/pokerogue/ui/pb_tray_overlay_enemy.png');
 }
 
 .pkbattle-pbtray.ally {
-  right: 32px;
-  bottom: 72px;
+  right: 24px;
+  bottom: 68px;
   background-image: url('./assets/pokerogue/ui/pb_tray_overlay_player.png');
 }
 
@@ -1521,7 +1521,6 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 
 .pkbattle-ability-flyout {
   position: absolute;
-  top: 260px;
   min-width: 240px;
   max-width: min(48vw, 440px);
   padding: 8px 16px 8px 18px;
@@ -1546,17 +1545,19 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 
 .pkbattle-ability-flyout.player {
   left: 18px;
+  bottom: 120px;
   background-image: url('./assets/pokerogue/ui/ability_bar_left.png');
 }
 
 .pkbattle-ability-flyout.enemy {
   right: 18px;
+  top: 192px;
   background-image: url('./assets/pokerogue/ui/ability_bar_right.png');
 }
 
 .pkbattle-bottom {
   position: relative;
-  min-height: 160px;
+  min-height: 156px;
 }
 
 .pkbattle-window {
@@ -1575,7 +1576,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-message-window {
-  min-height: 160px;
+  min-height: 156px;
   background:
     linear-gradient(180deg, rgba(10,14,24,0.76), rgba(10,14,24,0.96)),
     url('./assets/pokerogue/ui/overlay_message.png');
@@ -1587,8 +1588,8 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   position: absolute;
   right: 0;
   bottom: 0;
-  width: min(38%, 420px);
-  min-height: 160px;
+  width: min(34%, 350px);
+  min-height: 132px;
   z-index: 2;
   border-radius: 18px;
   background: rgba(7,12,22,0.94);
@@ -1608,7 +1609,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-bottom.mode-command .pkbattle-message-window {
-  padding-right: min(40%, 440px);
+  padding-right: min(36%, 364px);
 }
 
 .pkbattle-bottom.mode-fight .pkbattle-message-window,
@@ -1621,6 +1622,26 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   padding: 14px 18px;
   display: grid;
   gap: 8px;
+}
+
+.pkbattle-message-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pkbattle-message-prompt-icon {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 8px;
+  opacity: 0.92;
+  animation: pkbattlePromptBounce 900ms steps(2, end) infinite;
+}
+
+@keyframes pkbattlePromptBounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(1px); }
 }
 
 .pkbattle-message-line {
@@ -1642,7 +1663,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   justify-content: space-between;
   gap: 10px;
   align-items: center;
-  padding: 12px 14px 10px;
+  padding: 10px 12px 8px;
   border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
@@ -1659,24 +1680,33 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 .pkbattle-command-body,
 .pkbattle-party-body,
 .pkbattle-target-body {
-  padding: 14px;
+  padding: 12px;
   display: grid;
   gap: 12px;
+}
+
+.pkbattle-command-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .pkbattle-command-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .pkbattle-command-shell {
   align-content: start;
+  min-height: 132px;
 }
 
 .pkbattle-command-summary {
   display: grid;
   gap: 2px;
+  min-width: 0;
 }
 
 .pkbattle-command-summary strong {
@@ -1701,9 +1731,10 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-command-btn {
-  min-height: 72px;
+  min-height: 54px;
   display: grid;
-  gap: 6px;
+  gap: 4px;
+  padding: 10px;
 }
 
 .pkbattle-command-fight { background: linear-gradient(180deg, rgba(200,77,66,0.95), rgba(153,52,45,0.95)); }
@@ -1716,7 +1747,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 .pkbattle-command-btn strong,
 .pkbattle-move-card strong,
 .pkbattle-party-card strong {
-  font-size: 0.92rem;
+  font-size: 0.9rem;
 }
 
 .pkbattle-command-btn small,
@@ -1725,7 +1756,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 .pkbattle-action-btn small {
   color: rgba(255,255,255,0.86);
   display: block;
-  line-height: 1.35;
+  line-height: 1.25;
 }
 
 .pkbattle-command-btn.active,
@@ -1760,6 +1791,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   border-radius: 999px;
   border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.04);
+  font-size: 0.78rem;
 }
 
 .pkbattle-tera-chip.active {
@@ -1778,14 +1810,14 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 
 .pkbattle-fight-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) 180px;
-  min-height: 220px;
+  grid-template-columns: minmax(0, 1.2fr) 170px;
+  min-height: 214px;
 }
 
 .pkbattle-fight-main {
-  padding: 12px;
+  padding: 10px;
   display: grid;
-  gap: 12px;
+  gap: 10px;
   border-right: 1px solid rgba(255,255,255,0.08);
 }
 
@@ -1796,18 +1828,18 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-action-btn {
-  padding: 8px 12px;
+  padding: 7px 10px;
   min-height: 0;
 }
 
 .pkbattle-move-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .pkbattle-move-card {
-  min-height: 84px;
+  min-height: 78px;
 }
 
 .pkbattle-move-card-head {
@@ -1824,9 +1856,9 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-fight-detail {
-  padding: 12px;
+  padding: 10px;
   display: grid;
-  gap: 10px;
+  gap: 9px;
   align-content: start;
   background: rgba(0,0,0,0.14);
 }
@@ -1850,9 +1882,42 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   font-size: 0.72rem;
 }
 
+.pkbattle-party-layout {
+  grid-template-columns: minmax(180px, 0.6fr) minmax(0, 1.4fr);
+  align-items: start;
+  min-height: 232px;
+  background:
+    linear-gradient(180deg, rgba(5,10,18,0.7), rgba(5,10,18,0.82)),
+    url('./assets/pokerogue/ui/party_bg.png');
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.pkbattle-party-sidebar {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.pkbattle-party-grid-wrap {
+  min-width: 0;
+}
+
 .pkbattle-party-grid {
   display: grid;
   gap: 10px;
+}
+
+.pkbattle-target-placeholder {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  padding: 18px;
+  color: var(--muted);
+  text-align: center;
+  border: 1px dashed rgba(255,255,255,0.12);
+  border-radius: 18px;
+  background: rgba(0,0,0,0.18);
 }
 
 .pkbattle-party-card {
@@ -1860,6 +1925,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   grid-template-columns: 56px 1fr;
   gap: 10px;
   align-items: center;
+  background: rgba(12,18,28,0.76);
 }
 
 .pkbattle-party-card .sprite-shell.small {
@@ -1905,7 +1971,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   }
 
   .pkbattle-state-window {
-    width: min(42%, 420px);
+    width: min(42%, 350px);
   }
 }
 
@@ -1946,6 +2012,14 @@ label > span { font-size: 0.9rem; color: var(--muted); }
     bottom: 86px;
   }
 
+  .pkbattle-ability-flyout.player {
+    bottom: 104px;
+  }
+
+  .pkbattle-ability-flyout.enemy {
+    top: 174px;
+  }
+
   .pkbattle-bottom.mode-command .pkbattle-message-window {
     padding-right: 0;
   }
@@ -1968,6 +2042,10 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   .pkbattle-fight-main {
     border-right: 0;
     border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .pkbattle-party-layout {
+    grid-template-columns: 1fr;
   }
 }
 
