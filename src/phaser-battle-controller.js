@@ -109,78 +109,103 @@ class PhaserBattleScene {
     this.controller = controller;
     this.Phaser = Phaser;
     this.sceneKey = 'pkb-phaser-battle-scene';
+    this.isBootstrapped = false;
+    this.handleResize = () => this.layoutSafely();
+    this.handleShutdown = () => {
+      try {
+        this.scale?.off?.('resize', this.handleResize, this);
+      } catch (_error) {
+        // no-op
+      }
+    };
   }
 
   preload() {}
 
   create() {
-    const { Phaser } = this;
-    this.currentModel = null;
-    this.lastAbilityFlyoutKey = '';
-    this.scale.on('resize', this.layout, this);
+    try {
+      const { Phaser } = this;
+      this.currentModel = null;
+      this.lastAbilityFlyoutKey = '';
 
-    this.background = this.add.graphics();
-    this.overlay = this.add.graphics();
+      this.background = this.add.graphics();
+      this.overlay = this.add.graphics();
 
-    this.topBanner = this.add.text(0, 0, '', {
-      fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-      fontSize: '26px',
-      color: '#edf6ff',
-      align: 'center',
-    }).setOrigin(0.5, 0.5);
+      this.topBanner = this.add.text(0, 0, '', {
+        fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
+        fontSize: '26px',
+        color: '#edf6ff',
+        align: 'center',
+      }).setOrigin(0.5, 0.5);
 
-    this.turnChip = this.add.text(0, 0, '', {
-      fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-      fontSize: '20px',
-      color: '#c7dcff',
-      backgroundColor: 'rgba(11, 22, 45, 0.85)',
-      padding: { left: 10, right: 10, top: 6, bottom: 6 },
-    }).setOrigin(0.5, 0.5);
+      this.turnChip = this.add.text(0, 0, '', {
+        fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
+        fontSize: '20px',
+        color: '#c7dcff',
+        backgroundColor: 'rgba(11, 22, 45, 0.85)',
+        padding: { left: 10, right: 10, top: 6, bottom: 6 },
+      }).setOrigin(0.5, 0.5);
 
-    this.fieldStatusText = this.add.text(0, 0, '', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '16px',
-      color: '#bfdbfe',
-      align: 'center',
-      wordWrap: { width: 980, useAdvancedWrap: true },
-    }).setOrigin(0.5, 0.5);
+      this.fieldStatusText = this.add.text(0, 0, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '16px',
+        color: '#bfdbfe',
+        align: 'center',
+        wordWrap: { width: 980, useAdvancedWrap: true },
+      }).setOrigin(0.5, 0.5);
 
-    this.enemySprite = this.createSpriteMount('enemy');
-    this.playerSprite = this.createSpriteMount('player');
+      this.enemySprite = this.createSpriteMount('enemy');
+      this.playerSprite = this.createSpriteMount('player');
 
-    this.enemyInfo = this.createInfoBox('enemy');
-    this.playerInfo = this.createInfoBox('player');
-    this.enemyTray = this.createPokeballTray();
-    this.playerTray = this.createPokeballTray();
+      this.enemyInfo = this.createInfoBox('enemy');
+      this.playerInfo = this.createInfoBox('player');
+      this.enemyTray = this.createPokeballTray();
+      this.playerTray = this.createPokeballTray();
 
-    this.abilityBar = this.createAbilityBar();
-    this.messageWindow = this.createWindow('message');
-    this.messagePrimary = this.add.text(18, 18, '', {
-      fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-      fontSize: '22px',
-      color: '#f8fbff',
-      wordWrap: { width: 64, useAdvancedWrap: true },
-      lineSpacing: 4,
-    }).setOrigin(0, 0);
-    this.messageSecondary = this.add.text(18, 18, '', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '15px',
-      color: '#cbd5e1',
-      wordWrap: { width: 64, useAdvancedWrap: true },
-    }).setOrigin(0, 0);
-    this.messageWindow.content.add([this.messagePrimary, this.messageSecondary]);
+      this.abilityBar = this.createAbilityBar();
+      this.messageWindow = this.createWindow('message');
+      this.messagePrimary = this.add.text(18, 18, '', {
+        fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
+        fontSize: '22px',
+        color: '#f8fbff',
+        wordWrap: { width: 64, useAdvancedWrap: true },
+        lineSpacing: 4,
+      }).setOrigin(0, 0);
+      this.messageSecondary = this.add.text(18, 18, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '15px',
+        color: '#cbd5e1',
+        wordWrap: { width: 64, useAdvancedWrap: true },
+      }).setOrigin(0, 0);
+      this.messageWindow.content.add([this.messagePrimary, this.messageSecondary]);
 
-    this.stateWindow = this.createWindow('state');
-    this.stateTitle = this.add.text(0, 0, '', {
-      fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-      fontSize: '18px',
-      color: '#c8d7ff',
-    }).setOrigin(0, 0);
-    this.stateWindow.container.add(this.stateTitle);
+      this.stateWindow = this.createWindow('state');
+      this.stateTitle = this.add.text(0, 0, '', {
+        fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
+        fontSize: '18px',
+        color: '#c8d7ff',
+      }).setOrigin(0, 0);
+      this.stateWindow.container.add(this.stateTitle);
 
-    this.stateButtons = [];
-    this.layout();
-    this.controller?.notifySceneReady?.(this);
+      this.stateButtons = [];
+      this.scale?.on?.('resize', this.handleResize, this);
+      this.events?.once?.('shutdown', this.handleShutdown, this);
+      this.isBootstrapped = true;
+      this.layoutSafely();
+      this.controller?.notifySceneReady?.(this);
+    } catch (error) {
+      this.controller?.notifySceneError?.(error);
+      throw error;
+    }
+  }
+
+  layoutSafely() {
+    try {
+      this.layout();
+    } catch (error) {
+      this.controller?.notifySceneError?.(error);
+      throw error;
+    }
   }
 
   createSpriteMount(name) {
@@ -268,6 +293,10 @@ class PhaserBattleScene {
   }
 
   layout() {
+    if (!this.isBootstrapped) return;
+    if (!this.scale || !this.background || !this.overlay || !this.topBanner || !this.turnChip || !this.fieldStatusText) return;
+    if (!this.enemyTray?.container || !this.playerTray?.container || !this.enemyInfo?.panel || !this.playerInfo?.panel) return;
+    if (!this.enemySprite?.dom || !this.playerSprite?.dom || !this.messageWindow?.bg || !this.messageWindow?.container || !this.stateWindow?.bg || !this.stateWindow?.container || !this.stateTitle) return;
     const width = this.scale.width;
     const height = this.scale.height;
     const margin = isMobileViewport() ? 18 : 24;
@@ -622,6 +651,9 @@ export class PhaserBattleController {
     this.sceneReady = false;
     this.sceneReadyPromise = null;
     this.resolveSceneReady = null;
+    this.rejectSceneReady = null;
+    this.sceneBootTimer = null;
+    this.bootError = null;
   }
 
   setStatus(text = '', tone = 'info') {
@@ -634,19 +666,42 @@ export class PhaserBattleController {
   notifySceneReady(scene) {
     if (scene) this.scene = scene;
     this.sceneReady = true;
+    this.bootError = null;
+    if (this.sceneBootTimer) {
+      clearTimeout(this.sceneBootTimer);
+      this.sceneBootTimer = null;
+    }
     if (typeof this.resolveSceneReady === 'function') {
       this.resolveSceneReady();
       this.resolveSceneReady = null;
+      this.rejectSceneReady = null;
     }
     this.setStatus('', 'ready');
   }
 
+  notifySceneError(error) {
+    const normalizedError = error instanceof Error ? error : new Error(String(error || 'Unknown Phaser battle renderer error'));
+    this.bootError = normalizedError;
+    if (this.sceneBootTimer) {
+      clearTimeout(this.sceneBootTimer);
+      this.sceneBootTimer = null;
+    }
+    this.setStatus(`Phaser battle renderer error: ${normalizedError.message}`, 'error');
+    if (typeof this.rejectSceneReady === 'function') {
+      this.rejectSceneReady(normalizedError);
+      this.resolveSceneReady = null;
+      this.rejectSceneReady = null;
+    }
+  }
+
   async ensureReady() {
+    if (this.bootError) throw this.bootError;
     if (this.sceneReady && this.ready) return;
     if (!this.mount) throw new Error('Phaser battle mount element is missing.');
     if (!this.sceneReadyPromise) {
-      this.sceneReadyPromise = new Promise(resolve => {
+      this.sceneReadyPromise = new Promise((resolve, reject) => {
         this.resolveSceneReady = resolve;
+        this.rejectSceneReady = reject;
       });
     }
     if (!this.ready) {
@@ -670,6 +725,9 @@ export class PhaserBattleController {
       });
       this.ready = true;
       this.mount.hidden = false;
+      this.sceneBootTimer = setTimeout(() => {
+        this.notifySceneError(new Error('Scene boot timed out before create() completed.'));
+      }, 8000);
     }
     await this.sceneReadyPromise;
   }
@@ -694,6 +752,12 @@ export class PhaserBattleController {
     this.sceneReady = false;
     this.sceneReadyPromise = null;
     this.resolveSceneReady = null;
+    this.rejectSceneReady = null;
+    this.bootError = null;
+    if (this.sceneBootTimer) {
+      clearTimeout(this.sceneBootTimer);
+      this.sceneBootTimer = null;
+    }
     if (this.game) {
       this.game.destroy(true);
       this.game = null;

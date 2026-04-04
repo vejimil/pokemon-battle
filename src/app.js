@@ -6329,6 +6329,14 @@ async function syncPhaserBattleRenderer(battle) {
       els.battlePhaserStatus.dataset.tone = 'error';
       els.battlePhaserStatus.textContent = `Phaser battle renderer error: ${error.message}`;
     }
+    try {
+      phaserBattleRenderer?.destroy?.();
+    } catch (_destroyError) {
+      // no-op
+    }
+    phaserBattleRenderer = null;
+    if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = true;
+    if (els.battlePhaserMount) els.battlePhaserMount.hidden = true;
     els.battlePanel.classList.remove('is-phaser-active');
     return false;
   }
