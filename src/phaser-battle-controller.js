@@ -165,6 +165,7 @@ class PhaserBattleScene {
 
     this.stateButtons = [];
     this.layout();
+    this.controller?.notifySceneReady?.(this);
   }
 
   createSpriteMount(name) {
@@ -578,6 +579,7 @@ class PhaserBattleScene {
   renderModel(model) {
     this.currentModel = model;
     if (!model) return;
+    if (!this.turnChip || !this.topBanner || !this.fieldStatusText || !this.enemyInfo || !this.playerInfo || !this.enemyTray || !this.playerTray || !this.messageWindow || !this.stateWindow || !this.abilityBar || !this.enemySprite || !this.playerSprite) return;
     this.turnChip.setText(model.turnChip || `Turn ${model.turn || 0}`);
     this.topBanner.setText(model.bannerText || 'Battle');
     this.fieldStatusText.setText(model.fieldStatus || '');
@@ -602,6 +604,9 @@ export class PhaserBattleController {
     this.callbacks = {};
     this.model = null;
     this.ready = false;
+    this.sceneReady = false;
+    this.sceneReadyPromise = null;
+    this.resolveSceneReady = null;
   }
 
   setStatus(text = '', tone = 'info') {
@@ -611,36 +616,53 @@ export class PhaserBattleController {
     this.statusEl.hidden = !text;
   }
 
-  async ensureReady() {
-    if (this.ready) return;
-    if (!this.mount) throw new Error('Phaser battle mount element is missing.');
-    this.setStatus('Loading Phaser battle renderer…', 'loading');
-    const Phaser = await loadPhaserModule();
-    const scene = new PhaserBattleScene(this, Phaser);
-    this.scene = scene;
-    this.game = new Phaser.Game({
-      type: Phaser.AUTO,
-      width: 1280,
-      height: 720,
-      parent: this.mount,
-      transparent: true,
-      backgroundColor: '#07101f',
-      dom: { createContainer: true },
-      scale: {
-        mode: Phaser.Scale.FIT,
-        autoCenter: Phaser.Scale.CENTER_BOTH,
-      },
-      scene: [scene],
-    });
-    this.ready = true;
-    this.mount.hidden = false;
+  notifySceneReady(scene) {
+    if (scene) this.scene = scene;
+    this.sceneReady = true;
+    if (typeof this.resolveSceneReady === 'function') {
+      this.resolveSceneReady();
+      this.resolveSceneReady = null;
+    }
     this.setStatus('', 'ready');
   }
 
+  async ensureReady() {
+    if (this.sceneReady && this.ready) return;
+    if (!this.mount) throw new Error('Phaser battle mount element is missing.');
+    if (!this.sceneReadyPromise) {
+      this.sceneReadyPromise = new Promise(resolve => {
+        this.resolveSceneReady = resolve;
+      });
+    }
+    if (!this.ready) {
+      this.setStatus('Loading Phaser battle renderer…', 'loading');
+      const Phaser = await loadPhaserModule();
+      const scene = new PhaserBattleScene(this, Phaser);
+      this.scene = scene;
+      this.game = new Phaser.Game({
+        type: Phaser.AUTO,
+        width: 1280,
+        height: 720,
+        parent: this.mount,
+        transparent: true,
+        backgroundColor: '#07101f',
+        dom: { createContainer: true },
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH,
+        },
+        scene: [scene],
+      });
+      this.ready = true;
+      this.mount.hidden = false;
+    }
+    await this.sceneReadyPromise;
+  }
+
   async show(model, callbacks = {}) {
-    await this.ensureReady();
     this.callbacks = callbacks;
     this.model = model;
+    await this.ensureReady();
     this.mount.hidden = false;
     this.scene?.renderModel(model);
   }
@@ -654,6 +676,9 @@ export class PhaserBattleController {
     this.callbacks = {};
     this.model = null;
     this.ready = false;
+    this.sceneReady = false;
+    this.sceneReadyPromise = null;
+    this.resolveSceneReady = null;
     if (this.game) {
       this.game.destroy(true);
       this.game = null;
