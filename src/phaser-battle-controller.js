@@ -104,16 +104,14 @@ async function renderAnimatedSpriteToHost(host, spriteModel = {}, size = 'large'
   }
 }
 
-function createPhaserBattleSceneClass(Phaser) {
-  return class PhaserBattleScene extends Phaser.Scene {
-    constructor(controller) {
-      super({ key: 'pkb-phaser-battle-scene' });
-      this.controller = controller;
-      this.Phaser = Phaser;
-      this.sceneKey = 'pkb-phaser-battle-scene';
-    }
+class PhaserBattleScene {
+  constructor(controller, Phaser) {
+    this.controller = controller;
+    this.Phaser = Phaser;
+    this.sceneKey = 'pkb-phaser-battle-scene';
+  }
 
-    preload() {}
+  preload() {}
 
   create() {
     const { Phaser } = this;
@@ -157,6 +155,21 @@ function createPhaserBattleSceneClass(Phaser) {
 
     this.abilityBar = this.createAbilityBar();
     this.messageWindow = this.createWindow('message');
+    this.messagePrimary = this.add.text(18, 18, '', {
+      fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
+      fontSize: '22px',
+      color: '#f8fbff',
+      wordWrap: { width: 64, useAdvancedWrap: true },
+      lineSpacing: 4,
+    }).setOrigin(0, 0);
+    this.messageSecondary = this.add.text(18, 18, '', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '15px',
+      color: '#cbd5e1',
+      wordWrap: { width: 64, useAdvancedWrap: true },
+    }).setOrigin(0, 0);
+    this.messageWindow.content.add([this.messagePrimary, this.messageSecondary]);
+
     this.stateWindow = this.createWindow('state');
     this.stateTitle = this.add.text(0, 0, '', {
       fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
@@ -248,9 +261,10 @@ function createPhaserBattleSceneClass(Phaser) {
   createWindow(kind) {
     const container = this.add.container(0, 0);
     const bg = this.add.rectangle(0, 0, 100, 100, 0x0e1a33, 0.95).setOrigin(0, 0).setStrokeStyle(3, 0xdbeafe, 0.14);
-    container.add(bg);
+    const content = this.add.container(0, 0);
+    container.add([bg, content]);
     container.name = kind;
-    return { container, bg };
+    return { container, bg, content };
   }
 
   layout() {
@@ -296,9 +310,13 @@ function createPhaserBattleSceneClass(Phaser) {
 
     this.messageWindow.bg.setSize(messageWidth, bottomHeight);
     this.messageWindow.container.setPosition(margin, bottomTop);
+    if (this.messageWindow.content) this.messageWindow.content.setPosition(0, 0);
+    if (this.messagePrimary) this.messagePrimary.setWordWrapWidth(Math.max(64, messageWidth - 36), true);
+    if (this.messageSecondary) this.messageSecondary.setWordWrapWidth(Math.max(64, messageWidth - 36), true);
 
     this.stateWindow.bg.setSize(stateWidth, bottomHeight);
     this.stateWindow.container.setPosition(margin + messageWidth + 14, bottomTop);
+    if (this.stateWindow.content) this.stateWindow.content.setPosition(0, 0);
 
     this.stateTitle.setPosition(18, 14);
 
@@ -347,6 +365,11 @@ function createPhaserBattleSceneClass(Phaser) {
     this.stateButtons = [];
   }
 
+  clearStateContent() {
+    this.clearStateButtons();
+    if (this.stateWindow?.content) this.stateWindow.content.removeAll(true);
+  }
+
   createButton({ x, y, width, height, label, sublabel = '', tone = 'default', disabled = false, onClick = null }) {
     const { Phaser } = this;
     const container = this.add.container(x, y);
@@ -378,39 +401,29 @@ function createPhaserBattleSceneClass(Phaser) {
       bg.on('pointerover', () => bg.setFillStyle(fill + 0x111111, 1));
       bg.on('pointerout', () => bg.setFillStyle(fill, 0.95));
     }
-    this.stateWindow.container.add(container);
+    this.stateWindow.content.add(container);
     this.stateButtons.push(container);
     return container;
   }
 
   renderMessageWindow(message = {}) {
-    const width = this.messageWindow.bg.width;
-    this.messageWindow.container.removeAll(true);
-    this.messageWindow.container.add(this.messageWindow.bg);
-    const primary = this.add.text(18, 18, message.primary || '—', {
-      fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-      fontSize: '22px',
-      color: '#f8fbff',
-      wordWrap: { width: width - 36, useAdvancedWrap: true },
-      lineSpacing: 4,
-    }).setOrigin(0, 0);
-    this.messageWindow.container.add(primary);
+    if (!this.messageWindow?.bg || !this.messagePrimary || !this.messageSecondary) return;
+    const width = Math.max(64, this.messageWindow.bg.width - 36);
+    this.messagePrimary.setWordWrapWidth(width, true);
+    this.messagePrimary.setText(message.primary || '—');
+    this.messageSecondary.setWordWrapWidth(width, true);
     if (message.secondary) {
-      const secondary = this.add.text(18, Math.min(this.messageWindow.bg.height - 40, primary.y + primary.height + 12), message.secondary, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '15px',
-        color: '#cbd5e1',
-        wordWrap: { width: width - 36, useAdvancedWrap: true },
-      }).setOrigin(0, 0);
-      this.messageWindow.container.add(secondary);
+      this.messageSecondary.setText(message.secondary);
+      this.messageSecondary.setVisible(true);
+      this.messageSecondary.setPosition(18, Math.min(this.messageWindow.bg.height - 40, this.messagePrimary.y + this.messagePrimary.height + 12));
+    } else {
+      this.messageSecondary.setText('');
+      this.messageSecondary.setVisible(false);
     }
   }
 
   renderStateWindow(ui = {}) {
-    this.clearStateButtons();
-    this.stateWindow.container.removeAll(true);
-    this.stateWindow.container.add(this.stateWindow.bg);
-    this.stateWindow.container.add(this.stateTitle);
+    this.clearStateContent();
     this.stateTitle.setText(ui.title || 'Battle');
     const width = this.stateWindow.bg.width;
     const height = this.stateWindow.bg.height;
@@ -422,7 +435,7 @@ function createPhaserBattleSceneClass(Phaser) {
         color: '#cbd5e1',
         wordWrap: { width: width - 36, useAdvancedWrap: true },
       }).setOrigin(0, 0);
-      this.stateWindow.container.add(note);
+      this.stateWindow.content.add(note);
       return;
     }
 
@@ -516,7 +529,7 @@ function createPhaserBattleSceneClass(Phaser) {
           color: '#cbd5e1',
           wordWrap: { width: width - 36, useAdvancedWrap: true },
         }).setOrigin(0, 0);
-        this.stateWindow.container.add(detail);
+        this.stateWindow.content.add(detail);
       }
       return;
     }
@@ -528,7 +541,7 @@ function createPhaserBattleSceneClass(Phaser) {
         color: '#bfdbfe',
         wordWrap: { width: width - 36, useAdvancedWrap: true },
       }).setOrigin(0, 0);
-      this.stateWindow.container.add(note);
+      this.stateWindow.content.add(note);
       (ui.partyOptions || []).forEach((option, index) => {
         this.createButton({
           x: 18,
@@ -563,7 +576,7 @@ function createPhaserBattleSceneClass(Phaser) {
       color: '#cbd5e1',
       wordWrap: { width: width - 36, useAdvancedWrap: true },
     }).setOrigin(0, 0);
-    this.stateWindow.container.add(placeholder);
+    this.stateWindow.content.add(placeholder);
     (ui.footerActions || []).forEach((button, index) => {
       this.createButton({
         x: 18 + index * 108,
@@ -595,7 +608,6 @@ function createPhaserBattleSceneClass(Phaser) {
     renderAnimatedSpriteToHost(this.enemySprite.host, model.enemySprite || {}, 'large');
     renderAnimatedSpriteToHost(this.playerSprite.host, model.playerSprite || {}, 'large');
   }
-  };
 }
 
 export class PhaserBattleController {
@@ -640,8 +652,7 @@ export class PhaserBattleController {
     if (!this.ready) {
       this.setStatus('Loading Phaser battle renderer…', 'loading');
       const Phaser = await loadPhaserModule();
-      const PhaserBattleScene = createPhaserBattleSceneClass(Phaser);
-      const scene = new PhaserBattleScene(this);
+      const scene = new PhaserBattleScene(this, Phaser);
       this.scene = scene;
       this.game = new Phaser.Game({
         type: Phaser.AUTO,
@@ -660,10 +671,7 @@ export class PhaserBattleController {
       this.ready = true;
       this.mount.hidden = false;
     }
-    await Promise.race([
-      this.sceneReadyPromise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Phaser scene startup timed out before create() completed.')), 5000)),
-    ]);
+    await this.sceneReadyPromise;
   }
 
   async show(model, callbacks = {}) {
