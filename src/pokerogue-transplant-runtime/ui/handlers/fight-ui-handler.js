@@ -58,16 +58,16 @@ export class FightUiHandler extends UiHandler {
       return { x, y, hit, label };
     });
 
-    this.moveInfoContainer = scene.add.container(0, 0).setName('move-info');
+    this.moveInfoContainer = scene.add.container(1, 0).setName('move-info');
     this.moveNameText = addTextObject(this.ui, 249, -40, '', 'WINDOW_BATTLE_COMMAND', {
       wordWrap: { width: 44, useAdvancedWrap: true },
     }).setOrigin(0, 0);
     this.typeIcon = env.textureExists(scene, env.UI_ASSETS.typesAtlas.key, 'unknown')
-      ? scene.add.image(263, -38, env.UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.55)
-      : addTextObject(this.ui, 263, -38, '', 'BATTLE_LABEL').setOrigin(0, 0);
+      ? scene.add.image(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.55)
+      : addTextObject(this.ui, 263, -36, '', 'BATTLE_LABEL').setOrigin(0, 0);
     this.moveCategoryIcon = env.textureExists(scene, env.UI_ASSETS.categoriesAtlas.key, 'status')
-      ? scene.add.image(289, -38, env.UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(0.55)
-      : addTextObject(this.ui, 289, -38, '', 'BATTLE_LABEL').setOrigin(0, 0);
+      ? scene.add.image(295, -36, env.UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(0.55)
+      : addTextObject(this.ui, 295, -36, '', 'BATTLE_LABEL').setOrigin(0, 0);
     this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'BATTLE_LABEL').setOrigin(0, 0.5);
     this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'BATTLE_VALUE').setOrigin(1, 0.5);
     this.powerLabel = addTextObject(this.ui, 250, -18, 'Pow', 'BATTLE_LABEL').setOrigin(0, 0.5);
@@ -142,6 +142,7 @@ export class FightUiHandler extends UiHandler {
     super.show(state);
     this.fieldIndex = Number(state.fieldIndex || 0);
     const battleMessage = this.ui.getMessageHandler();
+    battleMessage.bg.setVisible(false);
     battleMessage.commandWindow.setVisible(false);
     battleMessage.movesWindowContainer.setVisible(true);
 
@@ -335,7 +336,9 @@ export class FightUiHandler extends UiHandler {
 
   clear() {
     super.clear();
-    this.getUi().getMessageHandler().movesWindowContainer?.setVisible(false);
+    const messageHandler = this.getUi().getMessageHandler();
+    messageHandler.movesWindowContainer?.setVisible(false);
+    messageHandler.bg?.setVisible(true);
     this.infoVisible = false;
     if (this.cursorObj) this.cursorObj.setVisible(false);
   }
