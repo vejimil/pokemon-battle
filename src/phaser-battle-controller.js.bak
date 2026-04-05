@@ -162,23 +162,6 @@ function clearContainer(container) {
   container.removeAll(true);
 }
 
-function applyHostBox(host, width, height) {
-  if (!host) return;
-  Object.assign(host.style, {
-    width: `${Math.round(width)}px`,
-    height: `${Math.round(height)}px`,
-  });
-}
-
-function measureMountSize(mount) {
-  if (!mount?.getBoundingClientRect) return { width: 1280, height: 720 };
-  const rect = mount.getBoundingClientRect();
-  return {
-    width: Math.max(320, Math.round(rect.width || mount.clientWidth || 1280)),
-    height: Math.max(240, Math.round(rect.height || mount.clientHeight || 720)),
-  };
-}
-
 function createPhaserBattleSceneClass(Phaser) {
   return class PhaserBattleScene extends Phaser.Scene {
     constructor(controller) {
@@ -187,7 +170,6 @@ function createPhaserBattleSceneClass(Phaser) {
       this.Phaser = Phaser;
       this.sceneKey = 'pkb-phaser-battle-scene';
       this.isBootstrapped = false;
-      this.layoutMetrics = null;
       this.handleResize = () => this.layoutSafely();
       this.handleShutdown = () => {
         try {
@@ -592,66 +574,50 @@ function createPhaserBattleSceneClass(Phaser) {
       if (!this.isBootstrapped) return;
       const width = this.scale.width;
       const height = this.scale.height;
-      const mobile = isMobileViewport() || width < 1040;
-      const margin = mobile ? 16 : 24;
-      const headerTop = margin + 14;
-      const stageTop = margin + 56;
-      const bottomHeight = clamp(height * (mobile ? 0.34 : 0.31), 188, 252);
-      const bottomTop = height - bottomHeight - margin;
-      const stageBottom = bottomTop - 16;
+      const margin = isMobileViewport() ? 18 : 24;
+      const topHeight = clamp(height * 0.61, 360, 510);
+      const bottomHeight = clamp(height - topHeight - margin * 3, 180, 240);
       const stageWidth = width - margin * 2;
-      const stageHeight = Math.max(260, stageBottom - stageTop);
-      const activeMode = this.currentModel?.stateWindow?.mode || 'message';
-      const rightInset = 14;
-      const reservedMessageWidth = activeMode === 'command'
-        ? this.commandPanel.bg.width + 40
-        : activeMode === 'message'
-          ? this.notePanel.bg.width + 34
-          : 28;
-      const messageWrapWidth = Math.max(160, stageWidth - reservedMessageWidth);
-      const enemySpriteBox = clamp(Math.min(stageWidth * 0.22, stageHeight * 0.56), 188, 268);
-      const playerSpriteBox = clamp(Math.min(stageWidth * 0.25, stageHeight * 0.62), 210, 300);
-
-      this.layoutMetrics = { width, height, margin, headerTop, stageTop, stageBottom, stageWidth, stageHeight, bottomTop, bottomHeight, messageWrapWidth };
+      const bottomTop = height - bottomHeight - margin;
 
       this.background.clear();
       this.background.fillGradientStyle(0x06111f, 0x06111f, 0x13233f, 0x0b162d, 1);
       this.background.fillRect(0, 0, width, height);
-      this.background.fillStyle(0x1f3b5b, 0.22);
-      this.background.fillEllipse(width * 0.52, stageTop + stageHeight * 0.78, stageWidth * 0.62, stageHeight * 0.24);
-      this.background.fillStyle(0x14304f, 0.34);
-      this.background.fillEllipse(width * 0.74, stageTop + stageHeight * 0.3, stageWidth * 0.26, stageHeight * 0.1);
-      this.background.fillEllipse(width * 0.28, stageTop + stageHeight * 0.56, stageWidth * 0.18, stageHeight * 0.08);
+      this.background.fillStyle(0x1f3b5b, 0.26);
+      this.background.fillEllipse(width * 0.52, topHeight * 0.81, stageWidth * 0.68, topHeight * 0.28);
+      this.background.fillStyle(0x14304f, 0.38);
+      this.background.fillEllipse(width * 0.73, topHeight * 0.38, stageWidth * 0.24, topHeight * 0.1);
+      this.background.fillEllipse(width * 0.29, topHeight * 0.6, stageWidth * 0.19, topHeight * 0.08);
 
       this.overlay.clear();
       this.overlay.lineStyle(2, 0xffffff, 0.06);
-      this.overlay.strokeRoundedRect(margin, stageTop, stageWidth, stageHeight, 18);
+      this.overlay.strokeRoundedRect(margin, margin + 54, stageWidth, topHeight - 12, 18);
 
-      this.turnChip.setPosition(margin + 8, headerTop);
-      this.bannerText.setPosition(width / 2, headerTop + 2);
-      this.fieldStatusText.setPosition(width / 2, headerTop + 32);
+      this.turnChip.setPosition(margin + 8, margin + 14);
+      this.bannerText.setPosition(width / 2, margin + 18);
+      this.fieldStatusText.setPosition(width / 2, margin + 48);
       this.fieldStatusText.setWordWrapWidth(stageWidth - 120, true);
 
-      this.perspectiveTabs.container.setPosition(width / 2 - 154, stageTop + 12);
+      this.perspectiveTabs.container.setPosition(width / 2 - 154, margin + 66);
 
-      this.enemyTray.container.setPosition(width - margin - 288, stageTop + 54);
-      this.enemyInfo.container.setPosition(width - margin - this.enemyInfo.width, stageTop + 78);
-      this.playerInfo.container.setPosition(margin + 8, stageBottom - this.playerInfo.height - 8);
-      this.playerTray.container.setPosition(margin + 18, stageBottom - this.playerInfo.height - 28);
+      this.enemyInfo.container.setPosition(width - margin - this.enemyInfo.width, margin + 116);
+      this.playerInfo.container.setPosition(margin + 8, topHeight - this.playerInfo.height + 34);
+      this.enemyTray.container.setPosition(width - margin - 288, margin + 96);
+      this.playerTray.container.setPosition(margin + 18, topHeight - 22);
 
-      this.enemySprite.dom.setPosition(width * 0.72, stageTop + stageHeight * 0.34);
-      this.playerSprite.dom.setPosition(width * 0.29, stageTop + stageHeight * 0.67);
-      applyHostBox(this.enemySprite.host, enemySpriteBox, enemySpriteBox);
-      applyHostBox(this.playerSprite.host, playerSpriteBox, playerSpriteBox);
+      this.enemySprite.dom.setPosition(width * 0.73, topHeight * 0.4);
+      this.playerSprite.dom.setPosition(width * 0.28, topHeight * 0.77);
+      Object.assign(this.enemySprite.host.style, { width: '278px', height: '278px' });
+      Object.assign(this.playerSprite.host.style, { width: '294px', height: '294px' });
 
       this.messagePanel.container.setPosition(margin, bottomTop);
       this.messagePanel.bg.setSize(stageWidth, bottomHeight);
-      this.messagePanel.primary.setWordWrapWidth(messageWrapWidth, true);
-      this.messagePanel.secondary.setWordWrapWidth(messageWrapWidth, true);
+      this.messagePanel.primary.setWordWrapWidth(Math.max(100, stageWidth - 388), true);
+      this.messagePanel.secondary.setWordWrapWidth(Math.max(100, stageWidth - 388), true);
 
-      this.commandPanel.container.setPosition(width - margin - this.commandPanel.bg.width - rightInset, bottomTop + bottomHeight - this.commandPanel.bg.height - rightInset);
-      this.fightPanel.container.setPosition(margin + 10, bottomTop + bottomHeight - this.fightPanel.movesBg.height - 12);
-      this.partyPanel.container.setPosition(width - margin - this.partyPanel.bg.width - 12, bottomTop - 30);
+      this.commandPanel.container.setPosition(width - margin - this.commandPanel.bg.width - 10, bottomTop + bottomHeight - this.commandPanel.bg.height - 10);
+      this.fightPanel.container.setPosition(margin + 8, bottomTop + 12);
+      this.partyPanel.container.setPosition(width - margin - this.partyPanel.bg.width - 12, bottomTop - 22);
       this.notePanel.container.setPosition(width - margin - this.notePanel.bg.width - 12, bottomTop + bottomHeight - this.notePanel.bg.height - 12);
 
       if (this.currentModel) this.renderModel(this.currentModel);
@@ -710,20 +676,16 @@ function createPhaserBattleSceneClass(Phaser) {
         this.abilityBar.container.setVisible(false);
         return;
       }
-      const metrics = this.layoutMetrics || {};
       this.abilityBar.text.setText(model.text);
       this.abilityBar.bg.setSize(clamp(this.abilityBar.text.width + 28, 220, 520), 40);
       const x = model.side === 'enemy' ? this.scale.width - this.abilityBar.bg.width - 24 : 24;
-      const y = model.side === 'enemy'
-        ? (metrics.stageTop || 72) + 102
-        : (metrics.stageTop || 72) + (metrics.stageHeight || 360) * 0.54;
+      const y = model.side === 'enemy' ? 118 : this.scale.height * 0.5;
       this.abilityBar.container.setPosition(x, y);
       this.abilityBar.container.setVisible(true);
     }
 
     renderMessageWindow(message = {}) {
-      const metrics = this.layoutMetrics || {};
-      const width = Math.max(160, metrics.messageWrapWidth || (this.messagePanel.bg.width - 388));
+      const width = Math.max(100, this.messagePanel.bg.width - 388);
       this.messagePanel.primary.setWordWrapWidth(width, true);
       this.messagePanel.secondary.setWordWrapWidth(width, true);
       this.messagePanel.primary.setText(message.primary || '—');
@@ -735,10 +697,10 @@ function createPhaserBattleSceneClass(Phaser) {
         this.messagePanel.secondary.setText('');
         this.messagePanel.secondary.setVisible(false);
       }
-      const promptVisible = Boolean(message.showPrompt);
+      const promptVisible = Boolean(message.secondary || message.primary);
       this.messagePanel.prompt.setVisible(promptVisible);
       if (promptVisible) {
-        this.messagePanel.prompt.setPosition(this.messagePanel.bg.width - 24, this.messagePanel.bg.height - 24);
+        this.messagePanel.prompt.setPosition(width + 28, this.messagePanel.bg.height - 26);
         if (this.messagePanel.prompt.play) {
           try {
             this.messagePanel.prompt.play('pkb-ui-prompt-arrow');
@@ -765,7 +727,7 @@ function createPhaserBattleSceneClass(Phaser) {
         entry.label.setPosition(pos.x, pos.y);
         entry.label.setText(command.label || '');
         entry.label.setAlpha(command.disabled ? 0.42 : 1);
-        entry.label.setColor(command.disabled ? '#64748b' : (command.active ? '#93c5fd' : '#f8fbff'));
+        entry.label.setColor(command.disabled ? '#64748b' : '#f8fbff');
         entry.zone.setPosition(pos.x - 12, pos.y - 4);
         entry.zone.width = 126;
         entry.zone.height = 34;
@@ -779,11 +741,10 @@ function createPhaserBattleSceneClass(Phaser) {
       const tera = ui.teraToggle;
       if (tera) {
         this.commandPanel.teraButton.setVisible(true);
-        if (this.commandPanel.teraButton.setFrame && textureExists(this, UI_ASSETS.teraAtlas.key, tera.type || 'unknown')) {
-          this.commandPanel.teraButton.setTexture(UI_ASSETS.teraAtlas.key, tera.type || 'unknown');
+        if (this.commandPanel.teraButton.setFrame && textureExists(this, UI_ASSETS.teraAtlas.key, 'unknown')) {
+          this.commandPanel.teraButton.setTexture(UI_ASSETS.teraAtlas.key, 'unknown');
         }
         this.commandPanel.teraButton.setAlpha(tera.disabled ? 0.45 : 1);
-        this.commandPanel.teraButton.setScale(tera.active ? 2.55 : 2.35);
         this.commandPanel.teraButton.x = 258;
         this.commandPanel.teraButton.y = 108;
         this.commandPanel.teraButton.removeAllListeners?.();
@@ -992,30 +953,6 @@ export class PhaserBattleController {
     this.rejectSceneReady = null;
     this.sceneBootTimer = null;
     this.bootError = null;
-    this.resizeObserver = null;
-    this.resizeRaf = 0;
-    this.lastMountSize = { width: 0, height: 0 };
-  }
-
-  observeMount() {
-    if (!this.mount || typeof ResizeObserver === 'undefined' || this.resizeObserver) return;
-    this.resizeObserver = new ResizeObserver(() => {
-      if (this.resizeRaf) cancelAnimationFrame(this.resizeRaf);
-      this.resizeRaf = requestAnimationFrame(() => {
-        this.resizeRaf = 0;
-        if (!this.game || !this.mount?.isConnected) return;
-        const nextSize = measureMountSize(this.mount);
-        if (nextSize.width === this.lastMountSize.width && nextSize.height === this.lastMountSize.height) return;
-        this.lastMountSize = nextSize;
-        try {
-          this.game.scale?.refresh?.();
-          this.scene?.layoutSafely?.();
-        } catch (_error) {
-          // no-op
-        }
-      });
-    });
-    this.resizeObserver.observe(this.mount);
   }
 
   setStatus(text = '', tone = 'info') {
@@ -1071,9 +1008,7 @@ export class PhaserBattleController {
       const Phaser = await loadPhaserModule();
       const PhaserBattleScene = createPhaserBattleSceneClass(Phaser);
       const scene = new PhaserBattleScene(this);
-      const mountSize = measureMountSize(this.mount);
       this.scene = scene;
-      this.lastMountSize = mountSize;
       this.game = new Phaser.Game({
         type: Phaser.AUTO,
         width: 1280,
@@ -1090,7 +1025,6 @@ export class PhaserBattleController {
       });
       this.ready = true;
       this.mount.hidden = false;
-      this.observeMount();
       this.sceneBootTimer = setTimeout(() => {
         this.notifySceneError(new Error('Scene boot timed out before create() completed.'));
       }, 8000);
@@ -1124,15 +1058,6 @@ export class PhaserBattleController {
       clearTimeout(this.sceneBootTimer);
       this.sceneBootTimer = null;
     }
-    if (this.resizeRaf) {
-      cancelAnimationFrame(this.resizeRaf);
-      this.resizeRaf = 0;
-    }
-    if (this.resizeObserver) {
-      this.resizeObserver.disconnect();
-      this.resizeObserver = null;
-    }
-    this.lastMountSize = { width: 0, height: 0 };
     if (this.game) {
       this.game.destroy(true);
       this.game = null;

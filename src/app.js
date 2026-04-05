@@ -6118,10 +6118,19 @@ function buildBattleMessageModel(battle, player) {
                   ? lang('대상을 선택하세요.', 'Choose a target.')
                   : lang('행동을 선택하세요.', 'Choose an action.');
   const messageLines = (battle.log || []).slice(0, 2).map(line => localizeText(line.rawText || line.text || '').trim()).filter(Boolean);
-  const usePromptAsPrimary = currentMode === 'command' || !messageLines.length;
+  const interactiveMode = !battle.winner && !request?.wait && ['command', 'fight', 'party', 'target'].includes(currentMode);
+  const usePromptAsPrimary = interactiveMode || !messageLines.length;
   const primaryText = usePromptAsPrimary ? promptText : messageLines[0];
-  const secondaryText = usePromptAsPrimary ? (messageLines[0] || '') : (messageLines[1] || (promptText !== primaryText ? promptText : ''));
-  return {primary: primaryText, secondary: secondaryText};
+  const secondaryText = interactiveMode
+    ? ''
+    : usePromptAsPrimary
+      ? (messageLines[0] || '')
+      : (messageLines[1] || (promptText !== primaryText ? promptText : ''));
+  return {
+    primary: primaryText,
+    secondary: secondaryText,
+    showPrompt: !interactiveMode && !battle.winner && Boolean(messageLines.length || (request?.wait && promptText)),
+  };
 }
 
 function buildBattleInfoModel(player, battle = state.battle) {
@@ -6178,13 +6187,14 @@ function buildPhaserCommandWindowModel(battle, player) {
     mode: 'command',
     title: `${side?.name || `P${player + 1}`} · ${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}`,
     commands: [
-      {label: lang('싸운다', 'Fight'), sublabel: lang('기술 선택', 'Choose a move'), disabled: false, active: true, action: {type: 'command', key: 'fight'}},
+      {label: lang('싸운다', 'Fight'), sublabel: lang('기술 선택', 'Choose a move'), disabled: false, active: selectedChoice.kind !== 'switch', action: {type: 'command', key: 'fight'}},
       {label: lang('볼', 'Ball'), sublabel: lang('사용 안 함', 'Unused'), disabled: true, action: null},
-      {label: lang('포켓몬', 'Pokémon'), sublabel: canSwitch ? lang('교체', 'Switch') : lang('불가', 'Unavailable'), disabled: !canSwitch, action: {type: 'command', key: 'party'}},
+      {label: lang('포켓몬', 'Pokémon'), sublabel: canSwitch ? lang('교체', 'Switch') : lang('불가', 'Unavailable'), disabled: !canSwitch, active: selectedChoice.kind === 'switch', action: {type: 'command', key: 'party'}},
       {label: lang('도망', 'Run'), sublabel: lang('사용 안 함', 'Unused'), disabled: true, action: null},
     ],
     teraToggle: moveRequest?.canTerastallize ? {
       label: 'Tera',
+      type: toId(moveRequest.canTerastallize) || 'unknown',
       active: Boolean(selectedChoice.tera),
       disabled: false,
       action: {type: 'toggle', flag: 'tera'},

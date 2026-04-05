@@ -3212,9 +3212,12 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-phaser-mount {
-  min-height: min(72vh, 860px);
+  height: clamp(540px, 72vh, 860px);
+  min-height: 540px;
   border-radius: 22px;
   overflow: hidden;
+  position: relative;
+  isolation: isolate;
   background:
     radial-gradient(circle at top, rgba(125, 211, 252, 0.08), transparent 28%),
     linear-gradient(180deg, rgba(8, 16, 32, 0.96), rgba(5, 10, 20, 0.98));
