@@ -47,10 +47,11 @@ export class CommandUiHandler extends UiHandler {
     this.clear();
   }
 
-  show(args = {}) {
-    super.show(args);
-    this.currentModel = args || {};
-    this.fieldIndex = Number(args.fieldIndex || 0);
+  show(args = null) {
+    const state = args || this.globalScene.getCommandState();
+    super.show(state);
+    this.currentModel = state || {};
+    this.fieldIndex = Number(state.fieldIndex || 0);
     this.commandsContainer.setVisible(true);
 
     const messageHandler = this.getUi().getMessageHandler();
@@ -58,12 +59,12 @@ export class CommandUiHandler extends UiHandler {
     messageHandler.commandWindow.setVisible(true);
     messageHandler.movesWindowContainer.setVisible(false);
     messageHandler.message.setWordWrapWidth(this.canTera() ? 156 : 178, true);
-    if (args.title) {
-      messageHandler.showText(args.title, 0, null, null, false);
+    if (state.title) {
+      messageHandler.showText(state.title, 0, null, null, false);
     }
 
     this.entries.forEach((entry, index) => {
-      const command = (args.commands || [])[index] || { label: '', disabled: true };
+      const command = (state.commands || [])[index] || { label: '', disabled: true };
       entry.label.setText(command.label || '');
       entry.label.setAlpha(command.disabled ? 0.42 : 1);
       entry.label.setColor(command.disabled ? '#64748b' : '#f8fbff');
@@ -76,12 +77,12 @@ export class CommandUiHandler extends UiHandler {
       }
     });
 
-    if (!this.entries.some((_, index) => (args.commands || [])[index]?.active)) {
+    if (!this.entries.some((_, index) => (state.commands || [])[index]?.active)) {
       this.setCursor(this.getCursor() === Command.POKEMON ? Command.FIGHT : this.getCursor());
     }
 
     if (this.canTera()) {
-      const tera = args.teraToggle || {};
+      const tera = state.teraToggle || {};
       this.teraButton.setVisible(true);
       if (this.teraButton.setTexture && this.env.textureExists(this.scene, this.env.UI_ASSETS.teraAtlas.key, tera.type || 'unknown')) {
         this.teraButton.setTexture(this.env.UI_ASSETS.teraAtlas.key, tera.type || 'unknown');

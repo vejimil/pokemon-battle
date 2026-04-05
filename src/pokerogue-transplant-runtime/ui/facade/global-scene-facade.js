@@ -29,12 +29,68 @@ export class TransplantGlobalSceneFacade {
     return this.adapter?.getMode?.() ?? this.ui.mode;
   }
 
+  get modeChain() {
+    return this.ui?.getModeChain?.() || [];
+  }
+
   dispatchAction(action) {
     this.controller?.handleAction?.(action);
   }
 
   textureExists(key, frame = null) {
     return this.env.textureExists(this.scene, key, frame);
+  }
+
+  getMessageState() {
+    return this.adapter?.getMessageState?.() || {};
+  }
+
+  getCommandState() {
+    return this.adapter?.getCommandState?.() || { commands: [] };
+  }
+
+  getFightState() {
+    return this.adapter?.getFightState?.() || { moves: [], detail: {} };
+  }
+
+  getPartyState() {
+    return this.adapter?.getPartyState?.() || { partyOptions: [] };
+  }
+
+  getTargetState() {
+    return this.adapter?.getTargetState?.() || {};
+  }
+
+  getUiArgs(mode = this.mode) {
+    return this.adapter?.getUiArgsForMode?.(mode) || {};
+  }
+
+  getBlockedReason() {
+    return this.adapter?.getBlockedReason?.() || '';
+  }
+
+  getPerspectiveOptions() {
+    return this.adapter?.getPerspectiveOptions?.() || [];
+  }
+
+  setMode(mode, args = null) {
+    return this.ui?.setMode?.(mode, args);
+  }
+
+  setModeWithoutClear(mode, args = null) {
+    return this.ui?.setModeWithoutClear?.(mode, args);
+  }
+
+  setOverlayMode(mode, args = null) {
+    return this.ui?.setOverlayMode?.(mode, args);
+  }
+
+  revertMode() {
+    return this.ui?.revertMode?.() ?? false;
+  }
+
+  resetModeChain() {
+    this.ui?.resetModeChain?.();
   }
 }
 

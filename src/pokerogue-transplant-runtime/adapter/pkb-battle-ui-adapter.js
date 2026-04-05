@@ -60,6 +60,23 @@ export class PkbBattleUiAdapter {
     return this.mode === UiMode.TARGET_SELECT ? (this.stateWindow || {}) : {};
   }
 
+  getUiArgsForMode(mode = this.mode) {
+    const normalizedMode = normalizeUiMode(mode);
+    switch (normalizedMode) {
+      case UiMode.COMMAND:
+        return this.getCommandState();
+      case UiMode.FIGHT:
+        return this.getFightState();
+      case UiMode.PARTY:
+        return this.getPartyState();
+      case UiMode.TARGET_SELECT:
+        return this.getTargetState();
+      case UiMode.MESSAGE:
+      default:
+        return this.getMessageState();
+    }
+  }
+
   getEnemyInfo() {
     return this.model.enemyInfo || {};
   }

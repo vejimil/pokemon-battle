@@ -107,8 +107,9 @@ export class FightUiHandler extends UiHandler {
     this.clear();
   }
 
-  show(args = {}) {
-    super.show(args);
+  show(args = null) {
+    const state = args || this.globalScene.getFightState();
+    super.show(state);
     const battleMessage = this.ui.getMessageHandler();
     battleMessage.commandWindow.setVisible(false);
     battleMessage.movesWindowContainer.setVisible(true);
@@ -122,7 +123,7 @@ export class FightUiHandler extends UiHandler {
     let cursorIndex = 0;
 
     this.moveButtons.forEach((button, index) => {
-      const move = (args.moves || [])[index] || { label: '', disabled: true };
+      const move = (state.moves || [])[index] || { label: '', disabled: true };
       button.label.setText(move.label || '');
       button.label.setAlpha(move.disabled ? 0.42 : 1);
       button.label.setColor(move.disabled ? '#64748b' : '#f8fbff');
@@ -136,9 +137,9 @@ export class FightUiHandler extends UiHandler {
 
     const cursorPos = cursorPositions[cursorIndex] || cursorPositions[0];
     this.cursorObj.setPosition(cursorPos.x, cursorPos.y).setVisible(true);
-    this.updateMoveDetail(args.detail || {});
-    this.updateToggles(args.toggles || []);
-    this.updateFooterActions(args.footerActions || []);
+    this.updateMoveDetail(state.detail || {});
+    this.updateToggles(state.toggles || []);
+    this.updateFooterActions(state.footerActions || []);
     return true;
   }
 

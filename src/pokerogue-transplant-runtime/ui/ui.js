@@ -46,6 +46,7 @@ export class TransplantBattleUI {
       if (node) this.rootContainer.add(node);
     });
     this.layout();
+    this.getMessageHandler()?.show(this.adapter.getMessageState());
   }
 
   attachSpriteMounts(spriteMounts = {}) {
@@ -61,12 +62,73 @@ export class TransplantBattleUI {
     return this.handlers[UiMode.MESSAGE];
   }
 
-  setMode(mode, args = {}) {
+  getMode() {
+    return this.mode;
+  }
+
+  getModeChain() {
+    return [...this.modeChain];
+  }
+
+  getArgsForMode(mode = this.mode) {
+    return this.adapter.getUiArgsForMode(mode);
+  }
+
+  setModeInternal(mode, clear = true, force = false, chainMode = false, args = null) {
+    if (this.mode === mode && !force) {
+      this.refreshCurrentHandler(mode, args);
+      return false;
+    }
+    const previousMode = this.mode;
+    if (clear) {
+      this.getHandler(previousMode)?.clear?.();
+    }
+    if (chainMode && previousMode != null && !clear) {
+      this.modeChain.push(previousMode);
+    }
     this.mode = mode;
-    Object.values(this.handlers).forEach(handler => handler?.clear?.());
-    this.getMessageHandler()?.show(this.adapter.getMessageState());
+    this.refreshCurrentHandler(mode, args);
+    return true;
+  }
+
+  setMode(mode, args = null) {
+    return this.setModeInternal(mode, true, false, false, args);
+  }
+
+  setModeWithoutClear(mode, args = null) {
+    return this.setModeInternal(mode, false, false, false, args);
+  }
+
+  setOverlayMode(mode, args = null) {
+    return this.setModeInternal(mode, false, false, true, args);
+  }
+
+  resetModeChain() {
+    this.modeChain = [];
+  }
+
+  revertMode() {
+    if (!this.modeChain.length) return false;
+    this.getHandler(this.mode)?.clear?.();
+    this.mode = this.modeChain.pop();
+    this.refreshCurrentHandler(this.mode);
+    return true;
+  }
+
+  refreshCurrentHandler(mode = this.mode, args = null) {
+    const messageHandler = this.getMessageHandler();
+    const nextArgs = args ?? this.getArgsForMode(mode);
+    if (messageHandler) {
+      messageHandler.show(this.adapter.getMessageState());
+      if (mode === UiMode.MESSAGE) {
+        messageHandler.render(this.adapter.getMessageState());
+      }
+    }
     const handler = this.getHandler(mode);
-    if (mode !== UiMode.MESSAGE) handler?.show?.(args);
+    if (mode !== UiMode.MESSAGE) {
+      handler?.show?.(nextArgs);
+    }
+    return handler;
   }
 
   layout() {
@@ -94,8 +156,10 @@ export class TransplantBattleUI {
     this.enemyTray.update(this.adapter.getEnemyTray());
     this.playerTray.update(this.adapter.getPlayerTray());
     this.abilityBar.update(this.adapter.getAbilityBar());
-    this.getMessageHandler().render(this.adapter.getMessageState());
-    const mode = this.adapter.getMode();
+
+    const messageState = this.adapter.getMessageState();
+    this.getMessageHandler().render(messageState);
+
     if (this.enemySprite) {
       const spriteModel = this.adapter.getSpriteModel('enemy');
       const deferred = Boolean(spriteModel?.deferred || !spriteModel?.url);
@@ -108,7 +172,13 @@ export class TransplantBattleUI {
       this.playerSprite.dom.setVisible(!deferred);
       this.env.renderAnimatedSpriteToHost(this.playerSprite.host, spriteModel, 'large');
     }
-    this.getMessageHandler().bg.setVisible(true);
-    this.setMode(mode, this.adapter.getStateWindow());
+
+    const nextMode = this.adapter.getMode();
+    const nextArgs = this.getArgsForMode(nextMode);
+    if (nextMode !== this.mode) {
+      this.setModeInternal(nextMode, true, true, false, nextArgs);
+    } else {
+      this.refreshCurrentHandler(nextMode, nextArgs);
+    }
   }
 }

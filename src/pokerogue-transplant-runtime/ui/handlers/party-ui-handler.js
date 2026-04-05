@@ -130,14 +130,15 @@ export class PartyUiHandler extends UiHandler {
     this.clear();
   }
 
-  show(args = {}) {
-    super.show(args);
+  show(args = null) {
+    const state = args || this.globalScene.getPartyState();
+    super.show(state);
     this.partyContainer.setVisible(true);
-    this.message.setText([args.title || '', args.subtitle || ''].filter(Boolean).join('\n'));
+    this.message.setText([state.title || '', state.subtitle || ''].filter(Boolean).join('\n'));
     let cursorPos = null;
 
     this.slots.forEach((slot, index) => {
-      const option = (args.partyOptions || [])[index] || null;
+      const option = (state.partyOptions || [])[index] || null;
       slot.update(option);
       if (option?.active) cursorPos = slot.getCursorPosition();
     });
@@ -145,7 +146,7 @@ export class PartyUiHandler extends UiHandler {
     this.cursor.setVisible(Boolean(cursorPos));
     if (cursorPos) this.cursor.setPosition(cursorPos.x, cursorPos.y);
 
-    const footerAction = (args.footerActions || [])[0] || null;
+    const footerAction = (state.footerActions || [])[0] || null;
     const cancelVisible = Boolean(footerAction);
     this.cancelBg.setVisible(cancelVisible);
     this.cancelLabel.setVisible(cancelVisible);
