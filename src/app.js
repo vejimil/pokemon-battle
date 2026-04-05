@@ -6260,6 +6260,7 @@ function buildPhaserPartyWindowModel(battle, player) {
   const side = battle.players[player];
   const request = getEngineRequestForPlayer(player, battle);
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
   const forced = isEngineForceSwitchRequest(request);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
   const optionMap = new Map(options.map(({mon, index}) => [index, mon]));

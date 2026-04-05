@@ -127,11 +127,9 @@ export class PartyUiHandler extends UiHandler {
     this.partyContainer.setVisible(true);
     this.fieldIndex = Number(state.fieldIndex || 0);
     this.message.setText([state.title || '', state.subtitle || ''].filter(Boolean).join('\n'));
-    let cursorIndex = null;
     this.slots.forEach((slot, index) => {
-      const option = this.globalScene.getPartyOptions()[index] || null;
+      const option = (state.partyOptions || [])[index] || null;
       slot.update(option);
-      if (option?.active) cursorIndex = index;
     });
     const footerAction = this.getFooterAction();
     const cancelVisible = Boolean(footerAction);
@@ -144,8 +142,8 @@ export class PartyUiHandler extends UiHandler {
     if (footerAction && !footerAction.disabled && footerAction.action) {
       this.env.setInteractiveTarget(this.cancelZone, () => this.globalScene.dispatchAction(footerAction.action));
     }
-    if (cursorIndex == null) cursorIndex = this.getFirstSelectableIndex();
-    this.setCursor(cursorIndex, true);
+    const nextSelection = this.globalScene.getPartySelectionState(state.selection ?? this.getCursor());
+    this.setCursor(nextSelection, true);
     return true;
   }
   getInputModel() {
@@ -182,30 +180,14 @@ export class PartyUiHandler extends UiHandler {
     return slot ? slot.getCursorPosition() : null;
   }
   moveCursor(button) {
-    const availableIndexes = this.getSelectableTargets().map(target => target.index);
-    if (!availableIndexes.length) return false;
-    const current = this.getCursor();
-    const currentListIndex = availableIndexes.indexOf(current);
-    if (currentListIndex < 0) return this.setCursor(availableIndexes[0]);
-    let nextListIndex = currentListIndex;
-    if (button === Button.UP || button === Button.LEFT) nextListIndex = Math.max(0, currentListIndex - 1);
-    if (button === Button.DOWN || button === Button.RIGHT) nextListIndex = Math.min(availableIndexes.length - 1, currentListIndex + 1);
-    if (nextListIndex === currentListIndex) return false;
-    return this.setCursor(availableIndexes[nextListIndex]);
+    const nextSelection = this.globalScene.movePartySelection(this.getCursor(), button);
+    if (nextSelection == null) return false;
+    return this.setCursor(nextSelection);
   }
   activateCursor() {
-    const index = this.getCursor();
-    if (index === 6) {
-      const footer = this.getFooterAction();
-      if (footer && !footer.disabled && footer.action) {
-        this.globalScene.dispatchAction(footer.action);
-        return true;
-      }
-      return false;
-    }
-    const option = this.getPartyOptions()[index] || null;
-    if (!option || option.disabled || !option.action) return false;
-    this.globalScene.dispatchAction(option.action);
+    const action = this.globalScene.getPartySubmitAction(this.getCursor());
+    if (!action) return false;
+    this.globalScene.dispatchAction(action);
     return true;
   }
   processInput(button) {
@@ -215,9 +197,9 @@ export class PartyUiHandler extends UiHandler {
         success = this.activateCursor();
         break;
       case Button.CANCEL: {
-        const footer = this.getFooterAction();
-        if (footer && !footer.disabled && footer.action) {
-          this.globalScene.dispatchAction(footer.action);
+        const action = this.globalScene.getPartyCancelAction();
+        if (action) {
+          this.globalScene.dispatchAction(action);
           success = true;
         }
         break;

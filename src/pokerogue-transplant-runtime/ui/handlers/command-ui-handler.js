@@ -1,6 +1,6 @@
 import { UiHandler } from './ui-handler.js';
 import { UiMode } from '../ui-mode.js';
-import { Button, Command } from '../facade/input-facade.js';
+import { Button } from '../facade/input-facade.js';
 import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 
@@ -15,6 +15,7 @@ export class CommandUiHandler extends UiHandler {
     this.fieldIndex = 0;
     this.cursor2 = 0;
     this.currentModel = {};
+    this.selection = { kind: 'command', index: 0 };
   }
 
   setup() {
@@ -51,6 +52,58 @@ export class CommandUiHandler extends UiHandler {
     return this.globalScene.getCommandInputModel();
   }
 
+  getCommandEntries() {
+    return this.getInputModel().entries || [];
+  }
+
+  getTeraToggle() {
+    return this.getInputModel().teraToggle || null;
+  }
+
+  canTera() {
+    return Boolean(this.getTeraToggle());
+  }
+
+  getCursor() {
+    return this.fieldIndex ? this.cursor2 : this.cursor;
+  }
+
+  setCursor(cursor) {
+    const nextCursor = Math.max(0, Math.min(cursor, Math.max(0, this.getCommandEntries().length - 1)));
+    const changed = this.getCursor() !== nextCursor;
+    if (changed) {
+      if (this.fieldIndex) this.cursor2 = nextCursor;
+      else this.cursor = nextCursor;
+    }
+    return changed;
+  }
+
+  syncCursorVisual(selection = this.selection) {
+    if (!this.cursorObj) {
+      this.cursorObj = this.env.textureExists(this.scene, this.env.UI_ASSETS.cursor.key)
+        ? this.scene.add.image(0, 0, this.env.UI_ASSETS.cursor.key).setOrigin(0, 0)
+        : addTextObject(this.ui, 0, 0, '▶', 'WINDOW_BATTLE_COMMAND').setOrigin(0, 0);
+      this.commandsContainer.add(this.cursorObj);
+    }
+
+    this.selection = selection;
+    if (selection?.kind === 'tera') {
+      this.cursorObj.setVisible(false);
+    } else {
+      const index = selection?.index ?? 0;
+      const entry = this.entries[index] || this.entries[0];
+      this.cursorObj.setVisible(Boolean(entry));
+      if (entry) this.cursorObj.setPosition(entry.pos.x - 5, entry.pos.y + 8);
+    }
+    this.toggleTeraButton();
+  }
+
+  toggleTeraButton() {
+    if (!this.teraButton) return;
+    const active = this.selection?.kind === 'tera' || Boolean(this.getTeraToggle()?.active);
+    this.teraButton.setScale(active ? 1.45 : 1.3);
+  }
+
   show(args = null) {
     const state = args || this.getInputModel();
     super.show(state);
@@ -68,7 +121,7 @@ export class CommandUiHandler extends UiHandler {
     }
 
     this.entries.forEach((entry, index) => {
-      const command = this.getCommandEntries()[index] || { label: '', disabled: true };
+      const command = state.entries?.[index] || { label: '', disabled: true };
       entry.label.setText(command.label || '');
       entry.label.setAlpha(command.disabled ? 0.42 : 1);
       entry.label.setColor(command.disabled ? '#64748b' : '#f8fbff');
@@ -76,14 +129,7 @@ export class CommandUiHandler extends UiHandler {
       if (!command.disabled && command.action) {
         this.env.setInteractiveTarget(entry.zone, () => this.globalScene.dispatchAction(command.action));
       }
-      if (command.active) {
-        this.setCursor(index);
-      }
     });
-
-    if (!this.getCommandEntries().some(command => command?.active)) {
-      this.setCursor(this.getFirstEnabledCommandIndex(this.getCursor() === Command.POKEMON ? Command.FIGHT : this.getCursor()));
-    }
 
     if (this.canTera()) {
       const tera = this.getTeraToggle() || {};
@@ -91,7 +137,6 @@ export class CommandUiHandler extends UiHandler {
       if (this.teraButton.setTexture && this.env.textureExists(this.scene, this.env.UI_ASSETS.teraAtlas.key, tera.type || 'unknown')) {
         this.teraButton.setTexture(this.env.UI_ASSETS.teraAtlas.key, tera.type || 'unknown');
       }
-      this.teraButton.setScale(tera.active ? 1.45 : 1.3);
       this.teraButton.setAlpha(tera.disabled ? 0.45 : 1);
       this.teraButton.removeAllListeners?.();
       if (!tera.disabled && tera.action) {
@@ -99,119 +144,33 @@ export class CommandUiHandler extends UiHandler {
       }
     } else {
       this.teraButton.setVisible(false);
-      if (this.getCursor() === Command.TERA) {
-        this.setCursor(Command.FIGHT);
-      }
     }
 
-    this.toggleTeraButton();
+    const nextSelection = this.globalScene.getCommandSelectionState(state.selection || this.selection || { kind: 'command', index: this.getCursor() });
+    this.selection = nextSelection;
+    if (nextSelection.kind === 'command') this.setCursor(nextSelection.index);
+    this.syncCursorVisual(nextSelection);
     return true;
   }
 
-  getCommandEntries() {
-    return this.getInputModel().entries || [];
-  }
-
-  getTeraToggle() {
-    return this.getInputModel().teraToggle || null;
-  }
-
-  getCommandEntry(index) {
-    return this.getCommandEntries()[index] || null;
-  }
-
-  getFirstEnabledCommandIndex(preferred = Command.FIGHT) {
-    if (this.getCommandEntry(preferred) && !this.getCommandEntry(preferred).disabled) return preferred;
-    const firstEnabled = this.getCommandEntries().findIndex(command => command && !command.disabled);
-    return firstEnabled >= 0 ? firstEnabled : Command.FIGHT;
-  }
-
-  canTera() {
-    return Boolean(this.getTeraToggle());
-  }
-
-  toggleTeraButton() {
-    if (!this.teraButton) return;
-    const active = this.getCursor() === Command.TERA || Boolean(this.getTeraToggle()?.active);
-    this.teraButton.setScale(active ? 1.45 : 1.3);
-  }
-
-  getCursor() {
-    return this.fieldIndex ? this.cursor2 : this.cursor;
-  }
-
-  setCursor(cursor) {
-    const resolvedCursor = cursor === Command.TERA ? Command.TERA : this.getFirstEnabledCommandIndex(cursor);
-    const changed = this.getCursor() !== resolvedCursor;
-    if (changed) {
-      if (this.fieldIndex) this.cursor2 = resolvedCursor;
-      else this.cursor = resolvedCursor;
-    }
-
-    if (!this.cursorObj) {
-      this.cursorObj = this.env.textureExists(this.scene, this.env.UI_ASSETS.cursor.key)
-        ? this.scene.add.image(0, 0, this.env.UI_ASSETS.cursor.key).setOrigin(0, 0)
-        : addTextObject(this.ui, 0, 0, '▶', 'WINDOW_BATTLE_COMMAND').setOrigin(0, 0);
-      this.commandsContainer.add(this.cursorObj);
-    }
-
-    if (resolvedCursor === Command.TERA) {
-      this.cursorObj.setVisible(false);
-    } else {
-      const entry = this.entries[resolvedCursor] || this.entries[this.getFirstEnabledCommandIndex()];
-      this.cursorObj.setVisible(true);
-      this.cursorObj.setPosition(entry.pos.x - 5, entry.pos.y + 8);
-    }
-    this.toggleTeraButton();
-    return changed;
-  }
-
   dispatchCurrentSelection() {
-    if (this.getCursor() === Command.TERA) {
-      const tera = this.getTeraToggle();
-      if (!tera?.disabled && tera?.action) {
-        this.globalScene.dispatchAction(tera.action);
-        return true;
-      }
-      return false;
-    }
-    const current = this.getCommandEntry(this.getCursor());
-    if (!current?.disabled && current?.action) {
-      this.globalScene.dispatchAction(current.action);
-      return true;
-    }
-    return false;
+    const action = this.globalScene.getCommandSubmitAction(this.selection);
+    if (!action) return false;
+    this.globalScene.dispatchAction(action);
+    return true;
   }
 
   processInput(button) {
     let success = false;
-    const cursor = this.getCursor();
-    const teraEnabled = this.canTera();
-
     if (button === Button.ACTION) {
       success = this.dispatchCurrentSelection();
-    } else if (button === Button.CANCEL) {
-      success = false;
-    } else {
-      switch (button) {
-        case Button.UP:
-          if (cursor === Command.POKEMON || cursor === Command.RUN) success = this.setCursor(cursor - 2);
-          break;
-        case Button.DOWN:
-          if (cursor === Command.FIGHT || cursor === Command.BALL) success = this.setCursor(cursor + 2);
-          break;
-        case Button.LEFT:
-          if (cursor === Command.BALL || cursor === Command.RUN) success = this.setCursor(cursor - 1);
-          else if ((cursor === Command.FIGHT || cursor === Command.POKEMON) && teraEnabled) success = this.setCursor(Command.TERA);
-          break;
-        case Button.RIGHT:
-          if (cursor === Command.FIGHT || cursor === Command.POKEMON) {
-            const next = this.getCommandEntry(cursor + 1);
-            if (next && !next.disabled) success = this.setCursor(cursor + 1);
-          } else if (cursor === Command.TERA) {
-            success = this.setCursor(Command.FIGHT);
-          }
-          break;
+    } else if (button !== Button.CANCEL) {
+      const nextSelection = this.globalScene.moveCommandSelection(this.selection, button);
+      if (nextSelection) {
+        this.selection = nextSelection;
+        if (nextSelection.kind === 'command') this.setCursor(nextSelection.index);
+        this.syncCursorVisual(nextSelection);
+        success = true;
       }
     }
 

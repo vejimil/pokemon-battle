@@ -78,11 +78,13 @@ export class TransplantBattleUI {
   processInfoButton(pressed) {
     if (this.overlayActive) return false;
     const handler = this.getHandler();
-    const handled = [UiMode.COMMAND, UiMode.FIGHT, UiMode.MESSAGE, UiMode.TARGET_SELECT].includes(this.mode);
+    const handled = this.adapter?.supportsInfoToggle?.(this.mode) ?? false;
     if (handled && handler?.toggleInfo) {
       handler.toggleInfo(Boolean(pressed));
+      return true;
     }
-    return handled;
+    handler?.toggleInfo?.(false);
+    return true;
   }
 
   processInput(button) {

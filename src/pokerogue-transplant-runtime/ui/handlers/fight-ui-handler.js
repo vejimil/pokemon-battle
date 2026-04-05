@@ -33,6 +33,7 @@ export class FightUiHandler extends UiHandler {
     this.toggleCursor = 0;
     this.footerCursor = 0;
     this.infoVisible = false;
+    this.selection = { region: 'moves', index: 0 };
   }
 
   setup() {
@@ -118,62 +119,6 @@ export class FightUiHandler extends UiHandler {
     return this.globalScene.getFightInputModel();
   }
 
-  show(args = null) {
-    const state = args || this.getInputModel();
-    super.show(state);
-    this.fieldIndex = Number(state.fieldIndex || 0);
-    const battleMessage = this.ui.getMessageHandler();
-    battleMessage.commandWindow.setVisible(false);
-    battleMessage.movesWindowContainer.setVisible(true);
-
-    let cursorIndex = this.getCursor();
-    let toggleCursor = this.toggleCursor;
-    let footerCursor = this.footerCursor;
-    let focusRegion = this.focusRegion;
-
-    this.moveButtons.forEach((button, index) => {
-      const move = this.getMoves()[index] || { label: '', disabled: true };
-      button.label.setText(move.label || '');
-      button.label.setAlpha(move.disabled ? 0.42 : 1);
-      button.label.setColor(move.disabled ? '#64748b' : '#f8fbff');
-      button.hit.removeAllListeners();
-      if (!move.disabled) {
-        const hoverAction = move.focusAction ? () => this.globalScene.dispatchAction(move.focusAction) : null;
-        this.env.setInteractiveTarget(button.hit, move.action ? () => this.globalScene.dispatchAction(move.action) : null, hoverAction);
-      }
-      if (move.focused || move.active) {
-        cursorIndex = index;
-        focusRegion = 'moves';
-      }
-    });
-
-    this.updateMoveDetail(state.detail || {});
-    this.updateToggles(this.getToggles());
-    this.updateFooterActions(this.getFooterActions());
-
-    const activeToggle = this.getToggles().findIndex(toggle => toggle?.active);
-    if (activeToggle >= 0) {
-      toggleCursor = activeToggle;
-      focusRegion = 'toggles';
-    }
-    const activeFooter = this.getFooterActions().findIndex(action => action?.active);
-    if (activeFooter >= 0) {
-      footerCursor = activeFooter;
-      focusRegion = 'footer';
-    }
-
-    if (focusRegion === 'toggles' && !this.getToggles().length) focusRegion = 'moves';
-    if (focusRegion === 'footer' && !this.getFooterActions().length) focusRegion = 'moves';
-
-    this.focusRegion = focusRegion;
-    this.toggleCursor = Math.max(0, Math.min(toggleCursor, Math.max(0, this.getToggles().length - 1)));
-    this.footerCursor = Math.max(0, Math.min(footerCursor, Math.max(0, this.getFooterActions().length - 1)));
-    this.setCursor(cursorIndex);
-    this.applyFocusVisuals();
-    this.toggleInfo(this.infoVisible);
-    return true;
-  }
-
   getMoves() {
     return this.getInputModel().moves || [];
   }
@@ -199,7 +144,6 @@ export class FightUiHandler extends UiHandler {
       if (this.fieldIndex) this.cursor2 = nextCursor;
       else this.cursor = nextCursor;
     }
-    this.applyFocusVisuals();
     return changed;
   }
 
@@ -207,145 +151,96 @@ export class FightUiHandler extends UiHandler {
     return [
       { x: 13, y: -31 },
       { x: 127, y: -31 },
-      { x: 13, y: -16 },
-      { x: 127, y: -16 },
+      { x: 13, y: -15 },
+      { x: 127, y: -15 },
     ];
   }
 
-  focusMoveCursor(cursor) {
-    const move = this.getMoves()[cursor] || null;
-    this.focusRegion = 'moves';
-    const changed = this.setCursor(cursor);
-    if (move?.focusAction) {
-      this.globalScene.dispatchAction(move.focusAction);
-      return true;
+  applySelection(selection, { dispatchFocus = false } = {}) {
+    if (!selection) return false;
+    const normalized = this.globalScene.getFightSelectionState(selection);
+    const previous = this.selection;
+    this.selection = normalized;
+    this.focusRegion = normalized.region;
+    if (normalized.region === 'moves') {
+      this.setCursor(normalized.index);
+    } else if (normalized.region === 'toggles') {
+      this.toggleCursor = normalized.index;
+    } else if (normalized.region === 'footer') {
+      this.footerCursor = normalized.index;
+    }
+    this.applyFocusVisuals();
+    const changed = previous?.region !== normalized.region || previous?.index !== normalized.index;
+    if (changed && dispatchFocus) {
+      const focusAction = this.globalScene.getFightFocusAction(normalized);
+      if (focusAction) this.globalScene.dispatchAction(focusAction);
     }
     return changed;
   }
 
-  focusToggle(index) {
-    if (!this.getToggles().length) return false;
-    const next = Math.max(0, Math.min(index, this.getToggles().length - 1));
-    const changed = this.focusRegion !== 'toggles' || this.toggleCursor !== next;
-    this.focusRegion = 'toggles';
-    this.toggleCursor = next;
-    this.applyFocusVisuals();
-    return changed;
-  }
-
-  focusFooter(index) {
-    if (!this.getFooterActions().length) return false;
-    const next = Math.max(0, Math.min(index, this.getFooterActions().length - 1));
-    const changed = this.focusRegion !== 'footer' || this.footerCursor !== next;
-    this.focusRegion = 'footer';
-    this.footerCursor = next;
-    this.applyFocusVisuals();
-    return changed;
+  focusMoveCursor(index, { dispatchFocus = true } = {}) {
+    return this.applySelection({ region: 'moves', index }, { dispatchFocus });
   }
 
   applyFocusVisuals() {
-    const cursorPos = this.getCursorPositions()[this.getCursor()] || this.getCursorPositions()[0];
-    const showCursor = this.focusRegion === 'moves' && !this.infoVisible;
-    this.cursorObj.setPosition(cursorPos.x, cursorPos.y).setVisible(showCursor);
+    const positions = this.getCursorPositions();
+    const currentPos = positions[this.getCursor()] || positions[0] || { x: 13, y: -31 };
+    this.cursorObj?.setPosition(currentPos.x, currentPos.y);
+    this.cursorObj?.setVisible(!this.infoVisible && this.focusRegion === 'moves');
 
     this.toggleButtons.forEach((entry, index) => {
       const toggle = this.getToggles()[index] || null;
       if (!toggle) return;
       const isFocused = this.focusRegion === 'toggles' && this.toggleCursor === index;
-      entry.button.setScale(isFocused ? 1.05 : 1);
-      entry.bg.setAlpha(isFocused ? 1 : (toggle.active ? 1 : 0.82));
+      entry.bg.setAlpha(toggle.disabled ? 0.6 : (isFocused || toggle.active) ? 1 : 0.82);
+      entry.label.setColor(toggle.disabled ? '#94a3b8' : isFocused ? '#ffffff' : '#e2e8f0');
+      if (entry.icon) entry.icon.setAlpha(toggle.disabled ? 0.45 : 1);
     });
 
     this.footerButtons.forEach((entry, index) => {
       const action = this.getFooterActions()[index] || null;
       if (!action) return;
       const isFocused = this.focusRegion === 'footer' && this.footerCursor === index;
-      entry.bg.setScale(isFocused ? 1.05 : 1);
-      entry.bg.setAlpha(action.disabled ? 0.6 : (isFocused ? 1 : 0.85));
+      entry.bg.setAlpha(action.disabled ? 0.6 : isFocused ? 1 : 0.82);
+      entry.label.setColor(action.disabled ? '#94a3b8' : isFocused ? '#ffffff' : '#e2e8f0');
     });
   }
 
-  activateCurrentSelection() {
-    if (this.focusRegion === 'toggles') {
-      const toggle = this.getToggles()[this.toggleCursor] || null;
-      if (!toggle || toggle.disabled || !toggle.action) return false;
-      this.globalScene.dispatchAction(toggle.action);
-      return true;
-    }
-    if (this.focusRegion === 'footer') {
-      const footer = this.getFooterActions()[this.footerCursor] || null;
-      if (!footer || footer.disabled || !footer.action) return false;
-      this.globalScene.dispatchAction(footer.action);
-      return true;
-    }
-    const move = this.getMoves()[this.getCursor()] || null;
-    if (!move || move.disabled || !move.action) return false;
-    this.globalScene.dispatchAction(move.action);
+  show(args = null) {
+    const state = args || this.getInputModel();
+    super.show(state);
+    this.fieldIndex = Number(state.fieldIndex || 0);
+    const battleMessage = this.ui.getMessageHandler();
+    battleMessage.commandWindow.setVisible(false);
+    battleMessage.movesWindowContainer.setVisible(true);
+
+    this.moveButtons.forEach((button, index) => {
+      const move = (state.moves || [])[index] || { label: '', disabled: true };
+      button.label.setText(move.label || '');
+      button.label.setAlpha(move.disabled ? 0.42 : 1);
+      button.label.setColor(move.disabled ? '#64748b' : '#f8fbff');
+      button.hit.removeAllListeners();
+      if (!move.disabled) {
+        const hoverAction = move.focusAction ? () => this.globalScene.dispatchAction(move.focusAction) : null;
+        this.env.setInteractiveTarget(button.hit, move.action ? () => this.globalScene.dispatchAction(move.action) : null, hoverAction);
+      }
+    });
+
+    this.updateMoveDetail(state.detail || {});
+    this.updateToggles(state.toggles || []);
+    this.updateFooterActions(state.footerActions || []);
+
+    const nextSelection = this.globalScene.getFightSelectionState(state.selection || this.selection || { region: 'moves', index: this.getCursor() });
+    this.applySelection(nextSelection, { dispatchFocus: false });
+    this.toggleInfo(this.infoVisible);
     return true;
   }
 
-  moveWithinMoves(button) {
-    const cursor = this.getCursor();
-    let nextCursor = cursor;
-    switch (button) {
-      case Button.UP:
-        if (cursor >= 2) nextCursor = cursor - 2;
-        else if (this.getToggles().length) return this.focusToggle(Math.min(cursor, this.getToggles().length - 1));
-        break;
-      case Button.DOWN:
-        if (cursor < 2 && this.getMoves()[cursor + 2]) nextCursor = cursor + 2;
-        else if (this.getFooterActions().length) return this.focusFooter(Math.min(cursor % 2, this.getFooterActions().length - 1));
-        break;
-      case Button.LEFT:
-        if (cursor % 2 === 1) nextCursor = cursor - 1;
-        else if (this.getToggles().length) return this.focusToggle(0);
-        break;
-      case Button.RIGHT:
-        if (cursor % 2 === 0 && this.getMoves()[cursor + 1]) nextCursor = cursor + 1;
-        else if (this.getFooterActions().length) return this.focusFooter(Math.min(cursor % 2, this.getFooterActions().length - 1));
-        break;
-    }
-    if (nextCursor === cursor) return false;
-    return this.focusMoveCursor(nextCursor);
-  }
-
-  moveWithinToggles(button) {
-    if (!this.getToggles().length) return false;
-    switch (button) {
-      case Button.LEFT:
-        if (this.toggleCursor > 0) return this.focusToggle(this.toggleCursor - 1);
-        return false;
-      case Button.RIGHT:
-        if (this.toggleCursor < this.getToggles().length - 1) return this.focusToggle(this.toggleCursor + 1);
-        if (this.getFooterActions().length) return this.focusFooter(0);
-        return false;
-      case Button.DOWN:
-        if (this.getFooterActions().length) return this.focusFooter(Math.min(this.toggleCursor, this.getFooterActions().length - 1));
-        return this.focusMoveCursor(Math.min(this.toggleCursor, Math.max(0, this.getMoves().length - 1)));
-      case Button.UP:
-        return this.focusMoveCursor(Math.min(this.toggleCursor, Math.max(0, this.getMoves().length - 1)));
-      default:
-        return false;
-    }
-  }
-
-  moveWithinFooter(button) {
-    if (!this.getFooterActions().length) return false;
-    switch (button) {
-      case Button.LEFT:
-        if (this.footerCursor > 0) return this.focusFooter(this.footerCursor - 1);
-        return this.getToggles().length ? this.focusToggle(Math.min(this.toggleCursor, this.getToggles().length - 1)) : false;
-      case Button.RIGHT:
-        if (this.footerCursor < this.getFooterActions().length - 1) return this.focusFooter(this.footerCursor + 1);
-        return false;
-      case Button.UP:
-        if (this.getToggles().length) return this.focusToggle(Math.min(this.footerCursor, this.getToggles().length - 1));
-        return this.focusMoveCursor(Math.min(2 + this.footerCursor, Math.max(0, this.getMoves().length - 1)));
-      case Button.DOWN:
-        return this.focusMoveCursor(Math.min(2 + this.footerCursor, Math.max(0, this.getMoves().length - 1)));
-      default:
-        return false;
-    }
+  activateCurrentSelection() {
+    const action = this.globalScene.getFightSubmitAction(this.selection);
+    if (!action) return false;
+    this.globalScene.dispatchAction(action);
+    return true;
   }
 
   processInput(button) {
@@ -354,25 +249,26 @@ export class FightUiHandler extends UiHandler {
       case Button.ACTION:
         success = this.activateCurrentSelection();
         break;
-      case Button.CANCEL:
-        if (this.focusRegion === 'toggles' || this.focusRegion === 'footer') {
-          success = this.focusMoveCursor(this.getCursor());
-        } else {
-          const backAction = this.getFooterActions()[0] || null;
-          if (backAction && !backAction.disabled && backAction.action) {
-            this.globalScene.dispatchAction(backAction.action);
-            success = true;
-          }
+      case Button.CANCEL: {
+        const cancelResult = this.globalScene.getFightCancelResult(this.selection);
+        if (cancelResult?.kind === 'selection' && cancelResult.selection) {
+          success = this.applySelection(cancelResult.selection, { dispatchFocus: true });
+        } else if (cancelResult?.kind === 'action' && cancelResult.action) {
+          this.globalScene.dispatchAction(cancelResult.action);
+          success = true;
         }
         break;
+      }
       case Button.UP:
       case Button.DOWN:
       case Button.LEFT:
-      case Button.RIGHT:
-        if (this.focusRegion === 'toggles') success = this.moveWithinToggles(button);
-        else if (this.focusRegion === 'footer') success = this.moveWithinFooter(button);
-        else success = this.moveWithinMoves(button);
+      case Button.RIGHT: {
+        const nextSelection = this.globalScene.moveFightSelection(this.selection, button);
+        if (nextSelection) {
+          success = this.applySelection(nextSelection, { dispatchFocus: true });
+        }
         break;
+      }
     }
     if (success) this.getUi().playSelect();
     return success;

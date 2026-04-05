@@ -46,7 +46,7 @@ export class TargetSelectUiHandler extends UiHandler {
       || this.globalScene.getBlockedReason()
       || 'Target selection remains intentionally blocked in the current singles-only engine-first path.'
     );
-    const footerAction = this.globalScene.getTargetFooterActions()[0] || null;
+    const footerAction = (state.footerActions || [])[0] || null;
     this.footer.setText(footerAction?.label || 'Back');
     this.footerBg.setAlpha(footerAction?.disabled ? 0.6 : 1);
     this.footer.setColor(footerAction?.disabled ? '#94a3b8' : '#f8fbff');
@@ -59,9 +59,9 @@ export class TargetSelectUiHandler extends UiHandler {
 
   processInput(button) {
     if (button !== Button.ACTION && button !== Button.CANCEL) return false;
-    const footerAction = this.globalScene.getTargetFooterActions()[0] || null;
-    if (!footerAction || footerAction.disabled || !footerAction.action) return false;
-    this.globalScene.dispatchAction(footerAction.action);
+    const action = this.globalScene.getTargetBackAction();
+    if (!action) return false;
+    this.globalScene.dispatchAction(action);
     this.getUi().playSelect();
     return true;
   }
