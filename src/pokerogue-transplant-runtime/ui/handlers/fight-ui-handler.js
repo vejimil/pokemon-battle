@@ -226,60 +226,19 @@ export class FightUiHandler extends UiHandler {
   }
 
   processInput(button) {
+    const result = this.globalScene.resolveFightInput(this.getSelectionState(), button);
     let success = false;
-    const currentSelection = this.getSelectionState();
 
-    switch (button) {
-      case Button.ACTION: {
-        const action = this.globalScene.getFightSelectionSubmitAction(currentSelection);
-        if (action) {
-          this.globalScene.dispatchAction(action);
-          success = true;
-        }
-        break;
-      }
-      case Button.CANCEL: {
-        const result = this.globalScene.getFightCancelResult(currentSelection);
-        if (result?.action) {
-          this.globalScene.dispatchAction(result.action);
-          success = true;
-        } else if (result?.selection) {
-          const normalizedCurrent = this.globalScene.getFightSelectionState(currentSelection);
-          const normalizedNext = this.globalScene.getFightSelectionState(result.selection);
-          if (
-            normalizedCurrent.focusRegion !== normalizedNext.focusRegion
-            || normalizedCurrent.moveCursor !== normalizedNext.moveCursor
-            || normalizedCurrent.toggleCursor !== normalizedNext.toggleCursor
-            || normalizedCurrent.footerCursor !== normalizedNext.footerCursor
-          ) {
-            this.applySelectionState(normalizedNext);
-            success = true;
-          }
-        }
-        break;
-      }
-      case Button.UP:
-      case Button.DOWN:
-      case Button.LEFT:
-      case Button.RIGHT: {
-        const nextSelection = this.globalScene.moveFightSelection(currentSelection, button);
-        const normalizedCurrent = this.globalScene.getFightSelectionState(currentSelection);
-        const normalizedNext = this.globalScene.getFightSelectionState(nextSelection);
-        const changed =
-          normalizedCurrent.focusRegion !== normalizedNext.focusRegion
-          || normalizedCurrent.moveCursor !== normalizedNext.moveCursor
-          || normalizedCurrent.toggleCursor !== normalizedNext.toggleCursor
-          || normalizedCurrent.footerCursor !== normalizedNext.footerCursor;
-        if (changed) {
-          this.applySelectionState(normalizedNext);
-          const focusAction = this.globalScene.getFightSelectionFocusAction(normalizedNext);
-          if (focusAction) {
-            this.globalScene.dispatchAction(focusAction);
-          }
-          success = true;
-        }
-        break;
-      }
+    if (result.changed) {
+      this.applySelectionState(result.selection);
+      success = true;
+    }
+    if (result.focusAction) {
+      this.globalScene.dispatchAction(result.focusAction);
+    }
+    if (result.action) {
+      this.globalScene.dispatchAction(result.action);
+      success = true;
     }
 
     if (success) this.getUi().playSelect();

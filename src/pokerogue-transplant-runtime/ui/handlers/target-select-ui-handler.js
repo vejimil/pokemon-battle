@@ -58,10 +58,9 @@ export class TargetSelectUiHandler extends UiHandler {
   }
 
   processInput(button) {
-    if (button !== Button.ACTION && button !== Button.CANCEL) return false;
-    const action = this.globalScene.getTargetBackAction();
-    if (!action) return false;
-    this.globalScene.dispatchAction(action);
+    const result = this.globalScene.resolveTargetInput(button);
+    if (!result.handled || !result.action) return false;
+    this.globalScene.dispatchAction(result.action);
     this.getUi().playSelect();
     return true;
   }

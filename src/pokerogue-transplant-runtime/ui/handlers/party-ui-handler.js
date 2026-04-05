@@ -171,35 +171,17 @@ export class PartyUiHandler extends UiHandler {
   }
 
   processInput(button) {
+    const result = this.globalScene.resolvePartyInput(this.getCursor(), button);
     let success = false;
-    switch (button) {
-      case Button.ACTION: {
-        const action = this.globalScene.getPartySelectionSubmitAction(this.getCursor());
-        if (action) {
-          this.globalScene.dispatchAction(action);
-          success = true;
-        }
-        break;
-      }
-      case Button.CANCEL: {
-        const action = this.globalScene.getPartyCancelAction();
-        if (action) {
-          this.globalScene.dispatchAction(action);
-          success = true;
-        }
-        break;
-      }
-      case Button.UP:
-      case Button.DOWN:
-      case Button.LEFT:
-      case Button.RIGHT: {
-        const nextCursor = this.globalScene.movePartySelection(this.getCursor(), button);
-        if (nextCursor !== this.getCursor()) {
-          success = this.setCursor(nextCursor);
-        }
-        break;
-      }
+
+    if (result.changed) {
+      success = this.setCursor(result.cursor);
     }
+    if (result.action) {
+      this.globalScene.dispatchAction(result.action);
+      success = true;
+    }
+
     if (success) this.getUi().playSelect();
     return success;
   }

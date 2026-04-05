@@ -203,6 +203,26 @@ export class PkbBattleUiAdapter {
     return hasInteractiveAction(entry) ? entry.action : null;
   }
 
+  resolveCommandInput(currentCursor, button) {
+    const selection = this.getCommandSelectionState(currentCursor);
+    if (button === Button.ACTION) {
+      return {
+        cursor: selection.cursor,
+        action: this.getCommandSubmitAction(selection.cursor),
+        changed: false,
+      };
+    }
+    if (button === Button.CANCEL) {
+      return { cursor: selection.cursor, action: null, changed: false };
+    }
+    const nextCursor = this.moveCommandSelection(selection.cursor, button);
+    return {
+      cursor: nextCursor,
+      action: null,
+      changed: nextCursor !== selection.cursor,
+    };
+  }
+
   getFightMoves() {
     return this.getFightState().moves || [];
   }
@@ -399,6 +419,45 @@ export class PkbBattleUiAdapter {
     };
   }
 
+  areFightSelectionsEqual(firstSelection = {}, secondSelection = {}) {
+    const first = this.getFightSelectionState(firstSelection);
+    const second = this.getFightSelectionState(secondSelection);
+    return first.focusRegion === second.focusRegion
+      && first.moveCursor === second.moveCursor
+      && first.toggleCursor === second.toggleCursor
+      && first.footerCursor === second.footerCursor;
+  }
+
+  resolveFightInput(currentSelection = {}, button) {
+    const selection = this.getFightSelectionState(currentSelection);
+    if (button === Button.ACTION) {
+      return {
+        selection,
+        action: this.getFightSelectionSubmitAction(selection),
+        focusAction: null,
+        changed: false,
+      };
+    }
+    if (button === Button.CANCEL) {
+      const result = this.getFightCancelResult(selection);
+      const nextSelection = this.getFightSelectionState(result?.selection || selection);
+      return {
+        selection: nextSelection,
+        action: result?.action || null,
+        focusAction: null,
+        changed: !this.areFightSelectionsEqual(selection, nextSelection),
+      };
+    }
+    const nextSelection = this.getFightSelectionState(this.moveFightSelection(selection, button));
+    const changed = !this.areFightSelectionsEqual(selection, nextSelection);
+    return {
+      selection: nextSelection,
+      action: null,
+      focusAction: changed ? this.getFightSelectionFocusAction(nextSelection) : null,
+      changed,
+    };
+  }
+
   getPartyOptions() {
     return this.getPartyState().partyOptions || [];
   }
@@ -493,6 +552,30 @@ export class PkbBattleUiAdapter {
     return hasInteractiveAction(footerAction) ? footerAction.action : null;
   }
 
+  resolvePartyInput(currentCursor, button) {
+    const selection = this.getPartySelectionState(currentCursor);
+    if (button === Button.ACTION) {
+      return {
+        cursor: selection.cursor,
+        action: this.getPartySelectionSubmitAction(selection.cursor),
+        changed: false,
+      };
+    }
+    if (button === Button.CANCEL) {
+      return {
+        cursor: selection.cursor,
+        action: this.getPartyCancelAction(),
+        changed: false,
+      };
+    }
+    const nextCursor = this.movePartySelection(selection.cursor, button);
+    return {
+      cursor: nextCursor,
+      action: null,
+      changed: nextCursor !== selection.cursor,
+    };
+  }
+
   getTargetFooterActions() {
     return this.getTargetState().footerActions || [];
   }
@@ -511,6 +594,17 @@ export class PkbBattleUiAdapter {
   getTargetBackAction() {
     const footerAction = this.getTargetFooterActions()[0] || null;
     return hasInteractiveAction(footerAction) ? footerAction.action : null;
+  }
+
+  resolveTargetInput(button) {
+    if (button !== Button.ACTION && button !== Button.CANCEL) {
+      return { action: null, handled: false };
+    }
+    const action = this.getTargetBackAction();
+    return {
+      action,
+      handled: Boolean(action),
+    };
   }
 
   getEnemyInfo() {

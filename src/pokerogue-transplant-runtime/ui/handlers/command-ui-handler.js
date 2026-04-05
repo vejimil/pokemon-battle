@@ -151,21 +151,15 @@ export class CommandUiHandler extends UiHandler {
   }
 
   processInput(button) {
+    const result = this.globalScene.resolveCommandInput(this.getCursor(), button);
     let success = false;
 
-    if (button === Button.ACTION) {
-      const action = this.globalScene.getCommandSubmitAction(this.getCursor());
-      if (action) {
-        this.globalScene.dispatchAction(action);
-        success = true;
-      }
-    } else if (button === Button.CANCEL) {
-      success = false;
-    } else {
-      const nextCursor = this.globalScene.moveCommandSelection(this.getCursor(), button);
-      if (nextCursor !== this.getCursor()) {
-        success = this.setCursor(nextCursor);
-      }
+    if (result.changed) {
+      success = this.setCursor(result.cursor);
+    }
+    if (result.action) {
+      this.globalScene.dispatchAction(result.action);
+      success = true;
     }
 
     if (success) this.getUi().playSelect();

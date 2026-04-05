@@ -17,6 +17,7 @@ export class TransplantBattleUI {
     this.uiLanguage = 'ko';
     this.mode = UiMode.MESSAGE;
     this.modeChain = [];
+    this.modeArgs = new Map([[UiMode.MESSAGE, null]]);
     this.handlers = [];
     this.adapter = new PkbBattleUiAdapter();
     this.rootContainer = scene.add.container(0, 0).setDepth(40).setName('pkb-transplant-ui-root');
@@ -71,8 +72,29 @@ export class TransplantBattleUI {
     return this.modeChain.map(entry => (typeof entry === 'object' && entry ? entry.mode : entry)).filter(mode => mode != null);
   }
 
+  getModeChainEntries() {
+    return this.modeChain.map(entry => {
+      if (typeof entry === 'object' && entry) return { ...entry };
+      return { mode: entry, args: null };
+    });
+  }
+
+  getCurrentModeArgs() {
+    return this.getArgsForMode(this.mode);
+  }
+
+  storeModeArgs(mode, args) {
+    if (mode == null || typeof args === 'undefined') return;
+    this.modeArgs.set(mode, args);
+  }
+
   getArgsForMode(mode = this.mode) {
-    return this.adapter.getUiArgsForMode(mode);
+    if (this.modeArgs.has(mode)) {
+      return this.modeArgs.get(mode);
+    }
+    const adapterArgs = this.adapter.getUiArgsForMode(mode);
+    this.storeModeArgs(mode, adapterArgs);
+    return adapterArgs;
   }
 
   processInfoButton(pressed) {
@@ -99,22 +121,26 @@ export class TransplantBattleUI {
   }
 
   setModeInternal(mode, clear = true, force = false, chainMode = false, args = null) {
+    const nextArgs = args ?? this.adapter.getUiArgsForMode(mode);
     if (this.mode === mode && !force) {
-      this.refreshCurrentHandler(mode, args);
+      this.storeModeArgs(mode, nextArgs);
+      this.refreshCurrentHandler(mode, nextArgs);
       return false;
     }
     const previousMode = this.mode;
+    const previousArgs = this.getArgsForMode(previousMode);
     if (clear) {
       this.getHandler(previousMode)?.clear?.();
     }
     if (chainMode && previousMode != null && !clear) {
       this.modeChain.push({
         mode: previousMode,
-        args: this.getArgsForMode(previousMode),
+        args: previousArgs,
       });
     }
     this.mode = mode;
-    this.refreshCurrentHandler(mode, args);
+    this.storeModeArgs(mode, nextArgs);
+    this.refreshCurrentHandler(mode, nextArgs);
     return true;
   }
 
@@ -141,6 +167,7 @@ export class TransplantBattleUI {
     const restoredMode = typeof previous === 'object' && previous ? previous.mode : previous;
     const restoredArgs = typeof previous === 'object' && previous ? previous.args : null;
     this.mode = restoredMode;
+    this.storeModeArgs(restoredMode, restoredArgs);
     this.refreshCurrentHandler(this.mode, restoredArgs);
     return true;
   }
@@ -148,6 +175,7 @@ export class TransplantBattleUI {
   refreshCurrentHandler(mode = this.mode, args = null) {
     const messageHandler = this.getMessageHandler();
     const nextArgs = args ?? this.getArgsForMode(mode);
+    this.storeModeArgs(mode, nextArgs);
     if (messageHandler) {
       messageHandler.show(this.adapter.getMessageState());
       if (mode === UiMode.MESSAGE) {

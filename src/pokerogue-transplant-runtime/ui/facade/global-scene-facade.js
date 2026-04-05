@@ -33,6 +33,10 @@ export class TransplantGlobalSceneFacade {
     return this.ui?.getModeChain?.() || [];
   }
 
+  get modeChainEntries() {
+    return this.ui?.getModeChainEntries?.() || [];
+  }
+
   dispatchAction(action) {
     this.controller?.handleAction?.(action);
   }
@@ -174,7 +178,32 @@ export class TransplantGlobalSceneFacade {
   }
 
   getUiArgs(mode = this.mode) {
-    return this.adapter?.getUiArgsForMode?.(mode) || {};
+    return this.ui?.getArgsForMode?.(mode) || this.adapter?.getUiArgsForMode?.(mode) || {};
+  }
+
+  getCurrentModeArgs() {
+    return this.ui?.getCurrentModeArgs?.() || this.getUiArgs(this.mode);
+  }
+
+  resolveCommandInput(currentCursor, button) {
+    return this.adapter?.resolveCommandInput?.(currentCursor, button) || { cursor: currentCursor, action: null, changed: false };
+  }
+
+  resolveFightInput(currentSelection = {}, button) {
+    return this.adapter?.resolveFightInput?.(currentSelection, button) || {
+      selection: this.getFightSelectionState(currentSelection),
+      action: null,
+      focusAction: null,
+      changed: false,
+    };
+  }
+
+  resolvePartyInput(currentCursor, button) {
+    return this.adapter?.resolvePartyInput?.(currentCursor, button) || { cursor: currentCursor, action: null, changed: false };
+  }
+
+  resolveTargetInput(button) {
+    return this.adapter?.resolveTargetInput?.(button) || { action: null, handled: false };
   }
 
   getBlockedReason() {
