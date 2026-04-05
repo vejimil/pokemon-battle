@@ -1,3 +1,5 @@
+import { createPkbPokerogueTransplantLayer } from './pokerogue-ui-transplant.js';
+
 const PHASER_IMPORT_PATH = '../node_modules/phaser/dist/phaser.esm.js';
 
 const LOGICAL_WIDTH = 320;
@@ -297,6 +299,7 @@ function createPhaserBattleSceneClass(Phaser) {
       this.isBootstrapped = false;
       this.currentModel = null;
       this.uiLanguage = 'ko';
+      this.pokerogueUi = null;
       this.handleResize = () => this.layoutSafely();
       this.handleShutdown = () => {
         try {
@@ -322,16 +325,18 @@ function createPhaserBattleSceneClass(Phaser) {
 
         this.enemySprite = this.createSpriteMount('enemy');
         this.playerSprite = this.createSpriteMount('player');
-        this.enemyInfo = this.createBattleInfoBox('enemy');
-        this.playerInfo = this.createBattleInfoBox('player');
-        this.enemyTray = this.createTray('enemy');
-        this.playerTray = this.createTray('player');
-        this.abilityBar = this.createAbilityBar();
-
-        this.messagePanel = this.createMessagePanel();
-        this.commandPanel = this.createCommandPanel();
-        this.fightPanel = this.createFightPanel();
-        this.partyPanel = this.createPartyPanel();
+        this.pokerogueUi = createPkbPokerogueTransplantLayer(this, this.controller, {
+          UI_ASSETS,
+          clamp,
+          textureExists,
+          createBaseText,
+          setHorizontalCrop,
+          setInteractiveTarget,
+          renderAnimatedSpriteToHost,
+          applyHostBox,
+        });
+        this.pokerogueUi.attachSpriteMounts({ enemy: this.enemySprite, player: this.playerSprite });
+        this.pokerogueUi.setup();
 
         if (textureExists(this, UI_ASSETS.promptAtlas.key, '1') && !this.anims.exists('pkb-ui-prompt-arrow')) {
           this.anims.create({
@@ -649,24 +654,7 @@ function createPhaserBattleSceneClass(Phaser) {
       this.arenaEnemyBase.setPosition(ARENA_OFFSETS.enemy.x, ARENA_OFFSETS.enemy.y);
       this.arenaEnemyProps.forEach(prop => prop.setPosition(ARENA_OFFSETS.enemy.x, ARENA_OFFSETS.enemy.y));
       this.arenaPlayerBase.setPosition(ARENA_OFFSETS.player.x, ARENA_OFFSETS.player.y);
-      this.enemyTray.container.setPosition(0, 96);
-      this.playerTray.container.setPosition(320, 168);
-      this.enemyInfo.container.setPosition(140, 99);
-      this.playerInfo.container.setPosition(310, 168);
-
-      this.enemySprite.anchor.setPosition(ARENA_PLATFORM_CENTERS.enemy.x, ARENA_PLATFORM_CENTERS.enemy.y);
-      this.playerSprite.anchor.setPosition(ARENA_PLATFORM_CENTERS.player.x, ARENA_PLATFORM_CENTERS.player.y);
-      this.enemySprite.dom.setPosition(ARENA_PLATFORM_CENTERS.enemy.x, ARENA_PLATFORM_CENTERS.enemy.y);
-      this.playerSprite.dom.setPosition(ARENA_PLATFORM_CENTERS.player.x, ARENA_PLATFORM_CENTERS.player.y);
-      applyHostBox(this.enemySprite.host, 72, 72);
-      applyHostBox(this.playerSprite.host, 88, 88);
-
-      this.messagePanel.container.setPosition(0, 240);
-      this.commandPanel.container.setPosition(0, 240);
-      this.fightPanel.container.setPosition(0, 240);
-      this.partyPanel.container.setPosition(0, 240);
-
-      if (this.currentModel) this.renderModel(this.currentModel);
+      this.pokerogueUi?.layout?.();
     }
 
     updatePerspectiveTabs(model) {
@@ -998,19 +986,7 @@ function createPhaserBattleSceneClass(Phaser) {
       this.currentModel = model;
       if (!model) return;
       this.uiLanguage = model.language || 'ko';
-      this.updateInfoBox(this.enemyInfo, model.enemyInfo || {});
-      this.updateInfoBox(this.playerInfo, model.playerInfo || {});
-      this.updateTray(this.enemyTray, model.enemyTray || []);
-      this.updateTray(this.playerTray, model.playerTray || []);
-      this.renderMessageWindow(model.message || {});
-      this.renderStateWindow(model.stateWindow || {});
-      this.setAbilityBar(model.abilityBar || null);
-      const enemyDeferred = Boolean(model.enemySprite?.deferred || !model.enemySprite?.url);
-      const playerDeferred = Boolean(model.playerSprite?.deferred || !model.playerSprite?.url);
-      this.enemySprite.dom.setVisible(!enemyDeferred);
-      this.playerSprite.dom.setVisible(!playerDeferred);
-      renderAnimatedSpriteToHost(this.enemySprite.host, model.enemySprite || {}, 'large');
-      renderAnimatedSpriteToHost(this.playerSprite.host, model.playerSprite || {}, 'large');
+      this.pokerogueUi?.renderModel?.(model);
     }
   };
 }

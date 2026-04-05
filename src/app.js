@@ -6419,6 +6419,12 @@ function handlePhaserBattleAction(action) {
   }
 }
 
+
+const pkbPokerogueUiAdapter = Object.freeze({
+  buildModel: battle => buildPhaserBattleViewModel(battle),
+  dispatchAction: action => handlePhaserBattleAction(action),
+});
+
 async function syncPhaserBattleRenderer(battle) {
   if (!els.battlePanel) return false;
   if (!battle) {
@@ -6432,9 +6438,9 @@ async function syncPhaserBattleRenderer(battle) {
   }
   if (!phaserBattleRenderer) return false;
   try {
-    const model = buildPhaserBattleViewModel(battle);
+    const model = pkbPokerogueUiAdapter.buildModel(battle);
     if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = false;
-    await phaserBattleRenderer.show(model, {onAction: handlePhaserBattleAction});
+    await phaserBattleRenderer.show(model, {onAction: pkbPokerogueUiAdapter.dispatchAction});
     els.battlePanel.classList.add('is-phaser-active');
     return true;
   } catch (error) {
