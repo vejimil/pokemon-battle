@@ -65,5 +65,15 @@ export function setInteractiveTarget(target, onClick = null, onHover = null) {
 }
 
 export function addWindow(scene, x, y, width, height, key = UI_ASSETS.window.key) {
-  return scene.add.nineslice(x, y, key, undefined, width, height, 8, 8, 8, 8);
+  if (scene?.add?.nineslice) {
+    return scene.add.nineslice(x, y, key, undefined, width, height, 8, 8, 8, 8);
+  }
+  if (scene?.add?.image) {
+    const img = scene.add.image(x, y, key).setDisplaySize(width, height);
+    return img;
+  }
+  if (scene?.add?.rectangle) {
+    return scene.add.rectangle(x, y, width, height, 0x0f172a, 0.9);
+  }
+  throw new Error('Window rendering helper is unavailable in the active Phaser scene.');
 }
