@@ -1,69 +1,111 @@
-import { UiHandler } from '../handlers/ui-handler.js';
+import { addTextObject } from '../helpers/text.js';
 
-class BattleInfo extends UiHandler {
-  constructor(ui, side) {
-    super(ui, `battle-info-${side}`);
+export class BattleInfo {
+  constructor(ui, side, pos = {}) {
+    this.ui = ui;
+    this.scene = ui.scene;
+    this.env = ui.env;
     this.side = side;
     this.isPlayer = side === 'player';
+    this.container = null;
     this.bg = null;
-    this.name = null;
-    this.level = null;
-    this.status = null;
+    this.nameText = null;
+    this.levelText = null;
+    this.statusText = null;
     this.hpTrack = null;
     this.hpFill = null;
     this.hpText = null;
     this.expBar = null;
     this.expFill = null;
     this.typeIcons = [];
+    this.pos = {
+      nameTextX: this.isPlayer ? -115 : -124,
+      nameTextY: this.isPlayer ? -15.2 : -11.0,
+      levelX: this.isPlayer ? -41 : -50,
+      levelY: this.isPlayer ? -10 : -5,
+      hpX: this.isPlayer ? -61 : -71,
+      hpY: this.isPlayer ? -1 : 4.5,
+      statusX: this.isPlayer ? -12 : -22,
+      statusY: this.isPlayer ? 9 : 10,
+      hpTextX: this.isPlayer ? -60 : -70,
+      hpTextY: this.isPlayer ? 8 : 12,
+      ...pos,
+    };
+  }
+
+  getTextureName() {
+    return this.isPlayer ? this.env.UI_ASSETS.pbinfoPlayer.key : this.env.UI_ASSETS.pbinfoEnemy.key;
+  }
+
+  getTypeTextureKeys() {
+    return this.isPlayer
+      ? [
+          this.env.UI_ASSETS.pbinfoPlayerType1.key,
+          this.env.UI_ASSETS.pbinfoPlayerType2.key,
+          this.env.UI_ASSETS.pbinfoPlayerType3.key,
+        ]
+      : [
+          this.env.UI_ASSETS.pbinfoEnemyType1.key,
+          this.env.UI_ASSETS.pbinfoEnemyType2.key,
+          this.env.UI_ASSETS.pbinfoEnemyType3.key,
+        ];
+  }
+
+  getTypeIconOffsets() {
+    return this.isPlayer
+      ? [
+          { x: -139, y: -17 },
+          { x: -139, y: -1 },
+          { x: -154, y: -17 },
+        ]
+      : [
+          { x: -15, y: -15.5 },
+          { x: -15, y: -2.5 },
+          { x: 0, y: -15.5 },
+        ];
   }
 
   setup() {
     const { scene, env } = this;
     this.container = scene.add.container(0, 0).setName(`pkb-transplant-battle-info-${this.side}`);
-    const textureKey = this.isPlayer ? env.UI_ASSETS.pbinfoPlayer.key : env.UI_ASSETS.pbinfoEnemy.key;
-    this.bg = scene.add.image(0, 0, textureKey).setOrigin(1, 0.5);
-    this.name = env.createBaseText(scene, this.isPlayer ? -115 : -124, this.isPlayer ? -15 : -11, '', 8, '#f8fbff').setOrigin(0, 0);
-    this.level = scene.add.text(this.isPlayer ? -41 : -50, this.isPlayer ? -10 : -5, '', {
-      fontFamily: 'emerald, pkmnems, monospace', fontSize: '6px', color: '#dbeafe', resolution: 3,
-    }).setOrigin(0, 0.5);
-    this.status = scene.add.text(-12, this.isPlayer ? 9 : 10, '', {
-      fontFamily: 'emerald, pkmnems, monospace', fontSize: '6px', color: '#fbbf24', resolution: 3,
-    }).setOrigin(1, 0.5);
-    this.hpTrack = scene.add.rectangle(this.isPlayer ? -61 : -71, this.isPlayer ? -1 : 4.5, 48, 2, 0x111827, 1).setOrigin(0, 0);
-    this.hpFill = scene.add.image(this.hpTrack.x, this.hpTrack.y, env.UI_ASSETS.overlayHpAtlas.key, 'high').setOrigin(0, 0);
-    this.hpText = scene.add.text(this.isPlayer ? -60 : -70, this.isPlayer ? 8 : 12, '', {
-      fontFamily: 'emerald, pkmnems, monospace', fontSize: '6px', color: '#eff6ff', resolution: 3,
-    }).setOrigin(0, 0.5);
+    this.bg = scene.add.image(0, 0, this.getTextureName()).setOrigin(1, 0.5).setName(`pbinfo-${this.side}-bg`);
+    this.nameText = addTextObject(this.ui, this.pos.nameTextX, this.pos.nameTextY, '', 'BATTLE_INFO').setOrigin(0, 0).setName(`pbinfo-${this.side}-name`);
+    this.levelText = addTextObject(this.ui, this.pos.levelX, this.pos.levelY, '', 'BATTLE_INFO_SMALL').setOrigin(0, 0.5).setName(`pbinfo-${this.side}-level`);
+    this.statusText = addTextObject(this.ui, this.pos.statusX, this.pos.statusY, '', 'BATTLE_INFO_SMALL').setOrigin(1, 0.5).setName(`pbinfo-${this.side}-status`);
+    this.hpTrack = scene.add.rectangle(this.pos.hpX, this.pos.hpY, 48, 2, 0x111827, 1).setOrigin(0, 0).setName(`pbinfo-${this.side}-hp-track`);
+    this.hpFill = scene.add.image(this.pos.hpX, this.pos.hpY, env.UI_ASSETS.overlayHpAtlas.key, 'high').setOrigin(0, 0).setName(`pbinfo-${this.side}-hp-fill`);
+    this.hpText = addTextObject(this.ui, this.pos.hpTextX, this.pos.hpTextY, '', 'BATTLE_VALUE').setOrigin(0, 0.5).setName(`pbinfo-${this.side}-hp-text`);
+
     if (this.isPlayer) {
-      this.expBar = scene.add.image(-98, 18, env.UI_ASSETS.overlayExp.key).setOrigin(0, 0.5);
-      this.expFill = scene.add.rectangle(-98, 18, 0, 2, 0x60a5fa, 1).setOrigin(0, 0.5);
+      this.expBar = scene.add.image(-98, 18, env.UI_ASSETS.overlayExp.key).setOrigin(0, 0.5).setName('pbinfo-player-exp-bg');
+      this.expFill = scene.add.rectangle(-98, 18, 0, 2, 0x60a5fa, 1).setOrigin(0, 0.5).setName('pbinfo-player-exp-fill');
     }
-    const typeConfigs = this.isPlayer
-      ? [
-          { key: env.UI_ASSETS.pbinfoPlayerType1.key, x: -139, y: -17 },
-          { key: env.UI_ASSETS.pbinfoPlayerType2.key, x: -139, y: -1 },
-          { key: env.UI_ASSETS.pbinfoPlayerType3.key, x: -154, y: -17 },
-        ]
-      : [
-          { key: env.UI_ASSETS.pbinfoEnemyType1.key, x: -15, y: -15.5 },
-          { key: env.UI_ASSETS.pbinfoEnemyType2.key, x: -15, y: -2.5 },
-          { key: env.UI_ASSETS.pbinfoEnemyType3.key, x: 0, y: -15.5 },
-        ];
-    this.typeIcons = typeConfigs.map(config => {
-      const icon = scene.add.image(config.x, config.y, config.key, 'unknown').setOrigin(0, 0);
-      icon.setVisible(false);
+
+    this.typeIcons = this.getTypeIconOffsets().map((offset, index) => {
+      const icon = scene.add.image(offset.x, offset.y, this.getTypeTextureKeys()[index], 'unknown').setOrigin(0, 0).setVisible(false).setName(`pbinfo-${this.side}-type-${index + 1}`);
       return icon;
     });
-    this.container.add([this.bg, this.hpTrack, this.hpFill, ...(this.expBar ? [this.expBar, this.expFill] : []), this.name, this.level, this.status, this.hpText, ...this.typeIcons]);
+
+    this.container.add([
+      this.bg,
+      this.hpTrack,
+      this.hpFill,
+      ...(this.expBar ? [this.expBar, this.expFill] : []),
+      this.nameText,
+      this.levelText,
+      this.statusText,
+      this.hpText,
+      ...this.typeIcons,
+    ]);
   }
 
   update(info = {}) {
     const { clamp, textureExists, UI_ASSETS, setHorizontalCrop } = this.env;
     const hpPercent = clamp(Number(info.hpPercent || 0), 0, 100);
     const hpFrame = hpPercent > 50 ? 'high' : hpPercent > 20 ? 'medium' : 'low';
-    this.name.setText(info.displayName || '—');
-    this.level.setText(info.levelLabel || '');
-    this.status.setText(info.statusLabel || '');
+    this.nameText.setText(info.displayName || '—');
+    this.levelText.setText(info.levelLabel || '');
+    this.statusText.setText(info.statusLabel || '');
     this.hpText.setText(info.hpLabel || '');
     if (this.hpFill.setTexture && textureExists(this.scene, UI_ASSETS.overlayHpAtlas.key, hpFrame)) {
       this.hpFill.setTexture(UI_ASSETS.overlayHpAtlas.key, hpFrame);
@@ -72,13 +114,11 @@ class BattleInfo extends UiHandler {
     if (this.expFill) {
       this.expFill.width = Math.max(0, 85 * (clamp(Number(info.expPercent || 0), 0, 100) / 100));
     }
-    const typeTextureKeys = this.isPlayer
-      ? [UI_ASSETS.pbinfoPlayerType1.key, UI_ASSETS.pbinfoPlayerType2.key, UI_ASSETS.pbinfoPlayerType3.key]
-      : [UI_ASSETS.pbinfoEnemyType1.key, UI_ASSETS.pbinfoEnemyType2.key, UI_ASSETS.pbinfoEnemyType3.key];
+    const typeKeys = this.getTypeTextureKeys();
     this.typeIcons.forEach((icon, index) => {
       const typeId = String(info.types?.[index] || '').toLowerCase();
-      const textureKey = typeTextureKeys[index] || typeTextureKeys[0];
-      if (textureExists(this.scene, textureKey, typeId)) {
+      const textureKey = typeKeys[index] || typeKeys[0];
+      if (typeId && textureExists(this.scene, textureKey, typeId)) {
         icon.setTexture(textureKey, typeId);
         icon.setVisible(true);
       } else {
@@ -86,14 +126,6 @@ class BattleInfo extends UiHandler {
       }
     });
   }
-}
-
-export class EnemyBattleInfo extends BattleInfo {
-  constructor(ui) { super(ui, 'enemy'); }
-}
-
-export class PlayerBattleInfo extends BattleInfo {
-  constructor(ui) { super(ui, 'player'); }
 }
 
 export class BattleTray {
@@ -109,8 +141,8 @@ export class BattleTray {
 
   setup() {
     const { scene, env } = this;
-    this.container = scene.add.container(0, 0).setName(`pkb-transplant-battle-tray-${this.side}`);
     const isPlayer = this.side === 'player';
+    this.container = scene.add.container(0, 0).setName(`pkb-transplant-battle-tray-${this.side}`);
     const overlayKey = isPlayer ? env.UI_ASSETS.trayOverlayPlayer.key : env.UI_ASSETS.trayOverlayEnemy.key;
     this.overlay = env.textureExists(scene, overlayKey)
       ? scene.add.image(0, 0, overlayKey).setOrigin(isPlayer ? 1 : 0, 0)
@@ -161,8 +193,7 @@ export class AbilityBar {
     this.container = scene.add.container(0, 0).setVisible(false).setName('pkb-transplant-ability-bar');
     this.left = scene.add.image(0, 0, env.UI_ASSETS.abilityBarLeft.key).setOrigin(0, 0.5);
     this.right = scene.add.image(0, 0, env.UI_ASSETS.abilityBarRight.key).setOrigin(1, 0.5);
-    this.text = scene.add.text(0, 0, '', {
-      fontFamily: 'emerald, pkmnems, monospace', fontSize: '7px', color: '#f8fbff', resolution: 3,
+    this.text = addTextObject(this.ui, 0, 0, '', 'BATTLE_INFO_SMALL', {
       wordWrap: { width: 104, useAdvancedWrap: true },
     }).setOrigin(0.5, 0.5);
     this.container.add([this.left, this.right, this.text]);
@@ -178,22 +209,21 @@ export class AbilityBar {
     this.text.setWordWrapWidth(100, true);
     const width = clamp(this.text.width + 14, 72, 118);
     const side = model.side === 'enemy' ? 'enemy' : 'player';
-    const leftVisible = side === 'enemy';
-    const logicalX = side === 'enemy' ? 202 : 118;
-    const logicalY = side === 'enemy' ? 62 : 136;
-    this.left.setVisible(leftVisible);
-    this.right.setVisible(!leftVisible);
-    if (leftVisible) {
+    const showLeft = side === 'enemy';
+    const logicalX = showLeft ? 202 : 118;
+    const logicalY = showLeft ? 62 : 136;
+    this.left.setVisible(showLeft);
+    this.right.setVisible(!showLeft);
+    if (showLeft) {
       this.left.setPosition(0, 0);
       this.left.setCrop(0, 0, width, this.left.height);
       this.text.setPosition(width / 2, 0);
-      this.container.setPosition(logicalX, logicalY);
     } else {
       this.right.setPosition(0, 0);
       this.right.setCrop(this.right.width - width, 0, width, this.right.height);
       this.text.setPosition(-width / 2, 0);
-      this.container.setPosition(logicalX, logicalY);
     }
+    this.container.setPosition(logicalX, logicalY);
     this.container.setVisible(true);
   }
 }

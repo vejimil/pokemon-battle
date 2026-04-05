@@ -28,6 +28,10 @@ export class PkbBattleUiAdapter {
     return this;
   }
 
+  getModel() {
+    return this.model || {};
+  }
+
   getMode() {
     return this.mode;
   }

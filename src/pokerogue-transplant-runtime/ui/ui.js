@@ -5,7 +5,9 @@ import { CommandUiHandler } from './handlers/command-ui-handler.js';
 import { FightUiHandler } from './handlers/fight-ui-handler.js';
 import { PartyUiHandler } from './handlers/party-ui-handler.js';
 import { TargetSelectUiHandler } from './handlers/target-select-ui-handler.js';
-import { AbilityBar, BattleTray, EnemyBattleInfo, PlayerBattleInfo } from './battle-info/battle-info.js';
+import { AbilityBar, BattleTray } from './battle-info/battle-info.js';
+import { EnemyBattleInfo } from './battle-info/enemy-battle-info.js';
+import { PlayerBattleInfo } from './battle-info/player-battle-info.js';
 
 export class TransplantBattleUI {
   constructor(scene, controller, env) {
