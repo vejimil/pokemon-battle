@@ -4,6 +4,7 @@ import { Button } from '../facade/input-facade.js';
 import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
+
 class PartySlot {
   constructor(handler, index, slotY) {
     this.handler = handler;
@@ -12,35 +13,24 @@ class PartySlot {
     this.env = handler.env;
     this.index = index;
     this.slotY = slotY;
-    this.benched = index > 0;
-    this.baseX = this.benched ? 143 : 9;
-    this.mainFrame = this.benched ? 'party_slot' : 'party_slot_main';
-    this.selFrame = this.benched ? 'party_slot_sel' : 'party_slot_main_sel';
-    this.row = null;
-    this.bgObj = null;
-    this.pb = null;
-    this.label = null;
-    this.sublabel = null;
-    this.hpBarBase = null;
-    this.hpBarFill = null;
-    this.hpText = null;
-    this.hit = null;
+    this.baseX = index === 0 ? 229 : 276;
+    this.mainFrame = index === 0 ? 'party_slot_main' : index % 2 === 1 ? 'party_slot_r' : 'party_slot_l';
+    this.selFrame = index === 0 ? 'party_slot_main_sel' : index % 2 === 1 ? 'party_slot_r_sel' : 'party_slot_l_sel';
   }
   setup() {
     const { scene, env } = this;
-    this.bgObj = scene.add.image(this.baseX, this.slotY, this.benched ? env.UI_ASSETS.partySlotAtlas.key : env.UI_ASSETS.partySlotMainAtlas.key, this.mainFrame).setOrigin(0, 0);
-    this.pb = scene.add.image(this.baseX + (this.benched ? 2 : 4), this.slotY + (this.benched ? 12 : 4), env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
-    this.label = addTextObject(this.ui, this.baseX + (this.benched ? 21 : 24), this.slotY + (this.benched ? 2 : 10), '', 'WINDOW', {
-      wordWrap: { width: this.benched ? 52 : 76, useAdvancedWrap: true },
-    }).setOrigin(0, 0);
-    this.sublabel = addTextObject(this.ui, this.baseX + (this.benched ? 94 : 32), this.slotY + (this.benched ? 16 : 46), '', 'HINT', {
-      wordWrap: { width: this.benched ? 74 : 72, useAdvancedWrap: true },
-    }).setOrigin(0, 1);
-    this.hpBarBase = scene.add.image(this.baseX + (this.benched ? 72 : 8), this.slotY + (this.benched ? 6 : 31), env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
-    this.hpBarFill = scene.add.image(this.hpBarBase.x + 16, this.hpBarBase.y + 2, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
-    this.hpText = addTextObject(this.ui, this.benched ? this.baseX + 172 : this.baseX + 95, this.slotY + (this.benched ? 12 : 38), '', 'BATTLE_VALUE').setOrigin(1, 0.5);
-    this.hit = scene.add.rectangle(this.bgObj.x, this.bgObj.y, this.bgObj.width, this.bgObj.height, 0xffffff, 0.001).setOrigin(0, 0);
-    this.row = scene.add.container(0, 0, [this.bgObj, this.pb, this.hpBarBase, this.hpBarFill, this.label, this.sublabel, this.hpText, this.hit]);
+    const atlas = this.index === 0 ? env.UI_ASSETS.partySlotMainAtlas.key : env.UI_ASSETS.partySlotAtlas.key;
+    this.row = scene.add.container(this.baseX, this.slotY).setName(`party-slot-${this.index}`);
+    this.bgObj = scene.add.image(0, 0, atlas, this.mainFrame).setOrigin(0, 0.5);
+    this.pb = scene.add.image(-17, 0, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0.5, 0.5);
+    this.iconHolder = scene.add.rectangle(14, 0, 18, 18, 0xffffff, 0.001).setOrigin(0.5, 0.5);
+    this.label = addTextObject(this.ui, 28, -7, '', 'WINDOW').setOrigin(0, 0);
+    this.sublabel = addTextObject(this.ui, 28, 6, '', 'HINT').setOrigin(0, 0);
+    this.hpBarBase = addWindow(this.ui, 28, 20, 100, 4, env.UI_ASSETS.windowXthin.key).setOrigin(0, 0.5);
+    this.hpBarFill = scene.add.image(28, 20, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0.5);
+    this.hpText = addTextObject(this.ui, 131, 14, '', 'BATTLE_VALUE').setOrigin(1, 0);
+    this.hit = scene.add.rectangle(0, -18, this.bgObj.width + 18, 40, 0xffffff, 0.001).setOrigin(0, 0);
+    this.row.add([this.bgObj, this.pb, this.iconHolder, this.hpBarBase, this.hpBarFill, this.label, this.sublabel, this.hpText, this.hit]);
     return this.row;
   }
   update(option = null) {
@@ -70,6 +60,7 @@ class PartySlot {
     return { x: this.baseX - 4, y: this.slotY - 1 };
   }
 }
+
 export class PartyUiHandler extends UiHandler {
   constructor(ui) {
     super(ui, UiMode.PARTY);
@@ -84,7 +75,9 @@ export class PartyUiHandler extends UiHandler {
     this.cancelLabel = null;
     this.cancelZone = null;
     this.slots = [];
+    this.fieldIndex = 0;
   }
+
   setup() {
     const { scene, env } = this;
     this.container = scene.add.container(0, env.LOGICAL_HEIGHT).setDepth(56).setName('pkb-transplant-party-root').setVisible(false);
@@ -121,6 +114,7 @@ export class PartyUiHandler extends UiHandler {
     ]);
     this.clear();
   }
+
   show(args = null) {
     const state = args || this.globalScene.getPartyInputModel();
     super.show(state);
@@ -128,7 +122,7 @@ export class PartyUiHandler extends UiHandler {
     this.fieldIndex = Number(state.fieldIndex || 0);
     this.message.setText([state.title || '', state.subtitle || ''].filter(Boolean).join('\n'));
     this.slots.forEach((slot, index) => {
-      const option = (state.partyOptions || [])[index] || null;
+      const option = this.globalScene.getPartyOptions()[index] || null;
       slot.update(option);
     });
     const footerAction = this.getFooterAction();
@@ -142,31 +136,26 @@ export class PartyUiHandler extends UiHandler {
     if (footerAction && !footerAction.disabled && footerAction.action) {
       this.env.setInteractiveTarget(this.cancelZone, () => this.globalScene.dispatchAction(footerAction.action));
     }
-    const nextSelection = this.globalScene.getPartySelectionState(state.selection ?? this.getCursor());
-    this.setCursor(nextSelection, true);
+    const selection = this.globalScene.getPartySelectionState(this.getCursor());
+    this.setCursor(selection.cursor, true);
     return true;
   }
+
   getInputModel() {
     return this.globalScene.getPartyInputModel();
   }
+
   getPartyOptions() {
     return this.getInputModel().partyOptions || [];
   }
+
   getFooterAction() {
     return (this.getInputModel().footerActions || [])[0] || null;
   }
-  getSelectableTargets() {
-    const targets = this.getPartyOptions().map((option, index) => ({ type: 'slot', index, option })).filter(target => target.option);
-    if (this.getFooterAction()) targets.push({ type: 'footer', index: 6, option: this.getFooterAction() });
-    return targets;
-  }
-  getFirstSelectableIndex() {
-    const firstSlot = this.getPartyOptions().findIndex(option => option && !option.disabled);
-    if (firstSlot >= 0) return firstSlot;
-    return this.getFooterAction() ? 6 : 0;
-  }
+
   setCursor(index, force = false) {
-    const nextIndex = Math.max(0, Math.min(index, this.getFooterAction() ? 6 : 5));
+    const selection = this.globalScene.getPartySelectionState(index);
+    const nextIndex = selection.cursor;
     const changed = force ? true : super.setCursor(nextIndex);
     if (force) this.cursor = nextIndex;
     const cursorPos = this.getCursorPosition(nextIndex);
@@ -174,28 +163,24 @@ export class PartyUiHandler extends UiHandler {
     if (cursorPos) this.cursorObj.setPosition(cursorPos.x, cursorPos.y);
     return changed;
   }
+
   getCursorPosition(index) {
     if (index === 6 && this.getFooterAction()) return { x: 286, y: -26 };
     const slot = this.slots[index];
     return slot ? slot.getCursorPosition() : null;
   }
-  moveCursor(button) {
-    const nextSelection = this.globalScene.movePartySelection(this.getCursor(), button);
-    if (nextSelection == null) return false;
-    return this.setCursor(nextSelection);
-  }
-  activateCursor() {
-    const action = this.globalScene.getPartySubmitAction(this.getCursor());
-    if (!action) return false;
-    this.globalScene.dispatchAction(action);
-    return true;
-  }
+
   processInput(button) {
     let success = false;
     switch (button) {
-      case Button.ACTION:
-        success = this.activateCursor();
+      case Button.ACTION: {
+        const action = this.globalScene.getPartySelectionSubmitAction(this.getCursor());
+        if (action) {
+          this.globalScene.dispatchAction(action);
+          success = true;
+        }
         break;
+      }
       case Button.CANCEL: {
         const action = this.globalScene.getPartyCancelAction();
         if (action) {
@@ -207,13 +192,18 @@ export class PartyUiHandler extends UiHandler {
       case Button.UP:
       case Button.DOWN:
       case Button.LEFT:
-      case Button.RIGHT:
-        success = this.moveCursor(button);
+      case Button.RIGHT: {
+        const nextCursor = this.globalScene.movePartySelection(this.getCursor(), button);
+        if (nextCursor !== this.getCursor()) {
+          success = this.setCursor(nextCursor);
+        }
         break;
+      }
     }
     if (success) this.getUi().playSelect();
     return success;
   }
+
   clear() {
     super.clear();
     this.partyContainer?.setVisible(false);

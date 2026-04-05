@@ -19,16 +19,16 @@ export class TargetSelectUiHandler extends UiHandler {
 
   setup() {
     const { scene, env } = this;
-    this.container = scene.add.container(0, env.LOGICAL_HEIGHT).setDepth(55).setName('pkb-transplant-target');
-    this.panel = addWindow(this.ui, 18, -48, 224, 42, env.UI_ASSETS.window.key).setOrigin(0, 0);
-    this.title = addTextObject(this.ui, 26, -42, '', 'WINDOW_BATTLE_COMMAND').setOrigin(0, 0);
-    this.body = addTextObject(this.ui, 26, -30, '', 'HINT', {
-      wordWrap: { width: 205, useAdvancedWrap: true },
+    this.container = scene.add.container(0, env.LOGICAL_HEIGHT).setDepth(57).setName('pkb-transplant-target');
+    this.panel = addWindow(this.ui, 232, -46, 88, 46, env.UI_ASSETS.window.key).setOrigin(0, 1);
+    this.title = addTextObject(this.ui, 240, -40, '', 'WINDOW').setOrigin(0, 0);
+    this.body = addTextObject(this.ui, 240, -26, '', 'HINT', {
+      wordWrap: { width: 72, useAdvancedWrap: true },
       lineSpacing: 1,
     }).setOrigin(0, 0);
-    this.footerBg = addWindow(this.ui, 248, -13, 40, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 0);
-    this.footer = addTextObject(this.ui, 268, -7, 'Back', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5);
-    this.backZone = scene.add.rectangle(248, -13, 40, 12, 0xffffff, 0.001).setOrigin(0, 0);
+    this.footerBg = addWindow(this.ui, 244, -12, 52, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 1);
+    this.footer = addTextObject(this.ui, 270, -18, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5);
+    this.backZone = scene.add.rectangle(244, -24, 52, 12, 0xffffff, 0.001).setOrigin(0, 0);
     this.container.add([this.panel, this.title, this.body, this.footerBg, this.footer, this.backZone]);
     this.clear();
   }
@@ -46,7 +46,7 @@ export class TargetSelectUiHandler extends UiHandler {
       || this.globalScene.getBlockedReason()
       || 'Target selection remains intentionally blocked in the current singles-only engine-first path.'
     );
-    const footerAction = (state.footerActions || [])[0] || null;
+    const footerAction = this.globalScene.getTargetBackAction() ? (this.globalScene.getTargetFooterActions()[0] || null) : null;
     this.footer.setText(footerAction?.label || 'Back');
     this.footerBg.setAlpha(footerAction?.disabled ? 0.6 : 1);
     this.footer.setColor(footerAction?.disabled ? '#94a3b8' : '#f8fbff');

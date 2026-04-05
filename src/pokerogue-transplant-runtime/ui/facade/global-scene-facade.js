@@ -41,12 +41,12 @@ export class TransplantGlobalSceneFacade {
     return this.env.textureExists(this.scene, key, frame);
   }
 
-  getMessageState() {
-    return this.adapter?.getMessageState?.() || {};
+  canProcessInfoButton(mode = this.mode) {
+    return this.adapter?.canProcessInfoButton?.(mode) ?? false;
   }
 
-  supportsInfoToggle(mode = this.mode) {
-    return this.adapter?.supportsInfoToggle?.(mode) ?? false;
+  getMessageState() {
+    return this.adapter?.getMessageState?.() || {};
   }
 
   getCommandState() {
@@ -62,19 +62,19 @@ export class TransplantGlobalSceneFacade {
   }
 
   getCommandInputModel() {
-    return this.adapter?.getCommandInputModel?.() || { fieldIndex: 0, entries: [], teraToggle: null, selection: { kind: 'command', index: 0 } };
+    return this.adapter?.getCommandInputModel?.() || { fieldIndex: 0, entries: [], teraToggle: null };
   }
 
-  getCommandSelectionState(preferredSelection = null) {
-    return this.adapter?.getCommandSelectionState?.(preferredSelection) || { kind: 'command', index: 0 };
+  getCommandSelectionState(previousCursor = null) {
+    return this.adapter?.getCommandSelectionState?.(previousCursor) || { cursor: 0, entries: [], teraToggle: null, canTera: false };
   }
 
-  moveCommandSelection(selection, button) {
-    return this.adapter?.moveCommandSelection?.(selection, button) || null;
+  moveCommandSelection(currentCursor, button) {
+    return this.adapter?.moveCommandSelection?.(currentCursor, button) ?? currentCursor;
   }
 
-  getCommandSubmitAction(selection) {
-    return this.adapter?.getCommandSubmitAction?.(selection) || null;
+  getCommandSubmitAction(currentCursor) {
+    return this.adapter?.getCommandSubmitAction?.(currentCursor) || null;
   }
 
   getFightState() {
@@ -94,27 +94,35 @@ export class TransplantGlobalSceneFacade {
   }
 
   getFightInputModel() {
-    return this.adapter?.getFightInputModel?.() || { fieldIndex: 0, moves: [], toggles: [], footerActions: [], selection: { region: 'moves', index: 0 }, detail: {} };
+    return this.adapter?.getFightInputModel?.() || { fieldIndex: 0, moves: [], toggles: [], footerActions: [], detail: {} };
   }
 
-  getFightSelectionState(preferredSelection = null) {
-    return this.adapter?.getFightSelectionState?.(preferredSelection) || { region: 'moves', index: 0 };
+  getFightSelectionState(previousSelection = {}) {
+    return this.adapter?.getFightSelectionState?.(previousSelection) || {
+      focusRegion: 'moves',
+      moveCursor: 0,
+      toggleCursor: 0,
+      footerCursor: 0,
+      moves: [],
+      toggles: [],
+      footerActions: [],
+    };
   }
 
-  moveFightSelection(selection, button) {
-    return this.adapter?.moveFightSelection?.(selection, button) || null;
+  moveFightSelection(currentSelection = {}, button) {
+    return this.adapter?.moveFightSelection?.(currentSelection, button) || this.getFightSelectionState(currentSelection);
   }
 
-  getFightSubmitAction(selection) {
-    return this.adapter?.getFightSubmitAction?.(selection) || null;
+  getFightSelectionFocusAction(currentSelection = {}) {
+    return this.adapter?.getFightSelectionFocusAction?.(currentSelection) || null;
   }
 
-  getFightFocusAction(selection) {
-    return this.adapter?.getFightFocusAction?.(selection) || null;
+  getFightSelectionSubmitAction(currentSelection = {}) {
+    return this.adapter?.getFightSelectionSubmitAction?.(currentSelection) || null;
   }
 
-  getFightCancelResult(selection) {
-    return this.adapter?.getFightCancelResult?.(selection) || null;
+  getFightCancelResult(currentSelection = {}) {
+    return this.adapter?.getFightCancelResult?.(currentSelection) || { selection: this.getFightSelectionState(currentSelection), action: null };
   }
 
   getPartyState() {
@@ -130,19 +138,19 @@ export class TransplantGlobalSceneFacade {
   }
 
   getPartyInputModel() {
-    return this.adapter?.getPartyInputModel?.() || { fieldIndex: 0, partyOptions: [], footerActions: [], selection: 0 };
+    return this.adapter?.getPartyInputModel?.() || { fieldIndex: 0, partyOptions: [], footerActions: [] };
   }
 
-  getPartySelectionState(preferredIndex = null) {
-    return this.adapter?.getPartySelectionState?.(preferredIndex) ?? 0;
+  getPartySelectionState(previousCursor = null) {
+    return this.adapter?.getPartySelectionState?.(previousCursor) || { cursor: 0, partyOptions: [], footerActions: [], footerAction: null };
   }
 
-  movePartySelection(index, button) {
-    return this.adapter?.movePartySelection?.(index, button) ?? null;
+  movePartySelection(currentCursor, button) {
+    return this.adapter?.movePartySelection?.(currentCursor, button) ?? currentCursor;
   }
 
-  getPartySubmitAction(index) {
-    return this.adapter?.getPartySubmitAction?.(index) || null;
+  getPartySelectionSubmitAction(currentCursor) {
+    return this.adapter?.getPartySelectionSubmitAction?.(currentCursor) || null;
   }
 
   getPartyCancelAction() {
@@ -178,9 +186,9 @@ export class TransplantGlobalSceneFacade {
   }
 
   focusMove(moveIndex) {
-    const action = this.getFightFocusAction({ region: 'moves', index: moveIndex });
-    if (action) {
-      this.dispatchAction(action);
+    const move = this.getFightMoves()[moveIndex] || null;
+    if (move?.focusAction) {
+      this.dispatchAction(move.focusAction);
       return true;
     }
     return false;

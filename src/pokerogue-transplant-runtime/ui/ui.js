@@ -68,7 +68,7 @@ export class TransplantBattleUI {
   }
 
   getModeChain() {
-    return [...this.modeChain];
+    return this.modeChain.map(entry => (typeof entry === 'object' && entry ? entry.mode : entry)).filter(mode => mode != null);
   }
 
   getArgsForMode(mode = this.mode) {
@@ -77,13 +77,10 @@ export class TransplantBattleUI {
 
   processInfoButton(pressed) {
     if (this.overlayActive) return false;
+    const canProcess = this.adapter.canProcessInfoButton(this.mode);
+    if (!canProcess) return false;
     const handler = this.getHandler();
-    const handled = this.adapter?.supportsInfoToggle?.(this.mode) ?? false;
-    if (handled && handler?.toggleInfo) {
-      handler.toggleInfo(Boolean(pressed));
-      return true;
-    }
-    handler?.toggleInfo?.(false);
+    handler?.toggleInfo?.(Boolean(pressed));
     return true;
   }
 
@@ -111,7 +108,10 @@ export class TransplantBattleUI {
       this.getHandler(previousMode)?.clear?.();
     }
     if (chainMode && previousMode != null && !clear) {
-      this.modeChain.push(previousMode);
+      this.modeChain.push({
+        mode: previousMode,
+        args: this.getArgsForMode(previousMode),
+      });
     }
     this.mode = mode;
     this.refreshCurrentHandler(mode, args);
@@ -137,8 +137,11 @@ export class TransplantBattleUI {
   revertMode() {
     if (!this.modeChain.length) return false;
     this.getHandler(this.mode)?.clear?.();
-    this.mode = this.modeChain.pop();
-    this.refreshCurrentHandler(this.mode);
+    const previous = this.modeChain.pop();
+    const restoredMode = typeof previous === 'object' && previous ? previous.mode : previous;
+    const restoredArgs = typeof previous === 'object' && previous ? previous.args : null;
+    this.mode = restoredMode;
+    this.refreshCurrentHandler(this.mode, restoredArgs);
     return true;
   }
 

@@ -33,7 +33,6 @@ export class FightUiHandler extends UiHandler {
     this.toggleCursor = 0;
     this.footerCursor = 0;
     this.infoVisible = false;
-    this.selection = { region: 'moves', index: 0 };
   }
 
   setup() {
@@ -119,6 +118,53 @@ export class FightUiHandler extends UiHandler {
     return this.globalScene.getFightInputModel();
   }
 
+  getSelectionState() {
+    return {
+      focusRegion: this.focusRegion,
+      moveCursor: this.getCursor(),
+      toggleCursor: this.toggleCursor,
+      footerCursor: this.footerCursor,
+    };
+  }
+
+  applySelectionState(selection) {
+    const normalized = this.globalScene.getFightSelectionState(selection);
+    this.focusRegion = normalized.focusRegion;
+    this.toggleCursor = normalized.toggleCursor;
+    this.footerCursor = normalized.footerCursor;
+    this.setCursor(normalized.moveCursor);
+    this.applyFocusVisuals();
+    return normalized;
+  }
+
+  show(args = null) {
+    const state = args || this.getInputModel();
+    super.show(state);
+    this.fieldIndex = Number(state.fieldIndex || 0);
+    const battleMessage = this.ui.getMessageHandler();
+    battleMessage.commandWindow.setVisible(false);
+    battleMessage.movesWindowContainer.setVisible(true);
+
+    this.moveButtons.forEach((button, index) => {
+      const move = this.getMoves()[index] || { label: '', disabled: true };
+      button.label.setText(move.label || '');
+      button.label.setAlpha(move.disabled ? 0.42 : 1);
+      button.label.setColor(move.disabled ? '#64748b' : '#f8fbff');
+      button.hit.removeAllListeners();
+      if (!move.disabled) {
+        const hoverAction = move.focusAction ? () => this.globalScene.dispatchAction(move.focusAction) : null;
+        this.env.setInteractiveTarget(button.hit, move.action ? () => this.globalScene.dispatchAction(move.action) : null, hoverAction);
+      }
+    });
+
+    this.updateMoveDetail(state.detail || {});
+    this.updateToggles(this.getToggles());
+    this.updateFooterActions(this.getFooterActions());
+    this.applySelectionState(this.getSelectionState());
+    this.toggleInfo(this.infoVisible);
+    return true;
+  }
+
   getMoves() {
     return this.getInputModel().moves || [];
   }
@@ -144,6 +190,7 @@ export class FightUiHandler extends UiHandler {
       if (this.fieldIndex) this.cursor2 = nextCursor;
       else this.cursor = nextCursor;
     }
+    this.applyFocusVisuals();
     return changed;
   }
 
@@ -151,111 +198,63 @@ export class FightUiHandler extends UiHandler {
     return [
       { x: 13, y: -31 },
       { x: 127, y: -31 },
-      { x: 13, y: -15 },
-      { x: 127, y: -15 },
+      { x: 13, y: -16 },
+      { x: 127, y: -16 },
     ];
   }
 
-  applySelection(selection, { dispatchFocus = false } = {}) {
-    if (!selection) return false;
-    const normalized = this.globalScene.getFightSelectionState(selection);
-    const previous = this.selection;
-    this.selection = normalized;
-    this.focusRegion = normalized.region;
-    if (normalized.region === 'moves') {
-      this.setCursor(normalized.index);
-    } else if (normalized.region === 'toggles') {
-      this.toggleCursor = normalized.index;
-    } else if (normalized.region === 'footer') {
-      this.footerCursor = normalized.index;
-    }
-    this.applyFocusVisuals();
-    const changed = previous?.region !== normalized.region || previous?.index !== normalized.index;
-    if (changed && dispatchFocus) {
-      const focusAction = this.globalScene.getFightFocusAction(normalized);
-      if (focusAction) this.globalScene.dispatchAction(focusAction);
-    }
-    return changed;
-  }
-
-  focusMoveCursor(index, { dispatchFocus = true } = {}) {
-    return this.applySelection({ region: 'moves', index }, { dispatchFocus });
-  }
-
   applyFocusVisuals() {
-    const positions = this.getCursorPositions();
-    const currentPos = positions[this.getCursor()] || positions[0] || { x: 13, y: -31 };
-    this.cursorObj?.setPosition(currentPos.x, currentPos.y);
-    this.cursorObj?.setVisible(!this.infoVisible && this.focusRegion === 'moves');
+    const cursorPos = this.getCursorPositions()[this.getCursor()] || this.getCursorPositions()[0];
+    const showCursor = this.focusRegion === 'moves' && !this.infoVisible;
+    this.cursorObj.setPosition(cursorPos.x, cursorPos.y).setVisible(showCursor);
 
     this.toggleButtons.forEach((entry, index) => {
       const toggle = this.getToggles()[index] || null;
       if (!toggle) return;
       const isFocused = this.focusRegion === 'toggles' && this.toggleCursor === index;
-      entry.bg.setAlpha(toggle.disabled ? 0.6 : (isFocused || toggle.active) ? 1 : 0.82);
-      entry.label.setColor(toggle.disabled ? '#94a3b8' : isFocused ? '#ffffff' : '#e2e8f0');
-      if (entry.icon) entry.icon.setAlpha(toggle.disabled ? 0.45 : 1);
+      entry.button.setScale(isFocused ? 1.05 : 1);
+      entry.bg.setAlpha(isFocused ? 1 : (toggle.active ? 1 : 0.82));
     });
 
     this.footerButtons.forEach((entry, index) => {
       const action = this.getFooterActions()[index] || null;
       if (!action) return;
       const isFocused = this.focusRegion === 'footer' && this.footerCursor === index;
-      entry.bg.setAlpha(action.disabled ? 0.6 : isFocused ? 1 : 0.82);
-      entry.label.setColor(action.disabled ? '#94a3b8' : isFocused ? '#ffffff' : '#e2e8f0');
+      entry.bg.setScale(isFocused ? 1.05 : 1);
+      entry.bg.setAlpha(action.disabled ? 0.6 : (isFocused ? 1 : 0.85));
     });
-  }
-
-  show(args = null) {
-    const state = args || this.getInputModel();
-    super.show(state);
-    this.fieldIndex = Number(state.fieldIndex || 0);
-    const battleMessage = this.ui.getMessageHandler();
-    battleMessage.commandWindow.setVisible(false);
-    battleMessage.movesWindowContainer.setVisible(true);
-
-    this.moveButtons.forEach((button, index) => {
-      const move = (state.moves || [])[index] || { label: '', disabled: true };
-      button.label.setText(move.label || '');
-      button.label.setAlpha(move.disabled ? 0.42 : 1);
-      button.label.setColor(move.disabled ? '#64748b' : '#f8fbff');
-      button.hit.removeAllListeners();
-      if (!move.disabled) {
-        const hoverAction = move.focusAction ? () => this.globalScene.dispatchAction(move.focusAction) : null;
-        this.env.setInteractiveTarget(button.hit, move.action ? () => this.globalScene.dispatchAction(move.action) : null, hoverAction);
-      }
-    });
-
-    this.updateMoveDetail(state.detail || {});
-    this.updateToggles(state.toggles || []);
-    this.updateFooterActions(state.footerActions || []);
-
-    const nextSelection = this.globalScene.getFightSelectionState(state.selection || this.selection || { region: 'moves', index: this.getCursor() });
-    this.applySelection(nextSelection, { dispatchFocus: false });
-    this.toggleInfo(this.infoVisible);
-    return true;
-  }
-
-  activateCurrentSelection() {
-    const action = this.globalScene.getFightSubmitAction(this.selection);
-    if (!action) return false;
-    this.globalScene.dispatchAction(action);
-    return true;
   }
 
   processInput(button) {
     let success = false;
+    const currentSelection = this.getSelectionState();
+
     switch (button) {
-      case Button.ACTION:
-        success = this.activateCurrentSelection();
-        break;
-      case Button.CANCEL: {
-        const cancelResult = this.globalScene.getFightCancelResult(this.selection);
-        if (cancelResult?.kind === 'selection' && cancelResult.selection) {
-          success = this.applySelection(cancelResult.selection, { dispatchFocus: true });
-        } else if (cancelResult?.kind === 'action' && cancelResult.action) {
-          this.globalScene.dispatchAction(cancelResult.action);
+      case Button.ACTION: {
+        const action = this.globalScene.getFightSelectionSubmitAction(currentSelection);
+        if (action) {
+          this.globalScene.dispatchAction(action);
           success = true;
+        }
+        break;
+      }
+      case Button.CANCEL: {
+        const result = this.globalScene.getFightCancelResult(currentSelection);
+        if (result?.action) {
+          this.globalScene.dispatchAction(result.action);
+          success = true;
+        } else if (result?.selection) {
+          const normalizedCurrent = this.globalScene.getFightSelectionState(currentSelection);
+          const normalizedNext = this.globalScene.getFightSelectionState(result.selection);
+          if (
+            normalizedCurrent.focusRegion !== normalizedNext.focusRegion
+            || normalizedCurrent.moveCursor !== normalizedNext.moveCursor
+            || normalizedCurrent.toggleCursor !== normalizedNext.toggleCursor
+            || normalizedCurrent.footerCursor !== normalizedNext.footerCursor
+          ) {
+            this.applySelectionState(normalizedNext);
+            success = true;
+          }
         }
         break;
       }
@@ -263,13 +262,26 @@ export class FightUiHandler extends UiHandler {
       case Button.DOWN:
       case Button.LEFT:
       case Button.RIGHT: {
-        const nextSelection = this.globalScene.moveFightSelection(this.selection, button);
-        if (nextSelection) {
-          success = this.applySelection(nextSelection, { dispatchFocus: true });
+        const nextSelection = this.globalScene.moveFightSelection(currentSelection, button);
+        const normalizedCurrent = this.globalScene.getFightSelectionState(currentSelection);
+        const normalizedNext = this.globalScene.getFightSelectionState(nextSelection);
+        const changed =
+          normalizedCurrent.focusRegion !== normalizedNext.focusRegion
+          || normalizedCurrent.moveCursor !== normalizedNext.moveCursor
+          || normalizedCurrent.toggleCursor !== normalizedNext.toggleCursor
+          || normalizedCurrent.footerCursor !== normalizedNext.footerCursor;
+        if (changed) {
+          this.applySelectionState(normalizedNext);
+          const focusAction = this.globalScene.getFightSelectionFocusAction(normalizedNext);
+          if (focusAction) {
+            this.globalScene.dispatchAction(focusAction);
+          }
+          success = true;
         }
         break;
       }
     }
+
     if (success) this.getUi().playSelect();
     return success;
   }

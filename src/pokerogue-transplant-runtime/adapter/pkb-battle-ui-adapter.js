@@ -1,11 +1,21 @@
+import { Button, Command } from '../ui/facade/input-facade.js';
 import { UiMode, normalizeUiMode } from '../ui/ui-mode.js';
 
+const INFO_CAPABLE_MODES = new Set([UiMode.COMMAND, UiMode.FIGHT, UiMode.MESSAGE, UiMode.TARGET_SELECT]);
+
+function clampIndex(value, min, max) {
+  if (!Number.isFinite(value)) return min;
+  if (max < min) return min;
+  return Math.max(min, Math.min(max, Math.trunc(value)));
+}
+
 function normalizeMessageText(message = {}, stateWindow = {}) {
-  const text = String(message.text || '').trim();
+  const primary = String(message.primaryText || '').trim();
+  const secondary = String(message.secondaryText || '').trim();
   const placeholder = String(stateWindow.placeholder || '').trim();
-  const primary = text || placeholder || '';
-  const secondary = text && placeholder ? placeholder : '';
+  const text = [primary, secondary].filter(Boolean).join('\n') || placeholder || '';
   return {
+    text,
     primaryText: primary || text,
     secondaryText: secondary,
     showPrompt: Boolean(message.showPrompt),
@@ -13,191 +23,27 @@ function normalizeMessageText(message = {}, stateWindow = {}) {
   };
 }
 
-function clampIndex(value, min, max) {
-  if (!Number.isFinite(value)) return min;
-  return Math.max(min, Math.min(max, value));
+function findFlaggedIndex(items = [], keys = []) {
+  for (const key of keys) {
+    const index = items.findIndex(item => Boolean(item?.[key]));
+    if (index >= 0) return index;
+  }
+  return -1;
 }
 
-function findFirstEnabledIndex(entries = []) {
-  const index = entries.findIndex(entry => entry && !entry.disabled);
-  return index >= 0 ? index : 0;
+function findFirstEnabledIndex(items = [], preferred = 0) {
+  const normalizedPreferred = clampIndex(preferred, 0, Math.max(0, items.length - 1));
+  if (items[normalizedPreferred] && !items[normalizedPreferred].disabled) return normalizedPreferred;
+  const firstEnabled = items.findIndex(item => item && !item.disabled);
+  return firstEnabled >= 0 ? firstEnabled : normalizedPreferred;
 }
 
-function sanitizeCommandSelection(selection, entries = [], teraToggle = null) {
-  if (selection?.kind === 'tera' && teraToggle && !teraToggle.disabled) {
-    return { kind: 'tera', index: 4 };
-  }
-  const maxIndex = Math.max(0, entries.length - 1);
-  let index = clampIndex(selection?.index ?? findFirstEnabledIndex(entries), 0, maxIndex);
-  if (!entries[index] || entries[index].disabled) {
-    index = findFirstEnabledIndex(entries);
-  }
-  return { kind: 'command', index };
+function hasInteractiveAction(entry) {
+  return Boolean(entry && !entry.disabled && entry.action);
 }
 
-function getCommandActiveSelection(entries = [], teraToggle = null) {
-  if (teraToggle?.active) return { kind: 'tera', index: 4 };
-  const activeIndex = entries.findIndex(entry => entry?.active && !entry.disabled);
-  if (activeIndex >= 0) return { kind: 'command', index: activeIndex };
-  return sanitizeCommandSelection(null, entries, teraToggle);
-}
-
-function getCommandDirectionalSelection(selection, button, entries = [], teraToggle = null) {
-  const current = sanitizeCommandSelection(selection, entries, teraToggle);
-  const teraEnabled = Boolean(teraToggle && !teraToggle.disabled);
-  if (current.kind === 'tera') {
-    if (button === 'right') return sanitizeCommandSelection({ kind: 'command', index: 0 }, entries, teraToggle);
-    return null;
-  }
-  const cursor = current.index;
-  switch (button) {
-    case 'up':
-      if (cursor === 2 || cursor === 3) return sanitizeCommandSelection({ kind: 'command', index: cursor - 2 }, entries, teraToggle);
-      return null;
-    case 'down':
-      if (cursor === 0 || cursor === 1) return sanitizeCommandSelection({ kind: 'command', index: cursor + 2 }, entries, teraToggle);
-      return null;
-    case 'left':
-      if (cursor === 1 || cursor === 3) return sanitizeCommandSelection({ kind: 'command', index: cursor - 1 }, entries, teraToggle);
-      if ((cursor === 0 || cursor === 2) && teraEnabled) return { kind: 'tera', index: 4 };
-      return null;
-    case 'right':
-      if ((cursor === 0 || cursor === 2) && entries[cursor + 1] && !entries[cursor + 1].disabled) {
-        return sanitizeCommandSelection({ kind: 'command', index: cursor + 1 }, entries, teraToggle);
-      }
-      return null;
-    default:
-      return null;
-  }
-}
-
-function sanitizeFightSelection(selection, moves = [], toggles = [], footerActions = []) {
-  const moveCount = Math.min(4, moves.length);
-  const toggleCount = toggles.length;
-  const footerCount = footerActions.length;
-  if (selection?.region === 'toggles' && toggleCount) {
-    return { region: 'toggles', index: clampIndex(selection.index ?? 0, 0, toggleCount - 1) };
-  }
-  if (selection?.region === 'footer' && footerCount) {
-    return { region: 'footer', index: clampIndex(selection.index ?? 0, 0, footerCount - 1) };
-  }
-  return { region: 'moves', index: clampIndex(selection?.index ?? 0, 0, Math.max(0, moveCount - 1)) };
-}
-
-function getFightActiveSelection(moves = [], toggles = [], footerActions = []) {
-  const activeFooter = footerActions.findIndex(action => action?.active && !action.disabled);
-  if (activeFooter >= 0) return { region: 'footer', index: activeFooter };
-  const activeToggle = toggles.findIndex(toggle => toggle?.active && !toggle.disabled);
-  if (activeToggle >= 0) return { region: 'toggles', index: activeToggle };
-  const activeMove = moves.findIndex(move => (move?.focused || move?.active) && !move.disabled);
-  if (activeMove >= 0) return { region: 'moves', index: activeMove };
-  return sanitizeFightSelection(null, moves, toggles, footerActions);
-}
-
-function getFightDirectionalSelection(selection, button, moves = [], toggles = [], footerActions = []) {
-  const current = sanitizeFightSelection(selection, moves, toggles, footerActions);
-  const moveCount = Math.min(4, moves.length);
-  const toggleCount = toggles.length;
-  const footerCount = footerActions.length;
-  if (current.region === 'toggles') {
-    switch (button) {
-      case 'left':
-        return current.index > 0 ? { region: 'toggles', index: current.index - 1 } : null;
-      case 'right':
-        if (current.index < toggleCount - 1) return { region: 'toggles', index: current.index + 1 };
-        return footerCount ? { region: 'footer', index: 0 } : null;
-      case 'up':
-      case 'down':
-        return { region: 'moves', index: clampIndex(current.index, 0, Math.max(0, moveCount - 1)) };
-      default:
-        return null;
-    }
-  }
-  if (current.region === 'footer') {
-    switch (button) {
-      case 'left':
-        if (current.index > 0) return { region: 'footer', index: current.index - 1 };
-        return toggleCount ? { region: 'toggles', index: clampIndex(0, 0, toggleCount - 1) } : null;
-      case 'right':
-        return current.index < footerCount - 1 ? { region: 'footer', index: current.index + 1 } : null;
-      case 'up':
-      case 'down':
-        if (toggleCount) return { region: 'toggles', index: clampIndex(current.index, 0, toggleCount - 1) };
-        return { region: 'moves', index: clampIndex(2 + current.index, 0, Math.max(0, moveCount - 1)) };
-      default:
-        return null;
-    }
-  }
-  const cursor = current.index;
-  switch (button) {
-    case 'up':
-      if (cursor >= 2) return { region: 'moves', index: cursor - 2 };
-      return toggleCount ? { region: 'toggles', index: clampIndex(cursor, 0, toggleCount - 1) } : null;
-    case 'down':
-      if (cursor < 2 && moves[cursor + 2]) return { region: 'moves', index: cursor + 2 };
-      return footerCount ? { region: 'footer', index: clampIndex(cursor % 2, 0, footerCount - 1) } : null;
-    case 'left':
-      if (cursor % 2 === 1) return { region: 'moves', index: cursor - 1 };
-      return toggleCount ? { region: 'toggles', index: 0 } : null;
-    case 'right':
-      if (cursor % 2 === 0 && moves[cursor + 1]) return { region: 'moves', index: cursor + 1 };
-      return footerCount ? { region: 'footer', index: clampIndex(cursor % 2, 0, footerCount - 1) } : null;
-    default:
-      return null;
-  }
-}
-
-function buildPartyNavigationMap(optionCount, hasFooter) {
-  const lastRightIndex = Math.max(1, optionCount - 1);
-  const map = {};
-  if (optionCount > 0) {
-    map[0] = { right: optionCount > 1 ? 1 : (hasFooter ? 6 : null), down: hasFooter ? 6 : (optionCount > 1 ? 1 : null), left: null, up: null };
-  }
-  for (let index = 1; index < optionCount; index += 1) {
-    map[index] = {
-      up: index > 1 ? index - 1 : null,
-      down: index < optionCount - 1 ? index + 1 : (hasFooter ? 6 : null),
-      left: 0,
-      right: null,
-    };
-  }
-  if (hasFooter) {
-    map[6] = {
-      up: optionCount > 1 ? lastRightIndex : 0,
-      down: null,
-      left: 0,
-      right: null,
-    };
-  }
-  return map;
-}
-
-function getPartyActiveSelection(partyOptions = [], footerActions = []) {
-  const activeSlot = partyOptions.findIndex(option => option?.active && !option.disabled);
-  if (activeSlot >= 0) return activeSlot;
-  const footerAction = footerActions[0] || null;
-  if (footerAction?.active && !footerAction.disabled) return 6;
-  const firstEnabled = partyOptions.findIndex(option => option && !option.disabled);
-  if (firstEnabled >= 0) return firstEnabled;
-  return footerAction ? 6 : 0;
-}
-
-function sanitizePartySelection(index, partyOptions = [], footerActions = []) {
-  const footerAction = footerActions[0] || null;
-  const hasFooter = Boolean(footerAction);
-  if (index === 6 && hasFooter) return 6;
-  const optionCount = Math.min(6, partyOptions.length);
-  return clampIndex(index ?? getPartyActiveSelection(partyOptions, footerActions), 0, Math.max(0, optionCount - 1));
-}
-
-function getPartyDirectionalSelection(index, button, partyOptions = [], footerActions = []) {
-  const footerAction = footerActions[0] || null;
-  const optionCount = Math.min(6, partyOptions.length);
-  const hasFooter = Boolean(footerAction);
-  const map = buildPartyNavigationMap(optionCount, hasFooter);
-  const current = sanitizePartySelection(index, partyOptions, footerActions);
-  const next = map[current]?.[button] ?? null;
-  return next == null ? null : next;
+function cloneSelection(selection = {}) {
+  return { ...selection };
 }
 
 export class PkbBattleUiAdapter {
@@ -222,16 +68,16 @@ export class PkbBattleUiAdapter {
     return this.mode;
   }
 
+  canProcessInfoButton(mode = this.mode) {
+    return INFO_CAPABLE_MODES.has(normalizeUiMode(mode));
+  }
+
   getMessageState() {
     return normalizeMessageText(this.model.message || {}, this.stateWindow || {});
   }
 
   getStateWindow() {
     return this.stateWindow || {};
-  }
-
-  supportsInfoToggle(mode = this.mode) {
-    return [UiMode.COMMAND, UiMode.FIGHT, UiMode.MESSAGE, UiMode.TARGET_SELECT].includes(normalizeUiMode(mode));
   }
 
   getCommandState() {
@@ -254,13 +100,13 @@ export class PkbBattleUiAdapter {
     const normalizedMode = normalizeUiMode(mode);
     switch (normalizedMode) {
       case UiMode.COMMAND:
-        return this.getCommandInputModel();
+        return this.getCommandState();
       case UiMode.FIGHT:
-        return this.getFightInputModel();
+        return this.getFightState();
       case UiMode.PARTY:
-        return this.getPartyInputModel();
+        return this.getPartyState();
       case UiMode.TARGET_SELECT:
-        return this.getTargetInputModel();
+        return this.getTargetState();
       case UiMode.MESSAGE:
       default:
         return this.getMessageState();
@@ -275,35 +121,86 @@ export class PkbBattleUiAdapter {
     return this.getCommandState().teraToggle || null;
   }
 
-  getCommandSelectionState(preferredSelection = null) {
-    const entries = this.getCommandEntries();
-    const teraToggle = this.getTeraToggle();
-    return sanitizeCommandSelection(preferredSelection || getCommandActiveSelection(entries, teraToggle), entries, teraToggle);
-  }
-
-  moveCommandSelection(selection, button) {
-    return getCommandDirectionalSelection(selection, button, this.getCommandEntries(), this.getTeraToggle());
-  }
-
-  getCommandSubmitAction(selection) {
-    const resolved = this.getCommandSelectionState(selection);
-    if (resolved.kind === 'tera') {
-      const tera = this.getTeraToggle();
-      return !tera?.disabled ? (tera?.action || null) : null;
-    }
-    const entry = this.getCommandEntries()[resolved.index] || null;
-    return entry && !entry.disabled ? (entry.action || null) : null;
-  }
-
   getCommandInputModel() {
     const state = this.getCommandState();
     return {
       fieldIndex: Number.isInteger(state.fieldIndex) ? state.fieldIndex : 0,
       entries: this.getCommandEntries(),
       teraToggle: this.getTeraToggle(),
-      selection: this.getCommandSelectionState(),
       title: state.title || '',
     };
+  }
+
+  getCommandSelectionState(previousCursor = null) {
+    const entries = this.getCommandEntries();
+    const teraToggle = this.getTeraToggle();
+    const activeCommandIndex = findFlaggedIndex(entries, ['active']);
+    let cursor = Number.isInteger(previousCursor) ? previousCursor : null;
+
+    if (activeCommandIndex >= 0 && cursor !== Command.TERA) {
+      cursor = activeCommandIndex;
+    }
+
+    if (cursor == null) {
+      cursor = findFirstEnabledIndex(entries, Command.FIGHT);
+    }
+
+    if (cursor === Command.TERA && !teraToggle) {
+      cursor = findFirstEnabledIndex(entries, Command.FIGHT);
+    }
+
+    if (cursor !== Command.TERA) {
+      cursor = findFirstEnabledIndex(entries, cursor);
+    }
+
+    return {
+      cursor,
+      entries,
+      teraToggle,
+      canTera: Boolean(teraToggle),
+    };
+  }
+
+  moveCommandSelection(currentCursor, button) {
+    const state = this.getCommandSelectionState(currentCursor);
+    const { entries, canTera } = state;
+    let nextCursor = state.cursor;
+
+    switch (button) {
+      case Button.UP:
+        if (nextCursor === Command.POKEMON || nextCursor === Command.RUN) nextCursor -= 2;
+        break;
+      case Button.DOWN:
+        if (nextCursor === Command.FIGHT || nextCursor === Command.BALL) nextCursor += 2;
+        break;
+      case Button.LEFT:
+        if (nextCursor === Command.BALL || nextCursor === Command.RUN) nextCursor -= 1;
+        else if ((nextCursor === Command.FIGHT || nextCursor === Command.POKEMON) && canTera) nextCursor = Command.TERA;
+        break;
+      case Button.RIGHT:
+        if (nextCursor === Command.TERA) {
+          nextCursor = Command.FIGHT;
+          break;
+        }
+        if (nextCursor === Command.FIGHT || nextCursor === Command.POKEMON) {
+          const adjacent = entries[nextCursor + 1];
+          if (adjacent && !adjacent.disabled) nextCursor += 1;
+        }
+        break;
+      default:
+        break;
+    }
+
+    return this.getCommandSelectionState(nextCursor).cursor;
+  }
+
+  getCommandSubmitAction(currentCursor) {
+    const selection = this.getCommandSelectionState(currentCursor);
+    if (selection.cursor === Command.TERA) {
+      return hasInteractiveAction(selection.teraToggle) ? selection.teraToggle.action : null;
+    }
+    const entry = selection.entries[selection.cursor] || null;
+    return hasInteractiveAction(entry) ? entry.action : null;
   }
 
   getFightMoves() {
@@ -318,47 +215,6 @@ export class PkbBattleUiAdapter {
     return this.getFightState().footerActions || [];
   }
 
-  getFightSelectionState(preferredSelection = null) {
-    const moves = this.getFightMoves();
-    const toggles = this.getFightToggles();
-    const footerActions = this.getFightFooterActions();
-    return sanitizeFightSelection(preferredSelection || getFightActiveSelection(moves, toggles, footerActions), moves, toggles, footerActions);
-  }
-
-  moveFightSelection(selection, button) {
-    return getFightDirectionalSelection(selection, button, this.getFightMoves(), this.getFightToggles(), this.getFightFooterActions());
-  }
-
-  getFightSubmitAction(selection) {
-    const resolved = this.getFightSelectionState(selection);
-    if (resolved.region === 'toggles') {
-      const toggle = this.getFightToggles()[resolved.index] || null;
-      return toggle && !toggle.disabled ? (toggle.action || null) : null;
-    }
-    if (resolved.region === 'footer') {
-      const footer = this.getFightFooterActions()[resolved.index] || null;
-      return footer && !footer.disabled ? (footer.action || null) : null;
-    }
-    const move = this.getFightMoves()[resolved.index] || null;
-    return move && !move.disabled ? (move.action || null) : null;
-  }
-
-  getFightFocusAction(selection) {
-    const resolved = this.getFightSelectionState(selection);
-    if (resolved.region !== 'moves') return null;
-    const move = this.getFightMoves()[resolved.index] || null;
-    return move && !move.disabled ? (move.focusAction || null) : null;
-  }
-
-  getFightCancelResult(selection) {
-    const resolved = this.getFightSelectionState(selection);
-    if (resolved.region === 'moves') {
-      const footer = this.getFightFooterActions()[0] || null;
-      return footer && !footer.disabled ? { kind: 'action', action: footer.action || null } : null;
-    }
-    return { kind: 'selection', selection: { region: 'moves', index: this.getFightSelectionState({ region: 'moves', index: resolved.index }).index } };
-  }
-
   getFightInputModel() {
     const state = this.getFightState();
     return {
@@ -366,9 +222,180 @@ export class PkbBattleUiAdapter {
       moves: this.getFightMoves(),
       toggles: this.getFightToggles(),
       footerActions: this.getFightFooterActions(),
-      selection: this.getFightSelectionState(),
       detail: state.detail || {},
       title: state.title || '',
+    };
+  }
+
+  getFightSelectionState(previousSelection = {}) {
+    const moves = this.getFightMoves();
+    const toggles = this.getFightToggles();
+    const footerActions = this.getFightFooterActions();
+    const maxMoveIndex = Math.max(0, Math.min(moves.length - 1, 3));
+    const activeMoveIndex = findFlaggedIndex(moves, ['focused', 'active']);
+    const activeToggleIndex = findFlaggedIndex(toggles, ['active']);
+    const activeFooterIndex = findFlaggedIndex(footerActions, ['active']);
+
+    let moveCursor = clampIndex(
+      previousSelection.moveCursor ?? (activeMoveIndex >= 0 ? activeMoveIndex : 0),
+      0,
+      maxMoveIndex,
+    );
+    let toggleCursor = clampIndex(
+      previousSelection.toggleCursor ?? (activeToggleIndex >= 0 ? activeToggleIndex : 0),
+      0,
+      Math.max(0, toggles.length - 1),
+    );
+    let footerCursor = clampIndex(
+      previousSelection.footerCursor ?? (activeFooterIndex >= 0 ? activeFooterIndex : 0),
+      0,
+      Math.max(0, footerActions.length - 1),
+    );
+
+    let focusRegion = previousSelection.focusRegion || 'moves';
+    if (activeToggleIndex >= 0) focusRegion = 'toggles';
+    else if (activeFooterIndex >= 0) focusRegion = 'footer';
+    else if (!previousSelection.focusRegion && activeMoveIndex >= 0) focusRegion = 'moves';
+
+    if (focusRegion === 'toggles' && !toggles.length) focusRegion = footerActions.length ? 'footer' : 'moves';
+    if (focusRegion === 'footer' && !footerActions.length) focusRegion = toggles.length ? 'toggles' : 'moves';
+
+    return {
+      focusRegion,
+      moveCursor,
+      toggleCursor,
+      footerCursor,
+      moves,
+      toggles,
+      footerActions,
+    };
+  }
+
+  moveFightSelection(currentSelection = {}, button) {
+    const selection = cloneSelection(this.getFightSelectionState(currentSelection));
+    const { moves, toggles, footerActions } = selection;
+
+    const focusMove = nextCursor => {
+      selection.focusRegion = 'moves';
+      selection.moveCursor = clampIndex(nextCursor, 0, Math.max(0, Math.min(moves.length - 1, 3)));
+      return selection;
+    };
+
+    const focusToggle = nextCursor => {
+      if (!toggles.length) return selection;
+      selection.focusRegion = 'toggles';
+      selection.toggleCursor = clampIndex(nextCursor, 0, toggles.length - 1);
+      return selection;
+    };
+
+    const focusFooter = nextCursor => {
+      if (!footerActions.length) return selection;
+      selection.focusRegion = 'footer';
+      selection.footerCursor = clampIndex(nextCursor, 0, footerActions.length - 1);
+      return selection;
+    };
+
+    if (selection.focusRegion === 'toggles') {
+      switch (button) {
+        case Button.LEFT:
+          if (selection.toggleCursor > 0) focusToggle(selection.toggleCursor - 1);
+          break;
+        case Button.RIGHT:
+          if (selection.toggleCursor < toggles.length - 1) focusToggle(selection.toggleCursor + 1);
+          else if (footerActions.length) focusFooter(0);
+          break;
+        case Button.DOWN:
+          if (footerActions.length) focusFooter(Math.min(selection.toggleCursor, footerActions.length - 1));
+          else focusMove(Math.min(selection.toggleCursor, Math.max(0, moves.length - 1)));
+          break;
+        case Button.UP:
+          focusMove(Math.min(selection.toggleCursor, Math.max(0, moves.length - 1)));
+          break;
+        default:
+          break;
+      }
+      return selection;
+    }
+
+    if (selection.focusRegion === 'footer') {
+      switch (button) {
+        case Button.LEFT:
+          if (selection.footerCursor > 0) focusFooter(selection.footerCursor - 1);
+          else if (toggles.length) focusToggle(Math.min(selection.toggleCursor, toggles.length - 1));
+          break;
+        case Button.RIGHT:
+          if (selection.footerCursor < footerActions.length - 1) focusFooter(selection.footerCursor + 1);
+          break;
+        case Button.UP:
+          if (toggles.length) focusToggle(Math.min(selection.footerCursor, toggles.length - 1));
+          else focusMove(Math.min(2 + selection.footerCursor, Math.max(0, moves.length - 1)));
+          break;
+        case Button.DOWN:
+          focusMove(Math.min(2 + selection.footerCursor, Math.max(0, moves.length - 1)));
+          break;
+        default:
+          break;
+      }
+      return selection;
+    }
+
+    switch (button) {
+      case Button.UP:
+        if (selection.moveCursor >= 2) focusMove(selection.moveCursor - 2);
+        else if (toggles.length) focusToggle(Math.min(selection.moveCursor, toggles.length - 1));
+        break;
+      case Button.DOWN:
+        if (selection.moveCursor < 2 && moves[selection.moveCursor + 2]) focusMove(selection.moveCursor + 2);
+        else if (footerActions.length) focusFooter(Math.min(selection.moveCursor % 2, footerActions.length - 1));
+        break;
+      case Button.LEFT:
+        if (selection.moveCursor % 2 === 1) focusMove(selection.moveCursor - 1);
+        else if (toggles.length) focusToggle(0);
+        break;
+      case Button.RIGHT:
+        if (selection.moveCursor % 2 === 0 && moves[selection.moveCursor + 1]) focusMove(selection.moveCursor + 1);
+        else if (footerActions.length) focusFooter(Math.min(selection.moveCursor % 2, footerActions.length - 1));
+        break;
+      default:
+        break;
+    }
+
+    return selection;
+  }
+
+  getFightSelectionFocusAction(currentSelection = {}) {
+    const selection = this.getFightSelectionState(currentSelection);
+    if (selection.focusRegion !== 'moves') return null;
+    const move = selection.moves[selection.moveCursor] || null;
+    return move?.focusAction || null;
+  }
+
+  getFightSelectionSubmitAction(currentSelection = {}) {
+    const selection = this.getFightSelectionState(currentSelection);
+    if (selection.focusRegion === 'toggles') {
+      const toggle = selection.toggles[selection.toggleCursor] || null;
+      return hasInteractiveAction(toggle) ? toggle.action : null;
+    }
+    if (selection.focusRegion === 'footer') {
+      const footer = selection.footerActions[selection.footerCursor] || null;
+      return hasInteractiveAction(footer) ? footer.action : null;
+    }
+    const move = selection.moves[selection.moveCursor] || null;
+    return hasInteractiveAction(move) ? move.action : null;
+  }
+
+  getFightCancelResult(currentSelection = {}) {
+    const selection = this.getFightSelectionState(currentSelection);
+    if (selection.focusRegion === 'toggles' || selection.focusRegion === 'footer') {
+      return {
+        selection: this.getFightSelectionState({ ...selection, focusRegion: 'moves' }),
+        action: null,
+      };
+    }
+    const backAction = selection.footerActions[0] || null;
+    return {
+      selection,
+      action: hasInteractiveAction(backAction) ? backAction.action : null,
     };
   }
 
@@ -380,48 +407,94 @@ export class PkbBattleUiAdapter {
     return this.getPartyState().footerActions || [];
   }
 
-  getPartySelectionState(preferredIndex = null) {
-    return sanitizePartySelection(preferredIndex ?? getPartyActiveSelection(this.getPartyOptions(), this.getPartyFooterActions()), this.getPartyOptions(), this.getPartyFooterActions());
-  }
-
-  movePartySelection(index, button) {
-    return getPartyDirectionalSelection(index, button, this.getPartyOptions(), this.getPartyFooterActions());
-  }
-
-  getPartySubmitAction(index) {
-    const resolvedIndex = this.getPartySelectionState(index);
-    if (resolvedIndex === 6) {
-      const footer = this.getPartyFooterActions()[0] || null;
-      return footer && !footer.disabled ? (footer.action || null) : null;
-    }
-    const option = this.getPartyOptions()[resolvedIndex] || null;
-    return option && !option.disabled ? (option.action || null) : null;
-  }
-
-  getPartyCancelAction() {
-    const footer = this.getPartyFooterActions()[0] || null;
-    return footer && !footer.disabled ? (footer.action || null) : null;
-  }
-
   getPartyInputModel() {
     const state = this.getPartyState();
     return {
       fieldIndex: Number.isInteger(state.fieldIndex) ? state.fieldIndex : 0,
       partyOptions: this.getPartyOptions(),
       footerActions: this.getPartyFooterActions(),
-      selection: this.getPartySelectionState(),
       title: state.title || '',
       subtitle: state.subtitle || '',
     };
   }
 
-  getTargetFooterActions() {
-    return this.getTargetState().footerActions || [];
+  getPartySelectionState(previousCursor = null) {
+    const partyOptions = this.getPartyOptions();
+    const footerActions = this.getPartyFooterActions();
+    const footerAction = footerActions[0] || null;
+    const activePartyIndex = findFlaggedIndex(partyOptions, ['active']);
+    let cursor = Number.isInteger(previousCursor) ? previousCursor : null;
+
+    if (activePartyIndex >= 0 && !Number.isInteger(previousCursor)) {
+      cursor = activePartyIndex;
+    }
+
+    if (cursor == null) {
+      cursor = this.getFirstSelectablePartyIndex();
+    }
+
+    const maxCursor = footerAction ? 6 : 5;
+    cursor = clampIndex(cursor, 0, maxCursor);
+
+    if (cursor < 6) {
+      const option = partyOptions[cursor] || null;
+      if (!option || option.disabled) cursor = this.getFirstSelectablePartyIndex();
+    } else if (!footerAction) {
+      cursor = this.getFirstSelectablePartyIndex();
+    }
+
+    return {
+      cursor,
+      partyOptions,
+      footerActions,
+      footerAction,
+    };
   }
 
-  getTargetBackAction() {
-    const footer = this.getTargetFooterActions()[0] || null;
-    return footer && !footer.disabled ? (footer.action || null) : null;
+  getSelectablePartyIndexes() {
+    const partyOptions = this.getPartyOptions();
+    const selectable = partyOptions
+      .map((option, index) => ({ option, index }))
+      .filter(({ option }) => Boolean(option))
+      .map(({ index }) => index);
+    if (this.getPartyFooterActions()[0]) selectable.push(6);
+    return selectable;
+  }
+
+  getFirstSelectablePartyIndex() {
+    const firstEnabledSlot = this.getPartyOptions().findIndex(option => option && !option.disabled);
+    if (firstEnabledSlot >= 0) return firstEnabledSlot;
+    return this.getPartyFooterActions()[0] ? 6 : 0;
+  }
+
+  movePartySelection(currentCursor, button) {
+    const indexes = this.getSelectablePartyIndexes();
+    if (!indexes.length) return this.getPartySelectionState(currentCursor).cursor;
+    const selection = this.getPartySelectionState(currentCursor);
+    const listIndex = indexes.indexOf(selection.cursor);
+    if (listIndex < 0) return indexes[0];
+    let nextListIndex = listIndex;
+    if (button === Button.UP || button === Button.LEFT) nextListIndex = Math.max(0, listIndex - 1);
+    if (button === Button.DOWN || button === Button.RIGHT) nextListIndex = Math.min(indexes.length - 1, listIndex + 1);
+    return indexes[nextListIndex];
+  }
+
+  getPartySelectionSubmitAction(currentCursor) {
+    const selection = this.getPartySelectionState(currentCursor);
+    if (selection.cursor === 6) {
+      return hasInteractiveAction(selection.footerAction) ? selection.footerAction.action : null;
+    }
+    const option = selection.partyOptions[selection.cursor] || null;
+    return hasInteractiveAction(option) ? option.action : null;
+  }
+
+  getPartyCancelAction() {
+    const footerAction = this.getPartyFooterActions()[0] || null;
+    return hasInteractiveAction(footerAction) ? footerAction.action : null;
+  }
+
+  getTargetFooterActions() {
+    return this.getTargetState().footerActions || [];
   }
 
   getTargetInputModel() {
@@ -433,6 +506,11 @@ export class PkbBattleUiAdapter {
       footerActions: this.getTargetFooterActions(),
       blockedReason: state.blockedReason || '',
     };
+  }
+
+  getTargetBackAction() {
+    const footerAction = this.getTargetFooterActions()[0] || null;
+    return hasInteractiveAction(footerAction) ? footerAction.action : null;
   }
 
   getEnemyInfo() {
