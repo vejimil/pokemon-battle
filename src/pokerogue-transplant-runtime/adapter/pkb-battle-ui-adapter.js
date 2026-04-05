@@ -70,6 +70,15 @@ export class PkbBattleUiAdapter {
   getTeraToggle() {
     return this.getCommandState().teraToggle || null;
   }
+  getCommandInputModel() {
+    const state = this.getCommandState();
+    return {
+      fieldIndex: Number.isInteger(state.fieldIndex) ? state.fieldIndex : 0,
+      entries: this.getCommandEntries(),
+      teraToggle: this.getTeraToggle(),
+      title: state.title || '',
+    };
+  }
   getFightMoves() {
     return this.getFightState().moves || [];
   }
@@ -79,14 +88,45 @@ export class PkbBattleUiAdapter {
   getFightFooterActions() {
     return this.getFightState().footerActions || [];
   }
+  getFightInputModel() {
+    const state = this.getFightState();
+    return {
+      fieldIndex: Number.isInteger(state.fieldIndex) ? state.fieldIndex : 0,
+      moves: this.getFightMoves(),
+      toggles: this.getFightToggles(),
+      footerActions: this.getFightFooterActions(),
+      detail: state.detail || {},
+      title: state.title || '',
+    };
+  }
   getPartyOptions() {
     return this.getPartyState().partyOptions || [];
   }
   getPartyFooterActions() {
     return this.getPartyState().footerActions || [];
   }
+  getPartyInputModel() {
+    const state = this.getPartyState();
+    return {
+      fieldIndex: Number.isInteger(state.fieldIndex) ? state.fieldIndex : 0,
+      partyOptions: this.getPartyOptions(),
+      footerActions: this.getPartyFooterActions(),
+      title: state.title || '',
+      subtitle: state.subtitle || '',
+    };
+  }
   getTargetFooterActions() {
     return this.getTargetState().footerActions || [];
+  }
+  getTargetInputModel() {
+    const state = this.getTargetState();
+    return {
+      fieldIndex: Number.isInteger(state.fieldIndex) ? state.fieldIndex : 0,
+      title: state.title || '',
+      placeholder: state.placeholder || '',
+      footerActions: this.getTargetFooterActions(),
+      blockedReason: state.blockedReason || '',
+    };
   }
   getEnemyInfo() {
     return this.model.enemyInfo || {};

@@ -5933,6 +5933,7 @@ function renderBattlePartyWindow(battle, player) {
   const side = battle.players[player];
   const request = getEngineRequestForPlayer(player, battle);
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
   const forced = isEngineForceSwitchRequest(request);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
   container.innerHTML = `
@@ -6185,6 +6186,7 @@ function buildPhaserCommandWindowModel(battle, player) {
   const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
   return {
     mode: 'command',
+    fieldIndex: requestSlot,
     title: `${side?.name || `P${player + 1}`} · ${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}`,
     commands: [
       {label: lang('싸운다', 'Fight'), sublabel: lang('기술 선택', 'Choose a move'), disabled: false, active: selectedChoice.kind !== 'switch', action: {type: 'command', key: 'fight'}},
@@ -6242,6 +6244,7 @@ function buildPhaserFightWindowModel(battle, player) {
   const detail = buildPhaserMoveDetailModel(mon, detailMoveInfo, detailSlotInfo, moveRequest, choice, detailIndex);
   return {
     mode: 'fight',
+    fieldIndex: requestSlot,
     title: `${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')} · ${lang('기술', 'Moves')}`,
     moves,
     toggles,
@@ -6264,6 +6267,7 @@ function buildPhaserPartyWindowModel(battle, player) {
   const currentChoice = getEngineDraftChoice(player, activeIndex, battle);
   return {
     mode: 'party',
+    fieldIndex: requestSlot,
     title: `${side?.name || `P${player + 1}`} · ${forced ? lang('강제 교체', 'Forced switch') : lang('교체', 'Switch')}`,
     subtitle: forced
       ? lang('엔진이 교체를 요구하고 있습니다.', 'The engine requires a replacement.')
@@ -6304,6 +6308,7 @@ function buildPhaserPartyWindowModel(battle, player) {
 function buildPhaserTargetWindowModel() {
   return {
     mode: 'target',
+    fieldIndex: 0,
     title: lang('대상 선택', 'Target select'),
     placeholder: lang(
       '현재 엔진 필수 싱글 경로에서는 대상 선택이 별도 화면으로 노출되지 않습니다. 이 자리는 향후 더블용 구조 자리만 남겨 둔 상태입니다.',

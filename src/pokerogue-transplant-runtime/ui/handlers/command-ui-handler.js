@@ -47,8 +47,12 @@ export class CommandUiHandler extends UiHandler {
     this.clear();
   }
 
+  getInputModel() {
+    return this.globalScene.getCommandInputModel();
+  }
+
   show(args = null) {
-    const state = args || this.globalScene.getCommandState();
+    const state = args || this.getInputModel();
     super.show(state);
     this.currentModel = state || {};
     this.fieldIndex = Number(state.fieldIndex || 0);
@@ -82,7 +86,7 @@ export class CommandUiHandler extends UiHandler {
     }
 
     if (this.canTera()) {
-      const tera = this.globalScene.getTeraToggle() || {};
+      const tera = this.getTeraToggle() || {};
       this.teraButton.setVisible(true);
       if (this.teraButton.setTexture && this.env.textureExists(this.scene, this.env.UI_ASSETS.teraAtlas.key, tera.type || 'unknown')) {
         this.teraButton.setTexture(this.env.UI_ASSETS.teraAtlas.key, tera.type || 'unknown');
@@ -105,7 +109,11 @@ export class CommandUiHandler extends UiHandler {
   }
 
   getCommandEntries() {
-    return this.globalScene.getCommandEntries();
+    return this.getInputModel().entries || [];
+  }
+
+  getTeraToggle() {
+    return this.getInputModel().teraToggle || null;
   }
 
   getCommandEntry(index) {
@@ -119,12 +127,12 @@ export class CommandUiHandler extends UiHandler {
   }
 
   canTera() {
-    return Boolean(this.globalScene.getTeraToggle());
+    return Boolean(this.getTeraToggle());
   }
 
   toggleTeraButton() {
     if (!this.teraButton) return;
-    const active = this.getCursor() === Command.TERA || Boolean(this.globalScene.getTeraToggle()?.active);
+    const active = this.getCursor() === Command.TERA || Boolean(this.getTeraToggle()?.active);
     this.teraButton.setScale(active ? 1.45 : 1.3);
   }
 
@@ -160,7 +168,7 @@ export class CommandUiHandler extends UiHandler {
 
   dispatchCurrentSelection() {
     if (this.getCursor() === Command.TERA) {
-      const tera = this.globalScene.getTeraToggle();
+      const tera = this.getTeraToggle();
       if (!tera?.disabled && tera?.action) {
         this.globalScene.dispatchAction(tera.action);
         return true;

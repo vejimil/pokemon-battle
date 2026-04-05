@@ -75,9 +75,14 @@ export class TransplantBattleUI {
     return this.adapter.getUiArgsForMode(mode);
   }
 
-  processInfoButton(_pressed) {
+  processInfoButton(pressed) {
     if (this.overlayActive) return false;
-    return [UiMode.COMMAND, UiMode.FIGHT, UiMode.MESSAGE, UiMode.TARGET_SELECT].includes(this.mode);
+    const handler = this.getHandler();
+    const handled = [UiMode.COMMAND, UiMode.FIGHT, UiMode.MESSAGE, UiMode.TARGET_SELECT].includes(this.mode);
+    if (handled && handler?.toggleInfo) {
+      handler.toggleInfo(Boolean(pressed));
+    }
+    return handled;
   }
 
   processInput(button) {

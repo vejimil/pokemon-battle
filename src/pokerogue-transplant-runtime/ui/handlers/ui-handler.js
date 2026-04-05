@@ -22,6 +22,10 @@ export class UiHandler {
     return false;
   }
 
+  toggleInfo(_visible) {
+    return false;
+  }
+
   getUi() {
     return this.ui;
   }

@@ -34,7 +34,7 @@ export class TargetSelectUiHandler extends UiHandler {
   }
 
   show(args = null) {
-    const state = args || this.globalScene.getTargetState();
+    const state = args || this.globalScene.getTargetInputModel();
     super.show(state);
     const battleMessage = this.ui.getMessageHandler();
     battleMessage.commandWindow.setVisible(false);

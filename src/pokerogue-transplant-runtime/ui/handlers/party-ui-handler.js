@@ -122,9 +122,10 @@ export class PartyUiHandler extends UiHandler {
     this.clear();
   }
   show(args = null) {
-    const state = args || this.globalScene.getPartyState();
+    const state = args || this.globalScene.getPartyInputModel();
     super.show(state);
     this.partyContainer.setVisible(true);
+    this.fieldIndex = Number(state.fieldIndex || 0);
     this.message.setText([state.title || '', state.subtitle || ''].filter(Boolean).join('\n'));
     let cursorIndex = null;
     this.slots.forEach((slot, index) => {
@@ -147,11 +148,14 @@ export class PartyUiHandler extends UiHandler {
     this.setCursor(cursorIndex, true);
     return true;
   }
+  getInputModel() {
+    return this.globalScene.getPartyInputModel();
+  }
   getPartyOptions() {
-    return this.globalScene.getPartyOptions();
+    return this.getInputModel().partyOptions || [];
   }
   getFooterAction() {
-    return this.globalScene.getPartyFooterActions()[0] || null;
+    return (this.getInputModel().footerActions || [])[0] || null;
   }
   getSelectableTargets() {
     const targets = this.getPartyOptions().map((option, index) => ({ type: 'slot', index, option })).filter(target => target.option);
@@ -181,10 +185,12 @@ export class PartyUiHandler extends UiHandler {
     const availableIndexes = this.getSelectableTargets().map(target => target.index);
     if (!availableIndexes.length) return false;
     const current = this.getCursor();
-    const currentListIndex = Math.max(0, availableIndexes.indexOf(current));
+    const currentListIndex = availableIndexes.indexOf(current);
+    if (currentListIndex < 0) return this.setCursor(availableIndexes[0]);
     let nextListIndex = currentListIndex;
-    if (button === Button.UP || button === Button.LEFT) nextListIndex = currentListIndex > 0 ? currentListIndex - 1 : availableIndexes.length - 1;
-    if (button === Button.DOWN || button === Button.RIGHT) nextListIndex = currentListIndex < availableIndexes.length - 1 ? currentListIndex + 1 : 0;
+    if (button === Button.UP || button === Button.LEFT) nextListIndex = Math.max(0, currentListIndex - 1);
+    if (button === Button.DOWN || button === Button.RIGHT) nextListIndex = Math.min(availableIndexes.length - 1, currentListIndex + 1);
+    if (nextListIndex === currentListIndex) return false;
     return this.setCursor(availableIndexes[nextListIndex]);
   }
   activateCursor() {

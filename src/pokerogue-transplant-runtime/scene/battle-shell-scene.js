@@ -17,9 +17,11 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.ui = null;
       this.handleResize = () => this.layoutSafely();
       this.handleWindowKeyDown = event => this.handleGlobalKeyDown(event);
+      this.handleWindowKeyUp = event => this.handleGlobalKeyUp(event);
       this.handleShutdown = () => {
         try { this.scale?.off?.('resize', this.handleResize, this); } catch (_error) {}
         try { window.removeEventListener('keydown', this.handleWindowKeyDown, true); } catch (_error) {}
+        try { window.removeEventListener('keyup', this.handleWindowKeyUp, true); } catch (_error) {}
       };
       this.runtimeEnv = {
         ...env,
@@ -56,6 +58,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         }
         this.scale?.on?.('resize', this.handleResize, this);
         window.addEventListener('keydown', this.handleWindowKeyDown, true);
+        window.addEventListener('keyup', this.handleWindowKeyUp, true);
         this.events?.once?.('shutdown', this.handleShutdown, this);
         this.isBootstrapped = true;
         this.layoutSafely();
@@ -93,6 +96,15 @@ export function createBattleShellSceneClass(Phaser, env) {
       const handled = button === 'info'
         ? this.ui.processInfoButton(true)
         : this.ui.processInput(button);
+      if (handled) event.preventDefault();
+    }
+
+
+    handleGlobalKeyUp(event) {
+      if (!this.isBootstrapped || !this.ui || this.controller?.mount?.hidden) return;
+      const button = buttonFromKeyboardEvent(event);
+      if (button !== 'info') return;
+      const handled = this.ui.processInfoButton(false);
       if (handled) event.preventDefault();
     }
 

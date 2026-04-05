@@ -57,6 +57,10 @@ export class TransplantGlobalSceneFacade {
     return this.adapter?.getTeraToggle?.() || null;
   }
 
+  getCommandInputModel() {
+    return this.adapter?.getCommandInputModel?.() || { fieldIndex: 0, entries: [], teraToggle: null };
+  }
+
   getFightState() {
     return this.adapter?.getFightState?.() || { moves: [], detail: {} };
   }
@@ -73,6 +77,10 @@ export class TransplantGlobalSceneFacade {
     return this.adapter?.getFightFooterActions?.() || [];
   }
 
+  getFightInputModel() {
+    return this.adapter?.getFightInputModel?.() || { fieldIndex: 0, moves: [], toggles: [], footerActions: [], detail: {} };
+  }
+
   getPartyState() {
     return this.adapter?.getPartyState?.() || { partyOptions: [] };
   }
@@ -85,12 +93,20 @@ export class TransplantGlobalSceneFacade {
     return this.adapter?.getPartyFooterActions?.() || [];
   }
 
+  getPartyInputModel() {
+    return this.adapter?.getPartyInputModel?.() || { fieldIndex: 0, partyOptions: [], footerActions: [] };
+  }
+
   getTargetState() {
     return this.adapter?.getTargetState?.() || {};
   }
 
   getTargetFooterActions() {
     return this.adapter?.getTargetFooterActions?.() || [];
+  }
+
+  getTargetInputModel() {
+    return this.adapter?.getTargetInputModel?.() || { fieldIndex: 0, footerActions: [] };
   }
 
   getUiArgs(mode = this.mode) {
