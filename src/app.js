@@ -6154,7 +6154,7 @@ function buildBattleInfoModel(player, battle = state.battle) {
   return {
     displayName: displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species || 'Pokémon'),
     levelLabel: Number.isFinite(mon.level) ? `Lv ${mon.level}` : '',
-    types: (mon.types || []).map(type => displayType(type)),
+    types: (mon.types || []).map(type => toId(type)),
     statusLabel: mon.status ? displayStatus(mon.status) : '',
     hpLabel: `HP ${mon.hp}/${mon.maxHp}`,
     hpPercent: hpPercent(mon),
@@ -6316,6 +6316,8 @@ function buildPhaserBattleViewModel(battle) {
   else if (mode === 'target') stateWindow = buildPhaserTargetWindowModel(battle, perspective);
   const enemyInfo = buildBattleInfoModel(enemyPlayer, battle);
   const playerInfo = buildBattleInfoModel(allyPlayer, battle);
+  const enemyMon = getActiveMons(enemyPlayer, battle)[0] || null;
+  const playerMon = getActiveMons(allyPlayer, battle)[0] || null;
   const rawAbilityBar = updateBattleAbilityBarState(battle);
   const abilityBar = rawAbilityBar?.visible ? {
     ...rawAbilityBar,
@@ -6335,8 +6337,8 @@ function buildPhaserBattleViewModel(battle) {
     message: buildBattleMessageModel(battle, perspective),
     enemyInfo,
     playerInfo,
-    enemySprite: {url: enemyInfo.spriteUrl || ''},
-    playerSprite: {url: playerInfo.spriteUrl || ''},
+    enemySprite: {url: enemyMon ? spritePath(resolveBattleRenderSpriteId(enemyMon), 'front', enemyMon.shiny) : ''},
+    playerSprite: {url: playerMon ? spritePath(resolveBattleRenderSpriteId(playerMon), 'back', playerMon.shiny) : ''},
     enemyTray: buildBattleTrayModel(enemyPlayer, battle),
     playerTray: buildBattleTrayModel(allyPlayer, battle),
     abilityBar,

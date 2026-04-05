@@ -8,10 +8,22 @@ const UI_ASSETS = Object.freeze({
   categoriesAtlas: { key: 'pkb-ui-categories', json: './assets/pokerogue/ui/misc/categories.json', path: './assets/pokerogue/ui/misc/' },
   teraAtlas: { key: 'pkb-ui-button-tera', image: './assets/pokerogue/ui/button_tera.png', json: './assets/pokerogue/ui/button_tera.json' },
   trayAtlas: { key: 'pkb-ui-pb-tray-ball', image: './assets/pokerogue/ui/pb_tray_ball.png', json: './assets/pokerogue/ui/pb_tray_ball.json' },
+  overlayHpAtlas: { key: 'pkb-ui-overlay-hp', image: './assets/pokerogue/ui/overlay_hp.png', json: './assets/pokerogue/ui/overlay_hp.json' },
+  overlayMessage: { key: 'pkb-ui-overlay-message', url: './assets/pokerogue/ui/overlay_message.png' },
+  overlayExp: { key: 'pkb-ui-overlay-exp', url: './assets/pokerogue/ui/overlay_exp.png' },
+  window: { key: 'pkb-ui-window', url: './assets/pokerogue/ui/windows/window_1.png' },
+  windowThin: { key: 'pkb-ui-window-thin', url: './assets/pokerogue/ui/windows/window_1_thin.png' },
+  windowXthin: { key: 'pkb-ui-window-xthin', url: './assets/pokerogue/ui/windows/window_1_xthin.png' },
   cursor: { key: 'pkb-ui-cursor', url: './assets/pokerogue/ui/cursor.png' },
   cursorTera: { key: 'pkb-ui-cursor-tera', url: './assets/pokerogue/ui/cursor_tera.png' },
   pbinfoPlayer: { key: 'pkb-ui-pbinfo-player', url: './assets/pokerogue/ui/pbinfo_player.png' },
   pbinfoEnemy: { key: 'pkb-ui-pbinfo-enemy', url: './assets/pokerogue/ui/pbinfo_enemy_mini.png' },
+  pbinfoPlayerType1: { key: 'pkb-ui-pbinfo-player-type1', image: './assets/pokerogue/ui/pbinfo_player_type1.png', json: './assets/pokerogue/ui/pbinfo_player_type1.json' },
+  pbinfoPlayerType2: { key: 'pkb-ui-pbinfo-player-type2', image: './assets/pokerogue/ui/pbinfo_player_type2.png', json: './assets/pokerogue/ui/pbinfo_player_type2.json' },
+  pbinfoPlayerType3: { key: 'pkb-ui-pbinfo-player-type3', image: './assets/pokerogue/ui/pbinfo_player_type.png', json: './assets/pokerogue/ui/pbinfo_player_type.json' },
+  pbinfoEnemyType1: { key: 'pkb-ui-pbinfo-enemy-type1', image: './assets/pokerogue/ui/pbinfo_enemy_type1.png', json: './assets/pokerogue/ui/pbinfo_enemy_type1.json' },
+  pbinfoEnemyType2: { key: 'pkb-ui-pbinfo-enemy-type2', image: './assets/pokerogue/ui/pbinfo_enemy_type2.png', json: './assets/pokerogue/ui/pbinfo_enemy_type2.json' },
+  pbinfoEnemyType3: { key: 'pkb-ui-pbinfo-enemy-type3', image: './assets/pokerogue/ui/pbinfo_enemy_type.png', json: './assets/pokerogue/ui/pbinfo_enemy_type.json' },
   trayOverlayEnemy: { key: 'pkb-ui-tray-overlay-enemy', url: './assets/pokerogue/ui/pb_tray_overlay_enemy.png' },
   trayOverlayPlayer: { key: 'pkb-ui-tray-overlay-player', url: './assets/pokerogue/ui/pb_tray_overlay_player.png' },
 });
@@ -40,7 +52,7 @@ function ensureSpriteHostStyles(host) {
     width: '100%',
     height: '100%',
     display: 'grid',
-    placeItems: 'center',
+    placeItems: 'end center',
     pointerEvents: 'none',
     userSelect: 'none',
     overflow: 'visible',
@@ -49,8 +61,9 @@ function ensureSpriteHostStyles(host) {
 
 function clearAnimatedSprite(host) {
   if (!host) return;
-  if (host.__pkbSpriteTimer) clearInterval(host.__pkbSpriteTimer);
-  host.__pkbSpriteTimer = null;
+  const animator = host.__pkbAnimator;
+  if (animator?.rafId) cancelAnimationFrame(animator.rafId);
+  host.__pkbAnimator = null;
   host.innerHTML = '';
 }
 
@@ -69,51 +82,74 @@ async function inspectSpriteUrl(url) {
 
 async function renderAnimatedSpriteToHost(host, spriteModel = {}, size = 'large') {
   if (!host) return;
+  ensureSpriteHostStyles(host);
+  const url = spriteModel?.url || '';
+  const key = `${size}::${url}`;
+  if (!url) {
+    if (host.__pkbAnimator?.key !== '__empty__') {
+      clearAnimatedSprite(host);
+      host.__pkbAnimator = { key: '__empty__' };
+      host.textContent = '—';
+      host.style.color = '#d8e7ff';
+      host.style.font = '600 20px system-ui';
+    }
+    return;
+  }
+  if (host.__pkbAnimator?.key === key) return;
   const token = (Number(host.dataset.renderToken || '0') + 1).toString();
   host.dataset.renderToken = token;
   clearAnimatedSprite(host);
-  ensureSpriteHostStyles(host);
-  const url = spriteModel?.url || '';
-  if (!url) {
-    host.textContent = '—';
-    host.style.color = '#d8e7ff';
-    host.style.font = '600 20px system-ui';
-    return;
-  }
   try {
     const info = await inspectSpriteUrl(url);
     if (host.dataset.renderToken !== token) return;
     const canvas = document.createElement('canvas');
-    const baseTarget = size === 'large' ? 260 : 58;
-    const scale = Math.max(1, Math.min(size === 'large' ? 3.2 : 1.9, baseTarget / info.frame));
-    const width = Math.max(32, Math.floor(info.frame * scale));
-    const height = Math.max(32, Math.floor(info.height * scale));
-    canvas.width = width;
-    canvas.height = height;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
     canvas.style.imageRendering = 'pixelated';
     const ctx = canvas.getContext('2d');
     ctx.imageSmoothingEnabled = false;
-    let frameIndex = 0;
-    const draw = () => {
-      if (host.dataset.renderToken !== token) return;
-      ctx.clearRect(0, 0, width, height);
-      ctx.drawImage(info.img, frameIndex * info.frame, 0, info.frame, info.height, 0, 0, width, height);
-      frameIndex = (frameIndex + 1) % info.count;
+    const animator = {
+      key,
+      info,
+      canvas,
+      ctx,
+      frameIndex: 0,
+      lastFrameAt: performance.now(),
+      lastWidth: 0,
+      lastHeight: 0,
+      rafId: 0,
     };
-    draw();
-    if (info.count > 1) {
-      host.__pkbSpriteTimer = setInterval(() => {
-        if (!host.isConnected || host.dataset.renderToken !== token) {
-          clearAnimatedSprite(host);
-          return;
-        }
-        draw();
-      }, 120);
-    }
+    const draw = (timestamp) => {
+      if (!host.isConnected || host.dataset.renderToken !== token || host.__pkbAnimator !== animator) return;
+      const cssWidth = Math.max(32, Math.floor(host.clientWidth || 0));
+      const cssHeight = Math.max(32, Math.floor(host.clientHeight || 0));
+      if (cssWidth !== animator.lastWidth || cssHeight !== animator.lastHeight) {
+        animator.lastWidth = cssWidth;
+        animator.lastHeight = cssHeight;
+        animator.canvas.width = cssWidth;
+        animator.canvas.height = cssHeight;
+      }
+      if (timestamp - animator.lastFrameAt >= 120) {
+        animator.frameIndex = (animator.frameIndex + 1) % animator.info.count;
+        animator.lastFrameAt = timestamp;
+      }
+      const { frame, height, img } = animator.info;
+      const scale = Math.min(animator.canvas.width / frame, animator.canvas.height / height);
+      const drawWidth = Math.max(1, Math.floor(frame * scale));
+      const drawHeight = Math.max(1, Math.floor(height * scale));
+      const dx = Math.floor((animator.canvas.width - drawWidth) / 2);
+      const dy = Math.floor(animator.canvas.height - drawHeight);
+      animator.ctx.clearRect(0, 0, animator.canvas.width, animator.canvas.height);
+      animator.ctx.drawImage(img, animator.frameIndex * frame, 0, frame, height, dx, dy, drawWidth, drawHeight);
+      animator.rafId = requestAnimationFrame(draw);
+    };
+    host.__pkbAnimator = animator;
     host.appendChild(canvas);
+    animator.rafId = requestAnimationFrame(draw);
   } catch (_error) {
+    if (host.dataset.renderToken !== token) return;
+    clearAnimatedSprite(host);
+    host.__pkbAnimator = { key: '__missing__' };
     host.textContent = 'Sprite missing';
     host.style.color = '#fda4af';
     host.style.font = '600 16px system-ui';
@@ -129,10 +165,22 @@ function preloadUiAssets(scene) {
   if (!textures.exists(UI_ASSETS.categoriesAtlas.key)) load.multiatlas(UI_ASSETS.categoriesAtlas.key, UI_ASSETS.categoriesAtlas.json, UI_ASSETS.categoriesAtlas.path);
   if (!textures.exists(UI_ASSETS.teraAtlas.key)) load.atlas(UI_ASSETS.teraAtlas.key, UI_ASSETS.teraAtlas.image, UI_ASSETS.teraAtlas.json);
   if (!textures.exists(UI_ASSETS.trayAtlas.key)) load.multiatlas(UI_ASSETS.trayAtlas.key, UI_ASSETS.trayAtlas.json, './assets/pokerogue/ui/');
+  if (!textures.exists(UI_ASSETS.overlayHpAtlas.key)) load.atlas(UI_ASSETS.overlayHpAtlas.key, UI_ASSETS.overlayHpAtlas.image, UI_ASSETS.overlayHpAtlas.json);
+  if (!textures.exists(UI_ASSETS.overlayMessage.key)) load.image(UI_ASSETS.overlayMessage.key, UI_ASSETS.overlayMessage.url);
+  if (!textures.exists(UI_ASSETS.overlayExp.key)) load.image(UI_ASSETS.overlayExp.key, UI_ASSETS.overlayExp.url);
+  if (!textures.exists(UI_ASSETS.window.key)) load.image(UI_ASSETS.window.key, UI_ASSETS.window.url);
+  if (!textures.exists(UI_ASSETS.windowThin.key)) load.image(UI_ASSETS.windowThin.key, UI_ASSETS.windowThin.url);
+  if (!textures.exists(UI_ASSETS.windowXthin.key)) load.image(UI_ASSETS.windowXthin.key, UI_ASSETS.windowXthin.url);
   if (!textures.exists(UI_ASSETS.cursor.key)) load.image(UI_ASSETS.cursor.key, UI_ASSETS.cursor.url);
   if (!textures.exists(UI_ASSETS.cursorTera.key)) load.image(UI_ASSETS.cursorTera.key, UI_ASSETS.cursorTera.url);
   if (!textures.exists(UI_ASSETS.pbinfoPlayer.key)) load.image(UI_ASSETS.pbinfoPlayer.key, UI_ASSETS.pbinfoPlayer.url);
   if (!textures.exists(UI_ASSETS.pbinfoEnemy.key)) load.image(UI_ASSETS.pbinfoEnemy.key, UI_ASSETS.pbinfoEnemy.url);
+  if (!textures.exists(UI_ASSETS.pbinfoPlayerType1.key)) load.atlas(UI_ASSETS.pbinfoPlayerType1.key, UI_ASSETS.pbinfoPlayerType1.image, UI_ASSETS.pbinfoPlayerType1.json);
+  if (!textures.exists(UI_ASSETS.pbinfoPlayerType2.key)) load.atlas(UI_ASSETS.pbinfoPlayerType2.key, UI_ASSETS.pbinfoPlayerType2.image, UI_ASSETS.pbinfoPlayerType2.json);
+  if (!textures.exists(UI_ASSETS.pbinfoPlayerType3.key)) load.atlas(UI_ASSETS.pbinfoPlayerType3.key, UI_ASSETS.pbinfoPlayerType3.image, UI_ASSETS.pbinfoPlayerType3.json);
+  if (!textures.exists(UI_ASSETS.pbinfoEnemyType1.key)) load.atlas(UI_ASSETS.pbinfoEnemyType1.key, UI_ASSETS.pbinfoEnemyType1.image, UI_ASSETS.pbinfoEnemyType1.json);
+  if (!textures.exists(UI_ASSETS.pbinfoEnemyType2.key)) load.atlas(UI_ASSETS.pbinfoEnemyType2.key, UI_ASSETS.pbinfoEnemyType2.image, UI_ASSETS.pbinfoEnemyType2.json);
+  if (!textures.exists(UI_ASSETS.pbinfoEnemyType3.key)) load.atlas(UI_ASSETS.pbinfoEnemyType3.key, UI_ASSETS.pbinfoEnemyType3.image, UI_ASSETS.pbinfoEnemyType3.json);
   if (!textures.exists(UI_ASSETS.trayOverlayEnemy.key)) load.image(UI_ASSETS.trayOverlayEnemy.key, UI_ASSETS.trayOverlayEnemy.url);
   if (!textures.exists(UI_ASSETS.trayOverlayPlayer.key)) load.image(UI_ASSETS.trayOverlayPlayer.key, UI_ASSETS.trayOverlayPlayer.url);
 }
@@ -282,89 +330,91 @@ function createPhaserBattleSceneClass(Phaser) {
       host.className = `pkb-phaser-sprite pkb-phaser-sprite-${name}`;
       ensureSpriteHostStyles(host);
       const dom = this.add.dom(0, 0, host);
-      dom.setOrigin(0.5, 0.5);
+      dom.setOrigin(0.5, 1);
       return { host, dom };
     }
 
     createPerspectiveTabs() {
       const container = this.add.container(0, 0);
       const tabs = [0, 1].map(index => {
-        const bg = this.add.rectangle(0, 0, 150, 34, 0x0b162d, 0.92).setOrigin(0, 0).setStrokeStyle(2, 0xdbeafe, 0.16);
-        const label = this.add.text(75, 17, `P${index + 1}`, {
+        const bg = this.add.nineslice(0, 0, UI_ASSETS.windowThin.key, undefined, 72, 22, 8, 8, 8, 8).setOrigin(0, 0);
+        const label = this.add.text(36, 11, `P${index + 1}`, {
           fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-          fontSize: '18px',
+          fontSize: '9px',
           color: '#dbeafe',
           align: 'center',
         }).setOrigin(0.5, 0.5);
-        const button = this.add.container(index * 158, 0, [bg, label]);
-        setInteractiveTarget(bg, () => this.controller.handleAction({ type: 'perspective', player: index }));
+        const hit = this.add.rectangle(0, 0, 72, 22, 0xffffff, 0.001).setOrigin(0, 0);
+        const button = this.add.container(index * 76, 0, [bg, label, hit]);
+        setInteractiveTarget(hit, () => this.controller.handleAction({ type: 'perspective', player: index }));
         container.add(button);
-        return { button, bg, label };
+        return { button, bg, label, hit };
       });
       return { container, tabs };
     }
 
     createBattleInfoBox(side) {
       const container = this.add.container(0, 0);
-      const textureKey = side === 'player' ? UI_ASSETS.pbinfoPlayer.key : UI_ASSETS.pbinfoEnemy.key;
-      let width = 394;
-      let height = side === 'player' ? 126 : 96;
-      let bg = null;
-      if (textureExists(this, textureKey)) {
-        bg = this.add.image(0, 0, textureKey).setOrigin(0, 0);
-        bg.setScale(side === 'player' ? 3.02 : 3.03);
-        width = bg.displayWidth;
-        height = bg.displayHeight;
-      } else {
-        bg = this.add.rectangle(0, 0, width, height, 0x10213d, 0.94).setOrigin(0, 0).setStrokeStyle(2, 0xffffff, 0.12);
-      }
-      const name = this.add.text(18, 12, '', {
+      const isPlayer = side === 'player';
+      const textureKey = isPlayer ? UI_ASSETS.pbinfoPlayer.key : UI_ASSETS.pbinfoEnemy.key;
+      const bg = this.add.image(0, 0, textureKey).setOrigin(1, 0.5);
+      const name = this.add.text(isPlayer ? -115 : -124, isPlayer ? -15.2 : -11.2, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '21px',
+        fontSize: '9px',
         color: '#f8fbff',
       }).setOrigin(0, 0);
-      const level = this.add.text(width - 18, 12, '', {
+      const level = this.add.text(isPlayer ? -41 : -50, isPlayer ? -10 : -5, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '15px',
+        fontSize: '7px',
         color: '#dbeafe',
-      }).setOrigin(1, 0);
-      const status = this.add.text(width - 18, side === 'player' ? 77 : 51, '', {
+      }).setOrigin(0, 0.5);
+      const status = this.add.text(isPlayer ? -12 : -12, isPlayer ? 9 : 10, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
+        fontSize: '6px',
         color: '#fbbf24',
       }).setOrigin(1, 0.5);
-      const badges = this.add.text(width - 18, height - 14, '', {
+      const hpTrack = this.add.rectangle(isPlayer ? -61 : -71, isPlayer ? -1 : 4.5, 48, 2, 0x1f2937, 1).setOrigin(0, 0);
+      const hpFill = this.add.image(hpTrack.x, hpTrack.y, UI_ASSETS.overlayHpAtlas.key, 'high').setOrigin(0, 0);
+      const hpText = this.add.text(isPlayer ? -60 : -70, isPlayer ? 8 : 12, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: '#dbeafe',
-        align: 'right',
-      }).setOrigin(1, 1);
-      const hpTrack = this.add.rectangle(side === 'player' ? 164 : 172, side === 'player' ? 52 : 43, side === 'player' ? 176 : 162, 10, 0x122033, 0.96).setOrigin(0, 0).setStrokeStyle(1, 0xffffff, 0.08);
-      const hpFill = this.add.rectangle(hpTrack.x + 2, hpTrack.y + 2, hpTrack.width - 4, hpTrack.height - 4, 0x86efac, 1).setOrigin(0, 0);
-      const hpText = this.add.text(side === 'player' ? 162 : 170, side === 'player' ? 69 : 57, '', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: side === 'player' ? '13px' : '12px',
+        fontSize: isPlayer ? '6px' : '6px',
         color: '#eff6ff',
       }).setOrigin(0, 0.5);
-      const typeIcons = Array.from({ length: 3 }, (_, index) => {
-        const icon = this.add.image(18 + index * 38, side === 'player' ? 82 : 58, UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0.5);
+      const expBar = isPlayer ? this.add.image(-98, 18, UI_ASSETS.overlayExp.key).setOrigin(0, 0.5) : null;
+      const expFill = isPlayer ? this.add.rectangle(-98, 18, 85, 2, 0x60a5fa, 1).setOrigin(0, 0.5) : null;
+      const typeConfigs = isPlayer
+        ? [
+            { key: UI_ASSETS.pbinfoPlayerType1.key, x: -139, y: -17 },
+            { key: UI_ASSETS.pbinfoPlayerType2.key, x: -139, y: -1 },
+            { key: UI_ASSETS.pbinfoPlayerType3.key, x: -154, y: -17 },
+          ]
+        : [
+            { key: UI_ASSETS.pbinfoEnemyType1.key, x: -15, y: -15.5 },
+            { key: UI_ASSETS.pbinfoEnemyType2.key, x: -15, y: -2.5 },
+            { key: UI_ASSETS.pbinfoEnemyType3.key, x: 0, y: -15.5 },
+          ];
+      const typeIcons = typeConfigs.map(config => {
+        const icon = this.add.image(config.x, config.y, config.key, 'unknown').setOrigin(0, 0);
         icon.setVisible(false);
         return icon;
       });
-      container.add([bg, hpTrack, hpFill, name, level, status, badges, hpText, ...typeIcons]);
-      return { container, bg, name, level, status, badges, hpTrack, hpFill, hpText, typeIcons, width, height, side };
+      container.add([bg, hpTrack, hpFill, ...(expBar ? [expBar, expFill] : []), name, level, status, hpText, ...typeIcons]);
+      return { container, bg, name, level, status, hpTrack, hpFill, hpText, expBar, expFill, typeIcons, side, width: bg.width, height: bg.height };
     }
 
     createTray(side) {
       const container = this.add.container(0, 0);
-      const overlayKey = side === 'player' ? UI_ASSETS.trayOverlayPlayer.key : UI_ASSETS.trayOverlayEnemy.key;
-      const overlay = textureExists(this, overlayKey) ? this.add.image(0, 0, overlayKey).setOrigin(0, 0).setScale(2.7) : this.add.rectangle(0, 0, 282, 10, 0x0f172a, 0.64).setOrigin(0, 0);
+      const isPlayer = side === 'player';
+      const overlayKey = isPlayer ? UI_ASSETS.trayOverlayPlayer.key : UI_ASSETS.trayOverlayEnemy.key;
+      const overlay = textureExists(this, overlayKey)
+        ? this.add.image(0, 0, overlayKey).setOrigin(isPlayer ? 1 : 0, 0)
+        : this.add.rectangle(0, 0, 104, 4, 0x0f172a, 0.64).setOrigin(isPlayer ? 1 : 0, 0);
+      const startX = isPlayer ? -83 : 76;
+      const step = isPlayer ? 10 : -10;
       const balls = Array.from({ length: 6 }, (_, index) => {
         const ball = textureExists(this, UI_ASSETS.trayAtlas.key, 'ball')
-          ? this.add.image(0, 0, UI_ASSETS.trayAtlas.key, 'ball').setOrigin(0, 0.5).setScale(2.1)
-          : this.add.circle(0, 0, 8, 0xe2e8f0, 0.85).setStrokeStyle(2, 0x0f172a, 0.9);
-        ball.x = 10 + index * 28;
-        ball.y = overlay.displayHeight * 0.5;
+          ? this.add.image(startX + step * index, -8, UI_ASSETS.trayAtlas.key, 'ball').setOrigin(0, 0)
+          : this.add.circle(startX + step * index, -8, 2, 0xe2e8f0, 0.85).setOrigin(0, 0);
         return ball;
       });
       container.add([overlay, ...balls]);
@@ -373,11 +423,12 @@ function createPhaserBattleSceneClass(Phaser) {
 
     createAbilityBar() {
       const container = this.add.container(0, 0);
-      const bg = this.add.rectangle(0, 0, 360, 42, 0x081425, 0.96).setOrigin(0, 0).setStrokeStyle(2, 0xffffff, 0.12);
-      const text = this.add.text(14, 10, '', {
+      const bg = this.add.nineslice(0, 0, UI_ASSETS.windowThin.key, undefined, 118, 22, 8, 8, 8, 8).setOrigin(0, 0);
+      const text = this.add.text(6, 4, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '18px',
+        fontSize: '7px',
         color: '#f8fbff',
+        wordWrap: { width: 106, useAdvancedWrap: true },
       }).setOrigin(0, 0);
       container.add([bg, text]);
       container.setVisible(false);
@@ -386,24 +437,24 @@ function createPhaserBattleSceneClass(Phaser) {
 
     createMessagePanel() {
       const container = this.add.container(0, 0);
-      const bg = this.add.rectangle(0, 0, 100, 100, 0x081425, 0.98).setOrigin(0, 0).setStrokeStyle(2, 0xf8fafc, 0.12);
-      const primary = this.add.text(18, 16, '', {
+      const bg = this.add.image(0, 0, UI_ASSETS.bgAtlas.key, '1').setOrigin(0, 1);
+      const primary = this.add.text(12, -39, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '22px',
+        fontSize: '11px',
         color: '#f8fbff',
-        lineSpacing: 4,
-        wordWrap: { width: 100, useAdvancedWrap: true },
-      }).setOrigin(0, 0);
-      const secondary = this.add.text(18, 18, '', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '14px',
-        color: '#cbd5e1',
         lineSpacing: 2,
-        wordWrap: { width: 100, useAdvancedWrap: true },
+        wordWrap: { width: 178, useAdvancedWrap: true },
+      }).setOrigin(0, 0);
+      const secondary = this.add.text(12, -18, '', {
+        fontFamily: 'system-ui, sans-serif',
+        fontSize: '7px',
+        color: '#cbd5e1',
+        lineSpacing: 1,
+        wordWrap: { width: 178, useAdvancedWrap: true },
       }).setOrigin(0, 0);
       const prompt = textureExists(this, UI_ASSETS.promptAtlas.key, '1')
         ? this.add.sprite(0, 0, UI_ASSETS.promptAtlas.key, '1').setOrigin(0, 0)
-        : this.add.text(0, 0, '▾', { fontFamily: 'system-ui, sans-serif', fontSize: '18px', color: '#f8fbff' }).setOrigin(0, 0);
+        : this.add.text(0, 0, '▾', { fontFamily: 'system-ui, sans-serif', fontSize: '10px', color: '#f8fbff' }).setOrigin(0, 0);
       prompt.setVisible(false);
       container.add([bg, primary, secondary, prompt]);
       return { container, bg, primary, secondary, prompt };
@@ -411,26 +462,26 @@ function createPhaserBattleSceneClass(Phaser) {
 
     createCommandPanel() {
       const container = this.add.container(0, 0);
-      const bg = this.add.rectangle(0, 0, 340, 164, 0x0b162d, 0.98).setOrigin(0, 0).setStrokeStyle(2, 0xf8fafc, 0.12);
-      const title = this.add.text(16, 12, '', {
+      const bg = this.add.nineslice(0, 0, UI_ASSETS.window.key, undefined, 118, 48, 8, 8, 8, 8).setOrigin(0, 1);
+      const title = this.add.text(0, 0, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '18px',
+        fontSize: '8px',
         color: '#dbeafe',
-      }).setOrigin(0, 0);
+      }).setVisible(false);
       const cursor = textureExists(this, UI_ASSETS.cursor.key)
-        ? this.add.image(0, 0, UI_ASSETS.cursor.key).setOrigin(0, 0).setScale(2.2)
-        : this.add.text(0, 0, '▶', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#f8fbff' }).setOrigin(0, 0);
+        ? this.add.image(0, 0, UI_ASSETS.cursor.key).setOrigin(0, 0)
+        : this.add.text(0, 0, '▶', { fontFamily: 'system-ui, sans-serif', fontSize: '8px', color: '#f8fbff' }).setOrigin(0, 0);
       const teraButton = textureExists(this, UI_ASSETS.teraAtlas.key, 'unknown')
-        ? this.add.sprite(0, 0, UI_ASSETS.teraAtlas.key, 'unknown').setOrigin(0, 0).setScale(2.4)
-        : this.add.text(0, 0, 'Tera', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#f8fbff' }).setOrigin(0, 0);
+        ? this.add.sprite(-32, 15, UI_ASSETS.teraAtlas.key, 'unknown').setOrigin(0.5, 0.5).setScale(1.3)
+        : this.add.text(-32, 15, 'Tera', { fontFamily: 'system-ui, sans-serif', fontSize: '8px', color: '#f8fbff' }).setOrigin(0.5, 0.5);
       teraButton.setVisible(false);
-      const entries = Array.from({ length: 4 }, () => {
-        const label = this.add.text(0, 0, '', {
+      const entries = Array.from({ length: 4 }, (_, index) => {
+        const label = this.add.text(index % 2 === 0 ? 0 : 55.8, index < 2 ? -38 : -22, '', {
           fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-          fontSize: '22px',
+          fontSize: '10px',
           color: '#f8fbff',
         }).setOrigin(0, 0);
-        const zone = this.add.rectangle(0, 0, 132, 42, 0xffffff, 0.001).setOrigin(0, 0);
+        const zone = this.add.rectangle(label.x - 6, label.y - 2, 52, 14, 0xffffff, 0.001).setOrigin(0, 0);
         return { label, zone };
       });
       container.add([bg, title, cursor, teraButton, ...entries.flatMap(entry => [entry.zone, entry.label])]);
@@ -439,151 +490,141 @@ function createPhaserBattleSceneClass(Phaser) {
 
     createFightPanel() {
       const container = this.add.container(0, 0);
-      const movesBg = this.add.rectangle(0, 0, 420, 156, 0x0b162d, 0.98).setOrigin(0, 0).setStrokeStyle(2, 0xf8fafc, 0.12);
-      const detailBg = this.add.rectangle(436, 0, 320, 156, 0x0b162d, 0.98).setOrigin(0, 0).setStrokeStyle(2, 0xf8fafc, 0.12);
-      const title = this.add.text(14, 10, '', {
+      const movesBg = this.add.nineslice(0, 0, UI_ASSETS.window.key, undefined, 243, 48, 8, 8, 8, 8).setOrigin(0, 1);
+      const detailBg = this.add.nineslice(240, 0, UI_ASSETS.window.key, undefined, 80, 48, 8, 8, 8, 8).setOrigin(0, 1);
+      const title = this.add.text(0, 0, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '18px',
+        fontSize: '8px',
         color: '#dbeafe',
-      }).setOrigin(0, 0);
+      }).setVisible(false);
       const cursor = textureExists(this, UI_ASSETS.cursor.key)
-        ? this.add.image(0, 0, UI_ASSETS.cursor.key).setOrigin(0, 0).setScale(2.2)
-        : this.add.text(0, 0, '▶', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#f8fbff' }).setOrigin(0, 0);
-      const moves = Array.from({ length: 4 }, () => {
-        const label = this.add.text(0, 0, '', {
+        ? this.add.image(0, 0, UI_ASSETS.cursor.key).setOrigin(0, 0)
+        : this.add.text(0, 0, '▶', { fontFamily: 'system-ui, sans-serif', fontSize: '8px', color: '#f8fbff' }).setOrigin(0, 0);
+      const moves = Array.from({ length: 4 }, (_, moveIndex) => {
+        const label = this.add.text(moveIndex % 2 === 0 ? 0 : 114, moveIndex < 2 ? -39 : -23, '', {
           fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-          fontSize: '20px',
+          fontSize: '9px',
           color: '#f8fbff',
-          wordWrap: { width: 158, useAdvancedWrap: true },
+          wordWrap: { width: 102, useAdvancedWrap: true },
         }).setOrigin(0, 0);
-        const zone = this.add.rectangle(0, 0, 182, 46, 0xffffff, 0.001).setOrigin(0, 0);
+        const zone = this.add.rectangle(label.x - 6, label.y - 2, 110, 14, 0xffffff, 0.001).setOrigin(0, 0);
         return { label, zone };
       });
-      const detailName = this.add.text(454, 14, '', {
+      const detailName = this.add.text(247, -40, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '18px',
+        fontSize: '8px',
         color: '#f8fbff',
-        wordWrap: { width: 180, useAdvancedWrap: true },
+        wordWrap: { width: 46, useAdvancedWrap: true },
       }).setOrigin(0, 0);
       const typeIcon = textureExists(this, UI_ASSETS.typesAtlas.key, 'unknown')
-        ? this.add.image(454, 56, UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0)
-        : this.add.text(454, 56, '', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#cbd5e1' }).setOrigin(0, 0);
+        ? this.add.image(263, -38, UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.55)
+        : this.add.text(263, -38, '', { fontFamily: 'system-ui, sans-serif', fontSize: '7px', color: '#cbd5e1' }).setOrigin(0, 0);
       const categoryIcon = textureExists(this, UI_ASSETS.categoriesAtlas.key, 'status')
-        ? this.add.image(610, 58, UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0)
-        : this.add.text(610, 56, '', { fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: '#cbd5e1' }).setOrigin(0, 0);
-      const ppText = this.add.text(454, 82, '', {
+        ? this.add.image(289, -38, UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(0.55)
+        : this.add.text(289, -38, '', { fontFamily: 'system-ui, sans-serif', fontSize: '7px', color: '#cbd5e1' }).setOrigin(0, 0);
+      const ppText = this.add.text(247, -26, '', { fontFamily: 'system-ui, sans-serif', fontSize: '6px', color: '#dbeafe' }).setOrigin(0, 0);
+      const powerText = this.add.text(247, -18, '', { fontFamily: 'system-ui, sans-serif', fontSize: '6px', color: '#dbeafe' }).setOrigin(0, 0);
+      const accuracyText = this.add.text(247, -10, '', { fontFamily: 'system-ui, sans-serif', fontSize: '6px', color: '#dbeafe' }).setOrigin(0, 0);
+      const description = this.add.text(247, -2, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#dbeafe',
-      }).setOrigin(0, 0);
-      const powerText = this.add.text(454, 100, '', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#dbeafe',
-      }).setOrigin(0, 0);
-      const accuracyText = this.add.text(454, 118, '', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
-        color: '#dbeafe',
-      }).setOrigin(0, 0);
-      const description = this.add.text(454, 138, '', {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
+        fontSize: '6px',
         color: '#cbd5e1',
-        wordWrap: { width: 286, useAdvancedWrap: true },
+        wordWrap: { width: 66, useAdvancedWrap: true },
       }).setOrigin(0, 1);
       const toggles = Array.from({ length: 5 }, () => {
-        const bg = this.add.rectangle(0, 0, 76, 28, 0x132742, 0.98).setOrigin(0, 0).setStrokeStyle(2, 0xdbeafe, 0.16);
-        const label = this.add.text(38, 14, '', {
+        const bg = this.add.nineslice(0, 0, UI_ASSETS.windowXthin.key, undefined, 30, 12, 8, 8, 8, 8).setOrigin(0, 0);
+        const label = this.add.text(15, 6, '', {
           fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-          fontSize: '15px',
+          fontSize: '6px',
           color: '#f8fbff',
           align: 'center',
         }).setOrigin(0.5, 0.5);
         const icon = textureExists(this, UI_ASSETS.teraAtlas.key, 'unknown')
-          ? this.add.sprite(0, 0, UI_ASSETS.teraAtlas.key, 'unknown').setOrigin(0, 0).setScale(1.5)
+          ? this.add.sprite(0, 0, UI_ASSETS.teraAtlas.key, 'unknown').setOrigin(0.5, 0.5).setScale(0.45)
           : null;
-        const button = this.add.container(0, 0, icon ? [bg, icon, label] : [bg, label]);
+        const hit = this.add.rectangle(0, 0, 30, 12, 0xffffff, 0.001).setOrigin(0, 0);
+        const button = this.add.container(0, 0, icon ? [bg, icon, label, hit] : [bg, label, hit]);
         button.setVisible(false);
-        setInteractiveTarget(bg);
-        return { button, bg, label, icon };
+        return { button, bg, label, icon, hit };
       });
       const footerActions = Array.from({ length: 2 }, () => {
-        const bg = this.add.rectangle(0, 0, 98, 30, 0x132742, 0.98).setOrigin(0, 0).setStrokeStyle(2, 0xdbeafe, 0.16);
-        const label = this.add.text(49, 15, '', {
+        const bg = this.add.nineslice(0, 0, UI_ASSETS.windowXthin.key, undefined, 40, 12, 8, 8, 8, 8).setOrigin(0, 0);
+        const label = this.add.text(20, 6, '', {
           fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-          fontSize: '14px',
+          fontSize: '6px',
           color: '#f8fbff',
           align: 'center',
         }).setOrigin(0.5, 0.5);
-        return { bg, label };
+        const hit = this.add.rectangle(0, 0, 40, 12, 0xffffff, 0.001).setOrigin(0, 0);
+        return { bg, label, hit };
       });
-      container.add([movesBg, detailBg, title, cursor, ...moves.flatMap(entry => [entry.zone, entry.label]), detailName, typeIcon, categoryIcon, ppText, powerText, accuracyText, description, ...toggles.flatMap(entry => entry.icon ? [entry.button] : [entry.button]), ...footerActions.flatMap(entry => [entry.bg, entry.label])]);
+      container.add([movesBg, detailBg, title, cursor, ...moves.flatMap(entry => [entry.zone, entry.label]), detailName, typeIcon, categoryIcon, ppText, powerText, accuracyText, description, ...toggles.map(entry => entry.button), ...footerActions.flatMap(entry => [entry.bg, entry.label, entry.hit])]);
       return { container, movesBg, detailBg, title, cursor, moves, detailName, typeIcon, categoryIcon, ppText, powerText, accuracyText, description, toggles, footerActions };
     }
 
     createPartyPanel() {
       const container = this.add.container(0, 0);
-      const bg = this.add.rectangle(0, 0, 470, 276, 0x091423, 0.985).setOrigin(0, 0).setStrokeStyle(2, 0xf8fafc, 0.14);
-      const title = this.add.text(16, 12, '', {
+      const bg = this.add.nineslice(0, 0, UI_ASSETS.window.key, undefined, 160, 104, 8, 8, 8, 8).setOrigin(0, 1);
+      const title = this.add.text(8, -96, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '18px',
+        fontSize: '8px',
         color: '#dbeafe',
       }).setOrigin(0, 0);
-      const subtitle = this.add.text(16, 38, '', {
+      const subtitle = this.add.text(8, -86, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
+        fontSize: '6px',
         color: '#bfdbfe',
-        wordWrap: { width: 438, useAdvancedWrap: true },
+        wordWrap: { width: 144, useAdvancedWrap: true },
       }).setOrigin(0, 0);
       const cursor = textureExists(this, UI_ASSETS.cursor.key)
-        ? this.add.image(0, 0, UI_ASSETS.cursor.key).setOrigin(0, 0).setScale(2.1)
-        : this.add.text(0, 0, '▶', { fontFamily: 'system-ui, sans-serif', fontSize: '16px', color: '#f8fbff' }).setOrigin(0, 0);
-      const entries = Array.from({ length: 6 }, () => {
-        const rowBg = this.add.rectangle(0, 0, 438, 34, 0x132742, 0.76).setOrigin(0, 0).setStrokeStyle(1, 0xdbeafe, 0.1);
-        const label = this.add.text(14, 8, '', {
+        ? this.add.image(0, 0, UI_ASSETS.cursor.key).setOrigin(0, 0)
+        : this.add.text(0, 0, '▶', { fontFamily: 'system-ui, sans-serif', fontSize: '8px', color: '#f8fbff' }).setOrigin(0, 0);
+      const entries = Array.from({ length: 6 }, (_, index) => {
+        const rowBg = this.add.nineslice(0, 0, UI_ASSETS.windowXthin.key, undefined, 144, 12, 8, 8, 8, 8).setOrigin(0, 0);
+        const label = this.add.text(6, 2, '', {
           fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-          fontSize: '16px',
+          fontSize: '7px',
           color: '#f8fbff',
         }).setOrigin(0, 0);
-        const sublabel = this.add.text(14, 20, '', {
+        const sublabel = this.add.text(72, 2, '', {
           fontFamily: 'system-ui, sans-serif',
-          fontSize: '12px',
+          fontSize: '5px',
           color: '#cbd5e1',
         }).setOrigin(0, 0);
-        const row = this.add.container(0, 0, [rowBg, label, sublabel]);
-        return { row, rowBg, label, sublabel };
+        const hit = this.add.rectangle(0, 0, 144, 12, 0xffffff, 0.001).setOrigin(0, 0);
+        const row = this.add.container(0, 0, [rowBg, label, sublabel, hit]);
+        return { row, rowBg, label, sublabel, hit };
       });
-      const footer = this.add.text(16, 244, '', {
+      const footer = this.add.text(8, -12, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '14px',
+        fontSize: '6px',
         color: '#dbeafe',
       }).setOrigin(0, 0);
-      const footerZone = this.add.rectangle(16, 242, 98, 24, 0xffffff, 0.001).setOrigin(0, 0);
+      const footerZone = this.add.rectangle(8, -14, 44, 10, 0xffffff, 0.001).setOrigin(0, 0);
       container.add([bg, title, subtitle, cursor, ...entries.map(entry => entry.row), footer, footerZone]);
       return { container, bg, title, subtitle, cursor, entries, footer, footerZone };
     }
 
     createNotePanel() {
       const container = this.add.container(0, 0);
-      const bg = this.add.rectangle(0, 0, 340, 116, 0x0b162d, 0.98).setOrigin(0, 0).setStrokeStyle(2, 0xf8fafc, 0.12);
-      const title = this.add.text(16, 12, '', {
+      const bg = this.add.nineslice(0, 0, UI_ASSETS.window.key, undefined, 118, 48, 8, 8, 8, 8).setOrigin(0, 1);
+      const title = this.add.text(8, -42, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '18px',
+        fontSize: '8px',
         color: '#dbeafe',
       }).setOrigin(0, 0);
-      const body = this.add.text(16, 42, '', {
+      const body = this.add.text(8, -31, '', {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
+        fontSize: '6px',
         color: '#cbd5e1',
-        wordWrap: { width: 308, useAdvancedWrap: true },
+        wordWrap: { width: 102, useAdvancedWrap: true },
       }).setOrigin(0, 0);
-      const footer = this.add.text(16, 92, '', {
+      const footer = this.add.text(8, -10, '', {
         fontFamily: 'emerald, pkmnems, system-ui, sans-serif',
-        fontSize: '14px',
+        fontSize: '6px',
         color: '#dbeafe',
       }).setOrigin(0, 0);
-      const footerZone = this.add.rectangle(16, 90, 88, 22, 0xffffff, 0.001).setOrigin(0, 0);
+      const footerZone = this.add.rectangle(8, -12, 40, 10, 0xffffff, 0.001).setOrigin(0, 0);
       container.add([bg, title, body, footer, footerZone]);
       return { container, bg, title, body, footer, footerZone };
     }
@@ -592,67 +633,83 @@ function createPhaserBattleSceneClass(Phaser) {
       if (!this.isBootstrapped) return;
       const width = this.scale.width;
       const height = this.scale.height;
-      const mobile = isMobileViewport() || width < 1040;
-      const margin = mobile ? 16 : 24;
-      const headerTop = margin + 14;
-      const stageTop = margin + 56;
-      const bottomHeight = clamp(height * (mobile ? 0.34 : 0.31), 188, 252);
-      const bottomTop = height - bottomHeight - margin;
-      const stageBottom = bottomTop - 16;
-      const stageWidth = width - margin * 2;
-      const stageHeight = Math.max(260, stageBottom - stageTop);
+      const baseWidth = 320;
+      const baseHeight = 240;
+      const stageScale = Math.max(1.5, Math.min(width / baseWidth, height / baseHeight));
+      const originX = (width - baseWidth * stageScale) / 2;
+      const originY = (height - baseHeight * stageScale) / 2;
+      const toScreen = (x, y) => ({ x: originX + x * stageScale, y: originY + y * stageScale });
       const activeMode = this.currentModel?.stateWindow?.mode || 'message';
-      const rightInset = 14;
-      const reservedMessageWidth = activeMode === 'command'
-        ? this.commandPanel.bg.width + 40
-        : activeMode === 'message'
-          ? this.notePanel.bg.width + 34
-          : 28;
-      const messageWrapWidth = Math.max(160, stageWidth - reservedMessageWidth);
-      const enemySpriteBox = clamp(Math.min(stageWidth * 0.22, stageHeight * 0.56), 188, 268);
-      const playerSpriteBox = clamp(Math.min(stageWidth * 0.25, stageHeight * 0.62), 210, 300);
 
-      this.layoutMetrics = { width, height, margin, headerTop, stageTop, stageBottom, stageWidth, stageHeight, bottomTop, bottomHeight, messageWrapWidth };
+      this.layoutMetrics = { width, height, stageScale, originX, originY, toScreen };
 
       this.background.clear();
-      this.background.fillGradientStyle(0x06111f, 0x06111f, 0x13233f, 0x0b162d, 1);
+      this.background.fillGradientStyle(0x06111f, 0x06111f, 0x10213d, 0x081425, 1);
       this.background.fillRect(0, 0, width, height);
-      this.background.fillStyle(0x1f3b5b, 0.22);
-      this.background.fillEllipse(width * 0.52, stageTop + stageHeight * 0.78, stageWidth * 0.62, stageHeight * 0.24);
-      this.background.fillStyle(0x14304f, 0.34);
-      this.background.fillEllipse(width * 0.74, stageTop + stageHeight * 0.3, stageWidth * 0.26, stageHeight * 0.1);
-      this.background.fillEllipse(width * 0.28, stageTop + stageHeight * 0.56, stageWidth * 0.18, stageHeight * 0.08);
+      this.background.fillStyle(0x17324d, 0.34);
+      const enemyPlat = toScreen(236, 88);
+      const playerPlat = toScreen(106, 153);
+      this.background.fillEllipse(enemyPlat.x, enemyPlat.y, 52 * stageScale, 14 * stageScale);
+      this.background.fillStyle(0x17324d, 0.44);
+      this.background.fillEllipse(playerPlat.x, playerPlat.y, 84 * stageScale, 18 * stageScale);
 
       this.overlay.clear();
-      this.overlay.lineStyle(2, 0xffffff, 0.06);
-      this.overlay.strokeRoundedRect(margin, stageTop, stageWidth, stageHeight, 18);
+      this.overlay.lineStyle(2, 0xffffff, 0.05);
+      this.overlay.strokeRoundedRect(originX, originY, baseWidth * stageScale, baseHeight * stageScale, 18);
 
-      this.turnChip.setPosition(margin + 8, headerTop);
-      this.bannerText.setPosition(width / 2, headerTop + 2);
-      this.fieldStatusText.setPosition(width / 2, headerTop + 32);
-      this.fieldStatusText.setWordWrapWidth(stageWidth - 120, true);
+      const turnPos = toScreen(3, 18);
+      this.turnChip.setPosition(turnPos.x, turnPos.y);
+      this.turnChip.setScale(stageScale * 0.22);
+      const bannerPos = toScreen(160, 18);
+      this.bannerText.setPosition(bannerPos.x, bannerPos.y);
+      this.bannerText.setScale(stageScale * 0.2);
+      const fieldPos = toScreen(160, 30);
+      this.fieldStatusText.setPosition(fieldPos.x, fieldPos.y);
+      this.fieldStatusText.setScale(stageScale * 0.18);
+      this.fieldStatusText.setWordWrapWidth(140 * stageScale, true);
 
-      this.perspectiveTabs.container.setPosition(width / 2 - 154, stageTop + 12);
+      const tabsPos = toScreen(124, 38);
+      this.perspectiveTabs.container.setPosition(tabsPos.x, tabsPos.y);
+      this.perspectiveTabs.container.setScale(stageScale);
 
-      this.enemyTray.container.setPosition(width - margin - 288, stageTop + 54);
-      this.enemyInfo.container.setPosition(width - margin - this.enemyInfo.width, stageTop + 78);
-      this.playerInfo.container.setPosition(margin + 8, stageBottom - this.playerInfo.height - 8);
-      this.playerTray.container.setPosition(margin + 18, stageBottom - this.playerInfo.height - 28);
+      const enemyTrayPos = toScreen(0, 96);
+      this.enemyTray.container.setPosition(enemyTrayPos.x, enemyTrayPos.y);
+      this.enemyTray.container.setScale(stageScale);
+      const playerTrayPos = toScreen(320, 168);
+      this.playerTray.container.setPosition(playerTrayPos.x, playerTrayPos.y);
+      this.playerTray.container.setScale(stageScale);
 
-      this.enemySprite.dom.setPosition(width * 0.72, stageTop + stageHeight * 0.34);
-      this.playerSprite.dom.setPosition(width * 0.29, stageTop + stageHeight * 0.67);
-      applyHostBox(this.enemySprite.host, enemySpriteBox, enemySpriteBox);
-      applyHostBox(this.playerSprite.host, playerSpriteBox, playerSpriteBox);
+      const enemyInfoPos = toScreen(140, 99);
+      this.enemyInfo.container.setPosition(enemyInfoPos.x, enemyInfoPos.y);
+      this.enemyInfo.container.setScale(stageScale);
+      const playerInfoPos = toScreen(310, 168);
+      this.playerInfo.container.setPosition(playerInfoPos.x, playerInfoPos.y);
+      this.playerInfo.container.setScale(stageScale);
 
-      this.messagePanel.container.setPosition(margin, bottomTop);
-      this.messagePanel.bg.setSize(stageWidth, bottomHeight);
-      this.messagePanel.primary.setWordWrapWidth(messageWrapWidth, true);
-      this.messagePanel.secondary.setWordWrapWidth(messageWrapWidth, true);
+      const enemySpritePos = toScreen(236, 84);
+      this.enemySprite.dom.setPosition(enemySpritePos.x, enemySpritePos.y);
+      const playerSpritePos = toScreen(106, 148);
+      this.playerSprite.dom.setPosition(playerSpritePos.x, playerSpritePos.y);
+      applyHostBox(this.enemySprite.host, 84 * stageScale, 84 * stageScale);
+      applyHostBox(this.playerSprite.host, 104 * stageScale, 104 * stageScale);
 
-      this.commandPanel.container.setPosition(width - margin - this.commandPanel.bg.width - rightInset, bottomTop + bottomHeight - this.commandPanel.bg.height - rightInset);
-      this.fightPanel.container.setPosition(margin + 10, bottomTop + bottomHeight - this.fightPanel.movesBg.height - 12);
-      this.partyPanel.container.setPosition(width - margin - this.partyPanel.bg.width - 12, bottomTop - 30);
-      this.notePanel.container.setPosition(width - margin - this.notePanel.bg.width - 12, bottomTop + bottomHeight - this.notePanel.bg.height - 12);
+      const msgPos = toScreen(0, 240);
+      this.messagePanel.container.setPosition(msgPos.x, msgPos.y);
+      this.messagePanel.container.setScale(stageScale);
+
+      const commandPos = toScreen(202, 240);
+      this.commandPanel.container.setPosition(commandPos.x, commandPos.y);
+      this.commandPanel.container.setScale(stageScale);
+      const fightPos = toScreen(18, 240);
+      this.fightPanel.container.setPosition(fightPos.x, fightPos.y);
+      this.fightPanel.container.setScale(stageScale);
+
+      const partyPos = toScreen(160, 240);
+      this.partyPanel.container.setPosition(partyPos.x - 80 * stageScale, partyPos.y);
+      this.partyPanel.container.setScale(stageScale);
+      const notePos = toScreen(202, 240);
+      this.notePanel.container.setPosition(notePos.x, notePos.y);
+      this.notePanel.container.setScale(stageScale);
 
       if (this.currentModel) this.renderModel(this.currentModel);
     }
@@ -662,26 +719,38 @@ function createPhaserBattleSceneClass(Phaser) {
       this.perspectiveTabs.tabs.forEach((tab, index) => {
         const option = tabs[index] || { label: `P${index + 1}`, active: false };
         tab.label.setText(option.label || `P${index + 1}`);
-        tab.bg.setFillStyle(option.active ? 0x1b3354 : 0x0b162d, 0.96);
-        tab.bg.setStrokeStyle(2, option.active ? 0x93c5fd : 0xdbeafe, option.active ? 0.35 : 0.16);
+        tab.label.setColor(option.active ? '#f8fbff' : '#dbeafe');
+        tab.bg.setAlpha(option.active ? 1 : 0.82);
+        if (tab.bg.setTint) {
+          if (option.active) tab.bg.clearTint();
+          else tab.bg.setTint(0xb7c0d6);
+        }
       });
     }
 
     updateInfoBox(target, info = {}) {
       const hpPercent = clamp(Number(info.hpPercent || 0), 0, 100);
-      const hpColor = hpPercent > 50 ? 0x86efac : hpPercent > 20 ? 0xfbbf24 : 0xf87171;
+      const hpFrame = hpPercent > 50 ? 'high' : hpPercent > 20 ? 'medium' : 'low';
       target.name.setText(info.displayName || '—');
       target.level.setText(info.levelLabel || '');
       target.status.setText(info.statusLabel || '');
-      target.badges.setText(info.badges?.join(' · ') || '');
-      target.hpFill.width = Math.max(0, (target.hpTrack.width - 4) * (hpPercent / 100));
-      target.hpFill.fillColor = hpColor;
       target.hpText.setText(info.hpLabel || '');
-      const typesKey = this.uiLanguage === 'ko' && textureExists(this, UI_ASSETS.typesKoAtlas.key, 'unknown') ? UI_ASSETS.typesKoAtlas.key : UI_ASSETS.typesAtlas.key;
+      if (target.hpFill.setTexture && textureExists(this, UI_ASSETS.overlayHpAtlas.key, hpFrame)) {
+        target.hpFill.setTexture(UI_ASSETS.overlayHpAtlas.key, hpFrame);
+      }
+      target.hpFill.displayWidth = Math.max(0, 48 * (hpPercent / 100));
+      target.hpFill.displayHeight = 2;
+      if (target.expFill) {
+        target.expFill.width = Math.max(0, 85 * (clamp(Number(info.expPercent || 0), 0, 100) / 100));
+      }
+      const typeTextureKeys = target.side === 'player'
+        ? [UI_ASSETS.pbinfoPlayerType1.key, UI_ASSETS.pbinfoPlayerType2.key, UI_ASSETS.pbinfoPlayerType3.key]
+        : [UI_ASSETS.pbinfoEnemyType1.key, UI_ASSETS.pbinfoEnemyType2.key, UI_ASSETS.pbinfoEnemyType3.key];
       target.typeIcons.forEach((icon, index) => {
         const typeId = String(info.types?.[index] || '').toLowerCase();
-        if (textureExists(this, typesKey, typeId)) {
-          icon.setTexture(typesKey, typeId);
+        const textureKey = typeTextureKeys[index] || typeTextureKeys[0];
+        if (textureExists(this, textureKey, typeId)) {
+          icon.setTexture(textureKey, typeId);
           icon.setVisible(true);
         } else {
           icon.setVisible(false);
@@ -697,7 +766,8 @@ function createPhaserBattleSceneClass(Phaser) {
           ball.setTexture(UI_ASSETS.trayAtlas.key, frame);
           ball.setVisible(true);
           ball.setAlpha(entry.state === 'active' ? 1 : 0.96);
-          ball.setTintFill(entry.state === 'active' ? 0x9bd6ff : 0xffffff);
+          if (entry.state === 'active' && ball.setTintFill) ball.setTintFill(0x9bd6ff);
+          else if (ball.clearTint) ball.clearTint();
         } else if (ball.setFillStyle) {
           const fill = entry.state === 'active' ? 0x7dd3fc : entry.state === 'faint' ? 0xf87171 : entry.state === 'status' ? 0xfbbf24 : entry.state === 'ball' ? 0xe2e8f0 : 0x475569;
           ball.setFillStyle(fill, entry.state === 'empty' ? 0.22 : 0.86);
@@ -710,27 +780,25 @@ function createPhaserBattleSceneClass(Phaser) {
         this.abilityBar.container.setVisible(false);
         return;
       }
-      const metrics = this.layoutMetrics || {};
+      const { stageScale = 1, toScreen = (x, y) => ({ x, y }) } = this.layoutMetrics || {};
       this.abilityBar.text.setText(model.text);
-      this.abilityBar.bg.setSize(clamp(this.abilityBar.text.width + 28, 220, 520), 40);
-      const x = model.side === 'enemy' ? this.scale.width - this.abilityBar.bg.width - 24 : 24;
-      const y = model.side === 'enemy'
-        ? (metrics.stageTop || 72) + 102
-        : (metrics.stageTop || 72) + (metrics.stageHeight || 360) * 0.54;
-      this.abilityBar.container.setPosition(x, y);
+      this.abilityBar.bg.setSize(clamp(this.abilityBar.text.width + 12, 118, 170), 22);
+      const logicalX = model.side === 'enemy' ? 202 : 0;
+      const logicalY = model.side === 'enemy' ? 60 : 124;
+      const pos = toScreen(logicalX, logicalY);
+      this.abilityBar.container.setPosition(pos.x, pos.y);
+      this.abilityBar.container.setScale(stageScale);
       this.abilityBar.container.setVisible(true);
     }
 
     renderMessageWindow(message = {}) {
-      const metrics = this.layoutMetrics || {};
-      const width = Math.max(160, metrics.messageWrapWidth || (this.messagePanel.bg.width - 388));
-      this.messagePanel.primary.setWordWrapWidth(width, true);
-      this.messagePanel.secondary.setWordWrapWidth(width, true);
+      this.messagePanel.primary.setWordWrapWidth(178, true);
+      this.messagePanel.secondary.setWordWrapWidth(178, true);
       this.messagePanel.primary.setText(message.primary || '—');
       if (message.secondary) {
         this.messagePanel.secondary.setText(message.secondary);
         this.messagePanel.secondary.setVisible(true);
-        this.messagePanel.secondary.setPosition(18, Math.min(this.messagePanel.bg.height - 42, 18 + this.messagePanel.primary.height + 12));
+        this.messagePanel.secondary.setPosition(12, -18);
       } else {
         this.messagePanel.secondary.setText('');
         this.messagePanel.secondary.setVisible(false);
@@ -738,7 +806,7 @@ function createPhaserBattleSceneClass(Phaser) {
       const promptVisible = Boolean(message.showPrompt);
       this.messagePanel.prompt.setVisible(promptVisible);
       if (promptVisible) {
-        this.messagePanel.prompt.setPosition(this.messagePanel.bg.width - 24, this.messagePanel.bg.height - 24);
+        this.messagePanel.prompt.setPosition(304, -14);
         if (this.messagePanel.prompt.play) {
           try {
             this.messagePanel.prompt.play('pkb-ui-prompt-arrow');
@@ -753,10 +821,10 @@ function createPhaserBattleSceneClass(Phaser) {
       this.commandPanel.container.setVisible(true);
       this.commandPanel.title.setText(ui.title || 'Battle');
       const positions = [
-        { x: 32, y: 52 },
-        { x: 186, y: 52 },
-        { x: 32, y: 102 },
-        { x: 186, y: 102 },
+        { x: 0, y: -38 },
+        { x: 55.8, y: -38 },
+        { x: 0, y: -22 },
+        { x: 55.8, y: -22 },
       ];
       let cursorPos = positions[0];
       (ui.commands || []).slice(0, 4).forEach((command, index) => {
@@ -765,17 +833,17 @@ function createPhaserBattleSceneClass(Phaser) {
         entry.label.setPosition(pos.x, pos.y);
         entry.label.setText(command.label || '');
         entry.label.setAlpha(command.disabled ? 0.42 : 1);
-        entry.label.setColor(command.disabled ? '#64748b' : (command.active ? '#93c5fd' : '#f8fbff'));
-        entry.zone.setPosition(pos.x - 12, pos.y - 4);
-        entry.zone.width = 126;
-        entry.zone.height = 34;
+        entry.label.setColor(command.disabled ? '#64748b' : '#f8fbff');
+        entry.zone.setPosition(pos.x - 6, pos.y - 2);
+        entry.zone.width = 52;
+        entry.zone.height = 14;
         entry.zone.removeAllListeners();
         if (!command.disabled && command.action) {
           setInteractiveTarget(entry.zone, () => this.controller.handleAction(command.action));
         }
         if (command.active) cursorPos = pos;
       });
-      this.commandPanel.cursor.setPosition(cursorPos.x - 18, cursorPos.y + 2);
+      this.commandPanel.cursor.setPosition(cursorPos.x - 5, cursorPos.y + 8);
       const tera = ui.teraToggle;
       if (tera) {
         this.commandPanel.teraButton.setVisible(true);
@@ -783,9 +851,9 @@ function createPhaserBattleSceneClass(Phaser) {
           this.commandPanel.teraButton.setTexture(UI_ASSETS.teraAtlas.key, tera.type || 'unknown');
         }
         this.commandPanel.teraButton.setAlpha(tera.disabled ? 0.45 : 1);
-        this.commandPanel.teraButton.setScale(tera.active ? 2.55 : 2.35);
-        this.commandPanel.teraButton.x = 258;
-        this.commandPanel.teraButton.y = 108;
+        this.commandPanel.teraButton.setScale(tera.active ? 1.45 : 1.3);
+        this.commandPanel.teraButton.x = -32;
+        this.commandPanel.teraButton.y = -15;
         this.commandPanel.teraButton.removeAllListeners?.();
         if (!tera.disabled && tera.action) {
           setInteractiveTarget(this.commandPanel.teraButton, () => this.controller.handleAction(tera.action));
@@ -799,10 +867,10 @@ function createPhaserBattleSceneClass(Phaser) {
       this.fightPanel.container.setVisible(true);
       this.fightPanel.title.setText(ui.title || 'Moves');
       const positions = [
-        { x: 36, y: 44 },
-        { x: 228, y: 44 },
-        { x: 36, y: 98 },
-        { x: 228, y: 98 },
+        { x: 0, y: -39 },
+        { x: 114, y: -39 },
+        { x: 0, y: -23 },
+        { x: 114, y: -23 },
       ];
       let cursorPos = positions[0];
       (ui.moves || []).slice(0, 4).forEach((move, index) => {
@@ -811,10 +879,10 @@ function createPhaserBattleSceneClass(Phaser) {
         entry.label.setPosition(pos.x, pos.y);
         entry.label.setText(move.label || '');
         entry.label.setAlpha(move.disabled ? 0.42 : 1);
-        entry.label.setColor(move.disabled ? '#64748b' : (move.active ? '#93c5fd' : '#f8fbff'));
-        entry.zone.setPosition(pos.x - 16, pos.y - 4);
-        entry.zone.width = 176;
-        entry.zone.height = 38;
+        entry.label.setColor(move.disabled ? '#64748b' : '#f8fbff');
+        entry.zone.setPosition(pos.x - 6, pos.y - 2);
+        entry.zone.width = 110;
+        entry.zone.height = 14;
         entry.zone.removeAllListeners();
         if (!move.disabled) {
           const hoverAction = move.focusAction ? () => this.controller.handleAction(move.focusAction) : null;
@@ -822,7 +890,7 @@ function createPhaserBattleSceneClass(Phaser) {
         }
         if (move.focused || move.active) cursorPos = pos;
       });
-      this.fightPanel.cursor.setPosition(cursorPos.x - 18, cursorPos.y + 2);
+      this.fightPanel.cursor.setPosition(cursorPos.x + 13, cursorPos.y + 8);
       const detail = ui.detail || {};
       this.fightPanel.detailName.setText(detail.name || '—');
       if (this.fightPanel.typeIcon.setTexture) {
@@ -847,46 +915,46 @@ function createPhaserBattleSceneClass(Phaser) {
         this.fightPanel.categoryIcon.setText(detail.category || '');
       }
       this.fightPanel.ppText.setText(`PP ${detail.ppLabel || '—'}`);
-      this.fightPanel.powerText.setText(`Power ${detail.powerLabel || '—'}`);
-      this.fightPanel.accuracyText.setText(`Accuracy ${detail.accuracyLabel || '—'}`);
+      this.fightPanel.powerText.setText(`Pow ${detail.powerLabel || '—'}`);
+      this.fightPanel.accuracyText.setText(`Acc ${detail.accuracyLabel || '—'}`);
       this.fightPanel.description.setText(detail.description || '');
 
       (ui.toggles || []).slice(0, this.fightPanel.toggles.length).forEach((toggle, index) => {
         const entry = this.fightPanel.toggles[index];
         entry.button.setVisible(true);
-        entry.button.setPosition(440 + index * 62, 124);
-        entry.bg.setFillStyle(toggle.active ? 0x24416b : 0x132742, toggle.disabled ? 0.42 : 0.98);
-        entry.bg.setStrokeStyle(2, toggle.active ? 0x93c5fd : 0xdbeafe, toggle.active ? 0.3 : 0.16);
+        entry.button.setPosition(246 + index * 31, -13);
+        entry.bg.setAlpha(toggle.disabled ? 0.45 : 1);
         entry.label.setText(toggle.label || '');
         entry.label.setColor(toggle.disabled ? '#64748b' : '#f8fbff');
-        entry.bg.removeAllListeners();
         if (entry.icon) {
           entry.icon.setVisible(toggle.kind === 'tera');
           if (toggle.kind === 'tera' && textureExists(this, UI_ASSETS.teraAtlas.key, toggle.type || 'unknown')) {
             entry.icon.setTexture(UI_ASSETS.teraAtlas.key, toggle.type || 'unknown');
-            entry.icon.setPosition(6, 4);
-            entry.label.setPosition(54, 14);
+            entry.icon.setPosition(6, 6);
+            entry.label.setPosition(15, 6);
           } else {
             entry.icon.setVisible(false);
-            entry.label.setPosition(38, 14);
+            entry.label.setPosition(15, 6);
           }
         }
+        entry.hit.removeAllListeners();
         if (!toggle.disabled && toggle.action) {
-          setInteractiveTarget(entry.bg, () => this.controller.handleAction(toggle.action));
+          setInteractiveTarget(entry.hit, () => this.controller.handleAction(toggle.action));
         }
       });
       this.fightPanel.toggles.slice((ui.toggles || []).length).forEach(entry => entry.button.setVisible(false));
 
       (ui.footerActions || []).slice(0, this.fightPanel.footerActions.length).forEach((action, index) => {
         const entry = this.fightPanel.footerActions[index];
-        entry.bg.setPosition(16 + index * 106, 122);
-        entry.label.setPosition(16 + index * 106 + 49, 137);
+        entry.bg.setPosition(247 + index * 41, -48);
+        entry.label.setPosition(247 + index * 41 + 20, -42);
         entry.label.setText(action.label || '');
         entry.label.setColor(action.disabled ? '#64748b' : '#f8fbff');
-        entry.bg.setAlpha(action.disabled ? 0.42 : 0.98);
-        entry.bg.removeAllListeners();
+        entry.bg.setAlpha(action.disabled ? 0.42 : 1);
+        entry.hit.setPosition(247 + index * 41, -48);
+        entry.hit.removeAllListeners();
         if (!action.disabled && action.action) {
-          setInteractiveTarget(entry.bg, () => this.controller.handleAction(action.action));
+          setInteractiveTarget(entry.hit, () => this.controller.handleAction(action.action));
         }
       });
     }
@@ -895,23 +963,23 @@ function createPhaserBattleSceneClass(Phaser) {
       this.partyPanel.container.setVisible(true);
       this.partyPanel.title.setText(ui.title || 'Switch');
       this.partyPanel.subtitle.setText(ui.subtitle || '');
-      let cursorY = 84;
+      let cursorY = -68;
       (ui.partyOptions || []).slice(0, this.partyPanel.entries.length).forEach((option, index) => {
         const entry = this.partyPanel.entries[index];
         entry.row.setVisible(true);
-        entry.row.setPosition(16, 78 + index * 38);
+        entry.row.setPosition(8, -74 + index * 13);
         entry.label.setText(option.label || '');
         entry.sublabel.setText(option.sublabel || '');
-        entry.rowBg.setAlpha(option.disabled ? 0.32 : (option.active ? 0.98 : 0.76));
-        entry.rowBg.setFillStyle(option.active ? 0x24416b : 0x132742, option.disabled ? 0.32 : (option.active ? 0.98 : 0.76));
-        entry.rowBg.removeAllListeners();
+        entry.rowBg.setAlpha(option.disabled ? 0.4 : 1);
+        entry.rowBg.removeAllListeners?.();
+        entry.hit.removeAllListeners();
         if (!option.disabled && option.action) {
-          setInteractiveTarget(entry.rowBg, () => this.controller.handleAction(option.action));
+          setInteractiveTarget(entry.hit, () => this.controller.handleAction(option.action));
         }
-        if (option.active) cursorY = 86 + index * 38;
+        if (option.active) cursorY = -72 + index * 13;
       });
       this.partyPanel.entries.slice((ui.partyOptions || []).length).forEach(entry => entry.row.setVisible(false));
-      this.partyPanel.cursor.setPosition(22, cursorY);
+      this.partyPanel.cursor.setPosition(10, cursorY);
       const footerAction = (ui.footerActions || [])[0] || null;
       this.partyPanel.footer.setText(footerAction?.label || '');
       this.partyPanel.footer.setVisible(Boolean(footerAction));
