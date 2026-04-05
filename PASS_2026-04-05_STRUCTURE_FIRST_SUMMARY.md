@@ -1,65 +1,90 @@
-# 2026-04-05 Structure-first Pokerogue shell pass
+# 2026-04-05 Pokerogue HUD structure correction pass
 
 ## 이번에 변경한 내용 (한국어)
 
-이번 패스에서는 **배틀러 렌더링을 의도적으로 보류**하고, 그 대신 **Phaser 배틀 화면의 구조를 실제 Pokerogue 쪽 구조에 더 가깝게 재정렬**하는 데 집중했다.
+이번 패스에서는 이전처럼 화면을 "포케로그 느낌"으로 다듬는 방식이 아니라,
+**실제 Pokerogue의 BattleMessageUiHandler / CommandUiHandler / FightUiHandler / PartyUiHandler 구조를 기준으로**
+현재 Phaser 배틀 셸을 다시 맞추는 방향으로 수정했다.
 
 ### 핵심 변경점
+
 - `src/phaser-battle-controller.js`
-  - 전장(배경 / 적 플랫폼 / 아군 플랫폼) 레이어를 다시 정리했다.
-  - 기존의 어색한 임시 전장 배치 대신, Pokerogue 기준의 **적/아군 플랫폼 오프셋**과 **배틀러 마운트 앵커 위치**를 따로 잡았다.
-  - 배틀러는 이번 패스에서 실제로 렌더하지 않도록, **숨김 가능한 DOM 마운트 + 앵커 컨테이너 구조**로 정리했다.
-  - 배틀러 URL이 있어도 이번 패스에서는 `deferred` 플래그를 우선하도록 처리했다.
-  - 배틀러가 없을 때 더미 문자나 큰 플레이스홀더를 그리지 않도록 정리했다.
+  - 상단의 커스텀 요소를 제거했다.
+    - Phaser 내부에 따로 그리던 `turnChip`, `bannerText`, `fieldStatusText`, 내부 perspective tab 구조를 더 이상 라이브 HUD에 쓰지 않도록 정리했다.
+    - 즉, 실제 Pokerogue 전투 HUD와 무관한 상단 임시 정보들을 Phaser 전투 셸에서 제거했다.
+  - 하단 UI를 **실제 Pokerogue 하단 UI 문법**에 더 가깝게 바꿨다.
+    - 이제 하단은 단일 임의 패널이 아니라,
+      1. `bg` 메시지 배경
+      2. `commandWindow`
+      3. `movesWindowContainer` (기술창 + 우측 상세창)
+      구조로 나뉜다.
+    - 즉, 이전의 “generic box 위에 Pokerogue skin” 느낌을 줄이고,
+      Pokerogue의 실제 handler 분리 방식을 따라가도록 수정했다.
+  - 커맨드창을 실제 Pokerogue 구조에 가깝게 정리했다.
+    - Fight / Ball / Pokémon / Run 텍스트 배치와 Tera 버튼을
+      실제 `CommandUiHandler`의 좌표 구조에 맞춰 재배치했다.
+    - 커맨드창 배경은 이제 별도 임시 패널이 아니라 message handler 쪽 command window를 사용한다.
+  - 기술창을 실제 Pokerogue 구조에 더 가깝게 정리했다.
+    - move label들은 `FightUiHandler`처럼 별도 moves container 내부 좌표계로 정리했다.
+    - 우측 상세창도 같은 하단 셸 안에서 동작하도록 바꿨다.
+    - 타입 / 카테고리 / PP / 위력 / 명중률 / 설명 영역을 이전보다 Pokerogue 구조에 가깝게 정리했다.
+  - 파티창은 계속 별도 full-screen handler처럼 동작하도록 유지하되,
+    기존 구조를 그대로 살리면서 message/command/fight 하단 셸과 명확히 분리했다.
+  - 메시지 표시도 이전처럼 “큰 primary + 작은 secondary”의 임의 구성에서,
+    **실제 Pokerogue처럼 한 메시지 영역 안에 1~2줄 텍스트가 들어가는 방식**으로 더 가깝게 바꿨다.
 
-- 하단 UI 구조를 Pokerogue 쪽 문법에 맞게 재편했다.
-  - 메시지 창: 하단 고정형으로 정리
-  - 커맨드 창: 하단 우측 고정형으로 정리
-  - 기술 선택 창: 하단 전체 구조로 다시 정리
-  - 파티/교체 창: 기존 느슨한 패널이 아니라, **Pokerogue의 party_bg / party_cancel / slot 계열 에셋 중심 구조**로 재구성
+- 배틀러는 계속 의도적으로 보류했다.
+  - 이번에도 battler 렌더를 다시 억지로 끼워 넣지 않았다.
+  - battler mount / anchor는 그대로 두고,
+    HUD 셸 정렬을 우선하는 방향을 유지했다.
 
-- HUD / 정보창 / 파티볼 트레이 정렬을 재조정했다.
-  - 적 정보창 / 내 정보창 위치를 Pokerogue 쪽에 더 가깝게 이동
-  - 파티볼 트레이 위치도 더 Pokerogue스럽게 맞춤
-  - HP/EXP/바 오버레이가 프레임 밖으로 튀어나오지 않도록 기존 구조를 정돈
+### 이번 패스에서 의도적으로 남겨둔 정직한 한계
 
-- 텍스트 선명도 개선
-  - Phaser 텍스트 resolution을 전반적으로 올리고,
-  - 게임 생성 시 render resolution도 기기 DPR을 고려해서 잡도록 보완했다.
-  - 완전한 최종 폰트 품질 보장은 아직 아니지만, 기존보다 흐릿하게 커지는 문제를 줄이는 방향으로 조정했다.
+완전히 "그대로" 가져오는 데 아직 남아 있는 구조적 제약이 있다.
 
-- 디버그/임시 표시 정리
-  - 배틀러 부재 시 임시 플레이스홀더가 보이지 않도록 수정
-  - 이번 패스 결과물이 "임시 디버그 화면"처럼 보이지 않도록 정리
+- 현재 프로젝트는 **마우스 클릭 중심의 웹 UI**이고,
+  Pokerogue는 **자체 입력 흐름(키보드/패드 중심) + UI handler 전환 구조**를 전제로 설계되어 있다.
+- 그래서 현재 PKB 쪽에서는 `Back`, `Switch`, 토글류 행동을
+  사용자가 클릭할 수 있도록 최소한의 클릭 affordance가 아직 조금 남아 있다.
+- 이 부분까지 100% Pokerogue와 동일하게 만들려면,
+  단순 좌표 수정이 아니라 **입력 흐름 자체를 Pokerogue식으로 더 깊게 옮길지** 먼저 결정해야 한다.
+- 이번 패스에서는 억지로 숨겨서 오히려 사용성이 깨지는 것보다,
+  구조는 Pokerogue 쪽으로 최대한 맞추되 클릭 가능성은 최소한 유지하는 쪽을 택했다.
 
-- `src/app.js`
-  - Phaser 뷰 모델에서 `enemySprite`, `playerSprite`에 **의도적인 battler deferral 플래그**를 넣어,
-    이번 패스에서는 배틀러가 레이아웃을 망치지 않도록 했다.
+즉,
+**이번 패스는 “Pokerogue handler 구조를 더 직접 반영한 HUD 셸 수정”이지,
+상호작용까지 완전 복제한 최종본은 아니다.**
 
 ## 다음에 해야 할 일 (한국어)
 
-다음 패스의 우선순위는 아래 순서가 좋다.
+다음 패스는 그냥 또 눈대중 수정하면 안 되고,
+**실제 Pokerogue의 현재 코드와 지금 PKB Phaser 셸을 1:1로 더 대조하는 정밀 correction pass**가 필요하다.
 
-1. **실제 Pokerogue 레이아웃과의 차이점 미세 교정**
-   - enemy/player info box의 정확한 간격
-   - 파티 슬롯 간격과 배경 여백
-   - 메시지 / 커맨드 / 기술창 사이 간격
-   - 커서 위치와 포커스 흐름
+우선순위는 아래가 좋다.
 
-2. **파티/교체 UI를 더 실제 Pokerogue 흐름에 맞게 다듬기**
-   - 선택 상태 표현
-   - 취소 버튼 active/selected frame 반영
-   - 슬롯별 상태 아이콘 / HP 표현 세밀 조정
+1. **메시지 / 커맨드 / 기술창 관계를 더 정확히 맞추기**
+   - 실제 Pokerogue의 window spacing
+   - message bg와 command/move window의 정확한 상대 위치
+   - prompt 위치
+   - move detail 패널 내부 텍스트 배치
 
-3. **기술창 상세 정보 영역을 실제 Pokerogue에 더 가깝게 정리**
-   - 타입/카테고리/PP/위력/명중률 배치
-   - 설명 영역 줄바꿈 / 간격
+2. **파티창을 실제 Pokerogue select state 기준으로 더 정확히 맞추기**
+   - slot 선택/비선택 frame
+   - cancel button selected state
+   - HP 텍스트 / 바 / 설명 텍스트 간격
+   - active slot vs bench slot 차이
 
-4. **그 다음에 battler 통합 재개**
-   - 지금 만든 battler mount anchor를 기준으로
-   - 실제 Pokerogue 전장 구조를 유지한 채
-   - 적/아군 battler 스프라이트를 다시 연결
-   - 절대로 예전처럼 레이아웃을 망치는 하이브리드 방식으로 되돌리지 말 것
+3. **enemy/player HUD box 정밀 교정**
+   - info box 간격
+   - tray 간격
+   - HP/EXP 영역 위치
+   - type icon 배치
+
+4. **그 다음에, 정말 가능한지 검토 후 battler 통합 재개 여부 판단**
+   - 지금처럼 battler 없이 셸이 먼저 정확해졌는지 확인
+   - 정확한 mount 좌표가 확보되면 battler를 다시 얹는다
+   - 만약 현재 구조에서 battler를 얹는 순간 또 어색해지면,
+     그 시점에서 억지로 진행하지 말고 구조를 다시 상의해야 한다.
 
 ## 다음 채팅용 영어 프롬프트
 
@@ -75,48 +100,55 @@ Files I am providing together with this prompt:
 Important:
 - Return a code-only ZIP only.
 - Do not include assets.
-- Keep the current structure-first direction.
-- Do not revert to a fake "Pokerogue-like" approximation.
-- Continue using actual Pokerogue battle scene structure, UI handler flow, container hierarchy, and asset usage as the source of truth.
-- If something still cannot be matched faithfully, say so explicitly instead of faking it.
+- Do not make the UI merely “closer” to Pokerogue.
+- Keep using actual Pokerogue code structure as the source of truth.
+- If exact fidelity becomes structurally blocked, stop and explain the blocker clearly instead of forcing a fake approximation.
 
 Current state after the latest pass:
-- The Phaser battle shell was restructured to be much more bottom-anchored and Pokerogue-like.
-- Arena/background/platform layers were cleaned up.
-- Enemy/player info boxes and party trays were repositioned closer to Pokerogue structure.
-- Command / fight / party windows were rebuilt into a more Pokerogue-faithful shell.
-- Party UI now uses Pokerogue party assets and a more faithful bottom-party layout.
-- Text sharpness was improved.
-- Battlers are intentionally deferred in this pass and should remain deferred until the shell alignment is tighter.
-- Clean battler mount anchors now exist for later integration.
+- The Phaser battle shell now follows Pokerogue’s bottom UI grammar more directly.
+- The old extra top-of-screen custom HUD elements inside Phaser were removed from the live shell.
+- The bottom UI was reworked around a Pokerogue-like message background + command window + moves window container structure.
+- Command UI now uses a structure much closer to Pokerogue’s CommandUiHandler layout.
+- Fight UI now uses a structure much closer to Pokerogue’s FightUiHandler layout.
+- Party UI remains a separate handler-style screen and is still battler-deferred.
+- Battlers are still intentionally deferred.
 
-Main task for this next pass:
-This should be a **tight correction pass** on top of the new shell.
-Do not jump back into battler rendering yet.
-First make the shell significantly more faithful to real Pokerogue in spacing, layout, cursor behavior, and window relationships.
+Critical instruction for this next pass:
+Do a **strict code-to-code correction pass**.
+Do not tune by eye.
+Compare the current PKB Phaser shell directly against Pokerogue’s real handler structure and positions.
 
-Focus on:
-1. Enemy/player info box spacing and exact alignment
-2. Party tray spacing and alignment
-3. Message / command / fight / party window spacing and containment
-4. Party screen fidelity:
-   - slot spacing
-   - selection state
+Main focus:
+1. BattleMessageUiHandler fidelity
+   - message bg
+   - commandWindow
+   - movesWindowContainer
+   - message text placement
+   - prompt placement
+2. CommandUiHandler fidelity
+   - exact command text placement
+   - cursor placement
+   - tera button relation to the command grid
+3. FightUiHandler fidelity
+   - move label coordinates
+   - cursor coordinates
+   - right-side detail area placement
+   - PP / power / accuracy / type / category arrangement
+4. PartyUiHandler fidelity
+   - exact slot spacing
+   - active slot vs bench slot layout
    - cancel button state/presentation
-   - HP/status text placement
-5. Fight window fidelity:
-   - move label positions
-   - detail panel layout
-   - type/category/PP/power/accuracy arrangement
-6. Cursor/focus flow:
-   - make command/fight/party navigation feel more like real Pokerogue
-7. Remove any remaining layout drift, generic panel feeling, or leftover approximation
+   - HP text / HP bar / description alignment
+5. Enemy/player info box and tray alignment
+   - compare against Pokerogue code, not screenshots alone
+6. Be honest about remaining structural blockers
+   - especially any blocker caused by the current click-based PKB interaction model versus Pokerogue’s handler/input model
 
 Still do NOT:
-- do not re-enable full battler rendering yet
-- do not use fake battler placeholders
-- do not manually guess a loose layout and call it close enough
-- do not touch battle mechanics unless a tiny bridge fix is strictly required for UI correctness
+- do not force battler rendering back in yet
+- do not do ad-hoc visual guessing
+- do not silently keep custom UI pieces if Pokerogue does not use them
+- do not fake exactness if the current architecture cannot support it
 
 Expected output:
 - A code-only ZIP only

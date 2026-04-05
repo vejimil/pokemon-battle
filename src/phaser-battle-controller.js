@@ -320,18 +320,6 @@ function createPhaserBattleSceneClass(Phaser) {
 
         this.createArenaLayers();
 
-        this.turnChip = createBaseText(this, 4, 12, '', 7, '#eaf2ff');
-        this.bannerText = createBaseText(this, 160, 12, '', 8, '#f8fbff', { align: 'center' }).setOrigin(0.5, 0.5);
-        this.fieldStatusText = this.add.text(160, 24, '', {
-          fontFamily: 'emerald, pkmnems, monospace',
-          fontSize: '6px',
-          color: '#cfe2ff',
-          align: 'center',
-          resolution: 3,
-          wordWrap: { width: 160, useAdvancedWrap: true },
-        }).setOrigin(0.5, 0.5);
-
-        this.perspectiveTabs = this.createPerspectiveTabs();
         this.enemySprite = this.createSpriteMount('enemy');
         this.playerSprite = this.createSpriteMount('player');
         this.enemyInfo = this.createBattleInfoBox('enemy');
@@ -344,7 +332,6 @@ function createPhaserBattleSceneClass(Phaser) {
         this.commandPanel = this.createCommandPanel();
         this.fightPanel = this.createFightPanel();
         this.partyPanel = this.createPartyPanel();
-        this.notePanel = this.createNotePanel();
 
         if (textureExists(this, UI_ASSETS.promptAtlas.key, '1') && !this.anims.exists('pkb-ui-prompt-arrow')) {
           this.anims.create({
@@ -497,11 +484,14 @@ function createPhaserBattleSceneClass(Phaser) {
     createMessagePanel() {
       const container = this.add.container(0, 240).setDepth(50);
       const bg = this.add.image(0, 0, UI_ASSETS.bgAtlas.key, '1').setOrigin(0, 1);
-      const primary = createBaseText(this, 12, -39, '', 11, '#f8fbff', {
-        lineSpacing: 1,
-        wordWrap: { width: 178, useAdvancedWrap: true },
-      }).setOrigin(0, 0);
-      const secondary = createBaseText(this, 12, -18, '', 6, '#cbd5e1', {
+      const commandWindow = this.add.nineslice(202, 0, UI_ASSETS.window.key, undefined, 118, 48, 8, 8, 8, 8).setOrigin(0, 1);
+      commandWindow.setVisible(false);
+      const movesWindowContainer = this.add.container(0, 0);
+      movesWindowContainer.setVisible(false);
+      const movesWindow = this.add.nineslice(0, 0, UI_ASSETS.window.key, undefined, 243, 48, 8, 8, 8, 8).setOrigin(0, 1);
+      const moveDetailsWindow = this.add.nineslice(240, 0, UI_ASSETS.window.key, undefined, 80, 48, 8, 8, 8, 8).setOrigin(0, 1);
+      movesWindowContainer.add([movesWindow, moveDetailsWindow]);
+      const message = createBaseText(this, 12, -39, '', 8, '#f8fbff', {
         lineSpacing: 1,
         wordWrap: { width: 178, useAdvancedWrap: true },
       }).setOrigin(0, 0);
@@ -509,13 +499,12 @@ function createPhaserBattleSceneClass(Phaser) {
         ? this.add.sprite(0, 0, UI_ASSETS.promptAtlas.key, '1').setOrigin(0, 0)
         : createBaseText(this, 0, 0, '▾', 10, '#f8fbff').setOrigin(0, 0);
       prompt.setVisible(false);
-      container.add([bg, primary, secondary, prompt]);
-      return { container, bg, primary, secondary, prompt };
+      container.add([bg, commandWindow, movesWindowContainer, message, prompt]);
+      return { container, bg, commandWindow, movesWindowContainer, movesWindow, moveDetailsWindow, message, prompt };
     }
 
     createCommandPanel() {
       const container = this.add.container(0, 240).setDepth(55);
-      const bg = this.add.nineslice(202, 0, UI_ASSETS.window.key, undefined, 118, 48, 8, 8, 8, 8).setOrigin(0, 1);
       const cursor = textureExists(this, UI_ASSETS.cursor.key)
         ? this.add.image(0, 0, UI_ASSETS.cursor.key).setOrigin(0, 0)
         : createBaseText(this, 0, 0, '▶', 8, '#f8fbff').setOrigin(0, 0);
@@ -534,33 +523,27 @@ function createPhaserBattleSceneClass(Phaser) {
         const zone = this.add.rectangle(pos.x - 6, pos.y - 2, 52, 14, 0xffffff, 0.001).setOrigin(0, 0);
         return { label, zone };
       });
-      container.add([bg, cursor, teraButton, ...entries.flatMap(entry => [entry.zone, entry.label])]);
-      return { container, bg, cursor, teraButton, entries };
+      container.add([cursor, teraButton, ...entries.flatMap(entry => [entry.zone, entry.label])]);
+      return { container, cursor, teraButton, entries };
     }
 
     createFightPanel() {
       const container = this.add.container(0, 240).setDepth(55);
-      const movesBg = this.add.nineslice(0, 0, UI_ASSETS.window.key, undefined, 243, 48, 8, 8, 8, 8).setOrigin(0, 1);
-      const detailBg = this.add.nineslice(240, 0, UI_ASSETS.window.key, undefined, 80, 48, 8, 8, 8, 8).setOrigin(0, 1);
+      const movesContainer = this.add.container(18, -38.7);
       const cursor = textureExists(this, UI_ASSETS.cursor.key)
         ? this.add.image(0, 0, UI_ASSETS.cursor.key).setOrigin(0, 0)
         : this.add.text(0, 0, '▶', { fontFamily: 'monospace', fontSize: '8px', color: '#f8fbff' }).setOrigin(0, 0);
       const moves = Array.from({ length: 4 }, (_, moveIndex) => {
-        const label = this.add.text(moveIndex % 2 === 0 ? 18 : 132, moveIndex < 2 ? -39 : -23, '', {
-          fontFamily: 'emerald, pkmnems, monospace',
-          fontSize: '8px',
-          color: '#f8fbff',
-          resolution: 3,
+        const localX = moveIndex % 2 === 0 ? 0 : 114;
+        const localY = moveIndex < 2 ? 0 : 16;
+        const label = createBaseText(this, localX, localY, '', 8, '#f8fbff', {
           wordWrap: { width: 98, useAdvancedWrap: true },
         }).setOrigin(0, 0);
-        const zone = this.add.rectangle(label.x - 6, label.y - 2, 110, 14, 0xffffff, 0.001).setOrigin(0, 0);
-        return { label, zone };
+        const zone = this.add.rectangle(localX - 6, localY - 2, 110, 14, 0xffffff, 0.001).setOrigin(0, 0);
+        movesContainer.add([zone, label]);
+        return { label, zone, localX, localY };
       });
-      const detailName = this.add.text(249, -40, '', {
-        fontFamily: 'emerald, pkmnems, monospace',
-        fontSize: '7px',
-        color: '#f8fbff',
-        resolution: 3,
+      const detailName = createBaseText(this, 249, -40, '', 7, '#f8fbff', {
         wordWrap: { width: 44, useAdvancedWrap: true },
       }).setOrigin(0, 0);
       const typeIcon = textureExists(this, UI_ASSETS.typesAtlas.key, 'unknown')
@@ -569,14 +552,13 @@ function createPhaserBattleSceneClass(Phaser) {
       const categoryIcon = textureExists(this, UI_ASSETS.categoriesAtlas.key, 'status')
         ? this.add.image(289, -38, UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(0.55)
         : this.add.text(289, -38, '', { fontFamily: 'monospace', fontSize: '7px', color: '#cbd5e1' }).setOrigin(0, 0);
-      const ppText = this.add.text(249, -26, '', { fontFamily: 'emerald, pkmnems, monospace', fontSize: '6px', color: '#dbeafe', resolution: 3 }).setOrigin(0, 0);
-      const powerText = this.add.text(249, -18, '', { fontFamily: 'emerald, pkmnems, monospace', fontSize: '6px', color: '#dbeafe', resolution: 3 }).setOrigin(0, 0);
-      const accuracyText = this.add.text(249, -10, '', { fontFamily: 'emerald, pkmnems, monospace', fontSize: '6px', color: '#dbeafe', resolution: 3 }).setOrigin(0, 0);
-      const description = this.add.text(249, -2, '', {
-        fontFamily: 'emerald, pkmnems, monospace',
-        fontSize: '6px',
-        color: '#cbd5e1',
-        resolution: 3,
+      const ppLabel = createBaseText(this, 250, -26, 'PP', 6, '#dbeafe').setOrigin(0, 0.5);
+      const ppText = createBaseText(this, 308, -26, '--/--', 6, '#dbeafe').setOrigin(1, 0.5);
+      const powerLabel = createBaseText(this, 250, -18, 'Pow', 6, '#dbeafe').setOrigin(0, 0.5);
+      const powerText = createBaseText(this, 308, -18, '---', 6, '#dbeafe').setOrigin(1, 0.5);
+      const accuracyLabel = createBaseText(this, 250, -10, 'Acc', 6, '#dbeafe').setOrigin(0, 0.5);
+      const accuracyText = createBaseText(this, 308, -10, '---', 6, '#dbeafe').setOrigin(1, 0.5);
+      const description = createBaseText(this, 249, -2, '', 6, '#cbd5e1', {
         wordWrap: { width: 65, useAdvancedWrap: true },
       }).setOrigin(0, 1);
       const toggles = Array.from({ length: 5 }, () => {
@@ -596,8 +578,8 @@ function createPhaserBattleSceneClass(Phaser) {
         const hit = this.add.rectangle(0, 0, 40, 12, 0xffffff, 0.001).setOrigin(0, 0);
         return { bg, label, hit };
       });
-      container.add([movesBg, detailBg, cursor, ...moves.flatMap(entry => [entry.zone, entry.label]), detailName, typeIcon, categoryIcon, ppText, powerText, accuracyText, description, ...toggles.map(entry => entry.button), ...footerActions.flatMap(entry => [entry.bg, entry.label, entry.hit])]);
-      return { container, movesBg, detailBg, cursor, moves, detailName, typeIcon, categoryIcon, ppText, powerText, accuracyText, description, toggles, footerActions };
+      container.add([movesContainer, cursor, detailName, typeIcon, categoryIcon, ppLabel, ppText, powerLabel, powerText, accuracyLabel, accuracyText, description, ...toggles.map(entry => entry.button), ...footerActions.flatMap(entry => [entry.bg, entry.label, entry.hit])]);
+      return { container, movesContainer, cursor, moves, detailName, typeIcon, categoryIcon, ppLabel, ppText, powerLabel, powerText, accuracyLabel, accuracyText, description, toggles, footerActions };
     }
 
     createPartyPanel() {
@@ -667,11 +649,6 @@ function createPhaserBattleSceneClass(Phaser) {
       this.arenaEnemyBase.setPosition(ARENA_OFFSETS.enemy.x, ARENA_OFFSETS.enemy.y);
       this.arenaEnemyProps.forEach(prop => prop.setPosition(ARENA_OFFSETS.enemy.x, ARENA_OFFSETS.enemy.y));
       this.arenaPlayerBase.setPosition(ARENA_OFFSETS.player.x, ARENA_OFFSETS.player.y);
-      this.turnChip.setPosition(4, 12);
-      this.bannerText.setPosition(160, 12);
-      this.fieldStatusText.setPosition(160, 24);
-      this.perspectiveTabs.container.setPosition(124, 34);
-
       this.enemyTray.container.setPosition(0, 96);
       this.playerTray.container.setPosition(320, 168);
       this.enemyInfo.container.setPosition(140, 99);
@@ -688,7 +665,6 @@ function createPhaserBattleSceneClass(Phaser) {
       this.commandPanel.container.setPosition(0, 240);
       this.fightPanel.container.setPosition(0, 240);
       this.partyPanel.container.setPosition(0, 240);
-      this.notePanel.container.setPosition(202, 240);
 
       if (this.currentModel) this.renderModel(this.currentModel);
     }
@@ -782,15 +758,8 @@ function createPhaserBattleSceneClass(Phaser) {
     }
 
     renderMessageWindow(message = {}) {
-      this.messagePanel.primary.setText(message.primary || '—');
-      if (message.secondary) {
-        this.messagePanel.secondary.setText(message.secondary);
-        this.messagePanel.secondary.setVisible(true);
-        this.messagePanel.secondary.setPosition(12, -18);
-      } else {
-        this.messagePanel.secondary.setText('');
-        this.messagePanel.secondary.setVisible(false);
-      }
+      const lines = [message.primary || '', message.secondary || ''].filter(Boolean);
+      this.messagePanel.message.setText(lines.join('\n') || '—');
       const promptVisible = Boolean(message.showPrompt);
       this.messagePanel.prompt.setVisible(promptVisible);
       if (promptVisible) {
@@ -850,21 +819,22 @@ function createPhaserBattleSceneClass(Phaser) {
 
     renderFightPanel(ui = {}) {
       this.fightPanel.container.setVisible(true);
+      this.messagePanel.movesWindowContainer.setVisible(true);
       const positions = [
-        { x: 18, y: -39 },
-        { x: 132, y: -39 },
-        { x: 18, y: -23 },
-        { x: 132, y: -23 },
+        { labelX: 0, labelY: 0, cursorX: 13, cursorY: -31 },
+        { labelX: 114, labelY: 0, cursorX: 127, cursorY: -31 },
+        { labelX: 0, labelY: 16, cursorX: 13, cursorY: -16 },
+        { labelX: 114, labelY: 16, cursorX: 127, cursorY: -16 },
       ];
       let cursorPos = positions[0];
       this.fightPanel.moves.forEach((entry, index) => {
         const move = (ui.moves || [])[index] || { label: '', disabled: true };
         const pos = positions[index];
-        entry.label.setPosition(pos.x, pos.y);
+        entry.label.setPosition(pos.labelX, pos.labelY);
         entry.label.setText(move.label || '');
         entry.label.setAlpha(move.disabled ? 0.42 : 1);
         entry.label.setColor(move.disabled ? '#64748b' : '#f8fbff');
-        entry.zone.setPosition(pos.x - 6, pos.y - 2);
+        entry.zone.setPosition(pos.labelX - 6, pos.labelY - 2);
         entry.zone.removeAllListeners();
         if (!move.disabled) {
           const hoverAction = move.focusAction ? () => this.controller.handleAction(move.focusAction) : null;
@@ -872,7 +842,7 @@ function createPhaserBattleSceneClass(Phaser) {
         }
         if (move.focused || move.active) cursorPos = pos;
       });
-      this.fightPanel.cursor.setPosition(cursorPos.x - 5, cursorPos.y + 8);
+      this.fightPanel.cursor.setPosition(cursorPos.cursorX, cursorPos.cursorY);
       const detail = ui.detail || {};
       this.fightPanel.detailName.setText(detail.name || '—');
       if (this.fightPanel.typeIcon.setTexture) {
@@ -896,9 +866,9 @@ function createPhaserBattleSceneClass(Phaser) {
       } else {
         this.fightPanel.categoryIcon.setText(detail.category || '');
       }
-      this.fightPanel.ppText.setText(`PP ${detail.ppLabel || '—'}`);
-      this.fightPanel.powerText.setText(`Pow ${detail.powerLabel || '—'}`);
-      this.fightPanel.accuracyText.setText(`Acc ${detail.accuracyLabel || '—'}`);
+      this.fightPanel.ppText.setText(detail.ppLabel || '--/--');
+      this.fightPanel.powerText.setText(detail.powerLabel || '---');
+      this.fightPanel.accuracyText.setText(detail.accuracyLabel || '---');
       this.fightPanel.description.setText(detail.description || '');
 
       (ui.toggles || []).slice(0, this.fightPanel.toggles.length).forEach((toggle, index) => {
@@ -928,6 +898,9 @@ function createPhaserBattleSceneClass(Phaser) {
 
       (ui.footerActions || []).slice(0, this.fightPanel.footerActions.length).forEach((action, index) => {
         const entry = this.fightPanel.footerActions[index];
+        entry.bg.setVisible(true);
+        entry.label.setVisible(true);
+        entry.hit.setVisible(true);
         entry.bg.setPosition(247 + index * 41, -48);
         entry.label.setPosition(247 + index * 41 + 20, -42);
         entry.label.setText(action.label || '');
@@ -938,6 +911,11 @@ function createPhaserBattleSceneClass(Phaser) {
         if (!action.disabled && action.action) {
           setInteractiveTarget(entry.hit, () => this.controller.handleAction(action.action));
         }
+      });
+      this.fightPanel.footerActions.slice((ui.footerActions || []).length).forEach(entry => {
+        entry.bg.setVisible(false);
+        entry.label.setVisible(false);
+        entry.hit.setVisible(false);
       });
     }
 
@@ -988,32 +966,23 @@ function createPhaserBattleSceneClass(Phaser) {
       }
     }
 
-    renderNotePanel(ui = {}) {
-      this.notePanel.container.setVisible(true);
-      this.notePanel.title.setText(ui.title || 'Battle');
-      this.notePanel.body.setText(ui.placeholder || ui.subtitle || '');
-      const footerAction = (ui.footerActions || [])[0] || null;
-      this.notePanel.footer.setText(footerAction?.label || '');
-      this.notePanel.footer.setVisible(Boolean(footerAction));
-      this.notePanel.footerZone.setVisible(Boolean(footerAction));
-      this.notePanel.footerZone.removeAllListeners();
-      if (footerAction && !footerAction.disabled && footerAction.action) {
-        setInteractiveTarget(this.notePanel.footerZone, () => this.controller.handleAction(footerAction.action));
-      }
-    }
-
     renderStateWindow(ui = {}) {
       const mode = ui.mode || 'message';
       this.commandPanel.container.setVisible(false);
       this.fightPanel.container.setVisible(false);
       this.partyPanel.container.setVisible(false);
-      this.notePanel.container.setVisible(false);
-      this.messagePanel.container.setVisible(mode === 'message' || mode === 'command');
+      this.messagePanel.container.setVisible(false);
+      this.messagePanel.bg.setVisible(false);
+      this.messagePanel.commandWindow.setVisible(false);
+      this.messagePanel.movesWindowContainer.setVisible(false);
       if (mode === 'command') {
+        this.messagePanel.container.setVisible(true);
+        this.messagePanel.bg.setVisible(true);
         this.renderCommandPanel(ui);
         return;
       }
       if (mode === 'fight') {
+        this.messagePanel.container.setVisible(true);
         this.renderFightPanel(ui);
         return;
       }
@@ -1021,20 +990,14 @@ function createPhaserBattleSceneClass(Phaser) {
         this.renderPartyPanel(ui);
         return;
       }
-      if (mode === 'target') {
-        this.messagePanel.container.setVisible(false);
-      }
-      this.renderNotePanel(ui);
+      this.messagePanel.container.setVisible(true);
+      this.messagePanel.bg.setVisible(true);
     }
 
     renderModel(model) {
       this.currentModel = model;
       if (!model) return;
       this.uiLanguage = model.language || 'ko';
-      this.turnChip.setText(model.turnChip || `Turn ${model.turn || 0}`);
-      this.bannerText.setText(model.bannerText || 'Battle');
-      this.fieldStatusText.setText(model.fieldStatus || '');
-      this.updatePerspectiveTabs(model);
       this.updateInfoBox(this.enemyInfo, model.enemyInfo || {});
       this.updateInfoBox(this.playerInfo, model.playerInfo || {});
       this.updateTray(this.enemyTray, model.enemyTray || []);
