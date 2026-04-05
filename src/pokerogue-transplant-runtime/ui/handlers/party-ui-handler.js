@@ -1,9 +1,9 @@
 import { UiHandler } from './ui-handler.js';
 import { UiMode } from '../ui-mode.js';
+import { Button } from '../facade/input-facade.js';
 import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
-
 class PartySlot {
   constructor(handler, index, slotY) {
     this.handler = handler;
@@ -26,7 +26,6 @@ class PartySlot {
     this.hpText = null;
     this.hit = null;
   }
-
   setup() {
     const { scene, env } = this;
     this.bgObj = scene.add.image(this.baseX, this.slotY, this.benched ? env.UI_ASSETS.partySlotAtlas.key : env.UI_ASSETS.partySlotMainAtlas.key, this.mainFrame).setOrigin(0, 0);
@@ -44,7 +43,6 @@ class PartySlot {
     this.row = scene.add.container(0, 0, [this.bgObj, this.pb, this.hpBarBase, this.hpBarFill, this.label, this.sublabel, this.hpText, this.hit]);
     return this.row;
   }
-
   update(option = null) {
     const { textureExists, UI_ASSETS, clamp, setHorizontalCrop } = this.env;
     this.row.setVisible(Boolean(option));
@@ -68,12 +66,10 @@ class PartySlot {
       this.env.setInteractiveTarget(this.hit, () => this.handler.globalScene.dispatchAction(option.action));
     }
   }
-
   getCursorPosition() {
     return { x: this.baseX - 4, y: this.slotY - 1 };
   }
 }
-
 export class PartyUiHandler extends UiHandler {
   constructor(ui) {
     super(ui, UiMode.PARTY);
@@ -82,14 +78,13 @@ export class PartyUiHandler extends UiHandler {
     this.partyBg = null;
     this.partyMessageBox = null;
     this.message = null;
-    this.cursor = null;
+    this.cursorObj = null;
     this.cancelBg = null;
     this.cancelPb = null;
     this.cancelLabel = null;
     this.cancelZone = null;
     this.slots = [];
   }
-
   setup() {
     const { scene, env } = this;
     this.container = scene.add.container(0, env.LOGICAL_HEIGHT).setDepth(56).setName('pkb-transplant-party-root').setVisible(false);
@@ -100,7 +95,7 @@ export class PartyUiHandler extends UiHandler {
       wordWrap: { width: 244, useAdvancedWrap: true },
       lineSpacing: 1,
     }).setOrigin(0, 1).setName('text-party-msg');
-    this.cursor = env.textureExists(scene, env.UI_ASSETS.menuSel.key)
+    this.cursorObj = env.textureExists(scene, env.UI_ASSETS.menuSel.key)
       ? scene.add.image(0, 0, env.UI_ASSETS.menuSel.key).setOrigin(0, 0)
       : addTextObject(this.ui, 0, 0, '▶', 'WINDOW_BATTLE_COMMAND').setOrigin(0, 0);
     this.cancelBg = env.textureExists(scene, env.UI_ASSETS.partyCancelAtlas.key, 'party_cancel')
@@ -111,42 +106,33 @@ export class PartyUiHandler extends UiHandler {
       : null;
     this.cancelLabel = addTextObject(this.ui, 281, -23, 'Cancel', 'WINDOW').setOrigin(0, 0);
     this.cancelZone = scene.add.rectangle(291, -32, 52, 32, 0xffffff, 0.001).setOrigin(0, 0);
-
     const slotYs = [-148.5, -168, -140, -112, -84, -56];
     this.slots = slotYs.map((slotY, index) => new PartySlot(this, index, slotY));
-
     this.container.add([
       this.partyBg,
       this.partyMessageBox,
       this.message,
-      this.cursor,
+      this.cursorObj,
       this.cancelBg,
       this.cancelLabel,
       this.cancelZone,
       ...(this.cancelPb ? [this.cancelPb] : []),
       ...this.slots.map(slot => slot.setup()),
     ]);
-
     this.clear();
   }
-
   show(args = null) {
     const state = args || this.globalScene.getPartyState();
     super.show(state);
     this.partyContainer.setVisible(true);
     this.message.setText([state.title || '', state.subtitle || ''].filter(Boolean).join('\n'));
-    let cursorPos = null;
-
+    let cursorIndex = null;
     this.slots.forEach((slot, index) => {
-      const option = (state.partyOptions || [])[index] || null;
+      const option = this.globalScene.getPartyOptions()[index] || null;
       slot.update(option);
-      if (option?.active) cursorPos = slot.getCursorPosition();
+      if (option?.active) cursorIndex = index;
     });
-
-    this.cursor.setVisible(Boolean(cursorPos));
-    if (cursorPos) this.cursor.setPosition(cursorPos.x, cursorPos.y);
-
-    const footerAction = (state.footerActions || [])[0] || null;
+    const footerAction = this.getFooterAction();
     const cancelVisible = Boolean(footerAction);
     this.cancelBg.setVisible(cancelVisible);
     this.cancelLabel.setVisible(cancelVisible);
@@ -157,12 +143,92 @@ export class PartyUiHandler extends UiHandler {
     if (footerAction && !footerAction.disabled && footerAction.action) {
       this.env.setInteractiveTarget(this.cancelZone, () => this.globalScene.dispatchAction(footerAction.action));
     }
+    if (cursorIndex == null) cursorIndex = this.getFirstSelectableIndex();
+    this.setCursor(cursorIndex, true);
     return true;
   }
-
+  getPartyOptions() {
+    return this.globalScene.getPartyOptions();
+  }
+  getFooterAction() {
+    return this.globalScene.getPartyFooterActions()[0] || null;
+  }
+  getSelectableTargets() {
+    const targets = this.getPartyOptions().map((option, index) => ({ type: 'slot', index, option })).filter(target => target.option);
+    if (this.getFooterAction()) targets.push({ type: 'footer', index: 6, option: this.getFooterAction() });
+    return targets;
+  }
+  getFirstSelectableIndex() {
+    const firstSlot = this.getPartyOptions().findIndex(option => option && !option.disabled);
+    if (firstSlot >= 0) return firstSlot;
+    return this.getFooterAction() ? 6 : 0;
+  }
+  setCursor(index, force = false) {
+    const nextIndex = Math.max(0, Math.min(index, this.getFooterAction() ? 6 : 5));
+    const changed = force ? true : super.setCursor(nextIndex);
+    if (force) this.cursor = nextIndex;
+    const cursorPos = this.getCursorPosition(nextIndex);
+    this.cursorObj.setVisible(Boolean(cursorPos));
+    if (cursorPos) this.cursorObj.setPosition(cursorPos.x, cursorPos.y);
+    return changed;
+  }
+  getCursorPosition(index) {
+    if (index === 6 && this.getFooterAction()) return { x: 286, y: -26 };
+    const slot = this.slots[index];
+    return slot ? slot.getCursorPosition() : null;
+  }
+  moveCursor(button) {
+    const availableIndexes = this.getSelectableTargets().map(target => target.index);
+    if (!availableIndexes.length) return false;
+    const current = this.getCursor();
+    const currentListIndex = Math.max(0, availableIndexes.indexOf(current));
+    let nextListIndex = currentListIndex;
+    if (button === Button.UP || button === Button.LEFT) nextListIndex = currentListIndex > 0 ? currentListIndex - 1 : availableIndexes.length - 1;
+    if (button === Button.DOWN || button === Button.RIGHT) nextListIndex = currentListIndex < availableIndexes.length - 1 ? currentListIndex + 1 : 0;
+    return this.setCursor(availableIndexes[nextListIndex]);
+  }
+  activateCursor() {
+    const index = this.getCursor();
+    if (index === 6) {
+      const footer = this.getFooterAction();
+      if (footer && !footer.disabled && footer.action) {
+        this.globalScene.dispatchAction(footer.action);
+        return true;
+      }
+      return false;
+    }
+    const option = this.getPartyOptions()[index] || null;
+    if (!option || option.disabled || !option.action) return false;
+    this.globalScene.dispatchAction(option.action);
+    return true;
+  }
+  processInput(button) {
+    let success = false;
+    switch (button) {
+      case Button.ACTION:
+        success = this.activateCursor();
+        break;
+      case Button.CANCEL: {
+        const footer = this.getFooterAction();
+        if (footer && !footer.disabled && footer.action) {
+          this.globalScene.dispatchAction(footer.action);
+          success = true;
+        }
+        break;
+      }
+      case Button.UP:
+      case Button.DOWN:
+      case Button.LEFT:
+      case Button.RIGHT:
+        success = this.moveCursor(button);
+        break;
+    }
+    if (success) this.getUi().playSelect();
+    return success;
+  }
   clear() {
     super.clear();
     this.partyContainer?.setVisible(false);
-    if (this.cursor) this.cursor.setVisible(false);
+    if (this.cursorObj) this.cursorObj.setVisible(false);
   }
 }

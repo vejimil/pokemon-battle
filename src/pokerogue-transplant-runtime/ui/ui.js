@@ -27,6 +27,7 @@ export class TransplantBattleUI {
     this.abilityBar = new AbilityBar(this);
     this.enemySprite = null;
     this.playerSprite = null;
+    this.overlayActive = false;
   }
 
   setup() {
@@ -72,6 +73,25 @@ export class TransplantBattleUI {
 
   getArgsForMode(mode = this.mode) {
     return this.adapter.getUiArgsForMode(mode);
+  }
+
+  processInfoButton(_pressed) {
+    if (this.overlayActive) return false;
+    return [UiMode.COMMAND, UiMode.FIGHT, UiMode.MESSAGE, UiMode.TARGET_SELECT].includes(this.mode);
+  }
+
+  processInput(button) {
+    if (this.overlayActive) return false;
+    const handler = this.getHandler();
+    return handler?.processInput?.(button) ?? false;
+  }
+
+  playSelect() {
+    return false;
+  }
+
+  playError() {
+    return false;
   }
 
   setModeInternal(mode, clear = true, force = false, chainMode = false, args = null) {

@@ -1,5 +1,6 @@
 import { UiHandler } from './ui-handler.js';
 import { UiMode } from '../ui-mode.js';
+import { Button } from '../facade/input-facade.js';
 import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
@@ -114,16 +115,10 @@ export class FightUiHandler extends UiHandler {
     battleMessage.commandWindow.setVisible(false);
     battleMessage.movesWindowContainer.setVisible(true);
 
-    const cursorPositions = [
-      { x: 13, y: -31 },
-      { x: 127, y: -31 },
-      { x: 13, y: -16 },
-      { x: 127, y: -16 },
-    ];
-    let cursorIndex = 0;
+    let cursorIndex = this.getCursor();
 
     this.moveButtons.forEach((button, index) => {
-      const move = (state.moves || [])[index] || { label: '', disabled: true };
+      const move = this.getMoves()[index] || { label: '', disabled: true };
       button.label.setText(move.label || '');
       button.label.setAlpha(move.disabled ? 0.42 : 1);
       button.label.setColor(move.disabled ? '#64748b' : '#f8fbff');
@@ -135,12 +130,102 @@ export class FightUiHandler extends UiHandler {
       if (move.focused || move.active) cursorIndex = index;
     });
 
-    const cursorPos = cursorPositions[cursorIndex] || cursorPositions[0];
-    this.cursorObj.setPosition(cursorPos.x, cursorPos.y).setVisible(true);
+    this.setCursor(cursorIndex);
     this.updateMoveDetail(state.detail || {});
-    this.updateToggles(state.toggles || []);
-    this.updateFooterActions(state.footerActions || []);
+    this.updateToggles(this.globalScene.getFightToggles());
+    this.updateFooterActions(this.globalScene.getFightFooterActions());
     return true;
+  }
+
+  getMoves() {
+    return this.globalScene.getFightMoves();
+  }
+
+  getFooterActions() {
+    return this.globalScene.getFightFooterActions();
+  }
+
+  getCursorPositions() {
+    return [
+      { x: 13, y: -31 },
+      { x: 127, y: -31 },
+      { x: 13, y: -16 },
+      { x: 127, y: -16 },
+    ];
+  }
+
+  setCursor(cursor) {
+    const moves = this.getMoves();
+    const maxIndex = Math.max(0, Math.min(moves.length - 1, 3));
+    const nextCursor = Math.max(0, Math.min(cursor, maxIndex));
+    const changed = super.setCursor(nextCursor);
+    const cursorPos = this.getCursorPositions()[nextCursor] || this.getCursorPositions()[0];
+    this.cursorObj.setPosition(cursorPos.x, cursorPos.y).setVisible(true);
+    return changed;
+  }
+
+  focusCursor(cursor) {
+    const moves = this.getMoves();
+    const move = moves[cursor] || null;
+    const changed = this.setCursor(cursor);
+    if (move?.focusAction) {
+      this.globalScene.dispatchAction(move.focusAction);
+      return true;
+    }
+    return changed;
+  }
+
+  activateCursor() {
+    const move = this.getMoves()[this.getCursor()] || null;
+    if (!move || move.disabled || !move.action) return false;
+    this.globalScene.dispatchAction(move.action);
+    return true;
+  }
+
+  moveCursor(button) {
+    const cursor = this.getCursor();
+    let nextCursor = cursor;
+    switch (button) {
+      case Button.UP:
+        if (cursor >= 2) nextCursor = cursor - 2;
+        break;
+      case Button.DOWN:
+        if (cursor < 2 && this.getMoves()[cursor + 2]) nextCursor = cursor + 2;
+        break;
+      case Button.LEFT:
+        if (cursor % 2 === 1) nextCursor = cursor - 1;
+        break;
+      case Button.RIGHT:
+        if (cursor % 2 === 0 && this.getMoves()[cursor + 1]) nextCursor = cursor + 1;
+        break;
+    }
+    if (nextCursor === cursor) return false;
+    return this.focusCursor(nextCursor);
+  }
+
+  processInput(button) {
+    let success = false;
+    switch (button) {
+      case Button.ACTION:
+        success = this.activateCursor();
+        break;
+      case Button.CANCEL: {
+        const backAction = this.getFooterActions()[0] || null;
+        if (backAction && !backAction.disabled && backAction.action) {
+          this.globalScene.dispatchAction(backAction.action);
+          success = true;
+        }
+        break;
+      }
+      case Button.UP:
+      case Button.DOWN:
+      case Button.LEFT:
+      case Button.RIGHT:
+        success = this.moveCursor(button);
+        break;
+    }
+    if (success) this.getUi().playSelect();
+    return success;
   }
 
   updateMoveDetail(detail = {}) {

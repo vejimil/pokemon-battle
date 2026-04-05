@@ -2,6 +2,7 @@ import { ARENA_OFFSETS } from '../runtime/constants.js';
 import { preloadUiAssets } from '../runtime/assets.js';
 import { ensureSpriteHostStyles, renderAnimatedSpriteToHost, setHostVisibility } from '../runtime/sprite-host.js';
 import { clamp, textureExists, createBaseText, setHorizontalCrop, setInteractiveTarget, applyHostBox, addWindow } from '../runtime/phaser-utils.js';
+import { buttonFromKeyboardEvent, isTypingIntoElement } from '../ui/facade/input-facade.js';
 import { TransplantBattleUI } from '../ui/ui.js';
 
 export function createBattleShellSceneClass(Phaser, env) {
@@ -15,8 +16,10 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.currentModel = null;
       this.ui = null;
       this.handleResize = () => this.layoutSafely();
+      this.handleWindowKeyDown = event => this.handleGlobalKeyDown(event);
       this.handleShutdown = () => {
         try { this.scale?.off?.('resize', this.handleResize, this); } catch (_error) {}
+        try { window.removeEventListener('keydown', this.handleWindowKeyDown, true); } catch (_error) {}
       };
       this.runtimeEnv = {
         ...env,
@@ -52,6 +55,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           });
         }
         this.scale?.on?.('resize', this.handleResize, this);
+        window.addEventListener('keydown', this.handleWindowKeyDown, true);
         this.events?.once?.('shutdown', this.handleShutdown, this);
         this.isBootstrapped = true;
         this.layoutSafely();
@@ -79,6 +83,17 @@ export function createBattleShellSceneClass(Phaser, env) {
       dom.setDepth(19);
       dom.setVisible(false);
       return { anchor, host, dom, name };
+    }
+
+    handleGlobalKeyDown(event) {
+      if (!this.isBootstrapped || !this.ui || this.controller?.mount?.hidden) return;
+      if (isTypingIntoElement(document.activeElement)) return;
+      const button = buttonFromKeyboardEvent(event);
+      if (!button) return;
+      const handled = button === 'info'
+        ? this.ui.processInfoButton(true)
+        : this.ui.processInput(button);
+      if (handled) event.preventDefault();
     }
 
     layoutSafely() {

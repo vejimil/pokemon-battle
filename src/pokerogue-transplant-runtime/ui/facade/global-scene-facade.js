@@ -49,16 +49,48 @@ export class TransplantGlobalSceneFacade {
     return this.adapter?.getCommandState?.() || { commands: [] };
   }
 
+  getCommandEntries() {
+    return this.adapter?.getCommandEntries?.() || [];
+  }
+
+  getTeraToggle() {
+    return this.adapter?.getTeraToggle?.() || null;
+  }
+
   getFightState() {
     return this.adapter?.getFightState?.() || { moves: [], detail: {} };
+  }
+
+  getFightMoves() {
+    return this.adapter?.getFightMoves?.() || [];
+  }
+
+  getFightToggles() {
+    return this.adapter?.getFightToggles?.() || [];
+  }
+
+  getFightFooterActions() {
+    return this.adapter?.getFightFooterActions?.() || [];
   }
 
   getPartyState() {
     return this.adapter?.getPartyState?.() || { partyOptions: [] };
   }
 
+  getPartyOptions() {
+    return this.adapter?.getPartyOptions?.() || [];
+  }
+
+  getPartyFooterActions() {
+    return this.adapter?.getPartyFooterActions?.() || [];
+  }
+
   getTargetState() {
     return this.adapter?.getTargetState?.() || {};
+  }
+
+  getTargetFooterActions() {
+    return this.adapter?.getTargetFooterActions?.() || [];
   }
 
   getUiArgs(mode = this.mode) {
@@ -71,6 +103,15 @@ export class TransplantGlobalSceneFacade {
 
   getPerspectiveOptions() {
     return this.adapter?.getPerspectiveOptions?.() || [];
+  }
+
+  focusMove(moveIndex) {
+    const move = this.getFightMoves()[moveIndex] || null;
+    if (move?.focusAction) {
+      this.dispatchAction(move.focusAction);
+      return true;
+    }
+    return false;
   }
 
   setMode(mode, args = null) {

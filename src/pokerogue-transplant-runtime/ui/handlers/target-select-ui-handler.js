@@ -1,5 +1,6 @@
 import { UiHandler } from './ui-handler.js';
 import { UiMode } from '../ui-mode.js';
+import { Button } from '../facade/input-facade.js';
 import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
@@ -45,7 +46,7 @@ export class TargetSelectUiHandler extends UiHandler {
       || this.globalScene.getBlockedReason()
       || 'Target selection remains intentionally blocked in the current singles-only engine-first path.'
     );
-    const footerAction = (state.footerActions || [])[0] || null;
+    const footerAction = this.globalScene.getTargetFooterActions()[0] || null;
     this.footer.setText(footerAction?.label || 'Back');
     this.footerBg.setAlpha(footerAction?.disabled ? 0.6 : 1);
     this.footer.setColor(footerAction?.disabled ? '#94a3b8' : '#f8fbff');
@@ -53,6 +54,15 @@ export class TargetSelectUiHandler extends UiHandler {
     if (footerAction && !footerAction.disabled && footerAction.action) {
       this.env.setInteractiveTarget(this.backZone, () => this.globalScene.dispatchAction(footerAction.action));
     }
+    return true;
+  }
+
+  processInput(button) {
+    if (button !== Button.ACTION && button !== Button.CANCEL) return false;
+    const footerAction = this.globalScene.getTargetFooterActions()[0] || null;
+    if (!footerAction || footerAction.disabled || !footerAction.action) return false;
+    this.globalScene.dispatchAction(footerAction.action);
+    this.getUi().playSelect();
     return true;
   }
 
