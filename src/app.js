@@ -6326,7 +6326,7 @@ function buildPhaserMessageWindowModel(battle, player) {
   };
 }
 
-function buildPhaserBattleViewModel(battle) {
+function buildPkbPokerogueUiModel(battle) {
   const ui = syncBattleUiState(battle);
   const perspective = ui?.perspective ?? 0;
   const allyPlayer = perspective;
@@ -6378,7 +6378,7 @@ function buildPhaserBattleViewModel(battle) {
   };
 }
 
-function handlePhaserBattleAction(action) {
+function dispatchPkbPokerogueUiAction(action) {
   const battle = ensureBattleUiState(state.battle);
   if (!battle || !action) return;
   const ui = getBattleUiState(battle);
@@ -6421,8 +6421,8 @@ function handlePhaserBattleAction(action) {
 
 
 const pkbPokerogueUiAdapter = Object.freeze({
-  buildModel: battle => buildPhaserBattleViewModel(battle),
-  dispatchAction: action => handlePhaserBattleAction(action),
+  buildModel: battle => buildPkbPokerogueUiModel(battle),
+  dispatchAction: action => dispatchPkbPokerogueUiAction(action),
 });
 
 async function syncPhaserBattleRenderer(battle) {
