@@ -3212,12 +3212,17 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-phaser-mount {
-  height: clamp(540px, 72vh, 860px);
-  min-height: 540px;
+  width: min(100%, 1120px);
+  aspect-ratio: 4 / 3;
+  min-height: 0;
+  max-height: 82vh;
+  margin-inline: auto;
   border-radius: 22px;
   overflow: hidden;
   position: relative;
   isolation: isolate;
+  display: grid;
+  place-items: center;
   background:
     radial-gradient(circle at top, rgba(125, 211, 252, 0.08), transparent 28%),
     linear-gradient(180deg, rgba(8, 16, 32, 0.96), rgba(5, 10, 20, 0.98));
@@ -3226,4 +3231,5 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 
 .pkbattle-phaser-mount canvas {
   display: block;
+  image-rendering: pixelated;
 }

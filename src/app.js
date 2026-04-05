@@ -6259,6 +6259,8 @@ function buildPhaserPartyWindowModel(battle, player) {
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   const forced = isEngineForceSwitchRequest(request);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
+  const optionMap = new Map(options.map(({mon, index}) => [index, mon]));
+  const activeSet = new Set(getBattleActiveIndices(player, battle));
   const currentChoice = getEngineDraftChoice(player, activeIndex, battle);
   return {
     mode: 'party',
@@ -6266,13 +6268,35 @@ function buildPhaserPartyWindowModel(battle, player) {
     subtitle: forced
       ? lang('엔진이 교체를 요구하고 있습니다.', 'The engine requires a replacement.')
       : lang('교체할 포켓몬을 선택하세요.', 'Choose the Pokémon to switch in.'),
-    partyOptions: options.map(({mon, index}) => ({
-      label: displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species),
-      sublabel: `HP ${mon.hp}/${mon.maxHp}${mon.status ? ` · ${displayStatus(mon.status)}` : ''}`,
-      disabled: false,
-      active: currentChoice.kind === 'switch' && currentChoice.switchTo === index,
-      action: {type: 'switch', switchTo: index},
-    })),
+    partyOptions: (side?.team || []).slice(0, 6).map((mon, index) => {
+      if (!mon) {
+        return {
+          label: lang('빈 슬롯', 'Empty slot'),
+          sublabel: '',
+          hpPercent: 0,
+          hpLabel: '',
+          disabled: true,
+          active: false,
+          action: null,
+        };
+      }
+      const canSwitchTo = optionMap.has(index);
+      const fainted = !mon.hp || mon.fainted;
+      const hpPercent = mon.maxHp ? Math.max(0, Math.min(100, (mon.hp / mon.maxHp) * 100)) : 0;
+      let sublabel = `HP ${mon.hp}/${mon.maxHp}`;
+      if (activeSet.has(index)) sublabel += ` · ${lang('전투 중', 'Active')}`;
+      else if (fainted) sublabel += ` · ${lang('기절', 'Fainted')}`;
+      else if (mon.status) sublabel += ` · ${displayStatus(mon.status)}`;
+      return {
+        label: displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species),
+        sublabel,
+        hpPercent,
+        hpLabel: `${mon.hp}/${mon.maxHp}`,
+        disabled: !canSwitchTo,
+        active: currentChoice.kind === 'switch' && currentChoice.switchTo === index,
+        action: canSwitchTo ? {type: 'switch', switchTo: index} : null,
+      };
+    }),
     footerActions: forced ? [] : [{label: lang('뒤로', 'Back'), disabled: false, action: {type: 'command', key: 'command'}}],
   };
 }
