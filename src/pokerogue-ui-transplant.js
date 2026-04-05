@@ -1,1 +1,2 @@
-export * from './pokerogue-ui/index.js';
+// Legacy compatibility barrel retained for audit/reference only.
+export * from './legacy/pokerogue-ui-transplant-compat.js';
