@@ -5,6 +5,9 @@ import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
 
+// HP overlay (party_slot_hp_overlay) frame width is 80px
+const HP_FILL_WIDTH = 80;
+
 class PartySlot {
   constructor(handler, index, slotY) {
     this.handler = handler;
@@ -12,50 +15,88 @@ class PartySlot {
     this.scene = handler.scene;
     this.env = handler.env;
     this.index = index;
+    this.isActive = index === 0;
     this.slotY = slotY;
-    this.baseX = index === 0 ? 229 : 276;
-    this.mainFrame = index === 0 ? 'party_slot_main' : index % 2 === 1 ? 'party_slot_r' : 'party_slot_l';
-    this.selFrame = index === 0 ? 'party_slot_main_sel' : index % 2 === 1 ? 'party_slot_r_sel' : 'party_slot_l_sel';
+    this.baseX = this.isActive ? 9 : 143;
+
+    if (this.isActive) {
+      this.mainFrame = 'party_slot_main';
+      this.selFrame = 'party_slot_main_sel';
+      this.fntFrame = 'party_slot_main_fnt';
+      this.selFntFrame = 'party_slot_main_fnt_sel';
+    } else {
+      this.mainFrame = 'party_slot';
+      this.selFrame = 'party_slot_sel';
+      this.fntFrame = 'party_slot_fnt';
+      this.selFntFrame = 'party_slot_fnt_sel';
+    }
   }
+
   setup() {
     const { scene, env } = this;
-    const atlas = this.index === 0 ? env.UI_ASSETS.partySlotMainAtlas.key : env.UI_ASSETS.partySlotAtlas.key;
+    const atlas = this.isActive ? env.UI_ASSETS.partySlotMainAtlas.key : env.UI_ASSETS.partySlotAtlas.key;
     this.row = scene.add.container(this.baseX, this.slotY).setName(`party-slot-${this.index}`);
-    this.bgObj = scene.add.image(0, 0, atlas, this.mainFrame).setOrigin(0, 0.5);
-    this.pb = scene.add.image(-17, 0, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0.5, 0.5);
-    this.iconHolder = scene.add.rectangle(14, 0, 18, 18, 0xffffff, 0.001).setOrigin(0.5, 0.5);
-    this.label = addTextObject(this.ui, 28, -7, '', 'WINDOW').setOrigin(0, 0);
-    this.sublabel = addTextObject(this.ui, 28, 6, '', 'HINT').setOrigin(0, 0);
-    this.hpBarBase = addWindow(this.ui, 28, 20, 100, 4, env.UI_ASSETS.windowXthin.key).setOrigin(0, 0.5);
-    this.hpBarFill = scene.add.image(28, 20, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0.5);
-    this.hpText = addTextObject(this.ui, 131, 14, '', 'BATTLE_VALUE').setOrigin(1, 0);
-    this.hit = scene.add.rectangle(0, -18, this.bgObj.width + 18, 40, 0xffffff, 0.001).setOrigin(0, 0);
+    this.bgObj = scene.add.image(0, 0, atlas, this.mainFrame).setOrigin(0, 0);
+
+    if (this.isActive) {
+      // Main slot layout (bgObj: 110×49, origin 0,0)
+      this.pb         = scene.add.image(4, 4, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
+      this.iconHolder = scene.add.rectangle(4, 4, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
+      this.label      = addTextObject(this.ui, 24, 10, '', 'WINDOW').setOrigin(0, 0);
+      this.sublabel   = addTextObject(this.ui, 32, 22, '', 'HINT').setOrigin(0, 0);
+      this.hpBarBase  = scene.add.image(8, 31, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
+      this.hpBarFill  = scene.add.image(24, 33, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
+      this.hpText     = addTextObject(this.ui, 105, 33, '', 'BATTLE_VALUE').setOrigin(1, 0);
+      this.hit        = scene.add.rectangle(0, 0, 110, 49, 0xffffff, 0.001).setOrigin(0, 0);
+    } else {
+      // Bench slot layout (bgObj: 175×24, origin 0,0)
+      this.pb         = scene.add.image(2, 12, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
+      this.iconHolder = scene.add.rectangle(2, 12, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
+      this.label      = addTextObject(this.ui, 21, 2, '', 'WINDOW').setOrigin(0, 0);
+      this.sublabel   = addTextObject(this.ui, 29, 14, '', 'HINT').setOrigin(0, 0);
+      this.hpBarBase  = scene.add.image(72, 6, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
+      this.hpBarFill  = scene.add.image(88, 8, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
+      this.hpText     = addTextObject(this.ui, 169, 6, '', 'BATTLE_VALUE').setOrigin(1, 0);
+      this.hit        = scene.add.rectangle(0, 0, 175, 24, 0xffffff, 0.001).setOrigin(0, 0);
+    }
+
     this.row.add([this.bgObj, this.pb, this.iconHolder, this.hpBarBase, this.hpBarFill, this.label, this.sublabel, this.hpText, this.hit]);
     return this.row;
   }
+
   update(option = null) {
     const { textureExists, UI_ASSETS, clamp, setHorizontalCrop } = this.env;
     this.row.setVisible(Boolean(option));
     if (!option) return;
+
     const selected = Boolean(option.active);
-    this.bgObj.setTexture(this.index === 0 ? UI_ASSETS.partySlotMainAtlas.key : UI_ASSETS.partySlotAtlas.key, selected ? this.selFrame : this.mainFrame);
+    const fainted  = Boolean(option.fainted);
+    const atlasKey = this.isActive ? UI_ASSETS.partySlotMainAtlas.key : UI_ASSETS.partySlotAtlas.key;
+    const frame = fainted
+      ? (selected ? this.selFntFrame : this.fntFrame)
+      : (selected ? this.selFrame   : this.mainFrame);
+    this.bgObj.setTexture(atlasKey, frame);
     this.pb.setTexture(UI_ASSETS.partyPbAtlas.key, selected ? 'party_pb_sel' : 'party_pb');
+
     this.label.setText(option.label || '');
     this.label.setColor(option.disabled ? '#64748b' : '#f8fbff');
     this.sublabel.setText(option.sublabel || '');
     this.sublabel.setColor(option.disabled ? '#94a3b8' : '#dbeafe');
+
     const hpPercent = clamp(Number(option.hpPercent ?? 100), 0, 100);
-    const hpFrame = hpPercent > 50 ? 'high' : hpPercent > 20 ? 'medium' : 'low';
+    const hpFrame   = hpPercent > 50 ? 'high' : hpPercent > 20 ? 'medium' : 'low';
     if (textureExists(this.scene, UI_ASSETS.partySlotHpOverlayAtlas.key, hpFrame)) {
       this.hpBarFill.setTexture(UI_ASSETS.partySlotHpOverlayAtlas.key, hpFrame);
     }
-    setHorizontalCrop(this.hpBarFill, 100 * (hpPercent / 100));
+    setHorizontalCrop(this.hpBarFill, HP_FILL_WIDTH * (hpPercent / 100));
     this.hpText.setText(option.hpLabel || '');
+
     this.hit.removeAllListeners();
     if (!option.disabled && option.action) {
       this.env.setInteractiveTarget(this.hit, () => this.handler.globalScene.dispatchAction(option.action));
     }
   }
+
   getCursorPosition() {
     return { x: this.baseX - 4, y: this.slotY - 1 };
   }
@@ -82,25 +123,34 @@ export class PartyUiHandler extends UiHandler {
     const { scene, env } = this;
     this.container = scene.add.container(0, env.LOGICAL_HEIGHT).setDepth(56).setName('pkb-transplant-party-root').setVisible(false);
     this.partyContainer = this.container;
+
     this.partyBg = scene.add.image(0, 0, env.UI_ASSETS.partyBg.key).setOrigin(0, 1);
+
     this.partyMessageBox = addWindow(this.ui, 1, -1, 262, 30).setOrigin(0, 1).setName('window-party-msg-box');
     this.message = addTextObject(this.ui, 10, -23, '', 'WINDOW', {
       wordWrap: { width: 244, useAdvancedWrap: true },
       lineSpacing: 1,
     }).setOrigin(0, 1).setName('text-party-msg');
+
     this.cursorObj = env.textureExists(scene, env.UI_ASSETS.menuSel.key)
       ? scene.add.image(0, 0, env.UI_ASSETS.menuSel.key).setOrigin(0, 0)
       : addTextObject(this.ui, 0, 0, '▶', 'WINDOW_BATTLE_COMMAND').setOrigin(0, 0);
+
+    // Cancel / footer button — party_cancel frame: 52×16, origin (0, 0.5) → top: y-8, bottom: y+8
     this.cancelBg = env.textureExists(scene, env.UI_ASSETS.partyCancelAtlas.key, 'party_cancel')
       ? scene.add.image(291, -16, env.UI_ASSETS.partyCancelAtlas.key, 'party_cancel').setOrigin(0, 0.5)
-      : addWindow(this.ui, 291, -16, 52, 32, env.UI_ASSETS.windowXthin.key).setOrigin(0, 0.5);
+      : addWindow(this.ui, 291, -24, 52, 16, env.UI_ASSETS.windowXthin?.key).setOrigin(0, 0);
     this.cancelPb = env.textureExists(scene, env.UI_ASSETS.partyPbAtlas.key, 'party_pb')
       ? scene.add.image(274, -16, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0.5, 0.5)
       : null;
     this.cancelLabel = addTextObject(this.ui, 281, -23, 'Cancel', 'WINDOW').setOrigin(0, 0);
-    this.cancelZone = scene.add.rectangle(291, -32, 52, 32, 0xffffff, 0.001).setOrigin(0, 0);
+    // Zone covers the cancel bg area: x=291, y=-24 (top), w=52, h=16
+    this.cancelZone = scene.add.rectangle(291, -24, 52, 16, 0xffffff, 0.001).setOrigin(0, 0);
+
+    // slotYs: index 0 = main slot, index 1-5 = bench
     const slotYs = [-148.5, -168, -140, -112, -84, -56];
     this.slots = slotYs.map((slotY, index) => new PartySlot(this, index, slotY));
+
     this.container.add([
       this.partyBg,
       this.partyMessageBox,
