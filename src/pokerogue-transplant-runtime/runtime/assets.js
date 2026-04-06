@@ -12,6 +12,10 @@ export function preloadUiAssets(scene) {
   if (!textures.exists(UI_ASSETS.overlayHpAtlas.key)) load.atlas(UI_ASSETS.overlayHpAtlas.key, UI_ASSETS.overlayHpAtlas.image, UI_ASSETS.overlayHpAtlas.json);
   if (!textures.exists(UI_ASSETS.overlayMessage.key)) load.image(UI_ASSETS.overlayMessage.key, UI_ASSETS.overlayMessage.url);
   if (!textures.exists(UI_ASSETS.overlayExp.key)) load.image(UI_ASSETS.overlayExp.key, UI_ASSETS.overlayExp.url);
+  if (!textures.exists(UI_ASSETS.overlayHpLabel.key)) load.image(UI_ASSETS.overlayHpLabel.key, UI_ASSETS.overlayHpLabel.url);
+  if (!textures.exists(UI_ASSETS.overlayLv.key)) load.image(UI_ASSETS.overlayLv.key, UI_ASSETS.overlayLv.url);
+  if (!textures.exists(UI_ASSETS.overlayExpLabel.key)) load.image(UI_ASSETS.overlayExpLabel.key, UI_ASSETS.overlayExpLabel.url);
+  if (!textures.exists(UI_ASSETS.numbersAtlas.key)) load.atlas(UI_ASSETS.numbersAtlas.key, UI_ASSETS.numbersAtlas.image, UI_ASSETS.numbersAtlas.json);
   if (!textures.exists(UI_ASSETS.window.key)) load.image(UI_ASSETS.window.key, UI_ASSETS.window.url);
   if (!textures.exists(UI_ASSETS.windowThin.key)) load.image(UI_ASSETS.windowThin.key, UI_ASSETS.windowThin.url);
   if (!textures.exists(UI_ASSETS.windowXthin.key)) load.image(UI_ASSETS.windowXthin.key, UI_ASSETS.windowXthin.url);

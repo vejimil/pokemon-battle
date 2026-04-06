@@ -12,23 +12,26 @@ export class BattleInfo {
     this.nameText = null;
     this.levelText = null;
     this.statusText = null;
-    this.hpTrack = null;
+    this.hpLabel = null;
     this.hpFill = null;
     this.hpText = null;
     this.expBar = null;
-    this.expFill = null;
+    this.expBarLabel = null;
     this.typeIcons = [];
+
+    // Positions match PokeRogue originals
+    const nameTextX = this.isPlayer ? -115 : -124;
+    const nameTextY = this.isPlayer ? -15.2 : -11.2;
     this.pos = {
-      nameTextX: this.isPlayer ? -115 : -124,
-      nameTextY: this.isPlayer ? -15.2 : -11.0,
-      levelX: this.isPlayer ? -41 : -50,
-      levelY: this.isPlayer ? -10 : -5,
-      hpX: this.isPlayer ? -61 : -71,
-      hpY: this.isPlayer ? -1 : 4.5,
-      statusX: this.isPlayer ? -12 : -22,
-      statusY: this.isPlayer ? 9 : 10,
-      hpTextX: this.isPlayer ? -60 : -70,
-      hpTextY: this.isPlayer ? 8 : 12,
+      nameTextX,
+      nameTextY,
+      levelX:   this.isPlayer ? -41  : -50,
+      levelY:   this.isPlayer ? -10  : -5,
+      hpX:      this.isPlayer ? -61  : -71,
+      hpY:      this.isPlayer ? -1   : 4.5,
+      // Status goes below the name, matching PokeRogue's statusIndicator setPositionRelative(nameText, 0, 11.5)
+      statusX:  nameTextX,
+      statusY:  nameTextY + 11.5,
       ...pos,
     };
   }
@@ -61,40 +64,81 @@ export class BattleInfo {
       : [
           { x: -15, y: -15.5 },
           { x: -15, y: -2.5 },
-          { x: 0, y: -15.5 },
+          { x: 0,   y: -15.5 },
         ];
   }
 
   setup() {
     const { scene, env } = this;
+    const { pos } = this;
     this.container = scene.add.container(0, 0).setName(`pkb-transplant-battle-info-${this.side}`);
-    this.bg = scene.add.image(0, 0, this.getTextureName()).setOrigin(1, 0.5).setName(`pbinfo-${this.side}-bg`);
-    this.nameText = addTextObject(this.ui, this.pos.nameTextX, this.pos.nameTextY, '', 'BATTLE_INFO').setOrigin(0, 0).setName(`pbinfo-${this.side}-name`);
-    this.levelText = addTextObject(this.ui, this.pos.levelX, this.pos.levelY, '', 'BATTLE_INFO_SMALL').setOrigin(0, 0.5).setName(`pbinfo-${this.side}-level`);
-    this.statusText = addTextObject(this.ui, this.pos.statusX, this.pos.statusY, '', 'BATTLE_INFO_SMALL').setOrigin(1, 0.5).setName(`pbinfo-${this.side}-status`);
-    this.hpTrack = scene.add.rectangle(this.pos.hpX, this.pos.hpY, 48, 2, 0x111827, 1).setOrigin(0, 0).setName(`pbinfo-${this.side}-hp-track`);
-    this.hpFill = scene.add.image(this.pos.hpX, this.pos.hpY, env.UI_ASSETS.overlayHpAtlas.key, 'high').setOrigin(0, 0).setName(`pbinfo-${this.side}-hp-fill`);
-    this.hpText = addTextObject(this.ui, this.pos.hpTextX, this.pos.hpTextY, '', 'BATTLE_VALUE').setOrigin(0, 0.5).setName(`pbinfo-${this.side}-hp-text`);
 
+    // Background box — origin(1, 0.5) matches PokeRogue
+    this.bg = scene.add.image(0, 0, this.getTextureName()).setOrigin(1, 0.5).setName(`pbinfo-${this.side}-bg`);
+
+    // Name
+    this.nameText = addTextObject(this.ui, pos.nameTextX, pos.nameTextY, '', 'BATTLE_INFO')
+      .setOrigin(0, 0).setName(`pbinfo-${this.side}-name`);
+
+    // Level — "Lv" sprite + number text
+    this.overlayLv = env.textureExists(scene, env.UI_ASSETS.overlayLv.key)
+      ? scene.add.image(pos.levelX - 1, pos.levelY, env.UI_ASSETS.overlayLv.key)
+          .setOrigin(1, 0.5).setName(`pbinfo-${this.side}-lv-icon`)
+      : null;
+    this.levelText = addTextObject(this.ui, pos.levelX, pos.levelY, '', 'BATTLE_INFO_SMALL')
+      .setOrigin(0, 0.5).setName(`pbinfo-${this.side}-level`);
+
+    // Status (text fallback — PokeRogue uses a sprite)
+    this.statusText = addTextObject(this.ui, pos.statusX, pos.statusY, '', 'BATTLE_INFO_SMALL')
+      .setOrigin(0, 0.5).setName(`pbinfo-${this.side}-status`);
+
+    // HP label sprite ("HP" image, positioned just left of the HP bar)
+    this.hpLabel = env.textureExists(scene, env.UI_ASSETS.overlayHpLabel.key)
+      ? scene.add.image(pos.hpX - 1, pos.hpY - 3, env.UI_ASSETS.overlayHpLabel.key)
+          .setOrigin(1, 0).setName(`pbinfo-${this.side}-hp-label`)
+      : null;
+
+    // HP fill bar (overlay_hp atlas — 48 × 2 per frame)
+    this.hpFill = scene.add.image(pos.hpX, pos.hpY, env.UI_ASSETS.overlayHpAtlas.key, 'high')
+      .setOrigin(0, 0).setName(`pbinfo-${this.side}-hp-fill`);
+
+    // HP number text — player only (enemy mini shows no HP numbers in PokeRogue)
     if (this.isPlayer) {
-      this.expBar = scene.add.image(-98, 18, env.UI_ASSETS.overlayExp.key).setOrigin(0, 0.5).setName('pbinfo-player-exp-bg');
-      this.expFill = scene.add.rectangle(-98, 18, 0, 2, 0x60a5fa, 1).setOrigin(0, 0.5).setName('pbinfo-player-exp-fill');
+      // Right-aligned at x=-15, y=10, matching PokeRogue's hpNumbersContainer position
+      this.hpText = addTextObject(this.ui, -15, 10, '', 'BATTLE_VALUE')
+        .setOrigin(1, 0.5).setName('pbinfo-player-hp-text');
     }
 
+    // EXP bar — player only
+    if (this.isPlayer) {
+      // overlay_exp.png is 85 × 2, origin(0) matches PokeRogue
+      this.expBar = scene.add.image(-98, 18, env.UI_ASSETS.overlayExp.key)
+        .setOrigin(0, 0).setName('pbinfo-player-exp-bg');
+      // "EXP" label sprite
+      this.expBarLabel = env.textureExists(scene, env.UI_ASSETS.overlayExpLabel.key)
+        ? scene.add.image(-91, 20, env.UI_ASSETS.overlayExpLabel.key)
+            .setOrigin(1, 1).setName('pbinfo-player-exp-label')
+        : null;
+    }
+
+    // Type icons
     this.typeIcons = this.getTypeIconOffsets().map((offset, index) => {
-      const icon = scene.add.image(offset.x, offset.y, this.getTypeTextureKeys()[index], 'unknown').setOrigin(0, 0).setVisible(false).setName(`pbinfo-${this.side}-type-${index + 1}`);
+      const icon = scene.add.image(offset.x, offset.y, this.getTypeTextureKeys()[index], 'unknown')
+        .setOrigin(0, 0).setVisible(false).setName(`pbinfo-${this.side}-type-${index + 1}`);
       return icon;
     });
 
     this.container.add([
       this.bg,
-      this.hpTrack,
+      ...(this.hpLabel ? [this.hpLabel] : []),
       this.hpFill,
-      ...(this.expBar ? [this.expBar, this.expFill] : []),
+      ...(this.expBar ? [this.expBar] : []),
+      ...(this.expBarLabel ? [this.expBarLabel] : []),
+      ...(this.overlayLv ? [this.overlayLv] : []),
       this.nameText,
       this.levelText,
       this.statusText,
-      this.hpText,
+      ...(this.hpText ? [this.hpText] : []),
       ...this.typeIcons,
     ]);
   }
@@ -102,18 +146,29 @@ export class BattleInfo {
   update(info = {}) {
     const { clamp, textureExists, UI_ASSETS, setHorizontalCrop } = this.env;
     const hpPercent = clamp(Number(info.hpPercent || 0), 0, 100);
-    const hpFrame = hpPercent > 50 ? 'high' : hpPercent > 20 ? 'medium' : 'low';
+    const hpFrame   = hpPercent > 50 ? 'high' : hpPercent > 20 ? 'medium' : 'low';
+
     this.nameText.setText(info.displayName || '—');
     this.levelText.setText(info.levelLabel || '');
     this.statusText.setText(info.statusLabel || '');
-    this.hpText.setText(info.hpLabel || '');
+    this.statusText.setVisible(Boolean(info.statusLabel));
+
     if (this.hpFill.setTexture && textureExists(this.scene, UI_ASSETS.overlayHpAtlas.key, hpFrame)) {
       this.hpFill.setTexture(UI_ASSETS.overlayHpAtlas.key, hpFrame);
     }
+    // overlay_hp frame width is 48px
     setHorizontalCrop(this.hpFill, 48 * (hpPercent / 100));
-    if (this.expFill) {
-      this.expFill.width = Math.max(0, 85 * (clamp(Number(info.expPercent || 0), 0, 100) / 100));
+
+    if (this.hpText) {
+      this.hpText.setText(info.hpLabel || '');
     }
+
+    if (this.expBar) {
+      const expPercent = clamp(Number(info.expPercent || 0), 0, 100);
+      // overlay_exp is 85px wide
+      setHorizontalCrop(this.expBar, 85 * (expPercent / 100));
+    }
+
     const typeKeys = this.getTypeTextureKeys();
     this.typeIcons.forEach((icon, index) => {
       const typeId = String(info.types?.[index] || '').toLowerCase();

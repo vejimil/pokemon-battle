@@ -6154,10 +6154,10 @@ function buildBattleInfoModel(player, battle = state.battle) {
     : 0;
   return {
     displayName: displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species || 'Pokémon'),
-    levelLabel: Number.isFinite(mon.level) ? `Lv ${mon.level}` : '',
+    levelLabel: Number.isFinite(mon.level) ? String(mon.level) : '',
     types: (mon.types || []).map(type => toId(type)),
     statusLabel: mon.status ? displayStatus(mon.status) : '',
-    hpLabel: `HP ${mon.hp}/${mon.maxHp}`,
+    hpLabel: `${mon.hp}/${mon.maxHp}`,
     hpPercent: hpPercent(mon),
     expPercent: expPct,
     badges: getBattleBadgeText(mon) ? getBattleBadgeText(mon).split(' · ') : [],
