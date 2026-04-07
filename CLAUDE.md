@@ -282,5 +282,3 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
   ⎿  You've hit your limit · resets 2pm (UTC)
 
 ✻ Cogitated for 21m 21s · 1 shell still running
-
-내일 시작하면 이 작업 이어서 해줘.
