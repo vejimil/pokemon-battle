@@ -77,12 +77,44 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음에 할 만한 작업
-- "Turn counter" 정체 파악 및 구현 (유저가 언급, 현재 미구현)
+## 다음 세션 우선순위 (시각 버그 수정)
+
+### 1. 폰트 선명도 — `phaser-utils.js` `createBaseText`
+- `resolution: 1`로 변경했으나 여전히 흐림
+- 원인 후보: (a) 커스텀 픽셀 폰트(`emerald`, `pkmnems`)가 로드되지 않아 `monospace` 폴백 사용 중, (b) Phaser Scale FIT 모드에서 비정수 배율 적용
+- 조사 방법: 폰트 로드 여부 확인, `@font-face` CSS 등록 여부 체크, BitmapFont 전환 고려
+
+### 2. 적 타입 아이콘 y 위치 — `battle-info.js` `getTypeIconOffsets()`
+- 4px 낮췄더니 이번엔 너무 낮아짐 → 원래(-15.5)와 수정값(-11.5) 사이 중간값 탐색
+- 시작점: type1/3을 `-13.5`, type2를 `0.5` 로 조정 후 시각 확인
+
+### 3. 하단 대화창 레이아웃 — `battle-message-ui-handler.js`
+- 폰트 크기, 정렬, 창 내 텍스트 위치가 원본과 다름
+- PokeRogue 원본: `messageContainer`가 x=12, y=-39에 위치, 폰트 8px, wordWrap 215px
+- 확인 항목: 창 높이(48px), bg 이미지 좌표, 메시지 컨테이너 오프셋
+
+### 4. 턴 인디케이터 (검은 바) — 미구현
+- 배틀 턴 시작 시 화면 위에서 아래로 슬라이드되는 검은 막대
+- PokeRogue 원본: `battle-scene.ts`의 `turnBlackout` 또는 유사 트랜지션 요소
+- `phaser-battle-controller.js` 또는 `app.js`에서 턴 시작 이벤트에 훅 필요
+
+### 5. 미스터리 파란 바 — `battle-info.js` 또는 `player-battle-info.js`
+- HP바 옆에 EXP바가 아닌 파란 막대가 표시됨
+- 원인 후보: EXP바(`overlay_exp`)가 잘못된 위치에 렌더링되거나, HP fill bar가 파란색으로 보이는 것
+- `expBar` 위치(-98, 18)와 `hpFill` crop/scaleX 동작 점검
+
+### 6. 파티 교체 UI — `party-ui-handler.js`
+- 포켓몬 교체 화면 전반적으로 어색함
+- 완성도 55% → 슬롯 레이아웃, 커서, HP바, 상태이상 아이콘 점검 필요
+
+### 7. 기술 선택 UI — `fight-ui-handler.js`
+- Fight 메뉴 진입 후 레이아웃/커서 동작 어색함
+- movesContainer 위치(18, -38.7), 커서 위치(13, -31) 시각 재확인
+
+### 향후 기능 작업 (버그 수정 후)
 - `command-ui-handler.js` Tera 버튼 색상 파이프라인
 - `battle-info.js` Stats 컨테이너 (능력치 변화 표시)
 - `battle-message-ui-handler.js` promptLevelUpStats → app.js 배틀 흐름 연결
-- 시각적 확인 후 타입 아이콘 y 오프셋 추가 미세 조정 (현재 4px 낮춤)
 
 ## 코드 작업 시 주의사항
 - PokeRogue 원본은 `/workspaces/pokemon-battle/pokerogue_codes/src/ui/` 참조
