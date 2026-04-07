@@ -4,7 +4,7 @@ export const LOGICAL_WIDTH = 320;
 export const LOGICAL_HEIGHT = 180;
 
 export const ARENA_OFFSETS = Object.freeze({
-  enemy: { x: 20, y: 0 },
+  enemy: { x: 0, y: 0 },
   player: { x: 0, y: 0 },
 });
 
