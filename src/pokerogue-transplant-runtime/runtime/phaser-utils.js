@@ -32,7 +32,7 @@ export function createBaseText(scene, x, y, text = '', fontSize = 8, color = '#f
     fontFamily: 'emerald, pkmnems, monospace',
     fontSize: `${fontSize}px`,
     color,
-    resolution: 3,
+    resolution: 1,
     ...options,
   });
   t.setRoundPixels?.(true);

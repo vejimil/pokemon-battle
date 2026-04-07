@@ -51,8 +51,9 @@ export class FightUiHandler extends UiHandler {
     this.movesContainer = scene.add.container(18, -38.7).setName(FightUiHandler.MOVES_CONTAINER_NAME);
     this.container.add(this.movesContainer);
 
+    // PokeRogue uses default origin (0.5, 0.5) for the cursor image
     this.cursorObj = env.textureExists(scene, env.UI_ASSETS.cursor.key)
-      ? scene.add.image(0, 0, env.UI_ASSETS.cursor.key).setOrigin(0, 0)
+      ? scene.add.image(0, 0, env.UI_ASSETS.cursor.key)
       : addTextObject(this.ui, 0, 0, '▶', 'WINDOW_BATTLE_COMMAND').setOrigin(0, 0);
     this.container.add(this.cursorObj);
 

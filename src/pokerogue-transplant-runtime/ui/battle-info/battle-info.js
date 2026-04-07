@@ -95,9 +95,9 @@ export class BattleInfo {
           { x: -154, y: -17 },
         ]
       : [
-          { x: -15, y: -15.5 },
-          { x: -15, y: -2.5 },
-          { x: 0,   y: -15.5 },
+          { x: -15, y: -11.5 },
+          { x: -15, y: 1.5 },
+          { x: 0,   y: -11.5 },
         ];
   }
 
@@ -423,38 +423,29 @@ export class AbilityBar {
   setup() {
     const { scene, env } = this;
     this.container = scene.add.container(0, 0).setVisible(false).setName('pkb-transplant-ability-bar');
-    this.left = scene.add.image(0, 0, env.UI_ASSETS.abilityBarLeft.key).setOrigin(0, 0.5);
-    this.right = scene.add.image(0, 0, env.UI_ASSETS.abilityBarRight.key).setOrigin(1, 0.5);
-    this.text = addTextObject(this.ui, 0, 0, '', 'BATTLE_INFO_SMALL', {
-      wordWrap: { width: 104, useAdvancedWrap: true },
-    }).setOrigin(0.5, 0.5);
+    // Both images use origin(0, 0) matching PokeRogue; container is positioned to correct screen edge
+    this.left = scene.add.image(0, 0, env.UI_ASSETS.abilityBarLeft.key).setOrigin(0, 0);
+    this.right = scene.add.image(0, 0, env.UI_ASSETS.abilityBarRight.key).setOrigin(0, 0);
+    // Text at x=15 (textPadding), y=3 matching PokeRogue's layout
+    this.text = addTextObject(this.ui, 15, 3, '', 'BATTLE_INFO_SMALL', {
+      wordWrap: { width: 100, useAdvancedWrap: true },
+    }).setOrigin(0, 0);
     this.container.add([this.left, this.right, this.text]);
   }
 
   update(model) {
-    const { clamp } = this.env;
     if (!model?.visible || !model.text) {
       this.container.setVisible(false);
       return;
     }
     this.text.setText(model.text);
-    this.text.setWordWrapWidth(100, true);
-    const width = clamp(this.text.width + 14, 72, 118);
-    const side = model.side === 'enemy' ? 'enemy' : 'player';
-    const showLeft = side === 'enemy';
-    const logicalX = showLeft ? 202 : 118;
-    const logicalY = showLeft ? 62 : 136;
-    this.left.setVisible(showLeft);
-    this.right.setVisible(!showLeft);
-    if (showLeft) {
-      this.left.setPosition(0, 0);
-      this.left.setCrop(0, 0, width, this.left.height);
-      this.text.setPosition(width / 2, 0);
-    } else {
-      this.right.setPosition(0, 0);
-      this.right.setCrop(this.right.width - width, 0, width, this.right.height);
-      this.text.setPosition(-width / 2, 0);
-    }
+    const isEnemy = model.side === 'enemy';
+    // PokeRogue: enemy bar right side (x=202=320-118), player bar left side (x=0)
+    // y=64 = fieldUI y=180 + baseY(-116)
+    const logicalX = isEnemy ? 202 : 0;
+    const logicalY = 64;
+    this.left.setVisible(!isEnemy);
+    this.right.setVisible(isEnemy);
     this.container.setPosition(logicalX, logicalY);
     this.container.setVisible(true);
   }

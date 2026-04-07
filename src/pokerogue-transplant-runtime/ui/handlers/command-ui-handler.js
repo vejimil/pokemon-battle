@@ -133,8 +133,9 @@ export class CommandUiHandler extends UiHandler {
     }
 
     if (!this.cursorObj) {
+      // PokeRogue uses default origin (0.5, 0.5) for the cursor image
       this.cursorObj = this.env.textureExists(this.scene, this.env.UI_ASSETS.cursor.key)
-        ? this.scene.add.image(0, 0, this.env.UI_ASSETS.cursor.key).setOrigin(0, 0)
+        ? this.scene.add.image(0, 0, this.env.UI_ASSETS.cursor.key)
         : addTextObject(this.ui, 0, 0, '▶', 'WINDOW_BATTLE_COMMAND').setOrigin(0, 0);
       this.commandsContainer.add(this.cursorObj);
     }
