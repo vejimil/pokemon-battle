@@ -190,18 +190,20 @@ export class TransplantBattleUI {
   }
 
   layout() {
-    this.enemyTray.container?.setPosition(0, 96);
-    this.playerTray.container?.setPosition(320, 168);
-    this.enemyInfo.container?.setPosition(140, 99);
-    this.playerInfo.container?.setPosition(310, 168);
+    // Positions derived from PokeRogue fieldUI coords (fieldUI at y=1080, scale 6):
+    // absolute canvas pos / 6 = our logical pos; y = (1080 + localY*6) / 6 = 180 + localY
+    this.enemyTray.container?.setPosition(0, 36);      // PokeRogue: (0, -144) in fieldUI
+    this.playerTray.container?.setPosition(320, 108);  // PokeRogue: (scaledCanvas.width, -72) in fieldUI
+    this.enemyInfo.container?.setPosition(140, 39);    // PokeRogue: EnemyBattleInfo(140, -141)
+    this.playerInfo.container?.setPosition(310, 108);  // PokeRogue: PlayerBattleInfo(scaledCanvas.width-10, -72)
     if (this.enemySprite) {
-      this.enemySprite.anchor.setPosition(216, 132);
-      this.enemySprite.dom.setPosition(216, 132);
+      this.enemySprite.anchor.setPosition(236, 84);    // PokeRogue: EnemyPokemon super(236, 84)
+      this.enemySprite.dom.setPosition(236, 84);
       this.env.applyHostBox(this.enemySprite.host, 72, 72);
     }
     if (this.playerSprite) {
-      this.playerSprite.anchor.setPosition(104, 184);
-      this.playerSprite.dom.setPosition(104, 184);
+      this.playerSprite.anchor.setPosition(106, 148);  // PokeRogue: PlayerPokemon super(106, 148)
+      this.playerSprite.dom.setPosition(106, 148);
       this.env.applyHostBox(this.playerSprite.host, 88, 88);
     }
   }

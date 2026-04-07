@@ -47,10 +47,11 @@ export class BattleInfo {
     this.lastHpPercent = -1;
     this.lastHpFrame   = 'high';
 
-    // Last known model values (for change-detection)
+    // Last known model values (for change-detection / skip redundant updates)
     this.lastName      = null;
     this.lastStatus    = null;
     this.lastTypes     = null;
+    this.lastLevelStr  = null;
 
     // Positions match PokeRogue originals
     const nameTextX = this.isPlayer ? -115 : -124;
@@ -304,10 +305,11 @@ export class BattleInfo {
     const genderWidth = genderSymbol ? this.genderText.displayWidth : 0;
     this._positionIcons(nameWidth, genderWidth);
 
-    // --- Level number sprites ---
+    // --- Level number sprites (only rebuild when level changes) ---
     const levelStr = String(info.levelLabel || '');
-    if (levelStr) {
+    if (levelStr && levelStr !== this.lastLevelStr) {
       this._setLevelNumbers(levelStr, UI_ASSETS.numbersAtlas?.key);
+      this.lastLevelStr = levelStr;
     }
 
     // --- HP bar tween ---

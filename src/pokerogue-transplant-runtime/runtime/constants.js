@@ -1,11 +1,11 @@
 export const PHASER_IMPORT_PATH = '../node_modules/phaser/dist/phaser.esm.js';
 
 export const LOGICAL_WIDTH = 320;
-export const LOGICAL_HEIGHT = 240;
+export const LOGICAL_HEIGHT = 180;
 
 export const ARENA_OFFSETS = Object.freeze({
-  enemy: { x: -47, y: 60 },
-  player: { x: 50, y: 60 },
+  enemy: { x: 20, y: 0 },
+  player: { x: 0, y: 0 },
 });
 
 export const UI_ASSETS = Object.freeze({

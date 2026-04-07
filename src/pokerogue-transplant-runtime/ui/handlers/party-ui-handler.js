@@ -8,23 +8,26 @@ import { addWindow } from '../helpers/ui-theme.js';
 // HP overlay (party_slot_hp_overlay) frame width is 80px
 const HP_FILL_WIDTH = 80;
 
-// Cache of icon keys already loaded into Phaser textures
-const iconTextureCache = new Set();
+// Cache of icon keys: 'loaded' | 'loading'
+const iconTextureCache = new Map();
 
 /**
  * Dynamically load a pokemon icon into the Phaser texture cache, then call cb().
- * If already loaded, calls cb() synchronously.
+ * Guaranteed to call cb() at most once per key, even if called multiple times.
  */
 function loadIconTexture(scene, key, url, cb) {
   if (scene.textures.exists(key)) { cb(); return; }
-  if (iconTextureCache.has(key)) {
-    // queued but not complete yet — wait
-    scene.load.once('complete', cb);
+  if (iconTextureCache.get(key) === 'loading') {
+    // Already in flight — add to pending list
+    scene.load.once('filecomplete-image-' + key, cb);
     return;
   }
-  iconTextureCache.add(key);
+  iconTextureCache.set(key, 'loading');
   scene.load.image(key, url);
-  scene.load.once('complete', cb);
+  scene.load.once('filecomplete-image-' + key, () => {
+    iconTextureCache.set(key, 'loaded');
+    cb();
+  });
   scene.load.start();
 }
 
@@ -38,7 +41,8 @@ class PartySlot {
     this.isActive = index === 0;
     this.slotY = slotY;
     this.baseX = this.isActive ? 9 : 143;
-    this.iconObj = null;   // dynamically created pokemon icon image
+    this.iconObj = null;       // dynamically created pokemon icon image
+    this.iconPending = false;  // true while async icon load is in flight
     this.levelText = null;
     this.statusSprite = null;
 
@@ -157,22 +161,17 @@ class PartySlot {
     // Pokemon icon — load dynamically if URL provided
     if (option.iconUrl) {
       const iconKey = `pkb-party-icon-${option.iconUrl}`;
-      const applyIcon = () => {
-        if (!this.scene.textures.exists(iconKey)) return;
-        if (!this.iconObj) {
-          // Create icon image and add to the row container
-          this.iconObj = this.scene.add.image(
-            this.isActive ? 4 : 2,
-            this.isActive ? 4 : 3,
-            iconKey
-          ).setOrigin(0, 0).setScale(0.5).setName(`party-icon-${this.index}`);
-          this.row.add(this.iconObj);
-        } else {
-          this.iconObj.setTexture(iconKey);
-        }
-        this.iconObj.setVisible(true);
-      };
-      loadIconTexture(this.scene, iconKey, option.iconUrl, applyIcon);
+      if (this.scene.textures.exists(iconKey)) {
+        // Already loaded — apply immediately
+        this._applyIcon(iconKey);
+      } else if (!this.iconPending) {
+        // Start loading only if not already in flight for this slot
+        this.iconPending = true;
+        loadIconTexture(this.scene, iconKey, option.iconUrl, () => {
+          this.iconPending = false;
+          this._applyIcon(iconKey);
+        });
+      }
     } else if (this.iconObj) {
       this.iconObj.setVisible(false);
     }
@@ -181,6 +180,21 @@ class PartySlot {
     if (!option.disabled && option.action) {
       this.env.setInteractiveTarget(this.hit, () => this.handler.globalScene.dispatchAction(option.action));
     }
+  }
+
+  _applyIcon(iconKey) {
+    if (!this.scene.textures.exists(iconKey)) return;
+    if (!this.iconObj) {
+      this.iconObj = this.scene.add.image(
+        this.isActive ? 4 : 2,
+        this.isActive ? 4 : 3,
+        iconKey
+      ).setOrigin(0, 0).setScale(0.5).setName(`party-icon-${this.index}`);
+      this.row.add(this.iconObj);
+    } else {
+      this.iconObj.setTexture(iconKey);
+    }
+    this.iconObj.setVisible(true);
   }
 
   getCursorPosition() {
