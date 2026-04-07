@@ -73,3 +73,214 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 - 에셋 추가 시: `constants.js` → `assets.js` 순으로 등록
 - multiatlas (textures[] 배열 형식): `load.multiatlas(key, json, path)` 사용
 - 일반 atlas: `load.atlas(key, image, json)` 사용
+
+##20260407 하던 작업
+ ● Bash(sed -n '440,480p' /workspaces/pokemon-battle/pokerogue_codes/src/battle-scene.ts)
+  ⎿    }
+
+       update() {
+     … +38 lines (ctrl+o to expand)
+
+● Bash(file /workspaces/pokemon-battle/assets/pokerogue/arenas/grass_bg.png /workspaces/pokemon-battle/assets/pokerogue/arenas/grass_a.png
+      /workspaces/pokemon-battle/a…)
+  ⎿  Error: Exit code 1
+     /workspaces/pokemon-battle/assets/pokerogue/arenas/grass_bg.png: PNG image data, 320 x 180, 4-bit colormap, non-interlaced
+     /workspaces/pokemon-battle/assets/pokerogue/arenas/grass_a.png:  PNG image data, 320 x 132, 4-bit colormap, non-interlaced
+     /workspaces/pokemon-battle/assets/pokerogue/arenas/grass_b.png:  PNG image data, 320 x 132, 4-bit colormap, non-interlaced
+     [rerun: b57]
+
+● Bash(python3 -c "
+      import struct, zlib…)
+  ⎿  Cancelled: parallel tool call Bash(file /workspaces/pokemon-battle/assets/p…) errored
+
+  Searched for 4 patterns, listed 1 directory (ctrl+o to expand)
+
+● Bash(sed -n '605,640p' /workspaces/pokemon-battle/pokerogue_codes/src/battle-scene.ts)
+  ⎿          this.arenaFlyout,
+             this.pokemonInfoContainer,
+           ])
+     … +33 lines (ctrl+o to expand)
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● Bash(sed -n '340,360p' /workspaces/pokemon-battle/pokerogue_codes/src/phases/encounter-phase.ts)
+  ⎿        }
+         }
+     … +17 lines (ctrl+o to expand)
+
+  Searching for 8 patterns, reading 1 file… (ctrl+o to expand)
+  ⎿  pokerogue_codes/src/ui/battle-info/battle-info.ts
+
+● Bash(sed -n '213,270p' /workspaces/pokemon-battle/pokerogue_codes/src/ui/battle-info/battle-info.ts)
+  ⎿    constructor(x: number, y: number, player: boolean, posParams: BattleInfoParamList) {
+         super(globalScene, x, y);
+         this.baseY = y;
+     … +51 lines (ctrl+o to expand)
+
+  Searched for 5 patterns (ctrl+o to expand)
+
+● Let me look at the arena images more carefully:
+
+● Bash(python3 << 'EOF'
+      import struct, zlib…)
+  ⎿  grass_bg.png:
+       Size: 320x180, bit_depth=4, color_type=3
+     … +5 lines (ctrl+o to expand)
+
+● Bash(cat /workspaces/pokemon-battle/assets/pokerogue/ui/bg.json | python3 -c "import sys,json; d=json.load(sys.stdin); [print(k, v) for k,v in
+      d.get('frames',{}).ite…)
+  ⎿  (No output)
+
+● Bash(python3 -c "
+      import json…)
+  ⎿  keys: ['textures', 'meta']
+     texture: bg.png
+       frame: {'filename': '1', 'rotated': False, 'trimmed': False, 'sourceSize': {'w': 320, 'h': 48}, 'spriteSourceSize': {'x': 0, 'y': 0, 'w': 320, 'h':
+     … +9 lines (ctrl+o to expand)
+
+  Searched for 11 patterns, read 1 file (ctrl+o to expand)
+
+● Bash(sed -n '12,50p' /workspaces/pokemon-battle/pokerogue_codes/src/ui/containers/pokeball-tray.ts)
+  ⎿    constructor(player: boolean) {
+         super(globalScene, player ? globalScene.scaledCanvas.width : 0, player ? -72 : -144);
+         this.player = player;
+     … +36 lines (ctrl+o to expand)
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Bash(sed -n '5960,5980p' /workspaces/pokemon-battle/pokerogue_codes/src/field/pokemon.ts)
+  ⎿        } else {
+             this.moveset = [];
+           }
+     … +18 lines (ctrl+o to expand)
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Bash(sed -n '319,360p' /workspaces/pokemon-battle/pokerogue_codes/src/field/pokemon.ts)
+  ⎿    constructor(
+         x: number,
+         y: number,
+     … +39 lines (ctrl+o to expand)
+
+● Bash(sed -n '5925,5945p' /workspaces/pokemon-battle/pokerogue_codes/src/field/pokemon.ts)
+  ⎿  Running…
+  ⎿    constructor(
+         species: PokemonSpecies,
+         level: number,
+     … +18 lines (ctrl+o to expand)
+
+● Bash(sed -n '6470,6490p' /workspaces/pokemon-battle/pokerogue_codes/src/field/pokemon.ts)
+  ⎿    constructor(
+         species: PokemonSpecies,
+         level: number,
+     … +18 lines (ctrl+o to expand)
+
+  Searched for 1 pattern, read 2 files (ctrl+o to expand)
+
+● Now I have a complete picture. The root cause of all 4 visual issues is that LOGICAL_HEIGHT = 240 should be 180 (matching PokeRogue's logical coordinate
+  system: 1920/6=320, 1080/6=180). Everything is 60px off because of this. Let me fix all the issues:
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Now I have all the data. The root fix is LOGICAL_HEIGHT = 180 (not 240) to match PokeRogue's 1920/6=320 × 1080/6=180 coordinate space. This fixes all 4
+  issues simultaneously:
+
+● Update(src/pokerogue-transplant-runtime/runtime/constants.js)
+  ⎿  Added 3 lines, removed 3 lines
+       1  export const PHASER_IMPORT_PATH = '../node_modules/phaser/dist/phaser.esm.js';
+       2  
+       3  export const LOGICAL_WIDTH = 320;
+       4 -export const LOGICAL_HEIGHT = 240;                                                                                                            
+       4 +export const LOGICAL_HEIGHT = 180;                                                                                                            
+       5  
+       6  export const ARENA_OFFSETS = Object.freeze({
+       7 -  enemy: { x: -47, y: 60 },                                                                                                                   
+       8 -  player: { x: 50, y: 60 },                                                                                                                   
+       7 +  enemy: { x: 20, y: 0 },                                                                                                                     
+       8 +  player: { x: 0, y: 0 },                                                                                                                     
+       9  });
+      10  
+      11  export const UI_ASSETS = Object.freeze({
+
+● Now fix ui.js layout() with correct positions derived from PokeRogue's fieldUI coordinates (fieldUI at y=1080, scale 6 → divide display position by 6):
+
+● Update(src/pokerogue-transplant-runtime/ui/ui.js)
+  ⎿  Added 10 lines, removed 8 lines
+      190    }
+      191  
+      192    layout() {
+      193 -    this.enemyTray.container?.setPosition(0, 96);                                                                                            
+      194 -    this.playerTray.container?.setPosition(320, 168);                                                                                        
+      195 -    this.enemyInfo.container?.setPosition(140, 99);                                                                                          
+      196 -    this.playerInfo.container?.setPosition(310, 168);                                                                                        
+      193 +    // Positions derived from PokeRogue fieldUI coords (fieldUI at y=1080, scale 6):                                                         
+      194 +    // absolute canvas pos / 6 = our logical pos; y = (1080 + localY*6) / 6 = 180 + localY                                                   
+      195 +    this.enemyTray.container?.setPosition(0, 36);      // PokeRogue: (0, -144) in fieldUI                                                    
+      196 +    this.playerTray.container?.setPosition(320, 108);  // PokeRogue: (scaledCanvas.width, -72) in fieldUI                                    
+      197 +    this.enemyInfo.container?.setPosition(140, 39);    // PokeRogue: EnemyBattleInfo(140, -141)                                              
+      198 +    this.playerInfo.container?.setPosition(310, 108);  // PokeRogue: PlayerBattleInfo(scaledCanvas.width-10, -72)                            
+      199      if (this.enemySprite) {
+      198 -      this.enemySprite.anchor.setPosition(216, 132);                                                                                         
+      199 -      this.enemySprite.dom.setPosition(216, 132);                                                                                            
+      200 +      this.enemySprite.anchor.setPosition(236, 84);    // PokeRogue: EnemyPokemon super(236, 84)                                             
+      201 +      this.enemySprite.dom.setPosition(236, 84);                                                                                             
+      202        this.env.applyHostBox(this.enemySprite.host, 72, 72);
+      203      }
+      204      if (this.playerSprite) {
+      203 -      this.playerSprite.anchor.setPosition(104, 184);                                                                                        
+      204 -      this.playerSprite.dom.setPosition(104, 184);                                                                                           
+      205 +      this.playerSprite.anchor.setPosition(106, 148);  // PokeRogue: PlayerPokemon super(106, 148)                                           
+      206 +      this.playerSprite.dom.setPosition(106, 148);                                                                                           
+      207        this.env.applyHostBox(this.playerSprite.host, 88, 88);
+      208      }
+      209    }
+
+● Now let me verify the fight-ui-handler and party-ui-handler aren't impacted negatively — they use env.LOGICAL_HEIGHT so they automatically update. Let me
+  also check the level-up stats panel coordinates in battle-message-ui-handler to make sure they still look right:
+
+  Searched for 2 patterns (ctrl+o to expand)
+
+● Bash(sed -n '588,602p' /workspaces/pokemon-battle/pokerogue_codes/src/battle-scene.ts)
+  ⎿        .setup();
+
+         this.fieldUI
+     … +12 lines (ctrl+o to expand)
+
+● Let me check HP bar parameters from PokeRogue to verify our positioning:
+
+● Bash(sed -n '45,65p' /workspaces/pokemon-battle/pokerogue_codes/src/ui/battle-info/enemy-battle-info.ts)
+  ⎿  Running…
+  ⎿    constructor() {
+         const posParams: BattleInfoParamList = {
+           nameTextX: -124,
+     … +18 lines (ctrl+o to expand)
+
+● Bash(sed -n '30,50p' /workspaces/pokemon-battle/pokerogue_codes/src/ui/battle-info/player-battle-info.ts)
+  ⎿    constructor() {
+         const posParams: BattleInfoParamList = {
+           nameTextX: -115,
+     … +17 lines (ctrl+o to expand)
+
+  Read 1 file (ctrl+o to expand)
+
+● Bash(python3 -c "
+      import struct…)
+  ⎿  overlay_hp.png: 48x6
+     overlay_hp_boss.png: 86x12
+     pbinfo_player.png: 130x42
+     pbinfo_enemy_mini.png: 130x31
+
+● Bash(python3 -c "
+      import json…)
+  ⎿  high {'x': 0, 'y': 0, 'w': 48, 'h': 2} {'w': 48, 'h': 2}
+     medium {'x': 0, 'y': 2, 'w': 48, 'h': 2} {'w': 48, 'h': 2}
+     low {'x': 0, 'y': 4, 'w': 48, 'h': 2} {'w': 48, 'h': 2}
+
+● Let me verify all the changes look correct:
+
+  Searched for 2 patterns (ctrl+o to expand)
+  ⎿  You've hit your limit · resets 2pm (UTC)
+
+✻ Cogitated for 21m 21s · 1 shell still running
+
+내일 시작하면 이 작업 이어서 해줘.
