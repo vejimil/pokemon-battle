@@ -39,6 +39,13 @@ export function preloadUiAssets(scene) {
   if (!textures.exists(UI_ASSETS.partyPbAtlas.key)) load.atlas(UI_ASSETS.partyPbAtlas.key, UI_ASSETS.partyPbAtlas.image, UI_ASSETS.partyPbAtlas.json);
   if (!textures.exists(UI_ASSETS.partySlotHpOverlayAtlas.key)) load.atlas(UI_ASSETS.partySlotHpOverlayAtlas.key, UI_ASSETS.partySlotHpOverlayAtlas.image, UI_ASSETS.partySlotHpOverlayAtlas.json);
   if (!textures.exists(UI_ASSETS.partySlotHpBar.key)) load.image(UI_ASSETS.partySlotHpBar.key, UI_ASSETS.partySlotHpBar.url);
+  if (!textures.exists(UI_ASSETS.overlayHpBossAtlas.key)) load.atlas(UI_ASSETS.overlayHpBossAtlas.key, UI_ASSETS.overlayHpBossAtlas.image, UI_ASSETS.overlayHpBossAtlas.json);
+  if (!textures.exists(UI_ASSETS.pbinfoEnemyBoss.key)) load.image(UI_ASSETS.pbinfoEnemyBoss.key, UI_ASSETS.pbinfoEnemyBoss.url);
+  if (!textures.exists(UI_ASSETS.statusesAtlas.key)) load.multiatlas(UI_ASSETS.statusesAtlas.key, UI_ASSETS.statusesAtlas.json, UI_ASSETS.statusesAtlas.path);
+  if (!textures.exists(UI_ASSETS.shinyIconsAtlas.key)) load.multiatlas(UI_ASSETS.shinyIconsAtlas.key, UI_ASSETS.shinyIconsAtlas.json, UI_ASSETS.shinyIconsAtlas.path);
+  if (!textures.exists(UI_ASSETS.iconTera.key)) load.image(UI_ASSETS.iconTera.key, UI_ASSETS.iconTera.url);
+  if (!textures.exists(UI_ASSETS.iconSpliced.key)) load.image(UI_ASSETS.iconSpliced.key, UI_ASSETS.iconSpliced.url);
+  if (!textures.exists(UI_ASSETS.iconOwned.key)) load.image(UI_ASSETS.iconOwned.key, UI_ASSETS.iconOwned.url);
   if (!textures.exists(UI_ASSETS.abilityBarLeft.key)) load.image(UI_ASSETS.abilityBarLeft.key, UI_ASSETS.abilityBarLeft.url);
   if (!textures.exists(UI_ASSETS.abilityBarRight.key)) load.image(UI_ASSETS.abilityBarRight.key, UI_ASSETS.abilityBarRight.url);
   if (!textures.exists(UI_ASSETS.arenaBg.key)) load.image(UI_ASSETS.arenaBg.key, UI_ASSETS.arenaBg.url);

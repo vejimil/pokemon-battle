@@ -5721,12 +5721,16 @@ function buildPhaserMoveDetailModel(mon, moveInfo, slotInfo, moveRequest, choice
   const resolvedType = toId(preview?.type || moveData?.type || '') || 'unknown';
   const resolvedCategory = toId(preview?.category || moveData?.category || 'status') || 'status';
   const accuracyValue = preview?.accuracy ?? moveData?.accuracy;
+  const ppCurrent = Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? null);
+  const ppMax     = Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? null);
+  const ppRatio   = (ppMax > 0 && ppCurrent !== null) ? clamp(ppCurrent / ppMax, 0, 1) : null;
   return {
     name: displayMoveName((choice?.z && zInfo?.move) ? zInfo.move : moveName || lang('기술 없음', 'No move')),
     type: resolvedType,
     typeLabel: displayType(preview?.type || moveData?.type || '') || '—',
     category: ['physical', 'special', 'status'].includes(resolvedCategory) ? resolvedCategory : 'status',
-    ppLabel: `${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}`,
+    ppLabel: `${ppCurrent ?? '—'}/${ppMax ?? '—'}`,
+    ppRatio,
     powerLabel: `${preview?.power ?? moveData?.power ?? '—'}`,
     accuracyLabel: `${accuracyValue ?? '—'}`,
     description: localizeText(moveData?.shortDesc || moveData?.desc || lang('설명 없음', 'No move description available.')),
@@ -6157,9 +6161,15 @@ function buildBattleInfoModel(player, battle = state.battle) {
     levelLabel: Number.isFinite(mon.level) ? String(mon.level) : '',
     types: (mon.types || []).map(type => toId(type)),
     statusLabel: mon.status ? displayStatus(mon.status) : '',
+    statusEffect: mon.status || '',
     hpLabel: `${mon.hp}/${mon.maxHp}`,
+    hp: mon.hp,
+    maxHp: mon.maxHp,
     hpPercent: hpPercent(mon),
     expPercent: expPct,
+    gender: mon.gender || '',
+    shiny: Boolean(mon.shiny),
+    teraType: mon.terastallized ? toId(mon.teraType || '') : '',
     badges: getBattleBadgeText(mon) ? getBattleBadgeText(mon).split(' · ') : [],
     fainted: Boolean(mon.fainted),
     spriteUrl: spritePath(resolveBattleRenderSpriteId(mon), player === 0 ? 'back' : 'front', mon.shiny),
@@ -6297,6 +6307,11 @@ function buildPhaserPartyWindowModel(battle, player) {
         sublabel,
         hpPercent,
         hpLabel: `${mon.hp}/${mon.maxHp}`,
+        level: Number.isFinite(mon.level) ? mon.level : null,
+        gender: mon.gender || '',
+        statusEffect: mon.status || '',
+        fainted: Boolean(fainted),
+        iconUrl: iconPath(resolveBattleRenderSpriteId(mon), Boolean(mon.shiny)),
         disabled: !canSwitchTo,
         active: currentChoice.kind === 'switch' && currentChoice.switchTo === index,
         action: canSwitchTo ? {type: 'switch', switchTo: index} : null,

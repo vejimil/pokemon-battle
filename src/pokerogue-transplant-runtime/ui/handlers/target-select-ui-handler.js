@@ -39,20 +39,31 @@ export class TargetSelectUiHandler extends UiHandler {
     const battleMessage = this.ui.getMessageHandler();
     battleMessage.commandWindow.setVisible(false);
     battleMessage.movesWindowContainer.setVisible(true);
-    this.title.setText(state.title || 'Target Select');
-    this.body.setText(
-      state.placeholder
-      || state.blockedReason
+
+    this.title.setText(state.title || '대상 선택');
+
+    // Show blocked reason or placeholder
+    const bodyText = state.blockedReason
       || this.globalScene.getBlockedReason()
-      || 'Target selection remains intentionally blocked in the current singles-only engine-first path.'
-    );
-    const footerAction = this.globalScene.getTargetBackAction() ? (this.globalScene.getTargetFooterActions()[0] || null) : null;
-    this.footer.setText(footerAction?.label || 'Back');
-    this.footerBg.setAlpha(footerAction?.disabled ? 0.6 : 1);
-    this.footer.setColor(footerAction?.disabled ? '#94a3b8' : '#f8fbff');
-    this.backZone.removeAllListeners();
-    if (footerAction && !footerAction.disabled && footerAction.action) {
-      this.env.setInteractiveTarget(this.backZone, () => this.globalScene.dispatchAction(footerAction.action));
+      || state.placeholder
+      || '';
+    this.body.setText(bodyText);
+
+    const footerAction = this.globalScene.getTargetBackAction()
+      ? (this.globalScene.getTargetFooterActions()[0] || null)
+      : null;
+    const footerVisible = Boolean(footerAction);
+    this.footerBg.setVisible(footerVisible);
+    this.footer.setVisible(footerVisible);
+    this.backZone.setVisible(footerVisible);
+    if (footerVisible) {
+      this.footer.setText(footerAction.label || 'Back');
+      this.footerBg.setAlpha(footerAction.disabled ? 0.6 : 1);
+      this.footer.setColor(footerAction.disabled ? '#94a3b8' : '#f8fbff');
+      this.backZone.removeAllListeners();
+      if (!footerAction.disabled && footerAction.action) {
+        this.env.setInteractiveTarget(this.backZone, () => this.globalScene.dispatchAction(footerAction.action));
+      }
     }
     return true;
   }

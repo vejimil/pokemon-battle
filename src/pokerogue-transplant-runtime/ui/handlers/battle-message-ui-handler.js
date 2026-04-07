@@ -1,5 +1,10 @@
 import { UiMode } from '../ui-mode.js';
 import { MessageUiHandler } from './message-ui-handler.js';
+import { addTextObject } from '../helpers/text.js';
+import { addWindow } from '../helpers/ui-theme.js';
+
+// Permanent stat labels (PokeRogue order: HP, ATK, DEF, SPATK, SPDEF, SPD)
+const STAT_LABELS = ['HP', 'Atk', 'Def', 'SpA', 'SpD', 'Spe'];
 
 export class BattleMessageUiHandler extends MessageUiHandler {
   constructor(ui) {
@@ -10,12 +15,22 @@ export class BattleMessageUiHandler extends MessageUiHandler {
     this.nameBoxContainer = null;
     this.nameBox = null;
     this.nameText = null;
-    this.wordWrapWidth = 178;
+    // Message area is ~243px wide, container starts at x=12; right margin ~16px → ~215px
+    this.wordWrapWidth = 215;
+
+    // Level-up stats panel
+    this.levelUpStatsContainer = null;
+    this.levelUpStatsIncrText = null;
+    this.levelUpStatsValuesText = null;
+    this._levelUpResolve = null;
+    this._levelUpAwaitingInput = false;
   }
 
   setup() {
     const { scene, env } = this;
-    this.container = scene.add.container(0, env.LOGICAL_HEIGHT).setDepth(50).setName('pkb-transplant-battle-message');
+    const W = env.LOGICAL_WIDTH;
+    const H = env.LOGICAL_HEIGHT;
+    this.container = scene.add.container(0, H).setDepth(50).setName('pkb-transplant-battle-message');
 
     this.bg = scene.add.image(0, 0, env.UI_ASSETS.bgAtlas.key, '1').setOrigin(0, 1).setName('sprite-battle-msg-bg');
     this.commandWindow = scene.add.nineslice(202, 0, env.UI_ASSETS.window.key, undefined, 118, 48, 8, 8, 8, 8)
@@ -45,7 +60,36 @@ export class BattleMessageUiHandler extends MessageUiHandler {
     messageContainer.add([this.message, this.nameBoxContainer]);
     this.initPromptSprite(messageContainer);
 
-    this.container.add([this.bg, this.commandWindow, this.movesWindowContainer, messageContainer]);
+    // Level-up stats panel (positioned top-right of battle area, above message box)
+    // Coordinates are relative to the container (bottom of screen = y=0 here)
+    this.levelUpStatsContainer = scene.add.container(0, 0).setVisible(false).setName('levelup-stats');
+
+    // Background window — anchored top-right
+    const statsBg = addWindow(this.ui, W, -H, 80, 100, env.UI_ASSETS.window.key).setOrigin(1, 0);
+    const labelX = W - 82;
+    const labelY = -H + 6;
+
+    const labelsText = addTextObject(this.ui, labelX, labelY, STAT_LABELS.join('\n'), 'WINDOW', {
+      maxLines: 6, lineSpacing: 3,
+    }).setOrigin(1, 0);
+
+    this.levelUpStatsIncrText = addTextObject(this.ui, W - 50, labelY, '+\n+\n+\n+\n+\n+', 'WINDOW', {
+      maxLines: 6, lineSpacing: 3,
+    }).setOrigin(0, 0);
+
+    this.levelUpStatsValuesText = addTextObject(this.ui, W - 7, labelY, '', 'WINDOW', {
+      maxLines: 6, lineSpacing: 3,
+    }).setOrigin(1, 0);
+
+    this.levelUpStatsContainer.add([statsBg, labelsText, this.levelUpStatsIncrText, this.levelUpStatsValuesText]);
+
+    this.container.add([
+      this.bg,
+      this.commandWindow,
+      this.movesWindowContainer,
+      messageContainer,
+      this.levelUpStatsContainer,
+    ]);
   }
 
   show(args = {}) {
@@ -84,5 +128,64 @@ export class BattleMessageUiHandler extends MessageUiHandler {
     const lastLine = wrapped.at(-1) || '';
     const approxWidth = Math.min(this.wordWrapWidth, Math.max(0, lastLine.length * 4.4));
     this.prompt.setPosition(2 + approxWidth, (lineCount - 1) * 12 + 2);
+  }
+
+  showNameText(name) {
+    this.nameBoxContainer.setVisible(true);
+    this.nameText.setText(name);
+    const width = Math.max(72, this.nameText.width + 16);
+    this.nameBox.setSize?.(width, 16);
+    this.nameBox.width = width;
+  }
+
+  hideNameText() {
+    this.nameBoxContainer.setVisible(false);
+  }
+
+  /**
+   * Show the level-up stats panel.
+   * @param {number[]} prevStats - stat values before level-up (6 values: HP,ATK,DEF,SPATK,SPDEF,SPD)
+   * @param {number[]} newStats  - stat values after level-up
+   * @param {boolean} showTotals - if true, show absolute values; if false, show "+X" increases
+   * @returns {Promise<void>} resolves when player dismisses
+   */
+  promptLevelUpStats(prevStats = [], newStats = [], showTotals = false) {
+    return new Promise(resolve => {
+      if (!this.levelUpStatsContainer) return resolve();
+
+      const lines = newStats.map((val, i) => {
+        const diff = val - (prevStats[i] ?? val);
+        return showTotals ? String(val) : (diff >= 0 ? `+${diff}` : String(diff));
+      });
+
+      this.levelUpStatsValuesText.setText(lines.join('\n'));
+      this.levelUpStatsIncrText.setVisible(!showTotals);
+      this.levelUpStatsContainer.setVisible(true);
+
+      this._levelUpAwaitingInput = true;
+      this._levelUpResolve = () => {
+        if (!showTotals) {
+          // First press: switch to totals view
+          this.promptLevelUpStats([], newStats, true).then(resolve);
+        } else {
+          this.levelUpStatsContainer.setVisible(false);
+          this._levelUpAwaitingInput = false;
+          this._levelUpResolve = null;
+          resolve();
+        }
+      };
+    });
+  }
+
+  /** Called by processInput — intercepts action/cancel for level-up panel */
+  processInput(button) {
+    if (this._levelUpAwaitingInput && this._levelUpResolve) {
+      const resolve = this._levelUpResolve;
+      this._levelUpResolve = null;
+      this._levelUpAwaitingInput = false;
+      resolve();
+      return true;
+    }
+    return super.processInput(button);
   }
 }

@@ -1,23 +1,56 @@
 import { addTextObject } from '../helpers/text.js';
 
+// status key (Showdown format) → statuses_ko atlas frame
+const STATUS_FRAME = {
+  brn: 'burn',
+  par: 'paralysis',
+  psn: 'poison',
+  tox: 'toxic',
+  slp: 'sleep',
+  frz: 'freeze',
+  pkrs: 'pokerus',
+};
+
+// gender symbol
+const GENDER_SYMBOL = { M: '♂', F: '♀' };
+const GENDER_COLOR  = { M: '#40c8f8', F: '#f89890' };
+
+const HP_FILL_WIDTH = 48; // overlay_hp frame width (px)
+
 export class BattleInfo {
-  constructor(ui, side, pos = {}) {
+  constructor(ui, side) {
     this.ui = ui;
     this.scene = ui.scene;
     this.env = ui.env;
     this.side = side;
     this.isPlayer = side === 'player';
-    this.container = null;
-    this.bg = null;
-    this.nameText = null;
-    this.levelText = null;
-    this.statusText = null;
-    this.hpLabel = null;
-    this.hpFill = null;
-    this.hpText = null;
-    this.expBar = null;
+
+    this.container   = null;
+    this.bg          = null;
+    this.nameText    = null;
+    this.genderText  = null;
+    this.levelContainer = null;   // Container holding overlayLv + level number sprites
+    this.levelNumImages = [];     // Phaser.Image[] for each digit
+    this.statusSprite = null;     // Sprite from statusesAtlas
+    this.hpLabel     = null;
+    this.hpFill      = null;
+    this.expBar      = null;
     this.expBarLabel = null;
-    this.typeIcons = [];
+    this.typeIcons   = [];
+
+    // Icon sprites
+    this.shinyIcon   = null;
+    this.teraIcon    = null;
+    this.splicedIcon = null;
+
+    // HP animation state
+    this.lastHpPercent = -1;
+    this.lastHpFrame   = 'high';
+
+    // Last known model values (for change-detection)
+    this.lastName      = null;
+    this.lastStatus    = null;
+    this.lastTypes     = null;
 
     // Positions match PokeRogue originals
     const nameTextX = this.isPlayer ? -115 : -124;
@@ -29,10 +62,9 @@ export class BattleInfo {
       levelY:   this.isPlayer ? -10  : -5,
       hpX:      this.isPlayer ? -61  : -71,
       hpY:      this.isPlayer ? -1   : 4.5,
-      // Status goes below the name, matching PokeRogue's statusIndicator setPositionRelative(nameText, 0, 11.5)
+      // Status positioned below name (PokeRogue: setPositionRelative(nameText, 0, 11.5))
       statusX:  nameTextX,
       statusY:  nameTextY + 11.5,
-      ...pos,
     };
   }
 
@@ -74,47 +106,68 @@ export class BattleInfo {
     this.container = scene.add.container(0, 0).setName(`pkb-transplant-battle-info-${this.side}`);
 
     // Background box — origin(1, 0.5) matches PokeRogue
-    this.bg = scene.add.image(0, 0, this.getTextureName()).setOrigin(1, 0.5).setName(`pbinfo-${this.side}-bg`);
+    this.bg = scene.add.image(0, 0, this.getTextureName())
+      .setOrigin(1, 0.5).setName(`pbinfo-${this.side}-bg`);
 
-    // Name
+    // Name text
     this.nameText = addTextObject(this.ui, pos.nameTextX, pos.nameTextY, '', 'BATTLE_INFO')
       .setOrigin(0, 0).setName(`pbinfo-${this.side}-name`);
 
-    // Level — "Lv" sprite + number text
-    this.overlayLv = env.textureExists(scene, env.UI_ASSETS.overlayLv.key)
-      ? scene.add.image(pos.levelX - 1, pos.levelY, env.UI_ASSETS.overlayLv.key)
-          .setOrigin(1, 0.5).setName(`pbinfo-${this.side}-lv-icon`)
+    // Gender text (♂/♀) — positioned right after name text
+    this.genderText = addTextObject(this.ui, pos.nameTextX, pos.nameTextY, '', 'BATTLE_INFO')
+      .setOrigin(0, 0).setName(`pbinfo-${this.side}-gender`);
+
+    // Level container: overlayLv sprite + number sprites
+    this.levelContainer = scene.add.container(pos.levelX, pos.levelY)
+      .setName(`pbinfo-${this.side}-level-container`);
+    if (env.textureExists(scene, env.UI_ASSETS.overlayLv.key)) {
+      const lvImg = scene.add.image(-1, 0, env.UI_ASSETS.overlayLv.key)
+        .setOrigin(1, 0.5).setName(`pbinfo-${this.side}-lv-icon`);
+      this.levelContainer.add(lvImg);
+    }
+
+    // Status sprite (from statusesAtlas)
+    const statusKey = env.UI_ASSETS.statusesAtlas?.key;
+    this.statusSprite = statusKey && env.textureExists(scene, statusKey)
+      ? scene.add.sprite(pos.statusX, pos.statusY, statusKey, 'burn')
+          .setOrigin(0, 0).setVisible(false).setName(`pbinfo-${this.side}-status`)
       : null;
-    this.levelText = addTextObject(this.ui, pos.levelX, pos.levelY, '', 'BATTLE_INFO_SMALL')
-      .setOrigin(0, 0.5).setName(`pbinfo-${this.side}-level`);
 
-    // Status (text fallback — PokeRogue uses a sprite)
-    this.statusText = addTextObject(this.ui, pos.statusX, pos.statusY, '', 'BATTLE_INFO_SMALL')
-      .setOrigin(0, 0.5).setName(`pbinfo-${this.side}-status`);
-
-    // HP label sprite ("HP" image, positioned just left of the HP bar)
+    // HP label sprite ("HP" image)
     this.hpLabel = env.textureExists(scene, env.UI_ASSETS.overlayHpLabel.key)
       ? scene.add.image(pos.hpX - 1, pos.hpY - 3, env.UI_ASSETS.overlayHpLabel.key)
           .setOrigin(1, 0).setName(`pbinfo-${this.side}-hp-label`)
       : null;
 
-    // HP fill bar (overlay_hp atlas — 48 × 2 per frame)
+    // HP fill bar — uses scaleX for animation (origin 0,0 so scales from left)
     this.hpFill = scene.add.image(pos.hpX, pos.hpY, env.UI_ASSETS.overlayHpAtlas.key, 'high')
       .setOrigin(0, 0).setName(`pbinfo-${this.side}-hp-fill`);
 
-    // HP number text — player only (enemy mini shows no HP numbers in PokeRogue)
-    if (this.isPlayer) {
-      // Right-aligned at x=-15, y=10, matching PokeRogue's hpNumbersContainer position
-      this.hpText = addTextObject(this.ui, -15, 10, '', 'BATTLE_VALUE')
-        .setOrigin(1, 0.5).setName('pbinfo-player-hp-text');
-    }
+    // Shiny icon (small star, top-right of name)
+    const shinyKey = env.UI_ASSETS.shinyIconsAtlas?.key;
+    this.shinyIcon = shinyKey && env.textureExists(scene, shinyKey)
+      ? scene.add.image(0, 0, shinyKey, '0')
+          .setOrigin(0, 0).setVisible(false).setScale(0.5).setName(`pbinfo-${this.side}-shiny`)
+      : null;
+
+    // Tera icon
+    const teraKey = env.UI_ASSETS.iconTera?.key;
+    this.teraIcon = teraKey && env.textureExists(scene, teraKey)
+      ? scene.add.image(0, 0, teraKey)
+          .setOrigin(0, 0).setVisible(false).setScale(0.5).setName(`pbinfo-${this.side}-tera`)
+      : null;
+
+    // Spliced icon
+    const splicedKey = env.UI_ASSETS.iconSpliced?.key;
+    this.splicedIcon = splicedKey && env.textureExists(scene, splicedKey)
+      ? scene.add.image(0, 0, splicedKey)
+          .setOrigin(0, 0).setVisible(false).setScale(0.5).setName(`pbinfo-${this.side}-spliced`)
+      : null;
 
     // EXP bar — player only
     if (this.isPlayer) {
-      // overlay_exp.png is 85 × 2, origin(0) matches PokeRogue
       this.expBar = scene.add.image(-98, 18, env.UI_ASSETS.overlayExp.key)
         .setOrigin(0, 0).setName('pbinfo-player-exp-bg');
-      // "EXP" label sprite
       this.expBarLabel = env.textureExists(scene, env.UI_ASSETS.overlayExpLabel.key)
         ? scene.add.image(-91, 20, env.UI_ASSETS.overlayExpLabel.key)
             .setOrigin(1, 1).setName('pbinfo-player-exp-label')
@@ -123,9 +176,8 @@ export class BattleInfo {
 
     // Type icons
     this.typeIcons = this.getTypeIconOffsets().map((offset, index) => {
-      const icon = scene.add.image(offset.x, offset.y, this.getTypeTextureKeys()[index], 'unknown')
+      return scene.add.image(offset.x, offset.y, this.getTypeTextureKeys()[index], 'unknown')
         .setOrigin(0, 0).setVisible(false).setName(`pbinfo-${this.side}-type-${index + 1}`);
-      return icon;
     });
 
     this.container.add([
@@ -134,48 +186,171 @@ export class BattleInfo {
       this.hpFill,
       ...(this.expBar ? [this.expBar] : []),
       ...(this.expBarLabel ? [this.expBarLabel] : []),
-      ...(this.overlayLv ? [this.overlayLv] : []),
+      this.levelContainer,
       this.nameText,
-      this.levelText,
-      this.statusText,
-      ...(this.hpText ? [this.hpText] : []),
+      this.genderText,
+      ...(this.statusSprite ? [this.statusSprite] : []),
+      ...(this.teraIcon ? [this.teraIcon] : []),
+      ...(this.splicedIcon ? [this.splicedIcon] : []),
+      ...(this.shinyIcon ? [this.shinyIcon] : []),
       ...this.typeIcons,
     ]);
   }
 
+  /** Build level number images inside levelContainer. */
+  _setLevelNumbers(levelStr, textureKey) {
+    const { scene, env } = this;
+    const numbersKey = textureKey || env.UI_ASSETS.numbersAtlas?.key;
+    // Remove previous digit images
+    this.levelNumImages.forEach(img => img.destroy());
+    this.levelNumImages = [];
+    if (!numbersKey || !env.textureExists(scene, numbersKey)) return;
+
+    // Digit images at x=0,8,16,… (PokeRogue: i * 8, 0, textureKey, digit)
+    // Level container has overlayLv at x=-1 origin(1,0.5), so digits start at x=0
+    const startX = 0.5; // small nudge matching PokeRogue's levelNumbersContainer x=9.5 relative offset handled at container level
+    for (let i = 0; i < levelStr.length; i++) {
+      const img = scene.add.image(startX + i * 8, 0, numbersKey, levelStr[i])
+        .setOrigin(0, 0.5);
+      this.levelNumImages.push(img);
+      this.levelContainer.add(img);
+    }
+    // Shift container left when more than 3 digits (matches PokeRogue setX logic)
+    const overflow = Math.max(levelStr.length - 3, 0);
+    this.levelContainer.setX(this.pos.levelX - 8 * overflow);
+  }
+
+  /** Update HP frame (high/medium/low) based on current scaleX. */
+  _updateHpFrame() {
+    const pct = this.hpFill.scaleX * 100;
+    const frame = pct > 50 ? 'high' : pct > 20 ? 'medium' : 'low';
+    if (frame !== this.lastHpFrame) {
+      this.hpFill.setFrame(frame);
+      this.lastHpFrame = frame;
+    }
+  }
+
+  /** Reposition the small icons (tera/spliced/shiny) to the right of name+gender. */
+  _positionIcons(nameWidth, genderWidth) {
+    let iconX = this.pos.nameTextX + nameWidth + genderWidth + 1;
+    const iconY = this.pos.nameTextY + 2;
+
+    if (this.teraIcon?.visible) {
+      this.teraIcon.setPosition(iconX, iconY);
+      iconX += this.teraIcon.displayWidth + 1;
+    }
+    if (this.splicedIcon?.visible) {
+      this.splicedIcon.setPosition(iconX, iconY);
+      iconX += this.splicedIcon.displayWidth + 1;
+    }
+    if (this.shinyIcon?.visible) {
+      this.shinyIcon.setPosition(iconX, iconY + 0.5);
+    }
+  }
+
   update(info = {}) {
-    const { clamp, textureExists, UI_ASSETS, setHorizontalCrop } = this.env;
-    const hpPercent = clamp(Number(info.hpPercent || 0), 0, 100);
-    const hpFrame   = hpPercent > 50 ? 'high' : hpPercent > 20 ? 'medium' : 'low';
+    const { scene, env } = this;
+    const { clamp, textureExists, UI_ASSETS, setHorizontalCrop } = env;
 
-    this.nameText.setText(info.displayName || '—');
-    this.levelText.setText(info.levelLabel || '');
-    this.statusText.setText(info.statusLabel || '');
-    this.statusText.setVisible(Boolean(info.statusLabel));
+    // --- Name ---
+    const displayName = info.displayName || '—';
+    this.nameText.setText(displayName);
 
-    if (this.hpFill.setTexture && textureExists(this.scene, UI_ASSETS.overlayHpAtlas.key, hpFrame)) {
-      this.hpFill.setTexture(UI_ASSETS.overlayHpAtlas.key, hpFrame);
-    }
-    // overlay_hp frame width is 48px
-    setHorizontalCrop(this.hpFill, 48 * (hpPercent / 100));
-
-    if (this.hpText) {
-      this.hpText.setText(info.hpLabel || '');
+    // --- Gender ---
+    const gender = info.gender || '';
+    const genderSymbol = GENDER_SYMBOL[gender] || '';
+    this.genderText.setText(genderSymbol);
+    if (genderSymbol) {
+      this.genderText.setColor(GENDER_COLOR[gender] || '#f8fbff');
+      const nameWidth = this.nameText.displayWidth;
+      this.genderText.setPosition(this.pos.nameTextX + nameWidth, this.pos.nameTextY);
     }
 
+    // --- Status sprite ---
+    const statusKey = info.statusEffect || '';
+    const frame = STATUS_FRAME[statusKey];
+    if (this.statusSprite) {
+      if (frame && textureExists(scene, UI_ASSETS.statusesAtlas?.key, frame)) {
+        this.statusSprite.setFrame(frame).setVisible(true);
+      } else {
+        this.statusSprite.setVisible(false);
+      }
+    }
+
+    // --- Tera icon ---
+    const teraType = info.teraType || '';
+    if (this.teraIcon) {
+      this.teraIcon.setVisible(Boolean(teraType));
+    }
+
+    // --- Spliced icon ---
+    if (this.splicedIcon) {
+      this.splicedIcon.setVisible(Boolean(info.isFusion));
+    }
+
+    // --- Shiny icon ---
+    if (this.shinyIcon) {
+      const shiny = Boolean(info.shiny);
+      const variant = String(info.shinyVariant ?? 0);
+      if (shiny && textureExists(scene, UI_ASSETS.shinyIconsAtlas?.key, variant)) {
+        this.shinyIcon.setFrame(variant).setVisible(true);
+      } else {
+        this.shinyIcon.setVisible(false);
+      }
+    }
+
+    // Reposition icons after name/gender width is known
+    const nameWidth = this.nameText.displayWidth;
+    const genderWidth = genderSymbol ? this.genderText.displayWidth : 0;
+    this._positionIcons(nameWidth, genderWidth);
+
+    // --- Level number sprites ---
+    const levelStr = String(info.levelLabel || '');
+    if (levelStr) {
+      this._setLevelNumbers(levelStr, UI_ASSETS.numbersAtlas?.key);
+    }
+
+    // --- HP bar tween ---
+    const newHpPercent = clamp(Number(info.hpPercent ?? 0), 0, 100);
+    if (this.lastHpPercent !== newHpPercent) {
+      // Kill existing tweens on hpFill to avoid conflicts
+      scene.tweens?.killTweensOf?.(this.hpFill);
+
+      const duration = this.lastHpPercent < 0
+        ? 0 // first update: instant
+        : clamp(Math.abs(this.lastHpPercent - newHpPercent) * 25, 100, 3000);
+
+      scene.tweens?.add?.({
+        targets: this.hpFill,
+        scaleX: newHpPercent / 100,
+        ease: 'Sine.easeOut',
+        duration,
+        onUpdate: () => this._updateHpFrame(),
+        onComplete: () => this._updateHpFrame(),
+      });
+
+      if (!scene.tweens) {
+        // Fallback: instant
+        this.hpFill.setScale(newHpPercent / 100, 1);
+        this._updateHpFrame();
+      }
+
+      this.lastHpPercent = newHpPercent;
+    }
+
+    // --- EXP bar (player only, instant update) ---
     if (this.expBar) {
-      const expPercent = clamp(Number(info.expPercent || 0), 0, 100);
-      // overlay_exp is 85px wide
+      const expPercent = clamp(Number(info.expPercent ?? 0), 0, 100);
       setHorizontalCrop(this.expBar, 85 * (expPercent / 100));
     }
 
+    // --- Type icons ---
     const typeKeys = this.getTypeTextureKeys();
     this.typeIcons.forEach((icon, index) => {
       const typeId = String(info.types?.[index] || '').toLowerCase();
       const textureKey = typeKeys[index] || typeKeys[0];
-      if (typeId && textureExists(this.scene, textureKey, typeId)) {
-        icon.setTexture(textureKey, typeId);
-        icon.setVisible(true);
+      if (typeId && textureExists(scene, textureKey, typeId)) {
+        icon.setTexture(textureKey, typeId).setVisible(true);
       } else {
         icon.setVisible(false);
       }

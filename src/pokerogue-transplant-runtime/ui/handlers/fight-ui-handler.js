@@ -5,6 +5,15 @@ import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
 
+// PP ratio → color (matches PokeRogue TextStyle colors, non-legacy theme)
+function ppRatioToColor(ratio) {
+  if (ratio === null || ratio === undefined) return { color: '#f8f8f8', shadow: '#6b5a73' };
+  if (ratio === 0)       return { color: '#e13d3d', shadow: '#632929' };
+  if (ratio <= 0.25)     return { color: '#d64b00', shadow: '#69402a' };
+  if (ratio <= 0.5)      return { color: '#ccbe00', shadow: '#6e672c' };
+  return                        { color: '#f8f8f8', shadow: '#6b5a73' };
+}
+
 export class FightUiHandler extends UiHandler {
   static MOVES_CONTAINER_NAME = 'moves';
 
@@ -248,8 +257,21 @@ export class FightUiHandler extends UiHandler {
 
   toggleInfo(visible) {
     this.infoVisible = Boolean(visible);
-    this.movesContainer.setVisible(!this.infoVisible).setAlpha(this.infoVisible ? 0 : 1);
-    this.cursorObj?.setVisible(!this.infoVisible && this.focusRegion === 'moves');
+    if (visible) {
+      // Instantly hide — matches PokeRogue (overlay fades in, names hide immediately)
+      this.movesContainer.setVisible(false).setAlpha(0);
+      this.cursorObj?.setVisible(false).setAlpha(0);
+    } else {
+      // Fade-in tween on movesContainer — matches PokeRogue's toggleInfo(false)
+      this.movesContainer.setVisible(true);
+      this.cursorObj?.setVisible(this.focusRegion === 'moves');
+      this.scene.tweens?.add?.({
+        targets: [this.movesContainer, this.cursorObj].filter(Boolean),
+        alpha: 1,
+        duration: 125,
+        ease: 'Sine.easeInOut',
+      });
+    }
     return true;
   }
 
@@ -282,6 +304,8 @@ export class FightUiHandler extends UiHandler {
     }
 
     this.ppText.setText(detail.ppLabel || '--/--');
+    const ppColors = ppRatioToColor(detail.ppRatio ?? null);
+    this.ppText.setColor(ppColors.color).setShadowColor(ppColors.shadow);
     this.powerText.setText(detail.powerLabel || '---');
     this.accuracyText.setText(detail.accuracyLabel || '---');
     this.descriptionText.setText(detail.description || '');

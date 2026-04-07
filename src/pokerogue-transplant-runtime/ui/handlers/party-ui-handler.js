@@ -8,6 +8,26 @@ import { addWindow } from '../helpers/ui-theme.js';
 // HP overlay (party_slot_hp_overlay) frame width is 80px
 const HP_FILL_WIDTH = 80;
 
+// Cache of icon keys already loaded into Phaser textures
+const iconTextureCache = new Set();
+
+/**
+ * Dynamically load a pokemon icon into the Phaser texture cache, then call cb().
+ * If already loaded, calls cb() synchronously.
+ */
+function loadIconTexture(scene, key, url, cb) {
+  if (scene.textures.exists(key)) { cb(); return; }
+  if (iconTextureCache.has(key)) {
+    // queued but not complete yet — wait
+    scene.load.once('complete', cb);
+    return;
+  }
+  iconTextureCache.add(key);
+  scene.load.image(key, url);
+  scene.load.once('complete', cb);
+  scene.load.start();
+}
+
 class PartySlot {
   constructor(handler, index, slotY) {
     this.handler = handler;
@@ -18,6 +38,9 @@ class PartySlot {
     this.isActive = index === 0;
     this.slotY = slotY;
     this.baseX = this.isActive ? 9 : 143;
+    this.iconObj = null;   // dynamically created pokemon icon image
+    this.levelText = null;
+    this.statusSprite = null;
 
     if (this.isActive) {
       this.mainFrame = 'party_slot_main';
@@ -42,8 +65,9 @@ class PartySlot {
       // Main slot layout (bgObj: 110×49, origin 0,0)
       this.pb         = scene.add.image(4, 4, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(4, 4, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
-      this.label      = addTextObject(this.ui, 24, 10, '', 'WINDOW').setOrigin(0, 0);
-      this.sublabel   = addTextObject(this.ui, 32, 22, '', 'HINT').setOrigin(0, 0);
+      this.label      = addTextObject(this.ui, 24, 3, '', 'WINDOW').setOrigin(0, 0);
+      this.levelText  = addTextObject(this.ui, 24, 13, '', 'HINT').setOrigin(0, 0);
+      this.sublabel   = addTextObject(this.ui, 24, 22, '', 'HINT').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(8, 31, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(24, 33, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
       this.hpText     = addTextObject(this.ui, 105, 33, '', 'BATTLE_VALUE').setOrigin(1, 0);
@@ -53,6 +77,7 @@ class PartySlot {
       this.pb         = scene.add.image(2, 12, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(2, 12, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
       this.label      = addTextObject(this.ui, 21, 2, '', 'WINDOW').setOrigin(0, 0);
+      this.levelText  = addTextObject(this.ui, 21, 12, '', 'HINT').setOrigin(0, 0);
       this.sublabel   = addTextObject(this.ui, 29, 14, '', 'HINT').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(72, 6, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(88, 8, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
@@ -60,7 +85,23 @@ class PartySlot {
       this.hit        = scene.add.rectangle(0, 0, 175, 24, 0xffffff, 0.001).setOrigin(0, 0);
     }
 
-    this.row.add([this.bgObj, this.pb, this.iconHolder, this.hpBarBase, this.hpBarFill, this.label, this.sublabel, this.hpText, this.hit]);
+    // Status sprite (shared position: below label)
+    const statusKey = env.UI_ASSETS.statusesAtlas?.key;
+    this.statusSprite = statusKey && env.textureExists(scene, statusKey)
+      ? scene.add.sprite(
+          this.isActive ? 24 : 21,
+          this.isActive ? 22 : 14,
+          statusKey, 'burn'
+        ).setOrigin(0, 0).setVisible(false).setScale(0.9)
+      : null;
+
+    this.row.add([
+      this.bgObj, this.pb, this.iconHolder,
+      this.hpBarBase, this.hpBarFill,
+      this.label, this.levelText, this.sublabel,
+      ...(this.statusSprite ? [this.statusSprite] : []),
+      this.hpText, this.hit,
+    ]);
     return this.row;
   }
 
@@ -80,9 +121,31 @@ class PartySlot {
 
     this.label.setText(option.label || '');
     this.label.setColor(option.disabled ? '#64748b' : '#f8fbff');
+
+    // Level
+    const lvStr = option.level != null ? `Lv.${option.level}` : '';
+    this.levelText.setText(lvStr);
+    this.levelText.setColor(option.disabled ? '#64748b' : '#a8d8f0');
+
+    // Sublabel (HP + status text)
     this.sublabel.setText(option.sublabel || '');
     this.sublabel.setColor(option.disabled ? '#94a3b8' : '#dbeafe');
 
+    // Status sprite
+    const STATUS_FRAME = { brn: 'burn', par: 'paralysis', psn: 'poison', tox: 'toxic', slp: 'sleep', frz: 'freeze' };
+    if (this.statusSprite) {
+      const statusKey = option.statusEffect || '';
+      const sfx = STATUS_FRAME[statusKey];
+      if (sfx && textureExists(this.scene, UI_ASSETS.statusesAtlas?.key, sfx)) {
+        this.statusSprite.setFrame(sfx).setVisible(true);
+        this.sublabel.setVisible(false); // hide text sublabel when sprite shown
+      } else {
+        this.statusSprite.setVisible(false);
+        this.sublabel.setVisible(true);
+      }
+    }
+
+    // HP bar
     const hpPercent = clamp(Number(option.hpPercent ?? 100), 0, 100);
     const hpFrame   = hpPercent > 50 ? 'high' : hpPercent > 20 ? 'medium' : 'low';
     if (textureExists(this.scene, UI_ASSETS.partySlotHpOverlayAtlas.key, hpFrame)) {
@@ -90,6 +153,29 @@ class PartySlot {
     }
     setHorizontalCrop(this.hpBarFill, HP_FILL_WIDTH * (hpPercent / 100));
     this.hpText.setText(option.hpLabel || '');
+
+    // Pokemon icon — load dynamically if URL provided
+    if (option.iconUrl) {
+      const iconKey = `pkb-party-icon-${option.iconUrl}`;
+      const applyIcon = () => {
+        if (!this.scene.textures.exists(iconKey)) return;
+        if (!this.iconObj) {
+          // Create icon image and add to the row container
+          this.iconObj = this.scene.add.image(
+            this.isActive ? 4 : 2,
+            this.isActive ? 4 : 3,
+            iconKey
+          ).setOrigin(0, 0).setScale(0.5).setName(`party-icon-${this.index}`);
+          this.row.add(this.iconObj);
+        } else {
+          this.iconObj.setTexture(iconKey);
+        }
+        this.iconObj.setVisible(true);
+      };
+      loadIconTexture(this.scene, iconKey, option.iconUrl, applyIcon);
+    } else if (this.iconObj) {
+      this.iconObj.setVisible(false);
+    }
 
     this.hit.removeAllListeners();
     if (!option.disabled && option.action) {
