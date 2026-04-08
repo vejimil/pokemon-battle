@@ -95,9 +95,9 @@ export class BattleInfo {
           { x: -154, y: -17 },
         ]
       : [
-          { x: -15, y: -13.5 },
-          { x: -15, y: 0.5 },
-          { x: 0,   y: -13.5 },
+          { x: -15, y: -15.5 },
+          { x: -15, y: -2.5 },
+          { x: 0,   y: -15.5 },
         ];
   }
 
@@ -165,13 +165,13 @@ export class BattleInfo {
           .setOrigin(0, 0).setVisible(false).setScale(0.5).setName(`pbinfo-${this.side}-spliced`)
       : null;
 
-    // EXP bar — player only
+    // EXP bar — player only; starts hidden and becomes visible when exp > 0
     if (this.isPlayer) {
       this.expBar = scene.add.image(-98, 18, env.UI_ASSETS.overlayExp.key)
-        .setOrigin(0, 0).setName('pbinfo-player-exp-bg');
+        .setOrigin(0, 0).setVisible(false).setName('pbinfo-player-exp-bg');
       this.expBarLabel = env.textureExists(scene, env.UI_ASSETS.overlayExpLabel.key)
         ? scene.add.image(-91, 20, env.UI_ASSETS.overlayExpLabel.key)
-            .setOrigin(1, 1).setName('pbinfo-player-exp-label')
+            .setOrigin(1, 1).setVisible(false).setName('pbinfo-player-exp-label')
         : null;
     }
 
@@ -340,11 +340,7 @@ export class BattleInfo {
       this.lastHpPercent = newHpPercent;
     }
 
-    // --- EXP bar (player only, instant update) ---
-    if (this.expBar) {
-      const expPercent = clamp(Number(info.expPercent ?? 0), 0, 100);
-      setHorizontalCrop(this.expBar, 85 * (expPercent / 100));
-    }
+    // EXP bar is managed by PlayerBattleInfo._tweenExpBar() — skip here
 
     // --- Type icons ---
     const typeKeys = this.getTypeTextureKeys();

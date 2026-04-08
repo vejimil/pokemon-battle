@@ -20,8 +20,7 @@ export class PlayerBattleInfo extends BattleInfo {
       .setName('pbinfo-player-hp-numbers');
     this.container.add(this.hpNumbersContainer);
 
-    // Crop expBar to 0 on init so it's invisible before the first update()
-    if (this.expBar) env.setHorizontalCrop(this.expBar, 0);
+    // expBar starts hidden (setVisible(false) set in battle-info.js setup)
   }
 
   /**
@@ -71,6 +70,16 @@ export class PlayerBattleInfo extends BattleInfo {
     if (fromWidth === toWidth) return;
 
     const duration = this.lastExpPercent < 0 ? 0 : Math.abs(toWidth - fromWidth) * 20;
+
+    // Show/hide based on whether there's any exp to display
+    const shouldShow = toWidth > 0;
+    this.expBar.setVisible(shouldShow);
+    if (this.expBarLabel) this.expBarLabel.setVisible(shouldShow);
+
+    if (!shouldShow) {
+      env.setHorizontalCrop(this.expBar, 0);
+      return;
+    }
 
     // Proxy object so we can tween the crop width
     const proxy = { w: fromWidth };

@@ -77,47 +77,53 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (시각 버그 수정)
+## 다음 세션 우선순위 (시각 버그 — 2026-04-08 현재 미해결)
 
-### 1. 폰트 선명도 — `phaser-utils.js` `createBaseText`
-- `resolution: 1`로 변경했으나 여전히 흐림
-- 원인 후보: (a) 커스텀 픽셀 폰트(`emerald`, `pkmnems`)가 로드되지 않아 `monospace` 폴백 사용 중, (b) Phaser Scale FIT 모드에서 비정수 배율 적용
-- 조사 방법: 폰트 로드 여부 확인, `@font-face` CSS 등록 여부 체크, BitmapFont 전환 고려
+> **작업 원칙: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 읽고 정확히 일치시킬 것.**
 
-### 2. 적 타입 아이콘 y 위치 — `battle-info.js` `getTypeIconOffsets()`
-- 4px 낮췄더니 이번엔 너무 낮아짐 → 원래(-15.5)와 수정값(-11.5) 사이 중간값 탐색
-- 시작점: type1/3을 `-13.5`, type2를 `0.5` 로 조정 후 시각 확인
+### 1. 폰트 흐림 — 근본 원인 미확인
+- 시도한 것: `resolution:1`, `Scale.INTEGER_SCALE`, 폰트 사전 로딩 → 여전히 흐림
+- **다음 조사**: PokeRogue 원본이 canvas text를 어떻게 렌더링하는지 확인
+  - `pokerogue_codes/src/ui/text.ts` → `addTextObject` 구현 정확히 읽기
+  - PokeRogue가 BitmapFont를 사용하는지 여부 확인
+  - 실제로 `emerald` 폰트가 canvas에 적용되고 있는지 브라우저 DevTools → Layers 패널로 확인
+- 폰트가 문제라면 BitmapFont(스프라이트시트) 전환 고려
 
-### 3. 하단 대화창 레이아웃 — `battle-message-ui-handler.js`
-- 폰트 크기, 정렬, 창 내 텍스트 위치가 원본과 다름
-- PokeRogue 원본: `messageContainer`가 x=12, y=-39에 위치, 폰트 8px, wordWrap 215px
+### 2. 파란 바 — 근본 원인 미확인
+- 시도한 것: `expBar.setVisible(false)` 초기화, setCrop(0) → 여전히 표시됨
+- **다음 조사**: 파란 바가 정확히 어느 오브젝트인지 Phaser DevTools/Inspector로 특정
+  - `overlay_exp.png` 실제 색상 확인 (파란색 맞는지)
+  - `overlay_hp` 'high' 프레임이 실제로 로드되는지, 색상 확인
+  - PokeRogue 원본의 expBar mask 구현 (`expMaskRect` geometry mask) 이식 여부 재검토
+  - `pokerogue_codes/src/ui/battle-info/player-battle-info.ts` 의 expBar/expMaskRect 로직 정확히 이식
+
+### 3. 적 타입 아이콘 위치 — 원본과 불일치 가능성
+- 현재 값: `(-15, -15.5)` / `(-15, -2.5)` / `(0, -15.5)` (원본과 동일)
+- **다음 조사**: 타입 아이콘이 담긴 컨테이너(BattleInfo) 자체의 위치가 잘못됐을 가능성
+  - `ui.js`의 `enemyInfo` 컨테이너 위치가 PokeRogue 원본(`super(140, -141)` in fieldUI)과 일치하는지 재확인
+  - `pokerogue_codes/src/ui/battle-info/enemy-battle-info.ts` `constructTypeIcons()` 정확히 비교
+
+### 4. 하단 대화창 레이아웃
+- PokeRogue 원본: `messageContainer` x=12, y=-39, 폰트 8px, wordWrap 1780(원본 스케일)
 - 확인 항목: 창 높이(48px), bg 이미지 좌표, 메시지 컨테이너 오프셋
 
-### 4. 턴 인디케이터 (검은 바) — 미구현
+### 5. 턴 인디케이터 (검은 바) — 미구현
 - 배틀 턴 시작 시 화면 위에서 아래로 슬라이드되는 검은 막대
 - PokeRogue 원본: `battle-scene.ts`의 `turnBlackout` 또는 유사 트랜지션 요소
-- `phaser-battle-controller.js` 또는 `app.js`에서 턴 시작 이벤트에 훅 필요
-
-### 5. 미스터리 파란 바 — `battle-info.js` 또는 `player-battle-info.js`
-- HP바 옆에 EXP바가 아닌 파란 막대가 표시됨
-- 원인 후보: EXP바(`overlay_exp`)가 잘못된 위치에 렌더링되거나, HP fill bar가 파란색으로 보이는 것
-- `expBar` 위치(-98, 18)와 `hpFill` crop/scaleX 동작 점검
-
-### 6. 파티 교체 UI — `party-ui-handler.js`
-- 포켓몬 교체 화면 전반적으로 어색함
-- 완성도 55% → 슬롯 레이아웃, 커서, HP바, 상태이상 아이콘 점검 필요
-
-### 7. 기술 선택 UI — `fight-ui-handler.js`
-- Fight 메뉴 진입 후 레이아웃/커서 동작 어색함
-- movesContainer 위치(18, -38.7), 커서 위치(13, -31) 시각 재확인
 
 ### 향후 기능 작업 (버그 수정 후)
+- 파티 교체 UI (`party-ui-handler.js`) 전면 재작성
+- 기술 선택 UI (`fight-ui-handler.js`) Move Info Overlay
 - `command-ui-handler.js` Tera 버튼 색상 파이프라인
 - `battle-info.js` Stats 컨테이너 (능력치 변화 표시)
-- `battle-message-ui-handler.js` promptLevelUpStats → app.js 배틀 흐름 연결
 
-## 코드 작업 시 주의사항
-- PokeRogue 원본은 `/workspaces/pokemon-battle/pokerogue_codes/src/ui/` 참조
+## 코드 작업 시 핵심 원칙
+
+> **모든 UI 코드 수정의 기준은 PokeRogue 원본 소스다.**
+> `/workspaces/pokemon-battle/pokerogue_codes/src/ui/` 를 항상 먼저 읽고,
+> 원본 로직·좌표·프레임명을 정확히 확인한 뒤에 이식본을 수정할 것.
+> 추측이나 중간값으로 조정하지 말고, 원본과 동일하게 맞춘다.
+
 - 이식본의 `env` 객체: `clamp`, `textureExists`, `setHorizontalCrop`, `UI_ASSETS` 포함
 - 빌더/bundler 없음 — JS 파일은 ESM으로 직접 서빙
 - 에셋 추가 시: `constants.js` → `assets.js` 순으로 등록
@@ -133,5 +139,11 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 3. **ARENA_OFFSETS 수정** (`constants.js`): enemy/player 모두 `{x:0, y:0}` (ArenaBase 기본 위치)
 4. **폰트 선명도 수정** (`phaser-utils.js`): `resolution: 3 → 1` — pixelArt 모드와 조합해 선명한 픽셀 텍스트
 5. **커서 origin 수정** (`command-ui-handler.js`, `fight-ui-handler.js`): `.setOrigin(0,0)` 제거 → 기본값 (0.5, 0.5)
-6. **적 타입 아이콘 y 오프셋** (`battle-info.js`): -15.5→-11.5, -2.5→+1.5 (4px 하향)
-7. **어빌리티 바 위치/방향 수정** (`battle-info.js`): player x=0, enemy x=202, 이미지 origin(0,0), y=64
+6. **어빌리티 바 위치/방향 수정** (`battle-info.js`): player x=0, enemy x=202, 이미지 origin(0,0), y=64
+
+## 2026-04-08 시도한 작업 (효과 미확인 — 여전히 버그 있음)
+1. **타입 아이콘 y 오프셋 복원** (`battle-info.js`): 원본 값 `(-15, -15.5)` / `(-15, -2.5)` / `(0, -15.5)` 적용
+2. **EXP 바 초기 숨김** (`battle-info.js`, `player-battle-info.js`): `setVisible(false)` + `_tweenExpBar` 내 가시성 관리
+3. **Phaser Scale 모드 변경** (`controller.js`): `Scale.FIT → Scale.INTEGER_SCALE` (정수배 강제)
+4. **aspect-ratio 수정** (`styles.css`): 4/3 → 16/9 (320×180 게임 비율에 맞춤)
+5. **폰트 사전 로딩** (`controller.js`): `document.fonts.load()` await 추가

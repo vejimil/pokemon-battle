@@ -3213,7 +3213,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 
 .pkbattle-phaser-mount {
   width: min(100%, 1120px);
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 16 / 9;
   min-height: 0;
   max-height: 82vh;
   margin-inline: auto;

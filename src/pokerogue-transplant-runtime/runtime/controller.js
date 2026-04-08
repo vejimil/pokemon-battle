@@ -114,7 +114,9 @@ export class TransplantBattleController {
         resolution: renderResolution,
         dom: { createContainer: true },
         scale: {
-          mode: Phaser.Scale.FIT,
+          // INTEGER_SCALE ensures only integer multipliers (1x, 2x, 3x…) are used.
+          // This is critical for pixel-art fonts: non-integer scale blurs canvas text.
+          mode: Phaser.Scale.INTEGER_SCALE,
           autoCenter: Phaser.Scale.CENTER_BOTH,
           width: LOGICAL_WIDTH,
           height: LOGICAL_HEIGHT,
