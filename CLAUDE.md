@@ -110,6 +110,16 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 ### 5. 턴 인디케이터 (검은 바) — 미구현
 - 배틀 턴 시작 시 화면 위에서 아래로 슬라이드되는 검은 막대
 - PokeRogue 원본: `battle-scene.ts`의 `turnBlackout` 또는 유사 트랜지션 요소
+- 확인 후 원본에 없으면 작업 안함
+
+### 6. 배틀 화면 전체화면 전환 — `app.js` + `index.html`
+- **현재 문제**: 배틀 시작 시 팀 빌더 페이지 하단에 작은 Phaser 캔버스가 로드됨
+- **목표**: PokeRogue처럼 배틀 시작 버튼 클릭 시 별도 전체화면으로 전환
+- **구현 방향**:
+  - `window.open()`으로 새 탭/창을 열고 배틀 전용 HTML(`battle.html`)을 서빙하거나
+  - 현재 페이지에서 팀 빌더를 완전히 숨기고 Phaser 캔버스를 `position:fixed; inset:0` 으로 풀스크린 오버레이 처리
+  - 팀 데이터는 `sessionStorage` 또는 `window.opener` postMessage로 전달
+- **우선도**: 시각 버그 수정 이후 첫 번째 구조 작업
 
 ### 향후 기능 작업 (버그 수정 후)
 - 파티 교체 UI (`party-ui-handler.js`) 전면 재작성
