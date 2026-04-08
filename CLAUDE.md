@@ -40,12 +40,12 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 - `app.js`의 `buildBattleInfoModel()` 함수가 배틀 상태를 읽어서 모델 생성
 - Phaser 씬이 매 프레임 또는 상태 변화 시 UI 핸들러의 `update(model)` 호출
 
-## 현재 이식 완성도 (2026-04-07 최신)
+## 현재 이식 완성도 (2026-04-08 최신)
 
 | 파일 | 완성도 | 주요 미구현 |
 |------|--------|-----------|
 | `battle-info.js` | ~85% | Stats 컨테이너, 이름 자동 줄임 |
-| `player-battle-info.js` | ~75% | EXP 레벨업 사운드 처리 |
+| `player-battle-info.js` | ~85% | EXP 레벨업 사운드 처리 |
 | `enemy-battle-info.js` | ~65% | Type effectiveness 창, Flyout 메뉴 |
 | `fight-ui-handler.js` | ~90% | Move Info Overlay (전체화면 토글) |
 | `command-ui-handler.js` | ~78% | Tera 색상 파이프라인 |
@@ -77,25 +77,33 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (시각 버그 — 2026-04-08 현재 미해결)
+## 다음 세션 우선순위 (시각 버그 — 2026-04-08 미확인 항목)
 
-> **작업 원칙: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 읽고 정확히 일치시킬 것.**
+> **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
+> **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
+> **작업 원칙3: 나를 위한 설명은 한글로 하되, 작업 및 사고 자체는 영어로 진행할 것 - 토큰 절약을 위함**
 
-### 1. 폰트 흐림 — 근본 원인 미확인
-- 시도한 것: `resolution:1`, `Scale.INTEGER_SCALE`, 폰트 사전 로딩 → 여전히 흐림
-- **다음 조사**: PokeRogue 원본이 canvas text를 어떻게 렌더링하는지 확인
+### 1. 폰트 흐림 — 미해결 (2026-04-08 현재)
+- 시도한 것:
+  - `resolution:1` 고정
+  - `Scale.INTEGER_SCALE` 적용
+  - 폰트 사전 로딩 (`document.fonts.load()`)
+  - `TEXT_RENDER_SCALE=6` 도입 (48px 렌더 후 `setScale(1/6)`) → **여전히 흐림**
+- **다음 조사**: PokeRogue가 canvas Text 오브젝트를 쓰는지 BitmapText를 쓰는지 확인
   - `pokerogue_codes/src/ui/text.ts` → `addTextObject` 구현 정확히 읽기
-  - PokeRogue가 BitmapFont를 사용하는지 여부 확인
-  - 실제로 `emerald` 폰트가 canvas에 적용되고 있는지 브라우저 DevTools → Layers 패널로 확인
-- 폰트가 문제라면 BitmapFont(스프라이트시트) 전환 고려
+  - PokeRogue가 BitmapFont/BitmapText를 사용하는지 확인 (BitmapText면 canvas Text와 완전히 다른 방식)
+  - 브라우저 DevTools → Rendering 탭 → "Show composited layer borders" 로 canvas 레이어 확인
+  - 실제로 `emerald` 폰트가 Phaser canvas에 적용되고 있는지 확인
+- **유력한 다음 시도**: BitmapFont(스프라이트시트) 방식으로 전환
 
-### 2. 파란 바 — 근본 원인 미확인
-- 시도한 것: `expBar.setVisible(false)` 초기화, setCrop(0) → 여전히 표시됨
-- **다음 조사**: 파란 바가 정확히 어느 오브젝트인지 Phaser DevTools/Inspector로 특정
-  - `overlay_exp.png` 실제 색상 확인 (파란색 맞는지)
-  - `overlay_hp` 'high' 프레임이 실제로 로드되는지, 색상 확인
-  - PokeRogue 원본의 expBar mask 구현 (`expMaskRect` geometry mask) 이식 여부 재검토
-  - `pokerogue_codes/src/ui/battle-info/player-battle-info.ts` 의 expBar/expMaskRect 로직 정확히 이식
+### 2. 남색 바 — 정체 미확인 (2026-04-08 현재)
+- **증상**: 아군 체력창 오른쪽, 적 체력창 왼쪽에 2-3픽셀 굵기의 수평 남색 바가 튀어나와 있음
+- **중요**: exp 바와 무관. PokeRogue 원본에도 없는 이물질
+- **다음 조사**: Phaser DevTools / 브라우저 Inspector로 해당 오브젝트 특정
+  - `battle-info.js` 또는 `player/enemy-battle-info.js` 에서 생성되는 Image/Sprite 중 좌표 범위가 tray 밖으로 나가는 것이 있는지 확인
+  - HP 오버레이 관련 오브젝트(`overlay_hp`) 프레임 크기(48×2px)와 실제 렌더 위치 재확인
+  - `addWindow` 로 생성된 bg 나인슬라이스가 의도치 않게 남색으로 렌더되는지 확인
+  - tray 컨테이너의 크기/마스킹 여부 확인 (넘치는 자식 오브젝트가 클리핑되지 않을 수 있음)
 
 ### 3. 적 타입 아이콘 위치 — 원본과 불일치 가능성
 - 현재 값: `(-15, -15.5)` / `(-15, -2.5)` / `(0, -15.5)` (원본과 동일)
@@ -103,23 +111,15 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `ui.js`의 `enemyInfo` 컨테이너 위치가 PokeRogue 원본(`super(140, -141)` in fieldUI)과 일치하는지 재확인
   - `pokerogue_codes/src/ui/battle-info/enemy-battle-info.ts` `constructTypeIcons()` 정확히 비교
 
-### 4. 하단 대화창 레이아웃
+### 4. 하단 대화창 레이아웃 — 미확인
 - PokeRogue 원본: `messageContainer` x=12, y=-39, 폰트 8px, wordWrap 1780(원본 스케일)
-- 확인 항목: 창 높이(48px), bg 이미지 좌표, 메시지 컨테이너 오프셋
+- 2026-04-08 조치: `setTextWordWrap()` 유틸 도입 — 로지컬 픽셀 값에 `TEXT_RENDER_SCALE(6)` 을 곱해서 실제 렌더 크기와 일치시킴
+- **다음 확인**: 창 높이(48px), bg 이미지 좌표, 메시지 컨테이너 오프셋 브라우저 확인
 
 ### 5. 턴 인디케이터 (검은 바) — 미구현
 - 배틀 턴 시작 시 화면 위에서 아래로 슬라이드되는 검은 막대
 - PokeRogue 원본: `battle-scene.ts`의 `turnBlackout` 또는 유사 트랜지션 요소
 - 확인 후 원본에 없으면 작업 안함
-
-### 6. 배틀 화면 전체화면 전환 — `app.js` + `index.html`
-- **현재 문제**: 배틀 시작 시 팀 빌더 페이지 하단에 작은 Phaser 캔버스가 로드됨
-- **목표**: PokeRogue처럼 배틀 시작 버튼 클릭 시 별도 전체화면으로 전환
-- **구현 방향**:
-  - `window.open()`으로 새 탭/창을 열고 배틀 전용 HTML(`battle.html`)을 서빙하거나
-  - 현재 페이지에서 팀 빌더를 완전히 숨기고 Phaser 캔버스를 `position:fixed; inset:0` 으로 풀스크린 오버레이 처리
-  - 팀 데이터는 `sessionStorage` 또는 `window.opener` postMessage로 전달
-- **우선도**: 시각 버그 수정 이후 첫 번째 구조 작업
 
 ### 향후 기능 작업 (버그 수정 후)
 - 파티 교체 UI (`party-ui-handler.js`) 전면 재작성
@@ -134,12 +134,13 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 > 원본 로직·좌표·프레임명을 정확히 확인한 뒤에 이식본을 수정할 것.
 > 추측이나 중간값으로 조정하지 말고, 원본과 동일하게 맞춘다.
 
-- 이식본의 `env` 객체: `clamp`, `textureExists`, `setHorizontalCrop`, `UI_ASSETS` 포함
+- 이식본의 `env` 객체: `clamp`, `textureExists`, `setHorizontalCrop`, `setTextWordWrap`, `UI_ASSETS` 포함
 - 빌더/bundler 없음 — JS 파일은 ESM으로 직접 서빙
 - 에셋 추가 시: `constants.js` → `assets.js` 순으로 등록
 - multiatlas (textures[] 배열 형식): `load.multiatlas(key, json, path)` 사용
 - 일반 atlas: `load.atlas(key, image, json)` 사용
-- **텍스트 해상도**: `createBaseText`에서 `resolution: 1` 고정 (3으로 올리면 안티앨리어싱 발생 → 흐릿해짐)
+- **텍스트 렌더링**: `createBaseText`에서 `TEXT_RENDER_SCALE=6` 방식 사용 — fontSize×6으로 렌더링 후 `setScale(1/6)` (PokeRogue 원본 동일), `resolution: 1` 고정
+- **wordWrap 지정**: 로지컬 픽셀 값으로 `env.setTextWordWrap(obj, width)` 호출 — 직접 `setWordWrapWidth()` 호출 금지 (6× 스케일 보정 필요)
 - **커서 이미지**: `setOrigin` 호출하지 말 것 — Phaser 기본값 (0.5, 0.5) 사용이 PokeRogue와 동일
 - **어빌리티 바**: enemy=오른쪽(x=202), player=왼쪽(x=0), 두 이미지 모두 origin(0,0)
 
@@ -151,9 +152,12 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 5. **커서 origin 수정** (`command-ui-handler.js`, `fight-ui-handler.js`): `.setOrigin(0,0)` 제거 → 기본값 (0.5, 0.5)
 6. **어빌리티 바 위치/방향 수정** (`battle-info.js`): player x=0, enemy x=202, 이미지 origin(0,0), y=64
 
-## 2026-04-08 시도한 작업 (효과 미확인 — 여전히 버그 있음)
+## 2026-04-08 완료한 작업
 1. **타입 아이콘 y 오프셋 복원** (`battle-info.js`): 원본 값 `(-15, -15.5)` / `(-15, -2.5)` / `(0, -15.5)` 적용
-2. **EXP 바 초기 숨김** (`battle-info.js`, `player-battle-info.js`): `setVisible(false)` + `_tweenExpBar` 내 가시성 관리
-3. **Phaser Scale 모드 변경** (`controller.js`): `Scale.FIT → Scale.INTEGER_SCALE` (정수배 강제)
-4. **aspect-ratio 수정** (`styles.css`): 4/3 → 16/9 (320×180 게임 비율에 맞춤)
-5. **폰트 사전 로딩** (`controller.js`): `document.fonts.load()` await 추가
+2. **Phaser Scale 모드 변경** (`controller.js`): `Scale.FIT → Scale.INTEGER_SCALE` (정수배 강제)
+3. **aspect-ratio 수정** (`styles.css`): 4/3 → 16/9 (320×180 게임 비율에 맞춤)
+4. **폰트 렌더링 방식 근본 수정** (`phaser-utils.js`): `TEXT_RENDER_SCALE=6` 도입 — `fontSize×6`으로 텍스트 생성 후 `setScale(1/6)`, PokeRogue 원본 방식과 동일
+5. **wordWrap 6× 스케일 대응** (`phaser-utils.js`, `battle-message-ui-handler.js`, `command-ui-handler.js`): `setTextWordWrap(obj, logicalWidth)` 유틸 추가 및 기존 직접 호출 교체
+6. **폰트 사전 로딩 크기 수정** (`controller.js`): 8px → 48px (`TEXT_RENDER_SCALE×8`) 로 브라우저 캐시 정합성 개선
+7. **EXP 바 geometry mask 이식** (`player-battle-info.js`): `expMaskRect` geometry mask 방식으로 전환 — PokeRogue 원본과 동일한 `scene.make.graphics()` + `createGeometryMask()` 패턴, `_applyExpMask(width)` 메서드 추가
+8. **배틀 전체화면 오버레이 구현 ✅** (`app.js`, `index.html`, `styles.css`): `enterBattleFullscreen()` / `exitBattleFullscreen()` 함수, `battle-fullscreen` CSS 클래스(`position:fixed; inset:0`), `← 빌더로` 버튼 및 ESC 키 지원 — **정상 동작 확인**
