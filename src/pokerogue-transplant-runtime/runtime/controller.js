@@ -86,6 +86,14 @@ export class TransplantBattleController {
         this.resolveSceneReady = resolve;
         this.rejectSceneReady = reject;
       });
+      // Pre-load custom pixel fonts so Phaser canvas text uses them from the first frame,
+      // rather than falling back to the monospace system font.
+      try {
+        await Promise.allSettled([
+          document.fonts.load('8px "emerald"', 'Aa0'),
+          document.fonts.load('8px "pkmnems"', 'Aa0'),
+        ]);
+      } catch (_) { /* font loading is non-critical */ }
       const Phaser = await loadPhaserModule();
       const sceneClass = createBattleShellSceneClass(Phaser, { LOGICAL_WIDTH, LOGICAL_HEIGHT, UI_ASSETS });
       const scene = new sceneClass(this);

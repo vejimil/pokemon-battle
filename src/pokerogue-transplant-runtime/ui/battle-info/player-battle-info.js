@@ -13,12 +13,15 @@ export class PlayerBattleInfo extends BattleInfo {
   setup() {
     super.setup();
 
-    const { scene } = this;
+    const { scene, env } = this;
 
     // HP numbers container — right-aligned at x=-15, y=10 (PokeRogue hpNumbersContainer)
     this.hpNumbersContainer = scene.add.container(-15, 10)
       .setName('pbinfo-player-hp-numbers');
     this.container.add(this.hpNumbersContainer);
+
+    // Crop expBar to 0 on init so it's invisible before the first update()
+    if (this.expBar) env.setHorizontalCrop(this.expBar, 0);
   }
 
   /**
