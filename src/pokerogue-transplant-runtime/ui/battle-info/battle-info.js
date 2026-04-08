@@ -384,6 +384,8 @@ export class BattleTray {
       return ball;
     });
     this.container.add([this.overlay, ...this.balls]);
+    // PokeRogue: PokeballTray starts hidden; only shown via showPbTray() during party switch
+    this.container.setVisible(false);
   }
 
   update(tray = []) {
