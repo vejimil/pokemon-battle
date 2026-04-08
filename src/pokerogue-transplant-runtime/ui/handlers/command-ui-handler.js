@@ -62,7 +62,7 @@ export class CommandUiHandler extends UiHandler {
     messageHandler.bg.setVisible(true);
     messageHandler.commandWindow.setVisible(true);
     messageHandler.movesWindowContainer.setVisible(false);
-    messageHandler.message.setWordWrapWidth(this.canTera() ? 91 : 111, true);
+    this.env.setTextWordWrap(messageHandler.message, this.canTera() ? 91 : 111, true);
     if (state.title) {
       messageHandler.showText(state.title, 0, null, null, false);
     }

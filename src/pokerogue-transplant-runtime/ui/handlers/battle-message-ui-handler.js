@@ -97,7 +97,7 @@ export class BattleMessageUiHandler extends MessageUiHandler {
     this.bg.setVisible(true);
     this.commandWindow.setVisible(false);
     this.movesWindowContainer.setVisible(false);
-    this.message.setWordWrapWidth(this.wordWrapWidth, true);
+    this.env.setTextWordWrap(this.message, this.wordWrapWidth, true);
     return true;
   }
 

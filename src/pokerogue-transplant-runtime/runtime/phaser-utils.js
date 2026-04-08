@@ -27,16 +27,41 @@ export function textureExists(scene, key, frame = null) {
   }
 }
 
+// PokeRogue renders text at 6× the logical font size then setScale(1/6),
+// so the browser renders crisp pixel-art glyphs at high resolution and
+// the downscale (with pixelArt nearest-neighbour) recovers the clean design.
+export const TEXT_RENDER_SCALE = 6;
+
 export function createBaseText(scene, x, y, text = '', fontSize = 8, color = '#f8fbff', options = {}) {
+  const S = TEXT_RENDER_SCALE;
+  // Scale wordWrap.width from logical pixels to the internal render canvas pixels.
+  const processedOptions = { ...options };
+  if (processedOptions.wordWrap) {
+    processedOptions.wordWrap = { ...processedOptions.wordWrap };
+    if (typeof processedOptions.wordWrap.width === 'number') {
+      processedOptions.wordWrap.width = processedOptions.wordWrap.width * S;
+    }
+  }
   const t = scene.add.text(x, y, text, {
     fontFamily: 'emerald, pkmnems, monospace',
-    fontSize: `${fontSize}px`,
+    fontSize: `${fontSize * S}px`,
     color,
     resolution: 1,
-    ...options,
+    ...processedOptions,
   });
+  t.setScale(1 / S);
   t.setRoundPixels?.(true);
   return t;
+}
+
+/**
+ * Wraps Phaser Text.setWordWrapWidth() to accept logical pixel values.
+ * Always multiply by TEXT_RENDER_SCALE because createBaseText renders at 6×.
+ */
+export function setTextWordWrap(textObj, logicalWidth, useAdvanced = true) {
+  if (textObj?.setWordWrapWidth) {
+    textObj.setWordWrapWidth(logicalWidth * TEXT_RENDER_SCALE, useAdvanced);
+  }
 }
 
 export function setHorizontalCrop(gameObject, width) {

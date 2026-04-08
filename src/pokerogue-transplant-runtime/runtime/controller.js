@@ -1,5 +1,5 @@
 import { LOGICAL_HEIGHT, LOGICAL_WIDTH, UI_ASSETS } from './constants.js';
-import { loadPhaserModule } from './phaser-utils.js';
+import { loadPhaserModule, TEXT_RENDER_SCALE } from './phaser-utils.js';
 import { createBattleShellSceneClass } from '../scene/battle-shell-scene.js';
 
 function measureMountSize(mount) {
@@ -86,12 +86,14 @@ export class TransplantBattleController {
         this.resolveSceneReady = resolve;
         this.rejectSceneReady = reject;
       });
-      // Pre-load custom pixel fonts so Phaser canvas text uses them from the first frame,
-      // rather than falling back to the monospace system font.
+      // Pre-load custom pixel fonts so Phaser canvas text uses them from the first frame.
+      // Load at the render scale size (TEXT_RENDER_SCALE × logical) so the browser
+      // caches the right glyph rasterisation (matching createBaseText's fontSize*S).
+      const preloadSize = `${8 * TEXT_RENDER_SCALE}px`; // 48px = 8px logical × 6
       try {
         await Promise.allSettled([
-          document.fonts.load('8px "emerald"', 'Aa0'),
-          document.fonts.load('8px "pkmnems"', 'Aa0'),
+          document.fonts.load(`${preloadSize} "emerald"`, 'Aa0'),
+          document.fonts.load(`${preloadSize} "pkmnems"`, 'Aa0'),
         ]);
       } catch (_) { /* font loading is non-critical */ }
       const Phaser = await loadPhaserModule();

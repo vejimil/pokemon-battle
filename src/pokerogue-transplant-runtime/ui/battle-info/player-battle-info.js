@@ -13,14 +13,26 @@ export class PlayerBattleInfo extends BattleInfo {
   setup() {
     super.setup();
 
-    const { scene, env } = this;
+    const { scene } = this;
 
     // HP numbers container — right-aligned at x=-15, y=10 (PokeRogue hpNumbersContainer)
     this.hpNumbersContainer = scene.add.container(-15, 10)
       .setName('pbinfo-player-hp-numbers');
     this.container.add(this.hpNumbersContainer);
 
-    // expBar starts hidden (setVisible(false) set in battle-info.js setup)
+    // Apply geometry mask to expBar (matches PokeRogue's expMaskRect approach).
+    // Mask position is initialised lazily in _tweenExpBar once the container
+    // layout has been applied and container.x / .y are known.
+    if (this.expBar) {
+      // scene.make.graphics() creates standalone (not in display list); used only
+      // as a geometry mask stencil — identical to PokeRogue's expMaskRect pattern.
+      this.expMaskRect = scene.make.graphics({}).setName('pbinfo-player-exp-mask');
+      const expMask = this.expMaskRect.createGeometryMask();
+      this.expBar.setMask(expMask);
+      // Keep expBar visible — the mask (which starts empty) controls what shows.
+      this.expBar.setVisible(true);
+      if (this.expBarLabel) this.expBarLabel.setVisible(false); // label only shows with exp
+    }
   }
 
   /**
@@ -55,11 +67,36 @@ export class PlayerBattleInfo extends BattleInfo {
   }
 
   /**
+   * Compute the world-space origin of the expBar (container pos + local offset).
+   * Called lazily so that layout() has already positioned the container.
+   */
+  _getExpMaskOrigin() {
+    // expBar is at local (-98, 18) with origin (0,0) inside this.container.
+    return {
+      x: this.container.x + (-98),
+      y: this.container.y + 18,
+    };
+  }
+
+  /** Draw the geometry mask to reveal `width` pixels of the exp bar (left to right). */
+  _applyExpMask(width) {
+    if (!this.expMaskRect) return;
+    const EXP_BAR_H = 2;
+    const { x, y } = this._getExpMaskOrigin();
+    this.expMaskRect.clear();
+    if (width >= 1) {
+      this.expMaskRect.fillStyle(0xffffff).fillRect(x, y, width, EXP_BAR_H);
+    }
+    // When width < 1 the mask is empty → bar is invisible (no mask = nothing shown).
+  }
+
+  /**
    * Animate the exp bar from current position to newExpPercent.
-   * Matches PokeRogue's updatePokemonExp() pattern.
+   * Uses a geometry mask (like PokeRogue's expMaskRect) so visibility is
+   * controlled by the mask rather than setVisible/setCrop.
    */
   _tweenExpBar(newExpPercent) {
-    const { scene, env } = this;
+    const { scene } = this;
     if (!this.expBar) return;
 
     const EXP_MAX_WIDTH = 85;
@@ -71,29 +108,46 @@ export class PlayerBattleInfo extends BattleInfo {
 
     const duration = this.lastExpPercent < 0 ? 0 : Math.abs(toWidth - fromWidth) * 20;
 
-    // Show/hide based on whether there's any exp to display
-    const shouldShow = toWidth > 0;
-    this.expBar.setVisible(shouldShow);
-    if (this.expBarLabel) this.expBarLabel.setVisible(shouldShow);
+    // Show/hide exp label
+    if (this.expBarLabel) this.expBarLabel.setVisible(toWidth >= 1);
 
-    if (!shouldShow) {
-      env.setHorizontalCrop(this.expBar, 0);
-      return;
-    }
-
-    // Proxy object so we can tween the crop width
-    const proxy = { w: fromWidth };
-    if (scene.tweens) {
-      scene.tweens.add({
-        targets: proxy,
-        w: toWidth,
-        ease: 'Sine.easeIn',
-        duration,
-        onUpdate: () => env.setHorizontalCrop(this.expBar, proxy.w),
-        onComplete: () => env.setHorizontalCrop(this.expBar, toWidth),
-      });
+    if (this.expMaskRect) {
+      // Geometry-mask path: tween the mask width.
+      if (!scene.tweens || duration === 0) {
+        this._applyExpMask(toWidth);
+      } else {
+        const proxy = { w: fromWidth };
+        scene.tweens.add({
+          targets: proxy,
+          w: toWidth,
+          ease: 'Sine.easeIn',
+          duration,
+          onUpdate: () => this._applyExpMask(proxy.w),
+          onComplete: () => this._applyExpMask(toWidth),
+        });
+      }
     } else {
-      env.setHorizontalCrop(this.expBar, toWidth);
+      // Fallback: crop-based approach
+      const { env } = this;
+      if (toWidth < 1) {
+        this.expBar.setVisible(false);
+        env.setHorizontalCrop(this.expBar, 0);
+        return;
+      }
+      this.expBar.setVisible(true);
+      if (!scene.tweens || duration === 0) {
+        env.setHorizontalCrop(this.expBar, toWidth);
+      } else {
+        const proxy = { w: fromWidth };
+        scene.tweens.add({
+          targets: proxy,
+          w: toWidth,
+          ease: 'Sine.easeIn',
+          duration,
+          onUpdate: () => env.setHorizontalCrop(this.expBar, proxy.w),
+          onComplete: () => env.setHorizontalCrop(this.expBar, toWidth),
+        });
+      }
     }
   }
 
@@ -139,9 +193,10 @@ export class PlayerBattleInfo extends BattleInfo {
     // Shift container Y (PokeRogue: this.y -= 12 * (mini ? 1 : -1))
     this.container.y += -12 * (mini ? 1 : -1);
 
-    // Toggle HP numbers and exp bar visibility
-    [this.hpNumbersContainer, this.expBar, this.expBarLabel]
-      .filter(Boolean)
-      .forEach(el => el.setVisible(!mini));
+    // Toggle HP numbers and exp bar / label visibility
+    if (this.hpNumbersContainer) this.hpNumbersContainer.setVisible(!mini);
+    // expBar visibility: in mini mode hide it; otherwise let the geometry mask control display
+    if (this.expBar) this.expBar.setVisible(!mini);
+    if (this.expBarLabel) this.expBarLabel.setVisible(!mini && this.lastExpPercent > 0);
   }
 }

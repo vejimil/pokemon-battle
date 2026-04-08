@@ -3688,6 +3688,7 @@ function bindElements() {
     battlePhaserRoot: document.getElementById('battle-phaser-root'),
     battlePhaserMount: document.getElementById('battle-phaser-mount'),
     battlePhaserStatus: document.getElementById('battle-phaser-status'),
+    battleExitFullscreenBtn: document.getElementById('battle-exit-fullscreen-btn'),
     battleLog: document.getElementById('battle-log'),
     pendingChoices: document.getElementById('pending-choices'),
     clearLogBtn: document.getElementById('clear-log-btn'),
@@ -6446,10 +6447,24 @@ const pkbPokerogueUiAdapter = Object.freeze({
   dispatchAction: action => dispatchPkbPokerogueUiAction(action),
 });
 
+function enterBattleFullscreen() {
+  if (!els.battlePhaserRoot) return;
+  els.battlePhaserRoot.classList.add('battle-fullscreen');
+  els.battlePhaserRoot.hidden = false;
+  if (els.battleExitFullscreenBtn) els.battleExitFullscreenBtn.hidden = false;
+}
+
+function exitBattleFullscreen() {
+  if (!els.battlePhaserRoot) return;
+  els.battlePhaserRoot.classList.remove('battle-fullscreen');
+  if (els.battleExitFullscreenBtn) els.battleExitFullscreenBtn.hidden = true;
+}
+
 async function syncPhaserBattleRenderer(battle) {
   if (!els.battlePanel) return false;
   if (!battle) {
     els.battlePanel.classList.remove('is-phaser-active');
+    exitBattleFullscreen();
     if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = true;
     phaserBattleRenderer?.hide();
     return false;
@@ -6460,12 +6475,13 @@ async function syncPhaserBattleRenderer(battle) {
   if (!phaserBattleRenderer) return false;
   try {
     const model = pkbPokerogueUiAdapter.buildModel(battle);
-    if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = false;
+    enterBattleFullscreen();
     await phaserBattleRenderer.show(model, {onAction: pkbPokerogueUiAdapter.dispatchAction});
     els.battlePanel.classList.add('is-phaser-active');
     return true;
   } catch (error) {
     console.error('Phaser battle renderer activation failed.', error);
+    exitBattleFullscreen();
     if (els.battlePhaserStatus) {
       els.battlePhaserStatus.hidden = false;
       els.battlePhaserStatus.dataset.tone = 'error';
@@ -6680,6 +6696,7 @@ function wireBattleEvents() {
   els.backToBuilderBtn.addEventListener('click', () => {
     state.battle = null;
     resetBattlePresentationState();
+    exitBattleFullscreen();
     phaserBattleRenderer?.hide();
     if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = true;
     els.battlePanel.classList.remove('is-phaser-active');
@@ -6689,6 +6706,17 @@ function wireBattleEvents() {
   els.restartBattleBtn.addEventListener('click', () => {
     resetBattlePresentationState();
     startBattle();
+  });
+  // Fullscreen exit: button click or ESC key
+  if (els.battleExitFullscreenBtn) {
+    els.battleExitFullscreenBtn.addEventListener('click', () => {
+      exitBattleFullscreen();
+    });
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && els.battlePhaserRoot?.classList.contains('battle-fullscreen')) {
+      exitBattleFullscreen();
+    }
   });
   els.battlePerspectiveP1Btn?.addEventListener('click', () => setBattlePerspective(0));
   els.battlePerspectiveP2Btn?.addEventListener('click', () => setBattlePerspective(1));

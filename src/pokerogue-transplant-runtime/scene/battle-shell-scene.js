@@ -1,7 +1,7 @@
 import { ARENA_OFFSETS } from '../runtime/constants.js';
 import { preloadUiAssets } from '../runtime/assets.js';
 import { ensureSpriteHostStyles, renderAnimatedSpriteToHost, setHostVisibility } from '../runtime/sprite-host.js';
-import { clamp, textureExists, createBaseText, setHorizontalCrop, setInteractiveTarget, applyHostBox, addWindow } from '../runtime/phaser-utils.js';
+import { clamp, textureExists, createBaseText, setHorizontalCrop, setInteractiveTarget, applyHostBox, addWindow, setTextWordWrap } from '../runtime/phaser-utils.js';
 import { buttonFromKeyboardEvent, isTypingIntoElement } from '../ui/facade/input-facade.js';
 import { TransplantBattleUI } from '../ui/ui.js';
 
@@ -29,6 +29,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         textureExists,
         createBaseText,
         setHorizontalCrop,
+        setTextWordWrap,
         setInteractiveTarget,
         renderAnimatedSpriteToHost,
         applyHostBox,
