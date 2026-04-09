@@ -47,11 +47,11 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 | `battle-info.js` | ~88% | Stats 컨테이너 |
 | `player-battle-info.js` | ~85% | EXP 레벨업 사운드 처리 |
 | `enemy-battle-info.js` | ~68% | Type effectiveness 창, Flyout 메뉴 |
-| `fight-ui-handler.js` | ~55% | 오른쪽 패널 과밀 (`moveNameText`/`descriptionText`/토글/풋터 재설계 필요) |
+| `fight-ui-handler.js` | ~75% | MoveInfoOverlay, 토글 버튼 위치 재검증 필요 |
 | `command-ui-handler.js` | ~80% | Tera 색상 파이프라인 |
-| `party-ui-handler.js` | ~35% | DOM 숨김 미해결(`renderModel()` 덮어씀), 아이콘 케이스 불일치 |
-| `ui.js` | ~85% | `partyModeActive` 플래그 미구현 |
-| `app.js` | ~90% | party 아이콘 경로 케이스 불일치 |
+| `party-ui-handler.js` | ~60% | 레이아웃 세부 개선 잔여 |
+| `ui.js` | ~92% | partyModeActive 플래그 완료 |
+| `app.js` | ~92% | iconPath toUpperCase 완료 |
 | `battle-message-ui-handler.js` | ~75% | `promptLevelUpStats` 트리거 연결 필요 |
 | `target-select-ui-handler.js` | ~40% | 싱글 배틀이라 field 스프라이트 접근 불가 |
 | `text.js` (helpers) | ~95% | 완성 |
@@ -118,11 +118,11 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - `enemy-battle-info.js` setup()에서 `super.setup()` 직후 `this.bg.setY(-1)` 적용
 - 원본 코드는 y=0이나 렌더링 아티팩트로 enemy만 보정 적용. player는 건드리지 않음.
 
-### 7. 교체 UI 레이아웃 오류 — **미해결, 원인 규명 완료** (2026-04-09 스크린샷 재검토)
-- `party-ui-handler.js` `show()`의 DOM 숨김 시도 자체는 있었지만, `ui.js renderModel()`이 매 렌더마다 `enemySprite.dom.setVisible(!deferred)` / `playerSprite.dom.setVisible(!deferred)`를 다시 실행해 숨김을 덮어씀
-- 따라서 **실제 해결은 `party-ui-handler.js`만 수정해서는 안 되고**, `ui.js`에 `partyModeActive` 플래그를 추가해 render 단계에서 DOM 스프라이트 재표시 자체를 막아야 함
-- 추가로 party 아이콘 경로가 소문자(`klefki.png`)를 가리켜 Linux에서 404가 발생하므로, `iconPath()`에 `spriteId.toUpperCase()` 보정이 필요
-- DOM 문제를 먼저 해결한 뒤, `party_bg.png`의 8-bit colormap 렌더링 여부를 별도로 재확인해야 함
+### 7. 교체 UI DOM 숨김 — **수정 완료** (2026-04-09 Phase 7)
+- `ui.js`에 `partyModeActive` 플래그 추가, `renderModel()`에서 `!deferred && !this.partyModeActive` 조건 적용
+- `party-ui-handler.js` `show()`에서 `this.ui.partyModeActive = true`, `clear()`에서 `false` 설정
+- `app.js` `iconPath()`: `spriteId.toUpperCase()` 적용 — Icons 폴더 파일명이 대문자임 (KLEFKI.png 등)
+- **다음**: `party_bg.png` 8-bit colormap 렌더링 여부, 파티 슬롯 레이아웃 세부 검증
 
 ### 8. 싸운다 UI — 카테고리 아이콘 — **수정 완료** (`fight-ui-handler.js`)
 - categories atlas 정상 로드 확인 (constants.js, assets.js, JSON 포맷 모두 ✓)
@@ -130,17 +130,17 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - `moveCategoryIcon`: `setVisible(false)` 추가, scale `0.55→1.0` (원본 ts:272)
 - `updateMoveDetail()`: 두 아이콘 모두 `setTexture()` 후 `setScale()` 재호출 추가
 
-### 9. Fight UI 오버플로우 — **1차 수정 실패, 근본 재작업 필요** (2026-04-09 스크린샷 재검토)
-- 토글/풋터 버튼 좌표만 옮겨서는 문제가 해결되지 않았음. **근본 문제는 80×48px 오른쪽 패널에 원본보다 훨씬 많은 요소를 넣고 있다는 점**
-- 원본 PokeRogue fight 패널에는 `typeIcon`, `moveCategoryIcon`, `PP`, `위력`, `명중률`만 있으며, **`moveNameText`와 `descriptionText`는 존재하지 않음**
-- 따라서 우선 `moveNameText`와 `descriptionText`를 제거해 오른쪽 패널을 원본의 8개 요소 구조로 되돌린 뒤, 토글 버튼은 movesWindow 위쪽(y≈-62) 부유 영역으로, 풋터 버튼은 왼쪽 패널 하단 여백으로 재배치해야 함
+### 9. Fight UI 오버플로우 — **수정 완료** (2026-04-09 Phase 7)
+- `moveNameText`, `descriptionText` 삭제 — 오른쪽 패널을 원본 8개 요소(typeIcon, moveCategoryIcon, pp/power/accuracy 라벨·값)로 정리
+- pp/power/accuracy 라벨·값 모두 `setVisible(false)` 초기화, `updateMoveDetail()`에서 일괄 visibility 제어 (원본 setInfoVis 패턴)
+- `clear()`에서 `moveInfoContainer.iterate(o => o.setVisible(false))` 추가
+- **다음**: 스크린샷으로 Fight UI 재검증 후 MoveInfoOverlay 작업
 
-### 다음 실제 우선순위 (Phase 7 기준)
-- `fight-ui-handler.js`: `moveNameText`, `descriptionText` 삭제 → 오른쪽 패널을 원본 PokeRogue의 8개 요소만 남기도록 정리
-- `fight-ui-handler.js`: 토글 버튼을 movesWindow 상단 위(y≈-62)로 이동하고, 풋터 버튼은 왼쪽 패널 하단 여백 기준으로 다시 검증
-- `ui.js` + `party-ui-handler.js`: `partyModeActive` 플래그를 도입해 파티 모드 중 DOM 배틀 스프라이트 재표시를 차단
-- `app.js`: `iconPath()`에 `spriteId.toUpperCase()` 적용하여 party 아이콘 케이스 불일치 해결
-- 위 4개 수정 후 스크린샷 기준으로 Fight UI/Party UI를 다시 시각 검증한 다음, 그 다음 단계로 `MoveInfoOverlay`, Tera 파이프라인, Stats 컨테이너 작업에 들어갈 것
+### 다음 실제 우선순위 (Phase 8 기준)
+- **스크린샷 시각 검증**: Fight UI 오른쪽 패널, Party UI DOM 숨김 정상 동작 여부 확인
+- `fight-ui-handler.js`: MoveInfoOverlay 이식 (원본 ts:108-121, `delayVisibility: true, onSide: true, right: true`)
+- `command-ui-handler.js`: Tera 색상 파이프라인
+- `party-ui-handler.js`: 슬롯 레이아웃 세부 개선, party_bg 렌더링 확인
 
 ## 코드 작업 시 핵심 원칙
 
