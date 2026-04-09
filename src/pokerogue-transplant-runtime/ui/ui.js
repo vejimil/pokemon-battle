@@ -48,6 +48,18 @@ export class TransplantBattleUI {
     [this.enemyTray.container, this.playerTray.container, this.enemyInfo.container, this.playerInfo.container, this.abilityBar.container].forEach(node => {
       if (node) this.rootContainer.add(node);
     });
+    // Phaser Container renders children in addition order by default (sortChildrenFlag=false).
+    // Enable depth sort so setDepth() values are respected.
+    this.rootContainer.sortChildrenFlag = true;
+    // Battle info containers need explicit depth below handlers so they don't cover UI panels.
+    this.enemyTray.container?.setDepth(42);
+    this.playerTray.container?.setDepth(42);
+    this.enemyInfo.container?.setDepth(42);
+    this.playerInfo.container?.setDepth(42);
+    this.abilityBar.container?.setDepth(42);
+    // COMMAND and TARGET_SELECT have no setDepth call — default 0 would go under battle info.
+    this.handlers[UiMode.COMMAND]?.container?.setDepth(50);
+    this.handlers[UiMode.TARGET_SELECT]?.container?.setDepth(50);
     this.layout();
     this.getMessageHandler()?.show(this.adapter.getMessageState());
   }

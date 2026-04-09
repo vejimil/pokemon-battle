@@ -39,6 +39,8 @@ export function preloadUiAssets(scene) {
   if (!textures.exists(UI_ASSETS.partyPbAtlas.key)) load.atlas(UI_ASSETS.partyPbAtlas.key, UI_ASSETS.partyPbAtlas.image, UI_ASSETS.partyPbAtlas.json);
   if (!textures.exists(UI_ASSETS.partySlotHpOverlayAtlas.key)) load.atlas(UI_ASSETS.partySlotHpOverlayAtlas.key, UI_ASSETS.partySlotHpOverlayAtlas.image, UI_ASSETS.partySlotHpOverlayAtlas.json);
   if (!textures.exists(UI_ASSETS.partySlotHpBar.key)) load.image(UI_ASSETS.partySlotHpBar.key, UI_ASSETS.partySlotHpBar.url);
+  if (UI_ASSETS.partySlotOverlayHp && !textures.exists(UI_ASSETS.partySlotOverlayHp.key)) load.image(UI_ASSETS.partySlotOverlayHp.key, UI_ASSETS.partySlotOverlayHp.url);
+  if (UI_ASSETS.partySlotOverlayLv && !textures.exists(UI_ASSETS.partySlotOverlayLv.key)) load.image(UI_ASSETS.partySlotOverlayLv.key, UI_ASSETS.partySlotOverlayLv.url);
   if (!textures.exists(UI_ASSETS.overlayHpBossAtlas.key)) load.atlas(UI_ASSETS.overlayHpBossAtlas.key, UI_ASSETS.overlayHpBossAtlas.image, UI_ASSETS.overlayHpBossAtlas.json);
   if (!textures.exists(UI_ASSETS.pbinfoEnemyBoss.key)) load.image(UI_ASSETS.pbinfoEnemyBoss.key, UI_ASSETS.pbinfoEnemyBoss.url);
   if (!textures.exists(UI_ASSETS.statusesAtlas.key)) load.multiatlas(UI_ASSETS.statusesAtlas.key, UI_ASSETS.statusesAtlas.json, UI_ASSETS.statusesAtlas.path);

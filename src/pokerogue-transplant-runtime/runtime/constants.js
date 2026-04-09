@@ -46,6 +46,8 @@ export const UI_ASSETS = Object.freeze({
   partyPbAtlas: { key: 'pkb-ui-party-pb', image: './assets/pokerogue/ui/party_pb.png', json: './assets/pokerogue/ui/party_pb.json' },
   partySlotHpOverlayAtlas: { key: 'pkb-ui-party-slot-hp-overlay', image: './assets/pokerogue/ui/party_slot_hp_overlay.png', json: './assets/pokerogue/ui/party_slot_hp_overlay.json' },
   partySlotHpBar: { key: 'pkb-ui-party-slot-hp-bar', url: './assets/pokerogue/ui/party_slot_hp_bar.png' },
+  partySlotOverlayHp: { key: 'pkb-ui-party-slot-overlay-hp', url: './assets/pokerogue/ui/text_images/ko/party_ui/party_slot_overlay_hp_ko.png' },
+  partySlotOverlayLv: { key: 'pkb-ui-party-slot-overlay-lv', url: './assets/pokerogue/ui/text_images/ko/party_ui/party_slot_overlay_lv_ko.png' },
   overlayHpBossAtlas: { key: 'pkb-ui-overlay-hp-boss', image: './assets/pokerogue/ui/overlay_hp_boss.png', json: './assets/pokerogue/ui/overlay_hp_boss.json' },
   pbinfoEnemyBoss: { key: 'pkb-ui-pbinfo-enemy-boss', url: './assets/pokerogue/ui/pbinfo_enemy_boss.png' },
   statusesAtlas: { key: 'pkb-ui-statuses', json: './assets/pokerogue/ui/misc/statuses_ko.json', path: './assets/pokerogue/ui/misc/' },

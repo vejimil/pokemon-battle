@@ -74,7 +74,10 @@ class PartySlot {
       this.sublabel   = addTextObject(this.ui, 24, 22, '', 'HINT').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(8, 31, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(24, 33, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
-      this.hpText     = addTextObject(this.ui, 105, 33, '', 'BATTLE_VALUE').setOrigin(1, 0);
+      this.hpLabel    = env.textureExists(scene, env.UI_ASSETS.partySlotOverlayHp?.key)
+        ? scene.add.image(23, 31, env.UI_ASSETS.partySlotOverlayHp.key).setOrigin(1, 0)
+        : null;
+      this.hpText     = addTextObject(this.ui, 105, 36, '', 'BATTLE_VALUE').setOrigin(1, 0);
       this.hit        = scene.add.rectangle(0, 0, 110, 49, 0xffffff, 0.001).setOrigin(0, 0);
     } else {
       // Bench slot layout (bgObj: 175×24, origin 0,0)
@@ -85,7 +88,10 @@ class PartySlot {
       this.sublabel   = addTextObject(this.ui, 29, 14, '', 'HINT').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(72, 6, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(88, 8, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
-      this.hpText     = addTextObject(this.ui, 169, 6, '', 'BATTLE_VALUE').setOrigin(1, 0);
+      this.hpLabel    = env.textureExists(scene, env.UI_ASSETS.partySlotOverlayHp?.key)
+        ? scene.add.image(87, 6, env.UI_ASSETS.partySlotOverlayHp.key).setOrigin(1, 0)
+        : null;
+      this.hpText     = addTextObject(this.ui, 169, 11, '', 'BATTLE_VALUE').setOrigin(1, 0);
       this.hit        = scene.add.rectangle(0, 0, 175, 24, 0xffffff, 0.001).setOrigin(0, 0);
     }
 
@@ -102,6 +108,7 @@ class PartySlot {
     this.row.add([
       this.bgObj, this.pb, this.iconHolder,
       this.hpBarBase, this.hpBarFill,
+      ...(this.hpLabel ? [this.hpLabel] : []),
       this.label, this.levelText, this.sublabel,
       ...(this.statusSprite ? [this.statusSprite] : []),
       this.hpText, this.hit,
@@ -189,7 +196,7 @@ class PartySlot {
         this.isActive ? 4 : 2,
         this.isActive ? 4 : 3,
         iconKey
-      ).setOrigin(0, 0).setScale(0.5).setName(`party-icon-${this.index}`);
+      ).setOrigin(0, 0).setDisplaySize(18, 18).setName(`party-icon-${this.index}`);
       this.row.add(this.iconObj);
     } else {
       this.iconObj.setTexture(iconKey);

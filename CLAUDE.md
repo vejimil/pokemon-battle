@@ -40,18 +40,18 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 - `app.js`의 `buildBattleInfoModel()` 함수가 배틀 상태를 읽어서 모델 생성
 - Phaser 씬이 매 프레임 또는 상태 변화 시 UI 핸들러의 `update(model)` 호출
 
-## 현재 이식 완성도 (2026-04-09 스크린샷 재검토 후)
+## 현재 이식 완성도 (Phase 12 완료 후)
 
 | 파일 | 완성도 | 주요 미구현 |
 |------|--------|-----------|
 | `battle-info.js` | ~88% | Stats 컨테이너 |
 | `player-battle-info.js` | ~85% | EXP 레벨업 사운드 처리 |
 | `enemy-battle-info.js` | ~68% | Type effectiveness 창, Flyout 메뉴 |
-| `fight-ui-handler.js` | ~75% | MoveInfoOverlay, 토글 버튼 위치 재검증 필요 |
+| `fight-ui-handler.js` | ~78% | MoveInfoOverlay 미이식 |
 | `command-ui-handler.js` | ~80% | Tera 색상 파이프라인 |
-| `party-ui-handler.js` | ~60% | 레이아웃 세부 개선 잔여 |
-| `ui.js` | ~92% | partyModeActive 플래그 완료 |
-| `app.js` | ~92% | iconPath toUpperCase 완료 |
+| `party-ui-handler.js` | ~70% | 레이아웃 시각 재검증 필요 |
+| `ui.js` | ~95% | 완성 수준 |
+| `app.js` | ~92% | — |
 | `battle-message-ui-handler.js` | ~75% | `promptLevelUpStats` 트리거 연결 필요 |
 | `target-select-ui-handler.js` | ~40% | 싱글 배틀이라 field 스프라이트 접근 불가 |
 | `text.js` (helpers) | ~95% | 완성 |
@@ -136,11 +136,11 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - `clear()`에서 `moveInfoContainer.iterate(o => o.setVisible(false))` 추가
 - **다음**: 스크린샷으로 Fight UI 재검증 후 MoveInfoOverlay 작업
 
-### 다음 실제 우선순위 (Phase 8 기준)
-- **스크린샷 시각 검증**: Fight UI 오른쪽 패널, Party UI DOM 숨김 정상 동작 여부 확인
+### 다음 실제 우선순위 (Phase 13 기준)
+- **스크린샷 시각 검증**: Party UI party_bg 커버리지 (sortChildrenFlag 적용 후), HP 라벨 표시 여부, Fight UI 토글 버튼 위치 확인
 - `fight-ui-handler.js`: MoveInfoOverlay 이식 (원본 ts:108-121, `delayVisibility: true, onSide: true, right: true`)
 - `command-ui-handler.js`: Tera 색상 파이프라인
-- `party-ui-handler.js`: 슬롯 레이아웃 세부 개선, party_bg 렌더링 확인
+- `party-ui-handler.js`: LV 라벨 이미지(`partySlotOverlayLv`) 추가 여부 확인, 슬롯 레이아웃 세부 검증
 
 ## 코드 작업 시 핵심 원칙
 

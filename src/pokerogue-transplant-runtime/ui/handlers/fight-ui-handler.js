@@ -326,7 +326,7 @@ export class FightUiHandler extends UiHandler {
       if (!toggle) return;
       const col = index % perRow;
       const row = Math.floor(index / perRow);
-      entry.button.setPosition(baseX + col * stride, -48 - row * 14);
+      entry.button.setPosition(baseX + col * stride, -62 - row * 14);
       entry.label.setText(toggle.label || '');
       entry.label.setColor(toggle.disabled ? '#94a3b8' : '#f8fbff');
       entry.bg.setAlpha(toggle.active ? 1 : 0.82);
