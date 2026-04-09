@@ -269,6 +269,16 @@ export class PartyUiHandler extends UiHandler {
     const state = args || this.globalScene.getPartyInputModel();
     super.show(state);
     this.partyContainer.setVisible(true);
+
+    // Hide battle scene DOM sprites (always above canvas) and battle-info containers
+    // so the party background fully covers the battle field
+    if (this.ui.enemySprite?.dom) this.ui.enemySprite.dom.setVisible(false);
+    if (this.ui.playerSprite?.dom) this.ui.playerSprite.dom.setVisible(false);
+    if (this.ui.enemyInfo?.container) this.ui.enemyInfo.container.setVisible(false);
+    if (this.ui.playerInfo?.container) this.ui.playerInfo.container.setVisible(false);
+    if (this.ui.enemyTray?.container) this.ui.enemyTray.container.setVisible(false);
+    if (this.ui.playerTray?.container) this.ui.playerTray.container.setVisible(false);
+
     this.fieldIndex = Number(state.fieldIndex || 0);
     this.message.setText([state.title || '', state.subtitle || ''].filter(Boolean).join('\n'));
     this.slots.forEach((slot, index) => {
@@ -340,5 +350,13 @@ export class PartyUiHandler extends UiHandler {
     super.clear();
     this.partyContainer?.setVisible(false);
     if (this.cursorObj) this.cursorObj.setVisible(false);
+
+    // Restore battle scene DOM sprites and battle-info containers
+    if (this.ui.enemySprite?.dom) this.ui.enemySprite.dom.setVisible(true);
+    if (this.ui.playerSprite?.dom) this.ui.playerSprite.dom.setVisible(true);
+    if (this.ui.enemyInfo?.container) this.ui.enemyInfo.container.setVisible(true);
+    if (this.ui.playerInfo?.container) this.ui.playerInfo.container.setVisible(true);
+    if (this.ui.enemyTray?.container) this.ui.enemyTray.container.setVisible(true);
+    if (this.ui.playerTray?.container) this.ui.playerTray.container.setVisible(true);
   }
 }

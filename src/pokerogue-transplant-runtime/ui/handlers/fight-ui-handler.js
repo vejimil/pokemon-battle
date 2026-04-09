@@ -103,18 +103,22 @@ export class FightUiHandler extends UiHandler {
     ]);
     this.container.add(this.moveInfoContainer);
 
+    // Toggle buttons: fit within right panel (x=241–317, y=-48 to -36)
+    // 3 per row, width=24px, spacing=26px — covers Tera/Z/Mega/Ultra/Dmax
     this.toggleButtons = Array.from({ length: 5 }, () => {
-      const bg = addWindow(this.ui, 0, 0, 30, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 0);
+      const bg = addWindow(this.ui, 0, 0, 24, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 0);
       const icon = env.textureExists(scene, env.UI_ASSETS.teraAtlas.key, 'unknown')
-        ? scene.add.sprite(0, 0, env.UI_ASSETS.teraAtlas.key, 'unknown').setOrigin(0.5, 0.5).setScale(0.45)
+        ? scene.add.sprite(0, 0, env.UI_ASSETS.teraAtlas.key, 'unknown').setOrigin(0.5, 0.5).setScale(0.35)
         : null;
-      const label = addTextObject(this.ui, 15, 6, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5);
-      const hit = scene.add.rectangle(0, 0, 30, 12, 0xffffff, 0.001).setOrigin(0, 0);
+      const label = addTextObject(this.ui, 12, 6, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5);
+      const hit = scene.add.rectangle(0, 0, 24, 12, 0xffffff, 0.001).setOrigin(0, 0);
       const button = scene.add.container(0, 0, icon ? [bg, icon, label, hit] : [bg, label, hit]).setVisible(false);
       this.container.add(button);
       return { button, bg, icon, label, hit };
     });
 
+    // Footer buttons (Back, Switch): placed on left panel bottom to avoid right-panel overflow
+    // x=1 (Back) and x=44 (Switch) — well within x=0–240
     this.footerButtons = Array.from({ length: 2 }, () => {
       const bg = addWindow(this.ui, 0, 0, 40, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 0).setVisible(false);
       const label = addTextObject(this.ui, 20, 6, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5).setVisible(false);
@@ -317,12 +321,18 @@ export class FightUiHandler extends UiHandler {
   }
 
   updateToggles(toggles = []) {
-    const baseX = 248;
+    // Right panel x=241–317, buttons 24px wide with 2px gap (26px stride)
+    // 3 buttons per row: row0 y=-48, row1 y=-34 (above type icon row at y=-36)
+    const baseX = 241;
+    const stride = 26;
+    const perRow = 3;
     this.toggleButtons.forEach((entry, index) => {
       const toggle = toggles[index] || null;
       entry.button.setVisible(Boolean(toggle));
       if (!toggle) return;
-      entry.button.setPosition(baseX + index * 33, -48);
+      const col = index % perRow;
+      const row = Math.floor(index / perRow);
+      entry.button.setPosition(baseX + col * stride, -48 - row * 14);
       entry.label.setText(toggle.label || '');
       entry.label.setColor(toggle.disabled ? '#94a3b8' : '#f8fbff');
       entry.bg.setAlpha(toggle.active ? 1 : 0.82);
@@ -330,8 +340,8 @@ export class FightUiHandler extends UiHandler {
         const isTera = toggle.kind === 'tera' && this.env.textureExists(this.scene, this.env.UI_ASSETS.teraAtlas.key, toggle.type || 'unknown');
         entry.icon.setVisible(isTera);
         if (isTera) entry.icon.setTexture(this.env.UI_ASSETS.teraAtlas.key, toggle.type || 'unknown');
-        entry.icon.setPosition(6, 6);
-        entry.label.setPosition(isTera ? 18 : 15, 6);
+        entry.icon.setPosition(5, 6);
+        entry.label.setPosition(isTera ? 14 : 12, 6);
         entry.label.setOrigin(isTera ? 0 : 0.5, 0.5);
       }
       entry.hit.removeAllListeners();
@@ -342,6 +352,8 @@ export class FightUiHandler extends UiHandler {
   }
 
   updateFooterActions(actions = []) {
+    // Footer buttons on left panel bottom (x=1 and x=44) to avoid right-panel overflow
+    const footerXs = [1, 44];
     this.footerButtons.forEach((entry, index) => {
       const action = actions[index] || null;
       const visible = Boolean(action);
@@ -349,7 +361,7 @@ export class FightUiHandler extends UiHandler {
       entry.label.setVisible(visible);
       entry.hit.setVisible(visible);
       if (!visible) return;
-      const x = 248 + index * 42;
+      const x = footerXs[index] ?? (1 + index * 43);
       entry.bg.setPosition(x, -13);
       entry.label.setPosition(x + 20, -7);
       entry.hit.setPosition(x, -13);

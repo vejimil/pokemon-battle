@@ -575,3 +575,132 @@ hpBarY: player ? -1 : 4.5            // 원본도 소수점
     → moveCategoryIcon: setScale(0.55) → setScale(1.0) (원본 ts:272)
     → updateMoveDetail()에서도 setTexture 후 setScale 호출 추가
 ```
+
+## Phase 6 — 1차 시도 버그 픽스 (2026-04-09) — 부분 실패
+
+> 스크린샷 재확인 결과, Phase 6 수정이 실제로 문제를 해결하지 못함. 근본 원인 재분석 후 Phase 7로 재작업 예정.
+
+```
+[~] Phase 6-A: fight-ui-handler.js 토글/풋터 버튼 위치 수정
+    → 수정은 적용됐으나 여전히 오른쪽 패널이 과밀. 근본 문제는 요소 수 자체.
+    → 실제 필요한 수정: moveNameText, descriptionText 제거 + 패널 재설계
+[~] Phase 6-B: party-ui-handler.js show() — DOM 스프라이트 숨김 시도
+    → 코드는 작성됐으나 ui.js renderModel()이 매 렌더마다 덮어써서 효과 없음
+[~] Phase 6-C: party-ui-handler.js clear() — 복원
+    → 6-B가 작동 안 하므로 의미 없음
+```
+
+---
+
+## Phase 7 — Fight UI & Party UI 근본 재작업 (내일 구현)
+
+> research.md section 12 정밀 분석 기반. 모든 수정 전 원본 코드 정확히 확인 후 진행.
+
+### Phase 7-A: Fight UI 오른쪽 패널 정리 (`fight-ui-handler.js`)
+
+**목표**: 원본 PokeRogue와 동일하게 오른쪽 패널을 8개 요소만 유지
+
+```
+[ ] 7-A-1: moveNameText 삭제
+    - setup()에서 생성 코드 제거
+    - moveInfoContainer.add() 배열에서 제거
+    - updateMoveDetail()에서 setText 호출 제거
+
+[ ] 7-A-2: descriptionText 삭제
+    - setup()에서 생성 코드 제거
+    - moveInfoContainer.add() 배열에서 제거
+    - updateMoveDetail()에서 setText 호출 제거
+
+[ ] 7-A-3: 오른쪽 패널 요소 최종 확인
+    - 남은 요소: typeIcon, moveCategoryIcon, ppLabel, ppText, powerLabel, powerText, accuracyLabel, accuracyText
+    - 좌표: 원본 PokeRogue ts:61~104와 동일한지 재확인
+```
+
+### Phase 7-B: Fight UI 토글 버튼 재배치 (`fight-ui-handler.js`)
+
+**목표**: 토글 버튼을 movesWindow 상단 위 부유 영역(y≈-62)으로 이동
+
+```
+[ ] 7-B-1: 토글 버튼 y 위치를 -62으로 변경
+    - updateToggles()의 row 계산: y = -62 - row*14 (기존 -48에서 변경)
+    - 토글이 없을 때는 setVisible(false)이므로 배틀 필드에 영향 없음
+    - width=30px, spacing=33px, x=1 시작 → 5개 버튼: x=1,34,67,100,133 → x<163, 왼쪽 패널 내
+
+[ ] 7-B-2: 토글 버튼 크기/스타일 최종 조정
+    - width=30px (기존 24px → 30px 복원), spacing=33px
+    - Tera 아이콘 scale=0.45 (기존 0.35 → 복원)
+```
+
+### Phase 7-C: Fight UI 풋터 버튼 배치 확인 (`fight-ui-handler.js`)
+
+**목표**: Back/Switch 버튼을 왼쪽 패널 하단 여백에 확실히 배치
+
+```
+[ ] 7-C-1: 풋터 버튼 y 위치 확인 및 조정
+    - movesContainer y=-38.7, row1 moves y=16 → 절대 y=-22.7
+    - 텍스트 WINDOW_BATTLE_COMMAND logical 16px → 실제 높이 ~10px → 하단 y≈-12.7
+    - 풋터 bg y=-12, height=12 → y=-12~0 → 거의 닿지 않음 (0.7px 간격)
+    - x: Back x=1 (width 40 → x=1~41), Switch x=44 (→x=44~84) ✓
+    - 확인 필요: 위 배치가 실제 렌더 시 겹침 없는지
+
+[ ] 7-C-2: footerButtons에서 bg의 setVisible 구조 확인
+    - 현재 bg/label/hit가 container가 아닌 개별 오브젝트 → container로 묶는 것 고려
+```
+
+### Phase 7-D: Party UI DOM 스프라이트 근본 수정 (`ui.js` + `party-ui-handler.js`)
+
+**목표**: renderModel()이 파티 모드 중 DOM 스프라이트를 재표시하지 않도록 플래그로 제어
+
+```
+[ ] 7-D-1: ui.js에 partyModeActive 플래그 추가
+    - constructor: this.partyModeActive = false;
+    - renderModel() 내 enemySprite.dom.setVisible, playerSprite.dom.setVisible 호출을
+      if (!this.partyModeActive) { ... } 로 감싸기
+
+[ ] 7-D-2: party-ui-handler.js show()에서 플래그 설정
+    - 기존 setVisible(false) 호출 유지
+    - 추가: this.ui.partyModeActive = true;
+    - 순서: 플래그 설정 → setVisible(false) (renderModel이 와도 플래그 확인하여 스킵)
+
+[ ] 7-D-3: party-ui-handler.js clear()에서 플래그 해제
+    - this.ui.partyModeActive = false;
+    - 그 후 setVisible(true) 복원 (기존 코드 유지)
+```
+
+### Phase 7-E: Party UI 아이콘 케이스 불일치 수정 (`app.js`)
+
+**목표**: 아이콘 파일명 대/소문자 불일치 해결
+
+```
+[ ] 7-E-1: iconPath() 함수 수정 (app.js line 3234 근처)
+    - 현재: `${state.assetBase.pokemon}/${folder}/${spriteId}.png`
+    - 수정: `${state.assetBase.pokemon}/${folder}/${spriteId.toUpperCase()}.png`
+    - 근거: 실제 파일이 KLEFKI.png, BARASKEWDA.png 등 대문자로 저장됨
+    - 단, 일부 특수 form 파일명은 다를 수 있으므로 폴백 처리 검토
+
+[ ] 7-E-2: partyBg 표시 여부 재확인
+    - 7-D 수정 후 DOM 스프라이트 가려지면 partyBg 표시 여부 눈으로 확인
+    - 미표시 시 party_bg.png WebGL 포맷 문제(8-bit colormap) 추가 조사
+```
+
+### Phase 7-F: 수정 후 시각 확인 체크리스트
+
+```
+[ ] Fight UI: 오른쪽 패널에 타입/카테고리/PP/위력/명중률만 표시, 텍스트 겹침 없음
+[ ] Fight UI: Tera 버튼이 movesWindow 위쪽에 표시, 기술 버튼과 분리됨
+[ ] Fight UI: Back/Switch 버튼이 하단 왼쪽에 표시, 기술명과 겹치지 않음
+[ ] Party UI: 배틀 DOM 스프라이트 숨겨짐, partyBg 표시됨
+[ ] Party UI: 슬롯 아이콘이 정상 표시됨 (Klefki, Baraskewda 등)
+[ ] Party UI: 활성 슬롯(왼쪽), 벤치 슬롯(오른쪽) 레이아웃 원본과 근사
+```
+
+---
+
+## 문서 동기화 메모 (2026-04-09 최종 정리)
+- 이 계획 문서의 **Phase 7이 현재 기준의 실제 다음 작업**이다.
+- 따라서 "Gemini 버그 픽스 완료"처럼 보이는 이전 표현이 있더라도, 실제 진행 상태는 **Phase 6 부분 실패 → Phase 7 재작업 필요**로 이해해야 한다.
+- 특히 우선순위는 다음 네 축으로 고정한다.
+  1. Fight UI 오른쪽 패널 정리 (`moveNameText`, `descriptionText` 제거)
+  2. Fight UI 토글/풋터 버튼 재배치
+  3. `ui.js` `partyModeActive` 플래그 도입
+  4. `app.js` `iconPath()` 대소문자 보정

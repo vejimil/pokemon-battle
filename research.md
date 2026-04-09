@@ -394,19 +394,19 @@ this.game = new Phaser.Game({
 
 ---
 
-## 9. 파일별 완성도 재평가 (2026-04-09 Phase 1~4 수정 후)
+## 9. 파일별 완성도 재평가 (2026-04-09 Phase 1~5 전체 수정 후)
 
 | 파일 | 수정 후 추정 | 주요 남은 문제 |
 |------|------------|--------------|
-| `battle-info.js` | ~88% | Stats 컨테이너 미구현; bg y 1~2px 미세 조정 미완 |
+| `battle-info.js` | ~88% | Stats 컨테이너 미구현 |
 | `player-battle-info.js` | ~85% | EXP 레벨업 사운드 처리 |
-| `enemy-battle-info.js` | ~65% | flyout/effectiveness 미구현 |
-| `fight-ui-handler.js` | ~82% | MoveInfoOverlay 미구현; categories 아이콘 누락 의심 |
+| `enemy-battle-info.js` | ~68% | flyout/effectiveness 미구현 (bg y=-1 보정 완료) |
+| `fight-ui-handler.js` | ~92% | MoveInfoOverlay 미구현 (아이콘 visibility·scale 수정 완료) |
 | `command-ui-handler.js` | ~80% | Tera 파이프라인 미구현 |
 | `battle-message-ui-handler.js` | ~75% | promptLevelUpStats 트리거 연결 |
-| `party-ui-handler.js` | ~50% | partyBg 미표시; 레이아웃 전면 재작성 필요 |
-| `text.js` (helpers) | ~90% | 폰트 크기·shadow 원본 맞춤 완료 |
-| `phaser-utils.js` | ~95% | resolution 통일 완료 |
+| `party-ui-handler.js` | ~55% | partyBg 코드 정상; 레이아웃 개선 필요 |
+| `text.js` (helpers) | ~95% | 완성 |
+| `phaser-utils.js` | ~95% | 완성 |
 
 ---
 
@@ -577,3 +577,204 @@ shadowX: 3.5, shadowY: 3.5            // BATTLE_INFO shadow 소수점
 **현재 mitigation**: `createBaseText`에서 `t.setRoundPixels(true)` 이미 적용 중. 효과는 제한적.
 
 **결론**: 이 수준의 흐림은 픽셀아트 폰트를 canvas Text로 렌더하는 한계. BitmapText 전환 없이는 근본 해결 어려울 수 있음. 우선순위 낮춤.
+
+---
+
+## 12. 스크린샷 정밀 분석 — Fight UI & Party UI 실제 문제 (2026-04-09)
+
+> 분석 대상: `screenshots/` 폴더의 PokeRogue 원본 vs PKB 현재 스크린샷 직접 비교
+> 결론: 이전 "수정 완료" 판정들이 잘못됨. 근본 원인을 새로 규명함.
+
+---
+
+### 12-A. Fight UI — 스크린샷 비교
+
+#### PokeRogue 원본 Fight UI (screenshots/pokerogue - fight.avif 기준)
+- 왼쪽 패널 (243×48px): 4개 기술 버튼 (2×2 그리드)
+- 오른쪽 패널 (80×48px): 타입 아이콘, 카테고리 아이콘, PP, 위력, 명중률 — **그게 전부**
+- 아무런 기술 이름 텍스트, 설명 텍스트, 토글 버튼, 풋터 버튼 없음
+
+#### PKB 현재 Fight UI (screenshots/pkb fight.png 확인)
+- 왼쪽 패널: 기술명 (Iron Defense, Sucker Punch, Energy Ball, Growth) 표시 — OK
+- 오른쪽 패널: `lr |Steel|` / `Defense` 처럼 완전히 해독 불가능, 겹침 심각
+- 하단: Back/Switch 버튼 왼쪽에 있음 — 시각적으로 어색
+
+#### 오른쪽 패널 요소 수 비교
+
+| 요소 | 원본 존재 | 현재 이식본 |
+|------|-----------|------------|
+| typeIcon (263, -36) | ✓ | ✓ |
+| moveCategoryIcon (295, -36) | ✓ | ✓ |
+| ppLabel + ppText (y=-26) | ✓ | ✓ |
+| powerLabel + powerText (y=-18) | ✓ | ✓ |
+| accuracyLabel + accuracyText (y=-10) | ✓ | ✓ |
+| **moveNameText (249, -40)** | **✗ 없음** | **있음 — 제거 필요** |
+| **descriptionText (249, -2)** | **✗ 없음** | **있음 — 제거 필요** |
+| **토글 버튼 (Tera/Z/Mega 등)** | **✗ 없음** | **있음 — 재설계 필요** |
+| **풋터 버튼 (Back/Switch)** | **✗ 없음** | **있음 — 재설계 필요** |
+
+**80×48px 패널에 15개 요소 → 원본의 거의 두 배 → 판독 불가능**
+
+#### 원본 대비 추가된 요소들의 올바른 배치 방향
+
+1. **moveNameText**: 원본에 없음. 삭제.
+   - 원본은 기술 이름을 왼쪽 패널 move 버튼 자체로 표시하며 별도 중복 표시 없음.
+
+2. **descriptionText**: 원본에 없음. 삭제.
+   - `MoveInfoOverlay`(전체화면 오버레이)가 설명을 담당. fight UI 패널 안에는 없음.
+
+3. **토글 버튼 (Tera/Z/Mega/Ultra/Dmax)**:
+   - 원본 PokeRogue: 기술 선택 UI가 아닌 **커맨드 UI에서 Tera 버튼 별도 배치** (command-ui-handler)
+   - PKB 설계: 기술 선택 UI에 토글 포함 (커스텀) → 위치를 상단 여백에 배치해야 함
+   - **올바른 위치**: movesWindow 상단 경계선 바깥, y=-60 정도 (window 프레임 위쪽 여백). 최대 5개지만 실전에서 1-2개.
+
+4. **풋터 버튼 (Back/Switch)**:
+   - 원본: B버튼(Cancel)으로 Back, 별도 Switch 버튼 없음
+   - PKB: 마우스 조작 지원 위해 필요 → 왼쪽 패널 하단에 소형 배치
+   - **이동 row1 기술버튼 y≈-22.7, 높이≈10px → 버튼 하단 ≈ y=-12.7**
+   - **풋터 버튼 y=-12, height=12**: y=-12~0 → 하단 여백에 딱 맞음 (경계선 근처)
+   - 단, Back (width 40, x=1) = x=1~41, Switch (width 40, x=44) = x=44~84 → 겹침 없음 ✓
+
+---
+
+### 12-B. Party UI — 스크린샷 비교 및 근본 원인 규명
+
+#### PokeRogue 원본 Party UI (screenshots/pokerogue - party.jpeg 기준)
+```
+[왼쪽 열] 활성 슬롯 (110×49px 영역):
+  - 포켓볼 아이콘 (작은 것)
+  - 포켓몬 아이콘 (작은 픽셀아트)
+  - 이름 (Corviknight) + 성별
+  - Lv. 106
+  - HP 바 + 346/346
+
+[오른쪽 열] 5개 벤치 슬롯 (각 175×24px):
+  - 포켓몬 아이콘 (작은 것)
+  - 이름 + Lv.
+  - HP 바 + HP 숫자
+
+[하단] "Choose a Pokémon." 메시지 | Cancel 버튼
+```
+
+#### PKB 현재 Party UI (screenshots/pkb party.png 확인)
+- 좌측 절반: 대형 포켓몬 스프라이트 2개 (배틀용 DOM 스프라이트)
+- 우측: Klefki, Barr...kewda의 HP 바 행만 표시
+- partyBg 없음 (배틀 필드 배경이 그대로 노출)
+- 하단: Back 버튼, 메시지 텍스트
+
+#### 근본 원인 1: renderModel()이 show() 숨김을 덮어씀 (핵심)
+
+`party-ui-handler.js` `show()`에서:
+```js
+this.ui.enemySprite?.dom?.setVisible(false);  // 숨김
+```
+
+하지만 `ui.js` `renderModel()` 안에서:
+```js
+// line 226
+this.enemySprite.dom.setVisible(!deferred);  // 매 렌더 사이클마다 무조건 실행 → show()의 숨김 덮어씀
+```
+
+`renderModel()`은 배틀 상태가 바뀔 때마다 호출되며, 내부에서 `deferred=false`이면 `setVisible(true)`를 강제 실행. `show()` 직후에 `renderModel()`이 호출되면 즉시 스프라이트가 다시 보임.
+
+**올바른 수정 방향**: `ui.js`에 `this.partyModeActive` 플래그를 추가하고, `renderModel()` 내 sprite setVisible 호출 시 이 플래그 확인.
+
+```js
+// ui.js renderModel() 내 수정 대상:
+if (this.enemySprite && !this.partyModeActive) {
+  this.enemySprite.dom.setVisible(!deferred);
+  // ...
+}
+```
+
+#### 근본 원인 2: 아이콘 케이스 불일치 (Linux 파일시스템)
+
+`iconPath(spriteId)` 함수:
+```js
+function iconPath(spriteId, shiny = false) {
+  return `${state.assetBase.pokemon}/${shiny ? 'Icons shiny' : 'Icons'}/${spriteId}.png`;
+  // → 예: './assets/Pokemon/Icons/klefki.png'
+}
+```
+
+실제 파일:
+```
+/workspaces/pokemon-battle/assets/Pokemon/Icons/KLEFKI.png   ← 대문자
+```
+
+`resolveBattleRenderSpriteId()`는 Showdown 내부 ID(소문자 `klefki`)를 반환 → 경로에 대문자 파일이 없음 → Linux 케이스 센시티브 파일시스템에서 404 → `scene.textures.exists(iconKey)`가 false → `_applyIcon()` 조기 반환 → **아이콘 없이 포켓볼만 표시됨**.
+
+따라서 PKB party 스크린샷에서 보이는 "대형 스프라이트 2개"는 파티 슬롯 아이콘이 아니라, **숨겨지지 않은 DOM 배틀 스프라이트**다. (근본원인 1)
+
+**올바른 수정 방향**:
+- Option A: `iconPath()`에서 `spriteId.toUpperCase()` 적용
+- Option B: 아이콘 파일을 소문자로 일괄 rename (touch 이슈 없음)
+- **Option A 권장**: 코드 1줄 수정으로 해결, 파일 변경 불필요
+
+#### 근본 원인 3: partyBg가 DOM 스프라이트에 가려짐
+
+partyBg PNG은 8-bit 컬러맵 포맷 (확인됨: `PNG image data, 320 x 180, 8-bit colormap`). Phaser/WebGL에서 palette PNG 디코딩 문제로 투명하게 렌더될 가능성 있음. 그러나 설령 정상 표시되더라도 DOM 스프라이트(1번 문제)는 canvas 최상단에 렌더되므로 가려짐.
+
+1번 문제 해결 후 partyBg 표시 여부를 추가 확인해야 함.
+
+---
+
+### 12-C. 올바른 수정 계획 (내일 구현)
+
+#### Fight UI 수정 계획
+
+| 항목 | 수정 내용 |
+|------|-----------|
+| `moveNameText` 제거 | 코드에서 완전 삭제 (원본에 없음) |
+| `descriptionText` 제거 | 코드에서 완전 삭제 (원본에 없음) |
+| 오른쪽 패널 정리 | typeIcon, moveCategoryIcon, PP, Pow, Acc만 유지 → 원본과 동일 |
+| 토글 버튼 이동 | movesWindow 위쪽 (y≈-60~-48) 부유 배치 OR 왼쪽 패널 상단 영역 |
+| 풋터 버튼 이동 | 왼쪽 패널 하단 여백 (y=-12, x=1/44) — move buttons와 간격 확인 필요 |
+
+**토글 버튼 구체 위치 후보**:
+- `y=-62`, `x=1`, `width=30`, `spacing=33` → x=1,34,67,100,133 → 5개 모두 x<163 ✓ (왼쪽 패널 내)
+- `y=-62`은 movesWindow 상단(y=-48) 위쪽 14px → window 프레임 위. 배틀 필드 영역에 부유. 이 위치가 시각적으로 자연스러움.
+
+**풋터 버튼 위치 확인 필요**:
+- movesContainer y=-38.7, row1 y=16 → 절대 y=-22.7, 텍스트 약 10px → 하단 y≈-12.7
+- 풋터 bg y=-12, height=12 → y=-12~0. 기술 텍스트 하단(y≈-12.7)과 ~0.7px 차이 → 거의 겹침 없음
+- 단, 텍스트 렌더 크기가 TEXT_RENDER_SCALE=6×10px=60px → scale 1/6 = 10px → 하단 y≈-12.7 확인
+
+#### Party UI 수정 계획
+
+| 항목 | 파일 | 수정 내용 |
+|------|------|-----------|
+| `partyModeActive` 플래그 추가 | `ui.js` | `this.partyModeActive = false` |
+| renderModel() 스프라이트 조건부 | `ui.js` | `if (!this.partyModeActive)` 감싸기 |
+| show()에서 플래그 설정 | `party-ui-handler.js` | `this.ui.partyModeActive = true` |
+| clear()에서 플래그 해제 | `party-ui-handler.js` | `this.ui.partyModeActive = false` |
+| 아이콘 경로 케이스 수정 | `app.js` line 3234 | `spriteId → spriteId.toUpperCase()` |
+| partyBg PNG 확인 | 별도 | 1번 수정 후 표시 여부 확인 |
+
+---
+
+### 현재 파일별 완성도 재평가 (2026-04-09 스크린샷 정밀 분석 후)
+
+| 파일 | 완성도 | 주요 남은 문제 |
+|------|--------|--------------|
+| `battle-info.js` | ~88% | Stats 컨테이너 미구현 |
+| `player-battle-info.js` | ~85% | EXP 레벨업 사운드 처리 |
+| `enemy-battle-info.js` | ~68% | flyout/effectiveness 미구현 |
+| `fight-ui-handler.js` | ~55% | 오른쪽 패널 과밀 (moveNameText/descriptionText/토글/풋터 재설계 필요) |
+| `command-ui-handler.js` | ~80% | Tera 파이프라인 미구현 |
+| `battle-message-ui-handler.js` | ~75% | promptLevelUpStats 트리거 연결 |
+| `party-ui-handler.js` | ~35% | DOM 숨김 미해결(renderModel 덮어씀), 아이콘 케이스 불일치 |
+| `ui.js` | ~85% | partyModeActive 플래그 미구현 |
+| `app.js` | ~90% | iconPath 케이스 불일치 |
+| `text.js` (helpers) | ~95% | 완성 |
+| `phaser-utils.js` | ~95% | 완성 |
+
+---
+
+## 13. 문서 동기화 메모 (2026-04-09 최종 정리)
+- 이 문서의 **Section 12가 2026-04-09 시점의 최종 원인 분석과 수정 방향**이다.
+- 즉, Phase 6의 Gemini 버그 픽스는 "수정 시도는 있었지만 최종 해결은 아니었다"로 해석해야 한다.
+- 특히 핵심 두 가지는 다음과 같다.
+  - Fight UI: 좌표 조정만으로는 부족하며, 원본에 없는 `moveNameText` / `descriptionText`를 제거해야 한다.
+  - Party UI: `party-ui-handler.js`만이 아니라 `ui.js renderModel()`까지 같이 수정해야 DOM 스프라이트가 다시 나타나지 않는다.
+- 다른 요약 문서와 충돌할 경우, **research.md section 12 + plan.md Phase 7**을 우선 기준으로 삼는다.

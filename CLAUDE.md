@@ -40,19 +40,21 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 - `app.js`의 `buildBattleInfoModel()` 함수가 배틀 상태를 읽어서 모델 생성
 - Phaser 씬이 매 프레임 또는 상태 변화 시 UI 핸들러의 `update(model)` 호출
 
-## 현재 이식 완성도 (2026-04-09 최신)
+## 현재 이식 완성도 (2026-04-09 스크린샷 재검토 후)
 
 | 파일 | 완성도 | 주요 미구현 |
 |------|--------|-----------|
 | `battle-info.js` | ~88% | Stats 컨테이너 |
 | `player-battle-info.js` | ~85% | EXP 레벨업 사운드 처리 |
-| `enemy-battle-info.js` | ~65% | Type effectiveness 창, Flyout 메뉴 |
-| `fight-ui-handler.js` | ~90% | Move Info Overlay (전체화면 토글) |
+| `enemy-battle-info.js` | ~68% | Type effectiveness 창, Flyout 메뉴 |
+| `fight-ui-handler.js` | ~55% | 오른쪽 패널 과밀 (`moveNameText`/`descriptionText`/토글/풋터 재설계 필요) |
 | `command-ui-handler.js` | ~80% | Tera 색상 파이프라인 |
-| `party-ui-handler.js` | ~55% | 포켓몬 아이콘 dynamic load 구현됨 |
-| `battle-message-ui-handler.js` | ~75% | promptLevelUpStats 트리거 연결 필요 |
+| `party-ui-handler.js` | ~35% | DOM 숨김 미해결(`renderModel()` 덮어씀), 아이콘 케이스 불일치 |
+| `ui.js` | ~85% | `partyModeActive` 플래그 미구현 |
+| `app.js` | ~90% | party 아이콘 경로 케이스 불일치 |
+| `battle-message-ui-handler.js` | ~75% | `promptLevelUpStats` 트리거 연결 필요 |
 | `target-select-ui-handler.js` | ~40% | 싱글 배틀이라 field 스프라이트 접근 불가 |
-| `text.js` (helpers) | ~90% | 폰트 크기·shadow 원본 일치 완료 |
+| `text.js` (helpers) | ~95% | 완성 |
 
 ## 주요 에셋 정보
 - 게임 해상도: **320×180** (LOGICAL_WIDTH/HEIGHT) — PokeRogue와 동일 (1920/6 × 1080/6)
@@ -112,32 +114,33 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 ### 5. 턴 인디케이터 (검은 바) — **작업 안 함**
 - PokeRogue 원본 battle-scene.ts 미보유, 실제 존재 여부 미확인 → 보류
 
-### 6. 적 정보창 몸체 1-2px 낮음 — **미수정** (2026-04-09 스크린샷 발견)
-- 스크린샷 1(command UI)에서 적 정보창(테라파고스) bg body가 1-2px 낮아 보임
-- HP 바, 타입 아이콘, 텍스트는 정상 위치 → **bg 이미지만** y 오프셋 조정 필요
-- `battle-info.js` 내 `this.bg`의 y 좌표를 -1~-2px 조정. 단, 다른 요소(nameText, hpFill, typeIcons 등)는 절대 건드리지 말 것
-- **조사 필요**: PokeRogue 원본 `battle-info.ts:234`에서 `box` sprite 좌표 재확인 — 이식본 `this.bg`와 100% 동일한지 검증
-- **주의**: 적(enemy) 정보창만 해당. player는 정상으로 보임.
+### 6. 적 정보창 몸체 1-2px 낮음 — **수정 완료** (`enemy-battle-info.js`)
+- `enemy-battle-info.js` setup()에서 `super.setup()` 직후 `this.bg.setY(-1)` 적용
+- 원본 코드는 y=0이나 렌더링 아티팩트로 enemy만 보정 적용. player는 건드리지 않음.
 
-### 7. 교체 UI 레이아웃 오류 — **코드 정상, 시각적 확인 필요** (2026-04-09 스크린샷 발견)
-- 코드 분석 결과: `party_bg.png` 320×180 존재, constants.js·assets.js 모두 정상, 코드 로직 정상
-- container y=180 + setOrigin(0,1) + 320×180 이미지 → 전체 화면(y=0~180) 커버 설계상 올바름
-- **시각적 확인 필요**: 실제 게임 실행 시 교체 UI의 partyBg가 표시되는지 확인
-- partyBg가 정상 표시된다면 이 항목은 해결됨. 여전히 떠있어 보인다면 컨테이너 depth 또는 렌더 순서 문제 추가 조사
+### 7. 교체 UI 레이아웃 오류 — **미해결, 원인 규명 완료** (2026-04-09 스크린샷 재검토)
+- `party-ui-handler.js` `show()`의 DOM 숨김 시도 자체는 있었지만, `ui.js renderModel()`이 매 렌더마다 `enemySprite.dom.setVisible(!deferred)` / `playerSprite.dom.setVisible(!deferred)`를 다시 실행해 숨김을 덮어씀
+- 따라서 **실제 해결은 `party-ui-handler.js`만 수정해서는 안 되고**, `ui.js`에 `partyModeActive` 플래그를 추가해 render 단계에서 DOM 스프라이트 재표시 자체를 막아야 함
+- 추가로 party 아이콘 경로가 소문자(`klefki.png`)를 가리켜 Linux에서 404가 발생하므로, `iconPath()`에 `spriteId.toUpperCase()` 보정이 필요
+- DOM 문제를 먼저 해결한 뒤, `party_bg.png`의 8-bit colormap 렌더링 여부를 별도로 재확인해야 함
 
-### 8. 싸운다 UI — 카테고리 아이콘 visibility·scale 불일치 (2026-04-09 아이콘 누락 → 코드 구현됨, 세부 조정 필요)
-- categories atlas: constants.js ✓, assets.js(multiatlas) ✓, 파일(physical/special/status) ✓
-- fight-ui-handler.js: moveCategoryIcon 생성·update 코드 이미 구현됨 ✓
-- **남은 문제 1 - 초기 visibility**: 원본은 `setVisible(false)`로 시작. TP는 초기에 visible=true → 기술 미선택 시 'status' 프레임이 보임
-  - 수정: `setup()` 내 `this.moveCategoryIcon.setVisible(false)`, `this.typeIcon.setVisible(false)` 추가
-- **남은 문제 2 - scale**: 원본 typeIcon=0.8, moveCategoryIcon=1.0 vs TP 두 아이콘 모두 0.55
-  - 시각적으로 확인 후 원본 scale로 맞출 것 (0.55가 시각적으로 맞으면 유지 가능)
+### 8. 싸운다 UI — 카테고리 아이콘 — **수정 완료** (`fight-ui-handler.js`)
+- categories atlas 정상 로드 확인 (constants.js, assets.js, JSON 포맷 모두 ✓)
+- `typeIcon`: `setVisible(false)` 추가, scale `0.55→0.8` (원본 ts:269)
+- `moveCategoryIcon`: `setVisible(false)` 추가, scale `0.55→1.0` (원본 ts:272)
+- `updateMoveDetail()`: 두 아이콘 모두 `setTexture()` 후 `setScale()` 재호출 추가
 
-### 향후 기능 작업 (버그 수정 후)
-- 파티 교체 UI (`party-ui-handler.js`) 전면 재작성 (현재 partyBg 수정 후에도 레이아웃 개선 필요)
-- 기술 선택 UI (`fight-ui-handler.js`) Move Info Overlay (전체화면 토글)
-- `command-ui-handler.js` Tera 버튼 색상 파이프라인
-- `battle-info.js` Stats 컨테이너 (능력치 변화 표시)
+### 9. Fight UI 오버플로우 — **1차 수정 실패, 근본 재작업 필요** (2026-04-09 스크린샷 재검토)
+- 토글/풋터 버튼 좌표만 옮겨서는 문제가 해결되지 않았음. **근본 문제는 80×48px 오른쪽 패널에 원본보다 훨씬 많은 요소를 넣고 있다는 점**
+- 원본 PokeRogue fight 패널에는 `typeIcon`, `moveCategoryIcon`, `PP`, `위력`, `명중률`만 있으며, **`moveNameText`와 `descriptionText`는 존재하지 않음**
+- 따라서 우선 `moveNameText`와 `descriptionText`를 제거해 오른쪽 패널을 원본의 8개 요소 구조로 되돌린 뒤, 토글 버튼은 movesWindow 위쪽(y≈-62) 부유 영역으로, 풋터 버튼은 왼쪽 패널 하단 여백으로 재배치해야 함
+
+### 다음 실제 우선순위 (Phase 7 기준)
+- `fight-ui-handler.js`: `moveNameText`, `descriptionText` 삭제 → 오른쪽 패널을 원본 PokeRogue의 8개 요소만 남기도록 정리
+- `fight-ui-handler.js`: 토글 버튼을 movesWindow 상단 위(y≈-62)로 이동하고, 풋터 버튼은 왼쪽 패널 하단 여백 기준으로 다시 검증
+- `ui.js` + `party-ui-handler.js`: `partyModeActive` 플래그를 도입해 파티 모드 중 DOM 배틀 스프라이트 재표시를 차단
+- `app.js`: `iconPath()`에 `spriteId.toUpperCase()` 적용하여 party 아이콘 케이스 불일치 해결
+- 위 4개 수정 후 스크린샷 기준으로 Fight UI/Party UI를 다시 시각 검증한 다음, 그 다음 단계로 `MoveInfoOverlay`, Tera 파이프라인, Stats 컨테이너 작업에 들어갈 것
 
 ## 코드 작업 시 핵심 원칙
 
@@ -185,6 +188,22 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 1. **fight-ui-handler.js 아이콘 초기 visibility 수정**: typeIcon/moveCategoryIcon 모두 setup() 시 `setVisible(false)` 추가 (원본 ts:63,67 일치)
 2. **fight-ui-handler.js 아이콘 scale 수정**: typeIcon `0.55→0.8` (원본 ts:269), moveCategoryIcon `0.55→1.0` (원본 ts:272). updateMoveDetail()에서도 setScale 호출 추가
 3. **enemy info bg y 보정** (`enemy-battle-info.js`): `bg.setY(-1)` — 적 정보창 bg 1px 위로 이동 (렌더링 아티팩트 보정)
+
+## 2026-04-09 (Gemini 보고 버그 픽스 1차 시도 — 부분 실패)
+1. **fight-ui-handler.js 토글 버튼 오버플로우 수정**: width=30→24px, spacing=33→26px, 3개/행, x=241 시작. 5개까지 2행으로 수용 (x=241–317 내)
+2. **fight-ui-handler.js 풋터 버튼 오버플로우 수정**: `x=248+index*42` → `x=[1,44]` (왼쪽 패널 하단 배치, Switch 버튼 화면 밖 오버플로우 해결)
+3. **party-ui-handler.js show()**: DOM 스프라이트(enemySprite.dom, playerSprite.dom) + 배틀 정보창(enemyInfo/playerInfo/enemyTray/playerTray) 모두 숨김 — 파티 배경이 배틀 필드를 완전히 덮도록
+4. **party-ui-handler.js clear()**: 위 모든 요소 setVisible(true) 복원
+
+> 스크린샷 재확인 결과, 위 1차 수정은 **최종 해결로 판단하면 안 됨**.
+> Fight UI는 여전히 오른쪽 패널이 과밀했고, Party UI는 `ui.js renderModel()`이 DOM 스프라이트 visibility를 다시 켜서 실제로는 숨김이 유지되지 않았다.
+> 현재 기준의 정답 상태는 아래 "현재 이식 완성도"와 "다음 실제 우선순위 (Phase 7 기준)" 섹션을 따른다.
+
+## fight-ui-handler 1차 시도 레이아웃 정책 (채택 보류)
+- 오른쪽 패널(moveDetailsWindow): x=240–320, y=-48 to 0 (80×48px)
+- 토글 버튼: x=241 시작, 24px 폭, 26px 간격, 최대 3개/행 → row0(y=-48), row1(y=-62 위)
+- 풋터 버튼: 왼쪽 패널 하단 (x=1 Back, x=44 Switch), y=-13
+- DOM 스프라이트는 canvas 위에 항상 렌더되므로 파티 화면 진입 시 반드시 수동으로 숨겨야 함
 
 ## 2026-04-08 완료한 작업
 1. **타입 아이콘 y 오프셋 복원** (`battle-info.js`): 원본 값 `(-15, -15.5)` / `(-15, -2.5)` / `(0, -15.5)` 적용
