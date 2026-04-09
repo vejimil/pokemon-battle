@@ -224,7 +224,7 @@ export class BattleInfo {
   /** Update HP frame (high/medium/low) based on current scaleX. */
   _updateHpFrame() {
     const pct = this.hpFill.scaleX * 100;
-    const frame = pct > 50 ? 'high' : pct > 20 ? 'medium' : 'low';
+    const frame = pct > 50 ? 'high' : pct > 25 ? 'medium' : 'low'; // 원본: scaleX > 0.25 (25%)
     if (frame !== this.lastHpFrame) {
       this.hpFill.setFrame(frame);
       this.lastHpFrame = frame;
@@ -254,8 +254,16 @@ export class BattleInfo {
     const { clamp, textureExists, UI_ASSETS, setHorizontalCrop } = env;
 
     // --- Name ---
-    const displayName = info.displayName || '—';
+    // 원본 updateNameText(): 너무 긴 이름은 "..." 처리
+    // 허용 너비: enemy non-boss=60px, enemy boss=98px, player=60px (BATTLE_INFO 12px 기준)
+    const rawName = info.displayName || '—';
+    const maxNameWidth = this.isPlayer ? 60 : (info.isBoss ? 98 : 60);
+    let displayName = rawName;
     this.nameText.setText(displayName);
+    while (this.nameText.displayWidth > maxNameWidth && displayName.length > 1) {
+      displayName = (displayName.endsWith('.') ? displayName.slice(0, -2) : displayName.slice(0, -1)).trimEnd() + '.';
+      this.nameText.setText(displayName);
+    }
 
     // --- Gender ---
     const gender = info.gender || '';

@@ -50,6 +50,10 @@ export function createBaseText(scene, x, y, text = '', fontSize = 8, color = '#f
     ...processedOptions,
   });
   t.setScale(1 / S);
+  // 원본: ret.setLineSpacing(scale * 30) = (1/6)*30 = 5 (lineSpacing 미지정 시 기본 적용)
+  if (processedOptions.lineSpacing == null) {
+    t.setLineSpacing(5);
+  }
   t.setRoundPixels?.(true);
   return t;
 }

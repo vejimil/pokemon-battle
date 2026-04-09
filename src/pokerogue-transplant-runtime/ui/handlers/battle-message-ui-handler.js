@@ -15,8 +15,9 @@ export class BattleMessageUiHandler extends MessageUiHandler {
     this.nameBoxContainer = null;
     this.nameBox = null;
     this.nameText = null;
-    // Message area is ~243px wide, container starts at x=12; right margin ~16px → ~215px
-    this.wordWrapWidth = 215;
+    // 원본: wordWrapWidth=1780 (96px canvas 기준) → logical = 1780/6 ≈ 297px
+    // createBaseText가 내부에서 ×TEXT_RENDER_SCALE 처리하므로 logical 단위로 전달
+    this.wordWrapWidth = 297;
 
     // Level-up stats panel
     this.levelUpStatsContainer = null;
@@ -48,14 +49,19 @@ export class BattleMessageUiHandler extends MessageUiHandler {
     this.movesWindowContainer.add([movesWindow, moveDetailsWindow]);
 
     const messageContainer = scene.add.container(12, -39).setName('message-container');
-    this.message = env.createBaseText(scene, 0, 0, '', 8, '#f8fbff', {
-      lineSpacing: 1,
+    // 원본 TextStyle.MESSAGE: fontSize=96px → scale 1/6 → 16px logical
+    // lineSpacing: createBaseText 기본값 5 사용 (원본 setLineSpacing(scale*30)=5)
+    this.message = env.createBaseText(scene, 0, 0, '', 16, '#f8f8f8', {
       wordWrap: { width: this.wordWrapWidth, useAdvancedWrap: true },
     }).setOrigin(0, 0).setName('text-battle-message');
+    // 원본 TextStyle.MESSAGE shadow(4,5) #6b5a73
+    this.message.setShadow(4, 5, '#6b5a73', 0, true, true);
 
     this.nameBoxContainer = scene.add.container(0, -16).setVisible(false).setName('namebox-container');
     this.nameBox = scene.add.nineslice(0, 0, env.UI_ASSETS.window.key, undefined, 72, 16, 8, 8, 8, 8).setOrigin(0, 0);
-    this.nameText = env.createBaseText(scene, 8, 1, '', 8, '#f8fbff').setOrigin(0, 0);
+    // 원본 nameText: TextStyle.MESSAGE (16px logical)
+    this.nameText = env.createBaseText(scene, 8, 1, '', 16, '#f8f8f8').setOrigin(0, 0);
+    this.nameText.setShadow(4, 5, '#6b5a73', 0, true, true);
     this.nameBoxContainer.add([this.nameBox, this.nameText]);
     messageContainer.add([this.message, this.nameBoxContainer]);
     this.initPromptSprite(messageContainer);
@@ -110,7 +116,8 @@ export class BattleMessageUiHandler extends MessageUiHandler {
     this.nameBoxContainer.setVisible(Boolean(speaker));
     if (speaker) {
       this.nameText.setText(speaker);
-      const width = Math.max(72, this.nameText.width + 16);
+      // 원본: this.nameBox.width = this.nameText.displayWidth + 16 (scale 후 logical px)
+      const width = Math.max(16, (this.nameText.displayWidth || 0) + 16);
       this.nameBox.setSize?.(width, 16);
       this.nameBox.width = width;
     }
@@ -133,7 +140,8 @@ export class BattleMessageUiHandler extends MessageUiHandler {
   showNameText(name) {
     this.nameBoxContainer.setVisible(true);
     this.nameText.setText(name);
-    const width = Math.max(72, this.nameText.width + 16);
+    // 원본: this.nameBox.width = this.nameText.displayWidth + 16
+    const width = Math.max(16, (this.nameText.displayWidth || 0) + 16);
     this.nameBox.setSize?.(width, 16);
     this.nameBox.width = width;
   }

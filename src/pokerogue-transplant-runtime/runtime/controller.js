@@ -101,7 +101,6 @@ export class TransplantBattleController {
       const scene = new sceneClass(this);
       const mountSize = measureMountSize(this.mount);
       this.lastMountSize = mountSize;
-      const renderResolution = window.devicePixelRatio > 1 ? 2 : 1;
       this.game = new Phaser.Game({
         type: Phaser.AUTO,
         width: LOGICAL_WIDTH,
@@ -113,7 +112,7 @@ export class TransplantBattleController {
         antialias: false,
         roundPixels: true,
         autoRound: true,
-        resolution: renderResolution,
+        resolution: 1, // 원본 PokeRogue와 동일; DPR 스케일은 INTEGER_SCALE이 CSS 배율로 담당
         dom: { createContainer: true },
         scale: {
           // INTEGER_SCALE ensures only integer multipliers (1x, 2x, 3x…) are used.
