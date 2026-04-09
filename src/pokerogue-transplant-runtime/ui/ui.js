@@ -29,6 +29,7 @@ export class TransplantBattleUI {
     this.enemySprite = null;
     this.playerSprite = null;
     this.overlayActive = false;
+    this.partyModeActive = false;
   }
 
   setup() {
@@ -223,13 +224,14 @@ export class TransplantBattleUI {
     if (this.enemySprite) {
       const spriteModel = this.adapter.getSpriteModel('enemy');
       const deferred = Boolean(spriteModel?.deferred || !spriteModel?.url);
-      this.enemySprite.dom.setVisible(!deferred);
+      // partyModeActive 중에는 DOM 스프라이트를 다시 켜지 않음 (party-ui-handler가 숨김 제어)
+      this.enemySprite.dom.setVisible(!deferred && !this.partyModeActive);
       this.env.renderAnimatedSpriteToHost(this.enemySprite.host, spriteModel, 'large');
     }
     if (this.playerSprite) {
       const spriteModel = this.adapter.getSpriteModel('player');
       const deferred = Boolean(spriteModel?.deferred || !spriteModel?.url);
-      this.playerSprite.dom.setVisible(!deferred);
+      this.playerSprite.dom.setVisible(!deferred && !this.partyModeActive);
       this.env.renderAnimatedSpriteToHost(this.playerSprite.host, spriteModel, 'large');
     }
 

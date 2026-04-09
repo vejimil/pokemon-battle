@@ -270,6 +270,9 @@ export class PartyUiHandler extends UiHandler {
     super.show(state);
     this.partyContainer.setVisible(true);
 
+    // partyModeActive 플래그: ui.js renderModel()이 DOM 스프라이트를 다시 켜는 것을 차단
+    this.ui.partyModeActive = true;
+
     // Hide battle scene DOM sprites (always above canvas) and battle-info containers
     // so the party background fully covers the battle field
     if (this.ui.enemySprite?.dom) this.ui.enemySprite.dom.setVisible(false);
@@ -350,6 +353,9 @@ export class PartyUiHandler extends UiHandler {
     super.clear();
     this.partyContainer?.setVisible(false);
     if (this.cursorObj) this.cursorObj.setVisible(false);
+
+    // partyModeActive 해제: DOM 스프라이트 visibility 복원 허용
+    this.ui.partyModeActive = false;
 
     // Restore battle scene DOM sprites and battle-info containers
     if (this.ui.enemySprite?.dom) this.ui.enemySprite.dom.setVisible(true);

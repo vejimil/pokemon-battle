@@ -3232,7 +3232,8 @@ function spritePath(spriteId, facing = 'front', shiny = false) {
 }
 function iconPath(spriteId, shiny = false) {
   const folder = shiny ? 'Icons shiny' : 'Icons';
-  return `${state.assetBase.pokemon}/${folder}/${spriteId}.png`;
+  // Linux 파일시스템은 대소문자 구분 — Icons 폴더 파일명은 모두 대문자 (예: KLEFKI.png)
+  return `${state.assetBase.pokemon}/${folder}/${(spriteId || '').toUpperCase()}.png`;
 }
 function getBattleRenderSpeciesName(mon) {
   if (!mon) return '';

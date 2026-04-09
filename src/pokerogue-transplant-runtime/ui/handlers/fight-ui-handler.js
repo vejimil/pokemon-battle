@@ -32,8 +32,6 @@ export class FightUiHandler extends UiHandler {
     this.powerText = null;
     this.accuracyLabel = null;
     this.accuracyText = null;
-    this.moveNameText = null;
-    this.descriptionText = null;
     this.toggleButtons = [];
     this.footerButtons = [];
     this.fieldIndex = 0;
@@ -69,28 +67,22 @@ export class FightUiHandler extends UiHandler {
     });
 
     this.moveInfoContainer = scene.add.container(1, 0).setName('move-info');
-    this.moveNameText = addTextObject(this.ui, 249, -40, '', 'WINDOW_BATTLE_COMMAND', {
-      wordWrap: { width: 44, useAdvancedWrap: true },
-    }).setOrigin(0, 0);
     // 원본: typeIcon/moveCategoryIcon 모두 setVisible(false)로 시작 (fight-ui-handler.ts:63,67)
     // 원본 scale: typeIcon=0.8 (line 269), moveCategoryIcon=1.0 (line 272)
     this.typeIcon = env.textureExists(scene, env.UI_ASSETS.typesAtlas.key, 'unknown')
       ? scene.add.image(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.8).setVisible(false)
-      : addTextObject(this.ui, 263, -36, '', 'BATTLE_LABEL').setOrigin(0, 0);
+      : addTextObject(this.ui, 263, -36, '', 'BATTLE_LABEL').setOrigin(0, 0).setVisible(false);
     this.moveCategoryIcon = env.textureExists(scene, env.UI_ASSETS.categoriesAtlas.key, 'status')
       ? scene.add.image(295, -36, env.UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(1.0).setVisible(false)
-      : addTextObject(this.ui, 295, -36, '', 'BATTLE_LABEL').setOrigin(0, 0);
-    this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'BATTLE_LABEL').setOrigin(0, 0.5);
-    this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'BATTLE_VALUE').setOrigin(1, 0.5);
-    this.powerLabel = addTextObject(this.ui, 250, -18, 'Pow', 'BATTLE_LABEL').setOrigin(0, 0.5);
-    this.powerText = addTextObject(this.ui, 308, -18, '---', 'BATTLE_VALUE').setOrigin(1, 0.5);
-    this.accuracyLabel = addTextObject(this.ui, 250, -10, 'Acc', 'BATTLE_LABEL').setOrigin(0, 0.5);
-    this.accuracyText = addTextObject(this.ui, 308, -10, '---', 'BATTLE_VALUE').setOrigin(1, 0.5);
-    this.descriptionText = addTextObject(this.ui, 249, -2, '', 'HINT', {
-      wordWrap: { width: 65, useAdvancedWrap: true },
-    }).setOrigin(0, 1);
+      : addTextObject(this.ui, 295, -36, '', 'BATTLE_LABEL').setOrigin(0, 0).setVisible(false);
+    // 원본: pp/power/accuracy 라벨·값도 모두 setVisible(false)로 시작 (fight-ui-handler.ts:69-94)
+    this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'BATTLE_LABEL').setOrigin(0, 0.5).setVisible(false);
+    this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'BATTLE_VALUE').setOrigin(1, 0.5).setVisible(false);
+    this.powerLabel = addTextObject(this.ui, 250, -18, 'Pow', 'BATTLE_LABEL').setOrigin(0, 0.5).setVisible(false);
+    this.powerText = addTextObject(this.ui, 308, -18, '---', 'BATTLE_VALUE').setOrigin(1, 0.5).setVisible(false);
+    this.accuracyLabel = addTextObject(this.ui, 250, -10, 'Acc', 'BATTLE_LABEL').setOrigin(0, 0.5).setVisible(false);
+    this.accuracyText = addTextObject(this.ui, 308, -10, '---', 'BATTLE_VALUE').setOrigin(1, 0.5).setVisible(false);
     this.moveInfoContainer.add([
-      this.moveNameText,
       this.typeIcon,
       this.moveCategoryIcon,
       this.ppLabel,
@@ -99,7 +91,6 @@ export class FightUiHandler extends UiHandler {
       this.powerText,
       this.accuracyLabel,
       this.accuracyText,
-      this.descriptionText,
     ]);
     this.container.add(this.moveInfoContainer);
 
@@ -283,7 +274,11 @@ export class FightUiHandler extends UiHandler {
   }
 
   updateMoveDetail(detail = {}) {
-    this.moveNameText.setText(detail.name || '—');
+    // 원본 setInfoVis(hasMove): moveInfoContainer 전체 visibility 일괄 제어 (fight-ui-handler.ts:259-262)
+    const hasMove = Boolean(detail && detail.name);
+    this.moveInfoContainer.iterate(o => o.setVisible?.(hasMove));
+
+    if (!hasMove) return;
 
     if (this.typeIcon.setTexture) {
       const typesKey = this.ui.uiLanguage === 'ko' && this.env.textureExists(this.scene, this.env.UI_ASSETS.typesKoAtlas.key, detail.type)
@@ -317,7 +312,6 @@ export class FightUiHandler extends UiHandler {
     this.ppText.setColor(ppColors.color).setShadowColor(ppColors.shadow);
     this.powerText.setText(detail.powerLabel || '---');
     this.accuracyText.setText(detail.accuracyLabel || '---');
-    this.descriptionText.setText(detail.description || '');
   }
 
   updateToggles(toggles = []) {
@@ -382,5 +376,7 @@ export class FightUiHandler extends UiHandler {
     messageHandler.bg?.setVisible(true);
     this.infoVisible = false;
     if (this.cursorObj) this.cursorObj.setVisible(false);
+    // 원본 clear(): setInfoVis(false) — moveInfoContainer 전체 숨김 (fight-ui-handler.ts:408-409)
+    this.moveInfoContainer?.iterate(o => o.setVisible?.(false));
   }
 }
