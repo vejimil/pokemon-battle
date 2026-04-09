@@ -78,7 +78,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (2026-04-09 기준, 스크린샷 검토 후 업데이트)
+## 다음 세션 우선순위 (2026-04-09 기준, 소스 심층 분석 후 업데이트)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
@@ -119,19 +119,19 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - **조사 필요**: PokeRogue 원본 `battle-info.ts:234`에서 `box` sprite 좌표 재확인 — 이식본 `this.bg`와 100% 동일한지 검증
 - **주의**: 적(enemy) 정보창만 해당. player는 정상으로 보임.
 
-### 7. 교체 UI 레이아웃 오류 — **미수정** (2026-04-09 스크린샷 발견)
-- 스크린샷 3(교체 UI)에서 party 슬롯이 배틀 필드 위에 둥둥 떠 있음
-- **partyBg 미표시**: `env.UI_ASSETS.partyBg.key` 텍스처가 로드되지 않았거나 키가 잘못됨 → 배경 없이 슬롯만 노출
-- **슬롯 위치**: 슬롯 Y좌표(container y=180 기준 상대값 -168~-56)는 절대 y 12~124에 위치 — 이 자체는 PokeRogue 레이아웃과 일치하나, partyBg 없이 노출되어 어색해 보임
-- **조사 필요**: `constants.js`에서 `partyBg` 키 확인, `assets.js`에서 실제 로드 여부 확인
-- **2차 조사**: partyBg 이미지 실제 크기가 320×180이어야 전체 화면을 덮음
+### 7. 교체 UI 레이아웃 오류 — **코드 정상, 시각적 확인 필요** (2026-04-09 스크린샷 발견)
+- 코드 분석 결과: `party_bg.png` 320×180 존재, constants.js·assets.js 모두 정상, 코드 로직 정상
+- container y=180 + setOrigin(0,1) + 320×180 이미지 → 전체 화면(y=0~180) 커버 설계상 올바름
+- **시각적 확인 필요**: 실제 게임 실행 시 교체 UI의 partyBg가 표시되는지 확인
+- partyBg가 정상 표시된다면 이 항목은 해결됨. 여전히 떠있어 보인다면 컨테이너 depth 또는 렌더 순서 문제 추가 조사
 
-### 8. 싸운다 UI — 기술 카테고리 아이콘 누락 (2026-04-09 스크린샷 발견)
-- 스크린샷 2(fight UI)에서 move info 패널에 **카테고리 아이콘**(물리/특수/변화 아이콘)이 없음
-- PokeRogue 원본: `moveCategoryIcon = globalScene.add.sprite(scaledCanvas.width-25, -36, "categories", "physical")`
-- `"categories"` 아틀라스가 로드되지 않았거나 이식본의 `fight-ui-handler.js`에서 키가 잘못됨
-- **조사 필요**: `constants.js`에서 categories atlas 키 확인, `assets.js`에서 로드 여부 확인
-- move info 패널 위치 자체는 정상(bottom-right of message area)
+### 8. 싸운다 UI — 카테고리 아이콘 visibility·scale 불일치 (2026-04-09 아이콘 누락 → 코드 구현됨, 세부 조정 필요)
+- categories atlas: constants.js ✓, assets.js(multiatlas) ✓, 파일(physical/special/status) ✓
+- fight-ui-handler.js: moveCategoryIcon 생성·update 코드 이미 구현됨 ✓
+- **남은 문제 1 - 초기 visibility**: 원본은 `setVisible(false)`로 시작. TP는 초기에 visible=true → 기술 미선택 시 'status' 프레임이 보임
+  - 수정: `setup()` 내 `this.moveCategoryIcon.setVisible(false)`, `this.typeIcon.setVisible(false)` 추가
+- **남은 문제 2 - scale**: 원본 typeIcon=0.8, moveCategoryIcon=1.0 vs TP 두 아이콘 모두 0.55
+  - 시각적으로 확인 후 원본 scale로 맞출 것 (0.55가 시각적으로 맞으면 유지 가능)
 
 ### 향후 기능 작업 (버그 수정 후)
 - 파티 교체 UI (`party-ui-handler.js`) 전면 재작성 (현재 partyBg 수정 후에도 레이아웃 개선 필요)
@@ -180,6 +180,11 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 8. **nameText truncation** (`battle-info.js`): 이름이 60px(비보스)/98px(보스) 초과 시 "..." 처리 (원본 updateNameText() 이식)
 9. **nameBox width 버그 수정** (`battle-message-ui-handler.js`): `.width` → `.displayWidth` (unscaled canvas px 오사용 수정)
 10. **타입 아이콘 위치 조사** (atlas json): 원본과 동일한 trim 동작 확인 — 수정 불필요
+
+## 2026-04-09 (소스 분석 후 추가 수정)
+1. **fight-ui-handler.js 아이콘 초기 visibility 수정**: typeIcon/moveCategoryIcon 모두 setup() 시 `setVisible(false)` 추가 (원본 ts:63,67 일치)
+2. **fight-ui-handler.js 아이콘 scale 수정**: typeIcon `0.55→0.8` (원본 ts:269), moveCategoryIcon `0.55→1.0` (원본 ts:272). updateMoveDetail()에서도 setScale 호출 추가
+3. **enemy info bg y 보정** (`enemy-battle-info.js`): `bg.setY(-1)` — 적 정보창 bg 1px 위로 이동 (렌더링 아티팩트 보정)
 
 ## 2026-04-08 완료한 작업
 1. **타입 아이콘 y 오프셋 복원** (`battle-info.js`): 원본 값 `(-15, -15.5)` / `(-15, -2.5)` / `(0, -15.5)` 적용

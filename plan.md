@@ -557,11 +557,21 @@ hpBarY: player ? -1 : 4.5            // 원본도 소수점
 ```
 [x] Phase 1-A~C: HP 임계값, wordWrapWidth 수정
 [x] Phase 2-A~C: resolution 통일, text.js 폰트 크기, lineSpacing
-[x] Phase 3-A~D: nameText truncation, 좌표 검토, message fontSize
+[x] Phase 3-A~D: nameText truncation, 좌표 검토, message fontSize (16px), shadow 적용
 [x] Phase 4: 타입 아이콘 atlas 조사 완료
 [x] CLAUDE.md 업데이트
-[ ] Phase 5-A: fight-ui categories atlas 조사 및 수정
-[ ] Phase 5-B: party-ui partyBg texture 조사 및 수정
-[ ] Phase 5-C: enemy info bg y 오프셋 조사 및 미세 조정
-[ ] Phase 5-D: 폰트 흐림 — 비정수 좌표 조사 (원본 확인 후 결정)
+[x] Phase 5-A: categories atlas 조사 완료 — 이미 정상 구현됨
+    → categoriesAtlas: constants.js ✓, assets.js multiatlas ✓, 파일 ✓, 프레임(physical/special/status) ✓
+    → fight-ui-handler.js: moveCategoryIcon 생성·업데이트 코드 이미 구현됨
+[x] Phase 5-B: partyBg — 코드 정상 확인 완료
+    → party_bg.png 320×180 존재, URL 정상, assets.js 로드 정상, container 설계 정상 ✓
+[x] Phase 5-C: enemy info bg y 오프셋 — enemy-battle-info.js에서 bg.setY(-1) 적용
+    → 원본 코드는 동일(y=0)하나 렌더링 아티팩트로 enemy만 -1px 보정
+[~] Phase 5-D: 폰트 흐림 — 원본도 동일 소수점 좌표, BitmapFont 전환 없이는 근본 해결 불가 → 스킵
+[x] Phase 5-E: fight-ui-handler 아이콘 초기 visibility 수정
+    → typeIcon, moveCategoryIcon 모두 .setVisible(false) 추가 (원본 fight-ui-handler.ts:63,67 일치)
+[x] Phase 5-F: fight-ui-handler 아이콘 scale 수정
+    → typeIcon: setScale(0.55) → setScale(0.8) (원본 ts:269)
+    → moveCategoryIcon: setScale(0.55) → setScale(1.0) (원본 ts:272)
+    → updateMoveDetail()에서도 setTexture 후 setScale 호출 추가
 ```

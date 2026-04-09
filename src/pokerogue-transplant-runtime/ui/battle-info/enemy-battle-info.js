@@ -13,6 +13,10 @@ export class EnemyBattleInfo extends BattleInfo {
   setup() {
     super.setup();
 
+    // 적 정보창 bg가 1-2px 낮아 보이는 시각적 오차 보정
+    // 원본 코드는 동일(0,0 origin 1,0.5)하나 렌더링 차이로 인해 enemy만 -1px 조정
+    if (this.bg) this.bg.setY(-1);
+
     const { scene, env } = this;
 
     // Owned icon (shown when player has caught this species)

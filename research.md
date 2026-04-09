@@ -410,6 +410,71 @@ this.game = new Phaser.Game({
 
 ---
 
+## 11. 2026-04-09 이후 코드 분석 결과 (소스 직접 확인)
+
+> 소스 파일 직접 분석 — constants.js, assets.js, fight-ui-handler.js, party-ui-handler.js, battle-message-ui-handler.js
+
+### 11-1. fight-ui-handler.js — categories atlas 및 아이콘 구현 확인
+
+**결론**: Phase 5-A(categories 아이콘)는 이미 코드에 구현됨.
+- `categoriesAtlas`: constants.js line 16에 등록, assets.js line 9에서 `load.multiatlas()` 로드 ✓
+- `categories.json`: multiatlas 포맷(`"textures"` 배열), 프레임: `physical`/`special`/`status` ✓
+- `fight-ui-handler.js`: `moveCategoryIcon`이 atlas key `env.UI_ASSETS.categoriesAtlas.key`로 생성됨 ✓
+- `updateMoveDetail()`: `detail.category`('physical'/'special'/'status')로 frame 설정, setVisible(true) ✓
+- `app.js`: `category: String(move.category || '').toLowerCase()` → 'physical'/'special'/'status' ✓
+
+**남은 문제 (신규 발견)**:
+
+1. **초기 visibility 불일치**:
+   - 원본 (`fight-ui-handler.ts:63,67`): `this.typeIcon.setVisible(false)`, `this.moveCategoryIcon.setVisible(false)`
+   - TP (`fight-ui-handler.js:76-80`): 두 아이콘 모두 초기 `setVisible()` 호출 없음 → 기본값 visible=true
+   - 결과: 기술 선택 전에도 'unknown'/'status' 프레임 아이콘이 보임
+
+2. **scale 불일치**:
+   - 원본 (`fight-ui-handler.ts:269,272`):
+     - `typeIcon.setScale(0.8)` (업데이트 시마다)
+     - `moveCategoryIcon.setScale(1.0)` (업데이트 시마다)
+   - TP (`fight-ui-handler.js:76-80`): 생성 시 두 아이콘 모두 `setScale(0.55)`, 이후 scale 업데이트 없음
+   - types.png 프레임: 32×14px. 원본 scale 0.8 → 25.6×11.2 logical
+   - categories.png 프레임: 28×11px. 원본 scale 1.0 → 28×11 logical
+   - TP scale 0.55: typeIcon 17.6×7.7, moveCategoryIcon 15.4×6.1 → 원본보다 작음
+   - **시각적 확인 필요**: 현재 0.55가 실제로 잘못 보이는지 게임 실행 후 확인
+
+### 11-2. party-ui-handler.js — partyBg 구현 확인
+
+**결론**: Phase 5-B(partyBg 미표시) 코드는 정상.
+- `party_bg.png`: 320×180 PNG 존재 ✓
+- `constants.js`: `partyBg: { key: 'pkb-ui-party-bg', url: './assets/pokerogue/ui/party_bg.png' }` ✓
+- `assets.js`: `load.image(UI_ASSETS.partyBg.key, UI_ASSETS.partyBg.url)` ✓
+- `party-ui-handler.js`: `scene.add.image(0, 0, env.UI_ASSETS.partyBg.key).setOrigin(0, 1)` ✓
+- 컨테이너 y=180, origin(0,1), 이미지 320×180 → 절대 y=0~180 커버 ✓
+- 컨테이너 children에 partyBg 추가됨 ✓
+- **시각적 확인 필요**: 실제 게임에서 교체 UI 열었을 때 partyBg가 표시되는지
+
+### 11-3. battle-message-ui-handler.js — 완료 사항 확인
+
+다음 수정이 이미 모두 반영됨:
+- `wordWrapWidth = 297` ✓ (1780/6)
+- `message`: fontSize=16, shadow(4,5,'#6b5a73') ✓
+- `nameText`: fontSize=16, shadow(4,5,'#6b5a73') ✓
+- `nameBox` 너비: `this.nameText.displayWidth + 16` ✓ (`.width` 버그 수정됨)
+
+### 11-4. text.ts 원본 shadow 값 재확인
+
+`getTextStyleOptions()` 기본값: `shadowXpos=4, shadowYpos=5`
+
+| TextStyle | shadowX | shadowY | 비고 |
+|-----------|---------|---------|------|
+| WINDOW | 3 | 3 | 명시 |
+| WINDOW_BATTLE_COMMAND | 4 | 5 | 기본값 유지 |
+| BATTLE_INFO | 3.5 | 3.5 | 명시 |
+| MESSAGE | 4 | 5 | 기본값 유지 (case에서 override 없음) |
+| PARTY | 4 | 5 | 기본값 유지 |
+
+TP `text.js` 현재 값: 위 표와 일치 ✓
+
+---
+
 ## 10. 2026-04-09 스크린샷 시각 분석
 
 > 스크린샷 촬영 조건: 2026-04-09 Phase 1~4 수정 적용 후 `npm start` 실행

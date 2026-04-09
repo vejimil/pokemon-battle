@@ -72,11 +72,13 @@ export class FightUiHandler extends UiHandler {
     this.moveNameText = addTextObject(this.ui, 249, -40, '', 'WINDOW_BATTLE_COMMAND', {
       wordWrap: { width: 44, useAdvancedWrap: true },
     }).setOrigin(0, 0);
+    // 원본: typeIcon/moveCategoryIcon 모두 setVisible(false)로 시작 (fight-ui-handler.ts:63,67)
+    // 원본 scale: typeIcon=0.8 (line 269), moveCategoryIcon=1.0 (line 272)
     this.typeIcon = env.textureExists(scene, env.UI_ASSETS.typesAtlas.key, 'unknown')
-      ? scene.add.image(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.55)
+      ? scene.add.image(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.8).setVisible(false)
       : addTextObject(this.ui, 263, -36, '', 'BATTLE_LABEL').setOrigin(0, 0);
     this.moveCategoryIcon = env.textureExists(scene, env.UI_ASSETS.categoriesAtlas.key, 'status')
-      ? scene.add.image(295, -36, env.UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(0.55)
+      ? scene.add.image(295, -36, env.UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(1.0).setVisible(false)
       : addTextObject(this.ui, 295, -36, '', 'BATTLE_LABEL').setOrigin(0, 0);
     this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'BATTLE_LABEL').setOrigin(0, 0.5);
     this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'BATTLE_VALUE').setOrigin(1, 0.5);
@@ -284,7 +286,8 @@ export class FightUiHandler extends UiHandler {
         ? this.env.UI_ASSETS.typesKoAtlas.key
         : this.env.UI_ASSETS.typesAtlas.key;
       if (this.env.textureExists(this.scene, typesKey, detail.type || 'unknown')) {
-        this.typeIcon.setTexture(typesKey, detail.type || 'unknown');
+        // 원본: setTexture(...).setScale(0.8) (fight-ui-handler.ts:269)
+        this.typeIcon.setTexture(typesKey, detail.type || 'unknown').setScale(0.8);
         this.typeIcon.setVisible(true);
       } else {
         this.typeIcon.setVisible(false);
@@ -295,7 +298,8 @@ export class FightUiHandler extends UiHandler {
 
     if (this.moveCategoryIcon.setTexture) {
       if (this.env.textureExists(this.scene, this.env.UI_ASSETS.categoriesAtlas.key, detail.category || 'status')) {
-        this.moveCategoryIcon.setTexture(this.env.UI_ASSETS.categoriesAtlas.key, detail.category || 'status');
+        // 원본: setTexture(...).setScale(1.0) (fight-ui-handler.ts:272)
+        this.moveCategoryIcon.setTexture(this.env.UI_ASSETS.categoriesAtlas.key, detail.category || 'status').setScale(1.0);
         this.moveCategoryIcon.setVisible(true);
       } else {
         this.moveCategoryIcon.setVisible(false);
