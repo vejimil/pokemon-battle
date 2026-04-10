@@ -25,13 +25,14 @@ function loadIconTexture(scene, key, url, cb) {
   iconTextureCache.set(key, 'loading');
   scene.load.image(key, url);
   scene.load.once('filecomplete-image-' + key, () => {
-    // Register 'frame0' = left half of the 2-frame sprite sheet
+    // Register frame0 (left half) and frame1 (right half) of the 2-frame sprite sheet
     try {
       const texture = scene.textures.get(key);
       if (texture && texture.source[0]) {
         const fw = Math.floor(texture.source[0].width / 2);
         const fh = texture.source[0].height;
-        texture.add('frame0', 0, 0, 0, fw, fh);
+        texture.add('frame0', 0, 0,  0, fw, fh); // left 64×64
+        texture.add('frame1', 0, fw, 0, fw, fh); // right 64×64
       }
     } catch (_e) {}
     iconTextureCache.set(key, 'loaded');
@@ -50,8 +51,9 @@ class PartySlot {
     this.isActive = index === 0;
     this.slotY = slotY;
     this.baseX = this.isActive ? 9 : 143;
-    this.iconObj = null;       // dynamically created pokemon icon image
-    this.iconPending = false;  // true while async icon load is in flight
+    this.iconObj = null;           // dynamically created pokemon icon sprite
+    this.iconAnimTimer = null;     // Phaser TimerEvent for 2-frame icon animation
+    this.iconPending = false;      // true while async icon load is in flight
     this.levelText = null;
     this.statusSprite = null;
 
@@ -200,20 +202,32 @@ class PartySlot {
 
   _applyIcon(iconKey) {
     if (!this.scene.textures.exists(iconKey)) return;
-    // Use 'frame0' (left half of 2-frame sprite sheet) if registered; else fall back to default
+    // Use 'frame0' (left half) as starting frame; fall back to default if not registered
     const frameKey = this.scene.textures.get(iconKey).has('frame0') ? 'frame0' : undefined;
+    // active slot: icon at (4, 4), bench slot: icon at (2, -4) for 32×32 vertical centering
+    const x = this.isActive ? 4 : 2;
+    const y = this.isActive ? 4 : -4;
     if (!this.iconObj) {
-      this.iconObj = this.scene.add.image(
-        this.isActive ? 4 : 2,
-        this.isActive ? 4 : 3,
-        iconKey,
-        frameKey
-      ).setOrigin(0, 0).setDisplaySize(18, 18).setName(`party-icon-${this.index}`);
+      this.iconObj = this.scene.add.sprite(x, y, iconKey, frameKey)
+        .setOrigin(0, 0).setDisplaySize(32, 32).setName(`party-icon-${this.index}`);
       this.row.add(this.iconObj);
     } else {
       this.iconObj.setTexture(iconKey, frameKey);
     }
     this.iconObj.setVisible(true);
+    // 2-frame animation: frame0 ↔ frame1 every 500ms (PokeRogue party icon style)
+    if (this.iconAnimTimer) { this.iconAnimTimer.remove(); this.iconAnimTimer = null; }
+    if (this.scene.textures.get(iconKey).has('frame1')) {
+      this.iconAnimTimer = this.scene.time.addEvent({
+        delay: 500,
+        loop: true,
+        callback: () => {
+          if (!this.iconObj?.active) return;
+          const next = this.iconObj.frame.name === 'frame0' ? 'frame1' : 'frame0';
+          this.iconObj.setFrame(next);
+        },
+      });
+    }
   }
 
   getCursorPosition() {
@@ -373,6 +387,11 @@ export class PartyUiHandler extends UiHandler {
     super.clear();
     this.partyContainer?.setVisible(false);
     if (this.cursorObj) this.cursorObj.setVisible(false);
+
+    // Clean up icon animation timers
+    this.slots.forEach(s => {
+      if (s.iconAnimTimer) { s.iconAnimTimer.remove(); s.iconAnimTimer = null; }
+    });
 
     // partyModeActive 해제: DOM 스프라이트 visibility 복원 허용
     this.ui.partyModeActive = false;

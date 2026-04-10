@@ -15,10 +15,11 @@ const TEXT_STYLE = Object.freeze({
   BATTLE_INFO:           { fontSize: 12, color: '#f8f8f8', shadowColor: '#6b5a73', shadowX: 3.5, shadowY: 3.5 },
   // 원본 PARTY/MOVE_LABEL (48px = 96-48 → 8px logical)
   BATTLE_INFO_SMALL:     { fontSize: 8,  color: '#f8f8f8', shadowColor: '#707070', shadowX: 4,   shadowY: 5   },
-  // 원본 MOVE_INFO_CONTENT 근사 (56px = 96-40 → ~9px logical)
-  BATTLE_LABEL:          { fontSize: 9,  color: '#f8f8f8', shadowColor: '#6b5a73', shadowX: 3,   shadowY: 3   },
-  BATTLE_VALUE:          { fontSize: 9,  color: '#f8f8f8', shadowColor: '#6b5a73', shadowX: 3,   shadowY: 3   },
-  HINT:                  { fontSize: 6,  color: '#94a3b8', shadowColor: '#334155', shadowX: 1,   shadowY: 1   },
+  // 원본 MOVE_INFO_CONTENT 근사 (56px = 7×8 → 56/6 logical, 8px 그리드 정렬)
+  BATTLE_LABEL:          { fontSize: 56/6, color: '#f8f8f8', shadowColor: '#6b5a73', shadowX: 3,   shadowY: 3   },
+  BATTLE_VALUE:          { fontSize: 56/6, color: '#f8f8f8', shadowColor: '#6b5a73', shadowX: 3,   shadowY: 3   },
+  // HINT: 8px (48px render = 6×8) — 36px(6×6) 비정수 그리드 수정, 색상으로 시각 구분 유지
+  HINT:                  { fontSize: 8,    color: '#94a3b8', shadowColor: '#334155', shadowX: 1,   shadowY: 1   },
 });
 
 export function addTextObject(ui, x, y, text = '', styleKey = 'WINDOW', options = {}) {

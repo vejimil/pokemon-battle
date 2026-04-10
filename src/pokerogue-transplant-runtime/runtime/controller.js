@@ -90,10 +90,14 @@ export class TransplantBattleController {
       // Load at the render scale size (TEXT_RENDER_SCALE × logical) so the browser
       // caches the right glyph rasterisation (matching createBaseText's fontSize*S).
       const preloadSize = `${8 * TEXT_RENDER_SCALE}px`; // 48px = 8px logical × 6
+      // 56px = BATTLE_LABEL/VALUE render size (56/6 × 6 = 56, 7×8 grid-aligned)
+      const preloadLabelSize = '56px';
       try {
         await Promise.allSettled([
           document.fonts.load(`${preloadSize} "emerald"`, 'Aa0'),
           document.fonts.load(`${preloadSize} "pkmnems"`, 'Aa0'),
+          document.fonts.load(`${preloadLabelSize} "emerald"`, 'Aa0'),
+          document.fonts.load(`${preloadLabelSize} "pkmnems"`, 'Aa0'),
         ]);
       } catch (_) { /* font loading is non-critical */ }
       const Phaser = await loadPhaserModule();

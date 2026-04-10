@@ -40,21 +40,21 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 - `app.js`의 `buildBattleInfoModel()` 함수가 배틀 상태를 읽어서 모델 생성
 - Phaser 씬이 매 프레임 또는 상태 변화 시 UI 핸들러의 `update(model)` 호출
 
-## 현재 이식 완성도 (Phase 12 완료 후)
+## 현재 이식 완성도 (Phase 14 완료 — 2026-04-10)
 
-| 파일 | 완성도 | 주요 미구현 |
+| 파일 | 완성도 | 주요 미구현 / 미해결 |
 |------|--------|-----------|
-| `battle-info.js` | ~88% | Stats 컨테이너 |
+| `battle-info.js` | ~88% | Stats 컨테이너, nameTextY 비정수 블러 |
 | `player-battle-info.js` | ~85% | EXP 레벨업 사운드 처리 |
 | `enemy-battle-info.js` | ~68% | Type effectiveness 창, Flyout 메뉴 |
-| `fight-ui-handler.js` | ~78% | MoveInfoOverlay 미이식 |
+| `fight-ui-handler.js` | ~80% | MoveInfoOverlay 미이식 (Pow/Acc는 MoveInfoOverlay 전용) |
 | `command-ui-handler.js` | ~80% | Tera 색상 파이프라인 |
-| `party-ui-handler.js` | ~70% | 레이아웃 시각 재검증 필요 |
+| `party-ui-handler.js` | ~85% | — |
 | `ui.js` | ~95% | 완성 수준 |
 | `app.js` | ~92% | — |
 | `battle-message-ui-handler.js` | ~75% | `promptLevelUpStats` 트리거 연결 필요 |
 | `target-select-ui-handler.js` | ~40% | 싱글 배틀이라 field 스프라이트 접근 불가 |
-| `text.js` (helpers) | ~95% | 완성 |
+| `text.js` (helpers) | ~85% | BATTLE_LABEL/VALUE/HINT 픽셀 그리드 미정렬 |
 
 ## 주요 에셋 정보
 - 게임 해상도: **320×180** (LOGICAL_WIDTH/HEIGHT) — PokeRogue와 동일 (1920/6 × 1080/6)
@@ -80,67 +80,70 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (2026-04-09 기준, 소스 심층 분석 후 업데이트)
+## 다음 세션 우선순위 (2026-04-10 기준 — Phase 14)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
 > **작업 원칙3: 나를 위한 설명은 한글로 하되, 작업 및 사고 자체는 영어로 진행할 것 - 토큰 절약을 위함**
 
-### 1. 폰트 흐림 — 부분 개선됨, 정보창 위 텍스트 여전히 흐림 (2026-04-09 스크린샷 확인)
-- 2026-04-09 조치:
-  - `controller.js`: Game `resolution: DPR기반 → 1` 고정 (Retina 불일치 해소)
-  - `text.js`: 폰트 크기 원본 맞춤 (WINDOW 8→**16px**, BATTLE_INFO 8→**12px**)
-  - `text.js`: shadow 추가 (style별 원본 shadowX/Y/color 적용)
-  - `phaser-utils.js`: lineSpacing 기본값 5 추가 (원본 `scale*30=5`)
-- **스크린샷 확인**: BATTLE_INFO(12px)로 렌더되는 정보창 위 텍스트(이름, HP숫자 등)가 여전히 흐림
-- **유력 원인**: `nameTextY = -11.2` 같은 비정수 y 좌표 → 서브픽셀 렌더링 발생. `pos` 좌표를 정수로 반올림 시도 필요.
-- **추가 원인 후보**: shadow(3.5, 3.5) 같은 소수 shadow offset 값 (BATTLE_INFO 스타일)
-- **남은 가능성**: BitmapFont(스프라이트시트) 방식 전환이 필요할 수 있음
+### ✅ 완료: 텍스트 왜곡(squashed) — `text.js` + `controller.js`
+- **원인**: BATTLE_LABEL/BATTLE_VALUE(9px×6=54px), HINT(6px×6=36px)가 8의 배수 아님
+  - 폰트 글리프 1픽셀이 렌더 캔버스에서 6.75px(54÷8) 또는 4.5px(36÷8)로 비정수 → 뭉개짐
+  - PokeRogue 표준 렌더 크기: 48/56/72/96 (모두 8의 배수)
+- **수정**: `BATTLE_LABEL: { fontSize: 56/6, ... }`, `BATTLE_VALUE: { fontSize: 56/6, ... }`, `HINT: { fontSize: 8, ... }`
+  - `56/6 × 6 = 56px` (7×8) 정확히 렌더됨
+- **폰트 프리로드**: `controller.js`에 `56px "emerald"/"pkmnems"` 추가 (현재 48px만 프리로드)
+- **영향 파일**: `src/pokerogue-transplant-runtime/ui/helpers/text.js`, `src/pokerogue-transplant-runtime/runtime/controller.js`
 
-### 2. 남색 바 — **해결됨** (2026-04-08)
-- BattleTray.setup() 마지막에 `this.container.setVisible(false)` 추가로 해결
+### ✅ 완료: 파티 아이콘 크기 및 애니메이션 — `party-ui-handler.js`
+- **원인**: 18×18 너무 작음, frame1 미등록, static 이미지
+- **수정**:
+  1. `loadIconTexture()`: frame1(우측 절반) 추가 등록 → `texture.add('frame1', 0, fw, 0, fw, fh)`
+  2. `_applyIcon()`: `scene.add.image()` → `scene.add.sprite()`, `setDisplaySize(18,18)` → `setDisplaySize(32,32)`
+  3. 500ms 타이머로 frame0↔frame1 교대 (`scene.time.addEvent`)
+  4. bench slot 아이콘 y 위치 변경: (2, 12) → (2, -4) (수직 중앙 정렬)
+  5. `clear()` 시 타이머 정리
+
+### ✅ 완료: Fight UI 버튼 레이아웃 — `fight-ui-handler.js`
+- **원인**: Pow/Acc 표시는 PokeRogue 원본 기본 UI에 없음(MoveInfoOverlay 전용), Back 버튼이 이동 버튼과 충돌
+- **수정**:
+  1. `setup()` / `updateMoveDetail()`: `powerLabel`, `powerText`, `accuracyLabel`, `accuracyText` 제거
+     - moveInfoContainer에 typeIcon + moveCategoryIcon + ppLabel + ppText만 유지 (PokeRogue 원본 기본 표시)
+  2. "TYPE" 라벨 텍스트 추가: `addTextObject(245, -36, 'TYPE', 'BATTLE_LABEL')` (원본 오른쪽 패널 1행)
+  3. footer Back 버튼: `(1, 0)` → `(241, 0)` (오른쪽 패널 하단), width=79 (패널 전체 너비)
+  4. footer Switch 버튼: 싱글 배틀 미사용 → 숨김 처리 유지
+- **오른쪽 패널 최종 레이아웃**:
+  ```
+  y=-36: [TYPE] [타입배지] [카테고리아이콘]
+  y=-26: PP  값
+  y=0 (origin 0,1): [BACK 버튼]
+  ```
+
+### 보류 항목
+- `fight-ui-handler.js`: MoveInfoOverlay 이식 (원본 ts:108-121) — Pow/Acc 표시는 여기서 담당
+- `command-ui-handler.js`: Tera 색상 파이프라인
+- `battle-info.js`: nameTextY(-11.2, -15.2) 비정수 블러 — 원본과 동일값이라 일단 유지
+
+---
+
+## 이전 완료 이력 (주요 항목)
+
+- **2026-04-10**: Navy bar 회귀 수정, 파티 아이콘 frame0 등록, levelText HINT→BATTLE_INFO_SMALL, 좌표 정수화(movesContainer -38.7→-39, 메인슬롯 -148.5→-149), footer y=-13→y=0 origin(0,1), toggle y=-62→-46
+- **2026-04-09**: wordWrapWidth 전면 수정, 폰트 크기 원본 맞춤, shadow 추가, lineSpacing 기본값, nameText truncation
+- **2026-04-08**: TEXT_RENDER_SCALE=6 도입, EXP bar mask, 배틀 전체화면, INTEGER_SCALE 모드
+- **2026-04-07**: LOGICAL_HEIGHT 수정, 레이아웃 전면 수정, 커서 origin 수정, 어빌리티 바 위치
+
+### 2. 남색 바 — **해결됨** (2026-04-08/10)
+- BattleTray.setup() 마지막에 `this.container.setVisible(false)`
+- party-ui-handler.clear()에서 tray setVisible(true) 코드 제거 (회귀 방지)
 
 ### 3. 적 타입 아이콘 위치(1픽셀) — **조사 완료, 이상 없음**
-- 오프셋 값 `(-15,-15.5)` 등은 원본과 동일
-- atlas JSON `pbinfo_enemy_type1.json`은 multiatlas "textures" 포맷, trim 데이터 정상
-- PokeRogue도 동일 atlas 사용 → 1픽셀 오프셋은 양쪽 동일, 수정 불필요
+- 오프셋 값 원본과 동일, atlas trim 정상, 수정 불필요
 
 ### 4. 하단 대화창 레이아웃 — **수정 완료** (2026-04-09)
-- `wordWrapWidth`: 215 → **297** (1780/6 logical px)
-- command-ui-handler: `91/111` → **152/185** (910/6, 1110/6)
-- message/nameText: fontSize **8→16px** (원본 TextStyle.MESSAGE=96px→logical 16px)
-- nameBox width 계산: `.width` → `.displayWidth` 버그 수정
+- wordWrapWidth 297, command-ui 152/185, fontSize 16px, nameBox displayWidth 수정
 
-### 5. 턴 인디케이터 (검은 바) — **작업 안 함**
-- PokeRogue 원본 battle-scene.ts 미보유, 실제 존재 여부 미확인 → 보류
-
-### 6. 적 정보창 몸체 1-2px 낮음 — **수정 완료** (`enemy-battle-info.js`)
-- `enemy-battle-info.js` setup()에서 `super.setup()` 직후 `this.bg.setY(-1)` 적용
-- 원본 코드는 y=0이나 렌더링 아티팩트로 enemy만 보정 적용. player는 건드리지 않음.
-
-### 7. 교체 UI DOM 숨김 — **수정 완료** (2026-04-09 Phase 7)
-- `ui.js`에 `partyModeActive` 플래그 추가, `renderModel()`에서 `!deferred && !this.partyModeActive` 조건 적용
-- `party-ui-handler.js` `show()`에서 `this.ui.partyModeActive = true`, `clear()`에서 `false` 설정
-- `app.js` `iconPath()`: `spriteId.toUpperCase()` 적용 — Icons 폴더 파일명이 대문자임 (KLEFKI.png 등)
-- **다음**: `party_bg.png` 8-bit colormap 렌더링 여부, 파티 슬롯 레이아웃 세부 검증
-
-### 8. 싸운다 UI — 카테고리 아이콘 — **수정 완료** (`fight-ui-handler.js`)
-- categories atlas 정상 로드 확인 (constants.js, assets.js, JSON 포맷 모두 ✓)
-- `typeIcon`: `setVisible(false)` 추가, scale `0.55→0.8` (원본 ts:269)
-- `moveCategoryIcon`: `setVisible(false)` 추가, scale `0.55→1.0` (원본 ts:272)
-- `updateMoveDetail()`: 두 아이콘 모두 `setTexture()` 후 `setScale()` 재호출 추가
-
-### 9. Fight UI 오버플로우 — **수정 완료** (2026-04-09 Phase 7)
-- `moveNameText`, `descriptionText` 삭제 — 오른쪽 패널을 원본 8개 요소(typeIcon, moveCategoryIcon, pp/power/accuracy 라벨·값)로 정리
-- pp/power/accuracy 라벨·값 모두 `setVisible(false)` 초기화, `updateMoveDetail()`에서 일괄 visibility 제어 (원본 setInfoVis 패턴)
-- `clear()`에서 `moveInfoContainer.iterate(o => o.setVisible(false))` 추가
-- **다음**: 스크린샷으로 Fight UI 재검증 후 MoveInfoOverlay 작업
-
-### 다음 실제 우선순위 (Phase 13 기준)
-- **스크린샷 시각 검증**: Party UI party_bg 커버리지 (sortChildrenFlag 적용 후), HP 라벨 표시 여부, Fight UI 토글 버튼 위치 확인
-- `fight-ui-handler.js`: MoveInfoOverlay 이식 (원본 ts:108-121, `delayVisibility: true, onSide: true, right: true`)
-- `command-ui-handler.js`: Tera 색상 파이프라인
-- `party-ui-handler.js`: LV 라벨 이미지(`partySlotOverlayLv`) 추가 여부 확인, 슬롯 레이아웃 세부 검증
+### 5. 턴 인디케이터 — 보류 (원본 미확인)
 
 ## 코드 작업 시 핵심 원칙
 
@@ -155,7 +158,9 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - multiatlas (textures[] 배열 형식): `load.multiatlas(key, json, path)` 사용
 - 일반 atlas: `load.atlas(key, image, json)` 사용
 - **텍스트 렌더링**: `createBaseText`에서 `TEXT_RENDER_SCALE=6` 방식 사용 — fontSize×6으로 렌더링 후 `setScale(1/6)` (PokeRogue 원본 동일), `resolution: 1` 고정
-- **폰트 크기 (logical px)**: WINDOW/MESSAGE=16, WINDOW_BATTLE_COMMAND=16, BATTLE_INFO=12, BATTLE_INFO_SMALL/BATTLE_LABEL/BATTLE_VALUE=8~9 — `text.js` TEXT_STYLE 참조
+- **폰트 패밀리 실체** (`styles.css` 확인): `"emerald"` → `pokemon-bw.ttf`, `"pkmnems"` → `pokemon-emerald-pro.ttf`. **"emerald" = pokemon-bw 폰트**이므로 폰트 교체로 블러 해결 시도 불필요. 블러 원인은 폰트가 아니라 8px 그리드 미정렬.
+- **폰트 픽셀 그리드 규칙**: `fontSize × TEXT_RENDER_SCALE`(렌더 크기)이 반드시 **8의 배수**여야 글리프가 정확히 찍힘. PokeRogue 표준: 48(8px), 56(≈9.33px), 72(12px), 96(16px). **9px×6=54는 8배수 아님 → 왜곡 발생**. 비표준 logical 크기 사용 시 `renderPx/6` 형태로 저장할 것.
+- **폰트 크기 (logical px)**: WINDOW/MESSAGE=16, WINDOW_BATTLE_COMMAND=16, BATTLE_INFO=12, BATTLE_INFO_SMALL=8, BATTLE_LABEL/BATTLE_VALUE=56/6(≈9.33), HINT=8 — `text.js` TEXT_STYLE 참조
 - **shadow**: `addTextObject` 호출 시 style별 shadow 자동 적용됨 — 직접 `setShadow()` 호출 불필요
 - **lineSpacing**: `createBaseText` 기본값 5 (원본 `scale*30=5`). 다른 값 필요 시 options으로 전달
 - **wordWrap 지정**: 로지컬 픽셀 값으로 `env.setTextWordWrap(obj, width)` 호출 — 직접 `setWordWrapWidth()` 호출 금지 (6× 스케일 보정 필요)
@@ -163,6 +168,29 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - **nameBox 폭 계산**: `nameText.displayWidth + 16` 사용 (`.width` 금지 — unscaled canvas px)
 - **커서 이미지**: `setOrigin` 호출하지 말 것 — Phaser 기본값 (0.5, 0.5) 사용이 PokeRogue와 동일
 - **어빌리티 바**: enemy=오른쪽(x=202), player=왼쪽(x=0), 두 이미지 모두 origin(0,0)
+
+## 2026-04-10 완료한 작업 (Phase 13)
+1. **Navy bar 회귀 수정** (`party-ui-handler.js`): `clear()` 에서 `enemyTray/playerTray.container.setVisible(true)` 제거. `show()`에서도 tray 숨김 제거. — 원인: `setup()→clear()` 호출 순서로 tray가 초기화 직후 켜짐
+2. **파티 아이콘 2프레임 수정** (`party-ui-handler.js`): `loadIconTexture()`에서 `texture.add('frame0', ...)` 등록 — 128×64를 18×18 압축하던 버그 해소
+3. **levelText 가시성** (`party-ui-handler.js`): `'HINT'`(6px) → `'BATTLE_INFO_SMALL'`(8px), active/bench 모두 적용
+4. **좌표 정수화** (`fight-ui-handler.js`, `party-ui-handler.js`): `movesContainer y=-38.7 → -39`, 메인 파티슬롯 `y=-148.5 → -149` (서브픽셀 블러 제거)
+5. **footer 버튼 위치** (`fight-ui-handler.js`): `y=-13 origin(0,0)` → `y=0 origin(0,1)` (이동 버튼 히트박스 충돌 감소)
+6. **toggle 버튼 위치** (`fight-ui-handler.js`): `y=-62 → -46` (fight 창 내부로 이동)
+7. **research.md 재작성**: 폰트 픽셀 그리드 분석, 아이콘 애니메이션 방안, PokeRogue 원본 비교 포함
+8. **plan.md 재작성**: Phase 14 Fix 1~3 상세 계획
+9. **CLAUDE.md 업데이트**: 완성도 테이블, 우선순위, 핵심 원칙 폰트 규칙 추가
+10. **폰트 패밀리 매핑 확인** (`styles.css`): `"emerald"` = `pokemon-bw.ttf` (이미 BW 폰트). 블러 해결은 폰트 교체가 아닌 8px 그리드 수정(Fix 1)으로 진행
+
+## 2026-04-10 완료한 작업 (Phase 14)
+1. **텍스트 왜곡 수정** (`text.js`): `BATTLE_LABEL/VALUE: fontSize 9→56/6` (54px→56px, 7×8), `HINT: fontSize 6→8` (36px→48px, 6×8) — 모두 8의 배수 렌더 크기로 정렬
+2. **폰트 프리로드 추가** (`controller.js`): 56px "emerald"/"pkmnems" 추가 (BATTLE_LABEL/VALUE용)
+3. **파티 아이콘 frame1 등록** (`party-ui-handler.js`): `loadIconTexture()`에서 frame1(우측 64×64) 추가 등록
+4. **파티 아이콘 sprite + 애니메이션** (`party-ui-handler.js`): `_applyIcon()` — `scene.add.image()` → `scene.add.sprite()`, `setDisplaySize(18,18)` → `setDisplaySize(32,32)`, 500ms 타이머 frame0↔frame1 교대
+5. **파티 아이콘 위치 조정** (`party-ui-handler.js`): bench 아이콘 y=3 → y=-4 (32×32 수직 중앙, 슬롯 24px 기준 (24-32)/2=-4)
+6. **아이콘 타이머 정리** (`party-ui-handler.js`): `clear()`에서 모든 슬롯 iconAnimTimer.remove()
+7. **Pow/Acc 제거** (`fight-ui-handler.js`): moveInfoContainer에서 powerLabel/powerText/accuracyLabel/accuracyText 제거 (PokeRogue 기본 UI에 없음, MoveInfoOverlay 전용)
+8. **TYPE 라벨 추가** (`fight-ui-handler.js`): `addTextObject(245, -36, 'TYPE', 'BATTLE_LABEL')` — 오른쪽 패널 1행
+9. **Back 버튼 이동** (`fight-ui-handler.js`): x=1,w=40 → x=241,w=79 (오른쪽 패널 하단 전체), 히트 영역 충돌 해소
 
 ## 2026-04-07 완료한 작업
 1. **LOGICAL_HEIGHT 240→180 수정** (`constants.js`): PokeRogue 좌표계(1920/6=320, 1080/6=180)에 맞춤

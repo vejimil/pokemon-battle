@@ -24,14 +24,11 @@ export class FightUiHandler extends UiHandler {
     this.moveInfoContainer = null;
     this.cursorObj = null;
     this.moveButtons = [];
+    this.typeLabel = null;
     this.typeIcon = null;
     this.moveCategoryIcon = null;
     this.ppLabel = null;
     this.ppText = null;
-    this.powerLabel = null;
-    this.powerText = null;
-    this.accuracyLabel = null;
-    this.accuracyText = null;
     this.toggleButtons = [];
     this.footerButtons = [];
     this.fieldIndex = 0;
@@ -67,30 +64,24 @@ export class FightUiHandler extends UiHandler {
     });
 
     this.moveInfoContainer = scene.add.container(1, 0).setName('move-info');
-    // 원본: typeIcon/moveCategoryIcon 모두 setVisible(false)로 시작 (fight-ui-handler.ts:63,67)
+    // PokeRogue 원본 기본 fight UI 오른쪽 패널: TYPE 라벨 + 타입배지 + 카테고리아이콘 (row1) + PP (row2)
+    // Pow/Acc는 MoveInfoOverlay 전용 (INFO 버튼 홀드 시만 표시)
     // 원본 scale: typeIcon=0.8 (line 269), moveCategoryIcon=1.0 (line 272)
+    this.typeLabel = addTextObject(this.ui, 245, -36, 'TYPE', 'BATTLE_LABEL').setOrigin(0, 0.5).setVisible(false);
     this.typeIcon = env.textureExists(scene, env.UI_ASSETS.typesAtlas.key, 'unknown')
       ? scene.add.image(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.8).setVisible(false)
       : addTextObject(this.ui, 263, -36, '', 'BATTLE_LABEL').setOrigin(0, 0).setVisible(false);
     this.moveCategoryIcon = env.textureExists(scene, env.UI_ASSETS.categoriesAtlas.key, 'status')
       ? scene.add.image(295, -36, env.UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(1.0).setVisible(false)
       : addTextObject(this.ui, 295, -36, '', 'BATTLE_LABEL').setOrigin(0, 0).setVisible(false);
-    // 원본: pp/power/accuracy 라벨·값도 모두 setVisible(false)로 시작 (fight-ui-handler.ts:69-94)
     this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'BATTLE_LABEL').setOrigin(0, 0.5).setVisible(false);
     this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'BATTLE_VALUE').setOrigin(1, 0.5).setVisible(false);
-    this.powerLabel = addTextObject(this.ui, 250, -18, 'Pow', 'BATTLE_LABEL').setOrigin(0, 0.5).setVisible(false);
-    this.powerText = addTextObject(this.ui, 308, -18, '---', 'BATTLE_VALUE').setOrigin(1, 0.5).setVisible(false);
-    this.accuracyLabel = addTextObject(this.ui, 250, -10, 'Acc', 'BATTLE_LABEL').setOrigin(0, 0.5).setVisible(false);
-    this.accuracyText = addTextObject(this.ui, 308, -10, '---', 'BATTLE_VALUE').setOrigin(1, 0.5).setVisible(false);
     this.moveInfoContainer.add([
+      this.typeLabel,
       this.typeIcon,
       this.moveCategoryIcon,
       this.ppLabel,
       this.ppText,
-      this.powerLabel,
-      this.powerText,
-      this.accuracyLabel,
-      this.accuracyText,
     ]);
     this.container.add(this.moveInfoContainer);
 
@@ -108,12 +99,17 @@ export class FightUiHandler extends UiHandler {
       return { button, bg, icon, label, hit };
     });
 
-    // Footer buttons (Back, Switch): anchored to bottom of fight window (y=0 = absolute 180).
-    // origin(0,1) so the 12px bg extends upward from y=0 → absolute 168–180.
-    this.footerButtons = Array.from({ length: 2 }, () => {
-      const bg = addWindow(this.ui, 0, 0, 40, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 1).setVisible(false);
-      const label = addTextObject(this.ui, 20, -6, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5).setVisible(false);
-      const hit = scene.add.rectangle(0, 0, 40, 12, 0xffffff, 0.001).setOrigin(0, 1).setVisible(false);
+    // Footer buttons anchored to y=0 (absolute 180), origin(0,1) → bg extends upward 12px.
+    // Back (index 0): right panel bottom, x=241, width=79 (full right panel width 240–319)
+    // Switch (index 1): left panel, x=1, width=40 (hidden in single battle)
+    const footerDefs = [
+      { x: 241, w: 79 },
+      { x: 1,   w: 40 },
+    ];
+    this.footerButtons = footerDefs.map(({ x, w }) => {
+      const bg = addWindow(this.ui, x, 0, w, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 1).setVisible(false);
+      const label = addTextObject(this.ui, x + Math.floor(w / 2), -6, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5).setVisible(false);
+      const hit = scene.add.rectangle(x, 0, w, 12, 0xffffff, 0.001).setOrigin(0, 1).setVisible(false);
       this.container.add([bg, label, hit]);
       return { bg, label, hit };
     });
@@ -310,8 +306,6 @@ export class FightUiHandler extends UiHandler {
     this.ppText.setText(detail.ppLabel || '--/--');
     const ppColors = ppRatioToColor(detail.ppRatio ?? null);
     this.ppText.setColor(ppColors.color).setShadowColor(ppColors.shadow);
-    this.powerText.setText(detail.powerLabel || '---');
-    this.accuracyText.setText(detail.accuracyLabel || '---');
   }
 
   updateToggles(toggles = []) {
@@ -347,8 +341,7 @@ export class FightUiHandler extends UiHandler {
   }
 
   updateFooterActions(actions = []) {
-    // Footer buttons on left panel bottom (x=1 and x=44) to avoid right-panel overflow
-    const footerXs = [1, 44];
+    // Positions are fixed from setup(): Back at x=241 (right panel), Switch at x=1 (left panel)
     this.footerButtons.forEach((entry, index) => {
       const action = actions[index] || null;
       const visible = Boolean(action);
@@ -356,10 +349,6 @@ export class FightUiHandler extends UiHandler {
       entry.label.setVisible(visible);
       entry.hit.setVisible(visible);
       if (!visible) return;
-      const x = footerXs[index] ?? (1 + index * 43);
-      entry.bg.setPosition(x, 0);
-      entry.label.setPosition(x + 20, -6);
-      entry.hit.setPosition(x, 0);
       entry.label.setText(action.label || '');
       entry.label.setColor(action.disabled ? '#94a3b8' : '#f8fbff');
       entry.bg.setAlpha(action.disabled ? 0.6 : 1);
