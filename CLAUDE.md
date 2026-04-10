@@ -40,21 +40,21 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 - `app.js`의 `buildBattleInfoModel()` 함수가 배틀 상태를 읽어서 모델 생성
 - Phaser 씬이 매 프레임 또는 상태 변화 시 UI 핸들러의 `update(model)` 호출
 
-## 현재 이식 완성도 (Phase 14 완료 — 2026-04-10)
+## 현재 이식 완성도 (Phase 15 진행 예정 — 2026-04-10)
 
 | 파일 | 완성도 | 주요 미구현 / 미해결 |
 |------|--------|-----------|
 | `battle-info.js` | ~88% | Stats 컨테이너, nameTextY 비정수 블러 |
 | `player-battle-info.js` | ~85% | EXP 레벨업 사운드 처리 |
 | `enemy-battle-info.js` | ~68% | Type effectiveness 창, Flyout 메뉴 |
-| `fight-ui-handler.js` | ~80% | MoveInfoOverlay 미이식 (Pow/Acc는 MoveInfoOverlay 전용) |
+| `fight-ui-handler.js` | ~70% | 텍스트 왜곡 미해결, fight 레이아웃 부자연스러움, Switch/Tera 버튼 위치 어색 |
 | `command-ui-handler.js` | ~80% | Tera 색상 파이프라인 |
-| `party-ui-handler.js` | ~85% | — |
+| `party-ui-handler.js` | ~80% | 아이콘 위치 조정 필요 (스크린샷 기준) |
 | `ui.js` | ~95% | 완성 수준 |
 | `app.js` | ~92% | — |
 | `battle-message-ui-handler.js` | ~75% | `promptLevelUpStats` 트리거 연결 필요 |
 | `target-select-ui-handler.js` | ~40% | 싱글 배틀이라 field 스프라이트 접근 불가 |
-| `text.js` (helpers) | ~85% | BATTLE_LABEL/VALUE/HINT 픽셀 그리드 미정렬 |
+| `text.js` (helpers) | ~85% | 텍스트 왜곡 수정 적용했으나 여전히 문제 — 재분석 필요 |
 
 ## 주요 에셋 정보
 - 게임 해상도: **320×180** (LOGICAL_WIDTH/HEIGHT) — PokeRogue와 동일 (1920/6 × 1080/6)
@@ -80,44 +80,33 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (2026-04-10 기준 — Phase 14)
+## 다음 세션 우선순위 (Phase 15 — 2026-04-10 스크린샷 기준)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
 > **작업 원칙3: 나를 위한 설명은 한글로 하되, 작업 및 사고 자체는 영어로 진행할 것 - 토큰 절약을 위함**
 
-### ✅ 완료: 텍스트 왜곡(squashed) — `text.js` + `controller.js`
-- **원인**: BATTLE_LABEL/BATTLE_VALUE(9px×6=54px), HINT(6px×6=36px)가 8의 배수 아님
-  - 폰트 글리프 1픽셀이 렌더 캔버스에서 6.75px(54÷8) 또는 4.5px(36÷8)로 비정수 → 뭉개짐
-  - PokeRogue 표준 렌더 크기: 48/56/72/96 (모두 8의 배수)
-- **수정**: `BATTLE_LABEL: { fontSize: 56/6, ... }`, `BATTLE_VALUE: { fontSize: 56/6, ... }`, `HINT: { fontSize: 8, ... }`
-  - `56/6 × 6 = 56px` (7×8) 정확히 렌더됨
-- **폰트 프리로드**: `controller.js`에 `56px "emerald"/"pkmnems"` 추가 (현재 48px만 프리로드)
-- **영향 파일**: `src/pokerogue-transplant-runtime/ui/helpers/text.js`, `src/pokerogue-transplant-runtime/runtime/controller.js`
+### P1. 텍스트 왜곡 재분석 — `text.js` + `phaser-utils.js` + `controller.js`
+- **현상**: Phase 14에서 `fontSize: 56/6`, `HINT: 8` 수정 적용 후에도 여전히 텍스트가 뭉개져 보임
+- **다음 세션 할 일**: 8px 그리드 수정이 실제로 적용되었는지 재확인. `createBaseText` 내부에서 fontSize 처리 방식 재검토. 혹시 `Math.round`, `Math.floor` 등이 개입해 `56/6`을 정수로 반올림하지는 않는지 확인.
+- **영향 파일**: `text.js`, `phaser-utils.js` (createBaseText), `controller.js`
 
-### ✅ 완료: 파티 아이콘 크기 및 애니메이션 — `party-ui-handler.js`
-- **원인**: 18×18 너무 작음, frame1 미등록, static 이미지
-- **수정**:
-  1. `loadIconTexture()`: frame1(우측 절반) 추가 등록 → `texture.add('frame1', 0, fw, 0, fw, fh)`
-  2. `_applyIcon()`: `scene.add.image()` → `scene.add.sprite()`, `setDisplaySize(18,18)` → `setDisplaySize(32,32)`
-  3. 500ms 타이머로 frame0↔frame1 교대 (`scene.time.addEvent`)
-  4. bench slot 아이콘 y 위치 변경: (2, 12) → (2, -4) (수직 중앙 정렬)
-  5. `clear()` 시 타이머 정리
+### P2. Fight UI 레이아웃 부자연스러움 — `fight-ui-handler.js`
+- **현상**: 타입배지, PP, 기타 스탯의 레이아웃이 비정상적/부자연스럽게 보임
+- **다음 세션 할 일**: PokeRogue 원본 fight-ui-handler.ts의 오른쪽 패널 좌표를 정밀 재확인. TYPE 라벨과 타입배지 간격, PP 라벨·값 위치가 원본과 정확히 일치하는지 검토. moveInfoContainer의 로컬 좌표(container x=1) 감안해서 절대좌표 역산.
+- **영향 파일**: `fight-ui-handler.js`
 
-### ✅ 완료: Fight UI 버튼 레이아웃 — `fight-ui-handler.js`
-- **원인**: Pow/Acc 표시는 PokeRogue 원본 기본 UI에 없음(MoveInfoOverlay 전용), Back 버튼이 이동 버튼과 충돌
-- **수정**:
-  1. `setup()` / `updateMoveDetail()`: `powerLabel`, `powerText`, `accuracyLabel`, `accuracyText` 제거
-     - moveInfoContainer에 typeIcon + moveCategoryIcon + ppLabel + ppText만 유지 (PokeRogue 원본 기본 표시)
-  2. "TYPE" 라벨 텍스트 추가: `addTextObject(245, -36, 'TYPE', 'BATTLE_LABEL')` (원본 오른쪽 패널 1행)
-  3. footer Back 버튼: `(1, 0)` → `(241, 0)` (오른쪽 패널 하단), width=79 (패널 전체 너비)
-  4. footer Switch 버튼: 싱글 배틀 미사용 → 숨김 처리 유지
-- **오른쪽 패널 최종 레이아웃**:
-  ```
-  y=-36: [TYPE] [타입배지] [카테고리아이콘]
-  y=-26: PP  값
-  y=0 (origin 0,1): [BACK 버튼]
-  ```
+### P3. Switch/Tera 버튼 처리 — `fight-ui-handler.js`
+- **현상**: Switch 버튼과 Tera(Toggle) 버튼이 어색하게 표시됨
+- **다음 세션 할 일**: PokeRogue 원본에서 Switch 버튼, Tera 버튼의 존재 여부 및 표시 방식 정밀 확인.
+  - 원본에 없거나 다른 방식(커서 교체 등)으로 구현된 경우 → 이식본에서 제거하고 원본 방식으로 대체
+  - Back 버튼도 원본 구현 방식 재확인 (키보드 B키 vs 버튼 UI)
+- **영향 파일**: `fight-ui-handler.js`
+
+### P4. 파티 아이콘 위치 조정 — `party-ui-handler.js`
+- **현상**: 아이콘 애니메이션은 정상 작동하나, 슬롯 내 아이콘 위치(x, y)가 부자연스러움 (스크린샷 `screenshots/20260410screenshot party.png` 참조)
+- **다음 세션 할 일**: PokeRogue 원본 파티 슬롯에서 아이콘의 정확한 좌표 확인. active slot(110×49)과 bench slot(175×24)에서 32×32 아이콘의 적절한 정렬 위치 재산출. 현재 active=(4,4), bench=(2,-4) 재검토.
+- **영향 파일**: `party-ui-handler.js`
 
 ### 보류 항목
 - `fight-ui-handler.js`: MoveInfoOverlay 이식 (원본 ts:108-121) — Pow/Acc 표시는 여기서 담당
