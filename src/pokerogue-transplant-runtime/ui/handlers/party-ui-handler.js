@@ -13,18 +13,27 @@ const iconTextureCache = new Map();
 
 /**
  * Dynamically load a pokemon icon into the Phaser texture cache, then call cb().
- * Guaranteed to call cb() at most once per key, even if called multiple times.
+ * Icons are 2-frame horizontal sprite sheets (128×64 → each frame is 64×64).
+ * After loading, a 'frame0' is registered covering the left half of the texture.
  */
 function loadIconTexture(scene, key, url, cb) {
   if (scene.textures.exists(key)) { cb(); return; }
   if (iconTextureCache.get(key) === 'loading') {
-    // Already in flight — add to pending list
     scene.load.once('filecomplete-image-' + key, cb);
     return;
   }
   iconTextureCache.set(key, 'loading');
   scene.load.image(key, url);
   scene.load.once('filecomplete-image-' + key, () => {
+    // Register 'frame0' = left half of the 2-frame sprite sheet
+    try {
+      const texture = scene.textures.get(key);
+      if (texture && texture.source[0]) {
+        const fw = Math.floor(texture.source[0].width / 2);
+        const fh = texture.source[0].height;
+        texture.add('frame0', 0, 0, 0, fw, fh);
+      }
+    } catch (_e) {}
     iconTextureCache.set(key, 'loaded');
     cb();
   });
@@ -70,7 +79,7 @@ class PartySlot {
       this.pb         = scene.add.image(4, 4, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(4, 4, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
       this.label      = addTextObject(this.ui, 24, 3, '', 'WINDOW').setOrigin(0, 0);
-      this.levelText  = addTextObject(this.ui, 24, 13, '', 'HINT').setOrigin(0, 0);
+      this.levelText  = addTextObject(this.ui, 24, 13, '', 'BATTLE_INFO_SMALL').setOrigin(0, 0);
       this.sublabel   = addTextObject(this.ui, 24, 22, '', 'HINT').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(8, 31, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(24, 33, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
@@ -84,7 +93,7 @@ class PartySlot {
       this.pb         = scene.add.image(2, 12, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(2, 12, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
       this.label      = addTextObject(this.ui, 21, 2, '', 'WINDOW').setOrigin(0, 0);
-      this.levelText  = addTextObject(this.ui, 21, 12, '', 'HINT').setOrigin(0, 0);
+      this.levelText  = addTextObject(this.ui, 21, 12, '', 'BATTLE_INFO_SMALL').setOrigin(0, 0);
       this.sublabel   = addTextObject(this.ui, 29, 14, '', 'HINT').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(72, 6, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(88, 8, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
@@ -191,15 +200,18 @@ class PartySlot {
 
   _applyIcon(iconKey) {
     if (!this.scene.textures.exists(iconKey)) return;
+    // Use 'frame0' (left half of 2-frame sprite sheet) if registered; else fall back to default
+    const frameKey = this.scene.textures.get(iconKey).has('frame0') ? 'frame0' : undefined;
     if (!this.iconObj) {
       this.iconObj = this.scene.add.image(
         this.isActive ? 4 : 2,
         this.isActive ? 4 : 3,
-        iconKey
+        iconKey,
+        frameKey
       ).setOrigin(0, 0).setDisplaySize(18, 18).setName(`party-icon-${this.index}`);
       this.row.add(this.iconObj);
     } else {
-      this.iconObj.setTexture(iconKey);
+      this.iconObj.setTexture(iconKey, frameKey);
     }
     this.iconObj.setVisible(true);
   }
@@ -255,7 +267,8 @@ export class PartyUiHandler extends UiHandler {
     this.cancelZone = scene.add.rectangle(291, -24, 52, 16, 0xffffff, 0.001).setOrigin(0, 0);
 
     // slotYs: index 0 = main slot, index 1-5 = bench
-    const slotYs = [-148.5, -168, -140, -112, -84, -56];
+    // -149 is integer (was -148.5) to avoid sub-pixel text blur
+    const slotYs = [-149, -168, -140, -112, -84, -56];
     this.slots = slotYs.map((slotY, index) => new PartySlot(this, index, slotY));
 
     this.container.add([
@@ -281,13 +294,13 @@ export class PartyUiHandler extends UiHandler {
     this.ui.partyModeActive = true;
 
     // Hide battle scene DOM sprites (always above canvas) and battle-info containers
-    // so the party background fully covers the battle field
+    // so the party background fully covers the battle field.
+    // Note: BattleTray containers are NOT touched here — they manage their own visibility
+    // and start hidden by BattleTray.setup(). Touching them here caused the navy-bar regression.
     if (this.ui.enemySprite?.dom) this.ui.enemySprite.dom.setVisible(false);
     if (this.ui.playerSprite?.dom) this.ui.playerSprite.dom.setVisible(false);
     if (this.ui.enemyInfo?.container) this.ui.enemyInfo.container.setVisible(false);
     if (this.ui.playerInfo?.container) this.ui.playerInfo.container.setVisible(false);
-    if (this.ui.enemyTray?.container) this.ui.enemyTray.container.setVisible(false);
-    if (this.ui.playerTray?.container) this.ui.playerTray.container.setVisible(false);
 
     this.fieldIndex = Number(state.fieldIndex || 0);
     this.message.setText([state.title || '', state.subtitle || ''].filter(Boolean).join('\n'));
@@ -364,12 +377,12 @@ export class PartyUiHandler extends UiHandler {
     // partyModeActive 해제: DOM 스프라이트 visibility 복원 허용
     this.ui.partyModeActive = false;
 
-    // Restore battle scene DOM sprites and battle-info containers
+    // Restore battle scene DOM sprites and battle-info containers.
+    // BattleTray containers are intentionally NOT restored here — they start hidden and
+    // should stay hidden (restoring them here was the navy-bar regression root cause).
     if (this.ui.enemySprite?.dom) this.ui.enemySprite.dom.setVisible(true);
     if (this.ui.playerSprite?.dom) this.ui.playerSprite.dom.setVisible(true);
     if (this.ui.enemyInfo?.container) this.ui.enemyInfo.container.setVisible(true);
     if (this.ui.playerInfo?.container) this.ui.playerInfo.container.setVisible(true);
-    if (this.ui.enemyTray?.container) this.ui.enemyTray.container.setVisible(true);
-    if (this.ui.playerTray?.container) this.ui.playerTray.container.setVisible(true);
   }
 }

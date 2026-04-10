@@ -46,7 +46,7 @@ export class FightUiHandler extends UiHandler {
     const { scene, env } = this;
     this.container = scene.add.container(0, env.LOGICAL_HEIGHT).setDepth(55).setName('pkb-transplant-fight');
 
-    this.movesContainer = scene.add.container(18, -38.7).setName(FightUiHandler.MOVES_CONTAINER_NAME);
+    this.movesContainer = scene.add.container(18, -39).setName(FightUiHandler.MOVES_CONTAINER_NAME);
     this.container.add(this.movesContainer);
 
     // PokeRogue uses default origin (0.5, 0.5) for the cursor image
@@ -108,12 +108,12 @@ export class FightUiHandler extends UiHandler {
       return { button, bg, icon, label, hit };
     });
 
-    // Footer buttons (Back, Switch): placed on left panel bottom to avoid right-panel overflow
-    // x=1 (Back) and x=44 (Switch) — well within x=0–240
+    // Footer buttons (Back, Switch): anchored to bottom of fight window (y=0 = absolute 180).
+    // origin(0,1) so the 12px bg extends upward from y=0 → absolute 168–180.
     this.footerButtons = Array.from({ length: 2 }, () => {
-      const bg = addWindow(this.ui, 0, 0, 40, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 0).setVisible(false);
-      const label = addTextObject(this.ui, 20, 6, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5).setVisible(false);
-      const hit = scene.add.rectangle(0, 0, 40, 12, 0xffffff, 0.001).setOrigin(0, 0).setVisible(false);
+      const bg = addWindow(this.ui, 0, 0, 40, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 1).setVisible(false);
+      const label = addTextObject(this.ui, 20, -6, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5).setVisible(false);
+      const hit = scene.add.rectangle(0, 0, 40, 12, 0xffffff, 0.001).setOrigin(0, 1).setVisible(false);
       this.container.add([bg, label, hit]);
       return { bg, label, hit };
     });
@@ -326,7 +326,8 @@ export class FightUiHandler extends UiHandler {
       if (!toggle) return;
       const col = index % perRow;
       const row = Math.floor(index / perRow);
-      entry.button.setPosition(baseX + col * stride, -62 - row * 14);
+      // row 0 → y=-46 (absolute 134, just inside fight window top at 132)
+      entry.button.setPosition(baseX + col * stride, -46 - row * 14);
       entry.label.setText(toggle.label || '');
       entry.label.setColor(toggle.disabled ? '#94a3b8' : '#f8fbff');
       entry.bg.setAlpha(toggle.active ? 1 : 0.82);
@@ -356,9 +357,9 @@ export class FightUiHandler extends UiHandler {
       entry.hit.setVisible(visible);
       if (!visible) return;
       const x = footerXs[index] ?? (1 + index * 43);
-      entry.bg.setPosition(x, -13);
-      entry.label.setPosition(x + 20, -7);
-      entry.hit.setPosition(x, -13);
+      entry.bg.setPosition(x, 0);
+      entry.label.setPosition(x + 20, -6);
+      entry.hit.setPosition(x, 0);
       entry.label.setText(action.label || '');
       entry.label.setColor(action.disabled ? '#94a3b8' : '#f8fbff');
       entry.bg.setAlpha(action.disabled ? 0.6 : 1);
