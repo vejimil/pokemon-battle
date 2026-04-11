@@ -81,7 +81,7 @@ class PartySlot {
       this.pb         = scene.add.image(4, 4, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(4, 4, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
       this.label      = addTextObject(this.ui, 24, 3, '', 'WINDOW').setOrigin(0, 0);
-      this.levelText  = addTextObject(this.ui, 24, 13, '', 'PARTY').setOrigin(0, 0);
+      this.levelText  = addTextObject(this.ui, 24, 15, '', 'PARTY').setOrigin(0, 0);
       this.sublabel   = addTextObject(this.ui, 24, 22, '', 'PARTY').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(8, 31, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(24, 33, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
@@ -142,16 +142,14 @@ class PartySlot {
     this.pb.setTexture(UI_ASSETS.partyPbAtlas.key, selected ? 'party_pb_sel' : 'party_pb');
 
     this.label.setText(option.label || '');
-    this.label.setColor(option.disabled ? '#64748b' : '#f8fbff');
 
     // Level
     const lvStr = option.level != null ? `Lv.${option.level}` : '';
     this.levelText.setText(lvStr);
-    this.levelText.setColor(option.disabled ? '#64748b' : '#f8f8f8');
 
     // Sublabel (HP + status text)
-    this.sublabel.setText(option.sublabel || '');
-    this.sublabel.setColor(option.disabled ? '#94a3b8' : '#dbeafe');
+    const sublabelText = this.isActive ? (option.sublabel || '') : '';
+    this.sublabel.setText(sublabelText);
 
     // Status sprite
     const STATUS_FRAME = { brn: 'burn', par: 'paralysis', psn: 'poison', tox: 'toxic', slp: 'sleep', frz: 'freeze' };
@@ -175,7 +173,6 @@ class PartySlot {
     }
     setHorizontalCrop(this.hpBarFill, HP_FILL_WIDTH * (hpPercent / 100));
     this.hpText.setText(option.hpLabel || '');
-    this.hpText.setColor(option.disabled ? '#64748b' : '#f8f8f8');
 
     // Pokemon icon — load dynamically if URL provided
     if (option.iconUrl) {

@@ -25,8 +25,8 @@ const TEXT_STYLE = Object.freeze({
     padding: { bottom: 6 },
     color: '#f8f8f8',
     shadowColor: '#6b5a73',
-    shadowX: 3.5,
-    shadowY: 3.5,
+    shadowX: 3,
+    shadowY: 3,
   },
 
   MOVE_INFO_CONTENT: {

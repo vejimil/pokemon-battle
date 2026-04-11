@@ -55,7 +55,7 @@ export class BattleInfo {
 
     // Positions match PokeRogue originals
     const nameTextX = this.isPlayer ? -115 : -124;
-    const nameTextY = this.isPlayer ? -15.2 : -11.2;
+    const nameTextY = this.isPlayer ? -15 : -11;
     this.pos = {
       nameTextX,
       nameTextY,
