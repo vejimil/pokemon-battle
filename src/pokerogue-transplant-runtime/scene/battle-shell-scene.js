@@ -3,7 +3,7 @@ import { preloadUiAssets } from '../runtime/assets.js';
 import { clamp, textureExists, createBaseText, setHorizontalCrop, setInteractiveTarget, applyHostBox, addWindow, setTextWordWrap } from '../runtime/phaser-utils.js';
 import { buttonFromKeyboardEvent, isTypingIntoElement } from '../ui/facade/input-facade.js';
 import { TransplantBattleUI } from '../ui/ui.js';
-import { loadPokemonMetrics, getMetricsForSprite } from '../runtime/pokemon-metrics.js';
+import { loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationDelayMs } from '../runtime/pokemon-metrics.js';
 
 export function createBattleShellSceneClass(Phaser, env) {
   return class TransplantBattleShellScene extends Phaser.Scene {
@@ -107,6 +107,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         name,
         phaserSprite: img,
         shadow,
+        shadowVisibleByMetrics: false,
         currentUrl: '',
         animTimer: null,
         // Shim: party-ui-handler calls mount.dom.setVisible() to hide/show sprites.
@@ -114,7 +115,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         dom: {
           setVisible: visible => {
             img.setVisible(visible);
-            shadow.setVisible(visible && !!mount.currentUrl);
+            shadow.setVisible(visible && !!mount.currentUrl && !!mount.shadowVisibleByMetrics);
           },
         },
       };
@@ -128,6 +129,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (!url) {
         this._clearBattlerAnim(mount);
         mount.currentUrl = '';
+        mount.shadowVisibleByMetrics = false;
         mount.phaserSprite.setVisible(false);
         mount.shadow.setVisible(false);
         return;
@@ -143,6 +145,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         // If Phaser renders between remove() and addImage(), it would try to access
         // a null glTexture and throw. The placeholder is always a valid 1×1 texture.
         mount.phaserSprite.setTexture('pkb-battler-placeholder').setVisible(false);
+        mount.shadowVisibleByMetrics = false;
         mount.shadow.setVisible(false);
         if (this.textures.exists(key)) this.textures.remove(key);
 
@@ -180,7 +183,9 @@ export function createBattleShellSceneClass(Phaser, env) {
         // Sprite offset: positive pbsY lifts sprite UP (reduces Phaser y).
         const offsetX = isFront ? (metrics?.frontX ?? 0) : (metrics?.backX ?? 0);
         const offsetY = isFront ? (metrics?.frontY ?? 0) : (metrics?.backY ?? 0);
-        const sprScale = isFront ? (metrics?.frontScale ?? 1) : (metrics?.backScale ?? 1);
+        const sprScale = isFront
+          ? (metrics?.frontScale ?? DBK_DEFAULTS.frontScale)
+          : (metrics?.backScale ?? DBK_DEFAULTS.backScale);
 
         mount.phaserSprite
           .setTexture(key, 0)
@@ -192,22 +197,28 @@ export function createBattleShellSceneClass(Phaser, env) {
         const shadowX      = baseX + (metrics?.shadowX ?? 0);
         const shadowOffY   = isFront ? (metrics?.shadowFrontY ?? 0) : (metrics?.shadowBackY ?? 0);
         const shadowY      = baseY + shadowOffY;
-        const shadowSize   = metrics?.shadowSize;           // undefined = default
-        const showShadow   = shadowSize === undefined || shadowSize > 0;
+        const isPlayerSide = !isFront;
+        const rawShadowSize = Number.isFinite(metrics?.shadowSize) ? metrics.shadowSize : 1;
+        const showBySide = !isPlayerSide || DBK_DEFAULTS.showPlayerSideShadows;
+        const showShadow = showBySide && rawShadowSize !== 0;
 
         if (showShadow) {
-          // shadowSize 2 = 1.4× default; undefined or 1 = 1× default.
-          const sizeScale = shadowSize === 2 ? 1.4 : 1.0;
+          const effectiveShadowSize = rawShadowSize > 0 ? rawShadowSize - 1 : rawShadowSize;
+          const shadowScale = Math.max(0.05, 1 + effectiveShadowSize * 0.1);
+          const baseShadowW = frameH * sprScale * 0.45;
+          const baseShadowH = frameH * sprScale * 0.1125;
           mount.shadow.setPosition(shadowX, shadowY);
-          mount.shadow.setSize(frameH * 0.45 * sizeScale, frameH * 0.11 * sizeScale);
+          mount.shadow.setSize(baseShadowW * shadowScale, baseShadowH * shadowScale);
+          mount.shadowVisibleByMetrics = true;
           mount.shadow.setVisible(true);
         } else {
+          mount.shadowVisibleByMetrics = false;
           mount.shadow.setVisible(false);
         }
 
-        // Animation speed: delay = 120 * (2 / speed). Speed 0 = no animation.
+        // Animation speed (DBK): delay = ((speed / 2.0) * frameDelayMs). Speed 0 = no animation.
         const animSpeed = isFront ? (metrics?.animFront ?? 2) : (metrics?.animBack ?? 2);
-        const delay     = animSpeed > 0 ? Math.round(120 * (2 / animSpeed)) : 0;
+        const delay = calcDbkAnimationDelayMs(animSpeed);
 
         if (frameCount > 1 && delay > 0) {
           let frame = 0;
@@ -223,6 +234,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       } catch (_err) {
         if (mount.currentUrl === url) {
           mount.phaserSprite.setVisible(false);
+          mount.shadowVisibleByMetrics = false;
           mount.shadow.setVisible(false);
         }
       }

@@ -6,6 +6,7 @@ import {Aliases} from './data/aliases.js';
 import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA, EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
 import {resolveItemIconUrl, applyPokerogueAtlasFrameToElement, POKEROGUE_ASSET_PATHS} from './pokerogue-assets.js';
 import {createPhaserBattleController} from './phaser-battle-controller.js';
+import {loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationDelayMs} from './pokerogue-transplant-runtime/runtime/pokemon-metrics.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
 const SHOWDOWN_TARGET_HINTS = {
@@ -172,6 +173,7 @@ const speciesDataCache = new Map();
 const moveDataCache = new Map();
 const itemDataCache = new Map();
 const imageInfoCache = new Map();
+let fallbackMetricsPromise = null;
 
 const SPECIAL_ITEM_LINKED_FORM_OVERRIDES = Object.freeze({
   arceus: Object.freeze({
@@ -385,31 +387,64 @@ function uniqueNames(values) {
   }
   return out;
 }
+function parseAssetIdParts(rawId = '') {
+  const id = String(rawId || '').trim();
+  if (!id) return null;
+  const numericGender = /^(.+?)_(\d+)_(female|male)$/i.exec(id);
+  if (numericGender) {
+    return {
+      id,
+      baseId: numericGender[1],
+      form: Number(numericGender[2]),
+      gender: numericGender[3].toLowerCase(),
+      kind: 'numericGender',
+    };
+  }
+  const basic = /^(.+?)(?:_(female|male|\d+))?$/i.exec(id);
+  if (!basic) return null;
+  const baseId = basic[1];
+  const suffix = basic[2] || '';
+  if (!suffix) return {id, baseId, kind: 'base'};
+  if (/^\d+$/.test(suffix)) {
+    return {id, baseId, form: Number(suffix), kind: 'numeric'};
+  }
+  if (/^(female|male)$/i.test(suffix)) {
+    return {id, baseId, gender: suffix.toLowerCase(), kind: 'gender'};
+  }
+  return null;
+}
 function parseAssetFamilies(list = []) {
   const families = new Map();
   for (const rawId of list) {
-    const id = String(rawId || '');
-    // Ignore rare numeric-form gender overlays such as SNEASEL_1_female here.
-    // They should not create a separate builder family or distort base-form truth.
-    if (/^.+?_\d+_(female|male)$/i.test(id)) continue;
-    const match = /^(.+?)(?:_(female|male|\d+))?$/i.exec(id);
-    if (!match) continue;
-    const baseId = match[1];
-    const suffix = match[2] || '';
+    const parsed = parseAssetIdParts(rawId);
+    if (!parsed) continue;
+    const {id, baseId} = parsed;
     if (!families.has(baseId)) {
       families.set(baseId, {
         baseId,
         baseExists: false,
         numeric: new Map(),
         genders: {},
+        numericGenders: new Map(),
         rawAssetIds: [],
       });
     }
     const family = families.get(baseId);
     family.rawAssetIds.push(id);
-    if (!suffix) family.baseExists = true;
-    else if (/^\d+$/.test(suffix)) family.numeric.set(Number(suffix), id);
-    else family.genders[suffix.toLowerCase()] = id;
+    switch (parsed.kind) {
+      case 'base':
+        family.baseExists = true;
+        break;
+      case 'numeric':
+        family.numeric.set(parsed.form, id);
+        break;
+      case 'gender':
+        family.genders[parsed.gender] = id;
+        break;
+      case 'numericGender':
+        family.numericGenders.set(`${parsed.form}:${parsed.gender}`, id);
+        break;
+    }
   }
   for (const family of families.values()) {
     family.rawAssetIds.sort((a, b) => a.localeCompare(b, undefined, {numeric: true}));
@@ -580,6 +615,22 @@ function buildAssetDex() {
       assetChoices.push({
         id: assetId,
         display: `${displaySpeciesName(assetToSpecies.get(assetId) || humanizeSpriteId(assetId))} · ${assetId}`,
+      });
+    }
+    const numericGenderEntries = Array.from(assetFamily.numericGenders.entries())
+      .filter(([, assetId]) => usableAssetIds.has(assetId))
+      .sort((a, b) => {
+        const [aForm, aGender] = a[0].split(':');
+        const [bForm, bGender] = b[0].split(':');
+        const byForm = Number(aForm) - Number(bForm);
+        if (byForm !== 0) return byForm;
+        return aGender.localeCompare(bGender);
+      });
+    for (const [formGender, assetId] of numericGenderEntries) {
+      const [, genderKey] = formGender.split(':');
+      assetChoices.push({
+        id: assetId,
+        display: `${displaySpeciesName(assetToSpecies.get(assetId) || humanizeSpriteId(assetId))} ${genderKey === 'female' ? '♀' : '♂'} · ${assetId}`,
       });
     }
     for (const genderKey of ['female', 'male']) {
@@ -797,9 +848,16 @@ function getAutoSpriteIdForSpecies(speciesName, gender = '', baseSpeciesName = '
   if (!family) return '';
   const resolvedSpecies = normalizeLocalizedInput('species', speciesName || baseSpeciesName, state.allSpeciesChoices || state.speciesChoices || []) || speciesName || baseSpeciesName || family.baseSpeciesName;
   let assetId = family.speciesToAsset.get(resolvedSpecies) || family.speciesToAsset.get(baseSpeciesName) || family.assetBaseId;
-  if (gender && toId(resolvedSpecies) === toId(family.baseSpeciesName)) {
-    const genderAsset = family.assetFamily.genders[gender === 'F' ? 'female' : gender === 'M' ? 'male' : ''];
-    if (genderAsset) assetId = genderAsset;
+  const genderKey = gender === 'F' ? 'female' : gender === 'M' ? 'male' : '';
+  if (genderKey) {
+    const numericMatch = /^(.+?)_(\d+)$/i.exec(assetId || '');
+    if (numericMatch) {
+      const numericGenderAsset = family.assetFamily.numericGenders?.get(`${Number(numericMatch[2])}:${genderKey}`);
+      if (numericGenderAsset) assetId = numericGenderAsset;
+    } else if (toId(resolvedSpecies) === toId(family.baseSpeciesName)) {
+      const genderAsset = family.assetFamily.genders[genderKey];
+      if (genderAsset) assetId = genderAsset;
+    }
   }
   return assetId || '';
 }
@@ -3552,6 +3610,11 @@ async function ensureImageInfo(url) {
   imageInfoCache.set(url, info);
   return info;
 }
+async function getFallbackMetrics() {
+  if (fallbackMetricsPromise) return fallbackMetricsPromise;
+  fallbackMetricsPromise = loadPokemonMetrics().catch(() => null);
+  return fallbackMetricsPromise;
+}
 async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=false, size='large'}) {
   clearSpriteAnimation(container);
   container.innerHTML = '';
@@ -3569,10 +3632,21 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
   const url = spritePath(spriteId, facing, shiny);
   container.dataset.spriteSrc = url;
   try {
-    const info = await ensureImageInfo(url);
+    const [info, metricsMap] = await Promise.all([
+      ensureImageInfo(url),
+      getFallbackMetrics(),
+    ]);
     if (container._spriteRenderToken !== renderToken) return;
+    const metrics = getMetricsForSprite(spriteId, metricsMap);
+    const isFront = facing !== 'back';
+    const defaultScale = isFront ? DBK_DEFAULTS.frontScale : DBK_DEFAULTS.backScale;
+    const metricScale = isFront ? metrics?.frontScale : metrics?.backScale;
+    const scaleMultiplier = Number.isFinite(metricScale) && metricScale > 0
+      ? metricScale / defaultScale
+      : 1;
     const canvas = document.createElement('canvas');
-    const scale = size === 'large' ? Math.min(2.4, 190 / info.frame) : Math.min(1.4, 56 / info.frame);
+    const baseScale = size === 'large' ? Math.min(2.4, 190 / info.frame) : Math.min(1.4, 56 / info.frame);
+    const scale = baseScale * Math.max(0.5, Math.min(scaleMultiplier, 3));
     const width = Math.max(24, Math.floor(info.frame * scale));
     const height = Math.max(24, Math.floor(info.height * scale));
     canvas.width = width;
@@ -3592,14 +3666,16 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
         frame = (frame + 1) % info.count;
       };
       draw();
-      if (info.count > 1) {
+      const animSpeed = isFront ? (metrics?.animFront ?? 2) : (metrics?.animBack ?? 2);
+      const delay = calcDbkAnimationDelayMs(animSpeed);
+      if (info.count > 1 && delay > 0) {
         const timer = setInterval(() => {
           if (!container.isConnected || canvas !== container.firstChild || container._spriteRenderToken !== renderToken) {
             clearInterval(timer);
             return;
           }
           draw();
-        }, 120);
+        }, delay);
         container._spriteTimer = timer;
       }
     };

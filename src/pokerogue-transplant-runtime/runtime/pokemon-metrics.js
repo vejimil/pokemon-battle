@@ -6,14 +6,21 @@
 //   FrontSprite x, y  — enemy side: x = horizontal offset, y = pixels to lift above base
 //   BackSprite  x, y  — player side: same
 //   ShadowSprite x, backY, frontY — shadow offset from the base ground line
-//   ShadowSize  n     — ≤0 = no shadow, undefined = default, 2 = larger
-//   AnimationSpeed back[, front]  — 0 = static, 1 = slow, 2 = normal (120ms), 3 = fast
+//   ShadowSize  n     — 0 = no shadow; negative = smaller shadow; positive = larger
+//   AnimationSpeed back[, front]  — DBK delay formula: ((speed / 2.0) * frameDelayMs)
 //
 // In Phaser logical coordinates (origin 0.5,1 = bottom-center):
 //   spriteX = baseX + pbsX
 //   spriteY = baseY - pbsY   (positive pbsY lifts sprite up = smaller Phaser y)
 //   shadowX = baseX + shadowPbsX
 //   shadowY = baseY + shadowFrontY (or shadowBackY for player side)
+
+export const DBK_DEFAULTS = Object.freeze({
+  frontScale: 1,
+  backScale: 1,
+  frameDelayMs: 90,
+  showPlayerSideShadows: false,
+});
 
 const METRICS_FILES = [
   './assets/Pokemon/PBS/pokemon_metrics.txt',
@@ -26,13 +33,13 @@ const METRICS_FILES = [
 let metricsCache = null;
 let metricsLoadPromise = null;
 
-// Convert a PBS header like [SPECIES,N,female] to a lookup key like "SPECIES_N_female".
+// Convert a PBS header like [SPECIES,N,female] to a lookup key like "SPECIES_N_FEMALE".
 function headerToKey(header) {
   const inner = header.slice(1, -1);
   const parts = inner.split(',').map(p => p.trim());
-  const species = parts[0];
-  const form    = parts[1] || '';
-  const gender  = parts[2] || '';
+  const species = (parts[0] || '').toUpperCase();
+  const form    = (parts[1] || '').toUpperCase();
+  const gender  = (parts[2] || '').toUpperCase();
   let key = species;
   if (form)   key += `_${form}`;
   if (gender) key += `_${gender}`;
@@ -67,12 +74,12 @@ function parseOneFile(text) {
       case 'FrontSprite':
         current.frontX     = vals[0] ?? 0;
         current.frontY     = vals[1] ?? 0;
-        if (vals[2] !== undefined) current.frontScale = vals[2];
+        if (Number.isFinite(vals[2]) && vals[2] > 0) current.frontScale = vals[2];
         break;
       case 'BackSprite':
         current.backX      = vals[0] ?? 0;
         current.backY      = vals[1] ?? 0;
-        if (vals[2] !== undefined) current.backScale = vals[2];
+        if (Number.isFinite(vals[2]) && vals[2] > 0) current.backScale = vals[2];
         break;
       case 'ShadowSprite':
         current.shadowX      = vals[0] ?? 0;
@@ -85,6 +92,9 @@ function parseOneFile(text) {
       case 'AnimationSpeed':
         current.animBack  = vals[0] ?? 2;
         current.animFront = vals.length > 1 ? (vals[1] ?? 2) : (vals[0] ?? 2);
+        break;
+      case 'SuperShinyHue':
+        current.superShinyHue = vals[0] ?? 0;
         break;
     }
   }
@@ -99,16 +109,15 @@ export async function loadPokemonMetrics() {
 
   metricsLoadPromise = (async () => {
     const combined = new Map();
-    await Promise.allSettled(
-      METRICS_FILES.map(async url => {
-        try {
-          const res = await fetch(url);
-          if (!res.ok) return;
-          const text = await res.text();
-          for (const [k, v] of parseOneFile(text)) combined.set(k, v);
-        } catch (_) { /* non-critical: missing file or parse error */ }
-      })
-    );
+    // Preserve file priority order: later files in METRICS_FILES override earlier ones.
+    for (const url of METRICS_FILES) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const text = await res.text();
+        for (const [k, v] of parseOneFile(text)) combined.set(k, v);
+      } catch (_) { /* non-critical: missing file or parse error */ }
+    }
     metricsCache = combined;
     return combined;
   })();
@@ -133,4 +142,12 @@ export function getMetricsForSprite(spriteId, metricsMap) {
   }
 
   return null;
+}
+
+// DBK animation formula:
+// delay(ms) = ((speed / 2.0) * frameDelayMs)
+export function calcDbkAnimationDelayMs(speed, frameDelayMs = DBK_DEFAULTS.frameDelayMs) {
+  const n = Number(speed);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.max(1, Math.round((n / 2) * frameDelayMs));
 }
