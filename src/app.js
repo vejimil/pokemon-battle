@@ -6386,12 +6386,10 @@ function buildPkbPokerogueUiModel(battle) {
     playerInfo,
     enemySprite: {
       url: enemyMon ? spritePath(resolveBattleRenderSpriteId(enemyMon), 'front', enemyMon.shiny) : '',
-      deferred: true,
       mount: 'enemy',
     },
     playerSprite: {
       url: playerMon ? spritePath(resolveBattleRenderSpriteId(playerMon), 'back', playerMon.shiny) : '',
-      deferred: true,
       mount: 'player',
     },
     enemyTray: buildBattleTrayModel(enemyPlayer, battle),

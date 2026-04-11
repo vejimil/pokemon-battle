@@ -40,7 +40,7 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 - `app.js`의 `buildBattleInfoModel()` 함수가 배틀 상태를 읽어서 모델 생성
 - Phaser 씬이 매 프레임 또는 상태 변화 시 UI 핸들러의 `update(model)` 호출
 
-## 현재 이식 완성도 (Phase 15 진행 예정 — 2026-04-10)
+## 현재 이식 완성도 (Phase 16 완료 — 2026-04-11)
 
 | 파일 | 완성도 | 주요 미구현 / 미해결 |
 |------|--------|-----------|
@@ -50,11 +50,12 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 | `fight-ui-handler.js` | ~70% | 텍스트 왜곡 미해결, fight 레이아웃 부자연스러움, Switch/Tera 버튼 위치 어색 |
 | `command-ui-handler.js` | ~80% | Tera 색상 파이프라인 |
 | `party-ui-handler.js` | ~80% | 아이콘 위치 조정 필요 (스크린샷 기준) |
-| `ui.js` | ~95% | 완성 수준 |
-| `app.js` | ~92% | — |
+| `ui.js` | ~97% | 완성 수준 |
+| `app.js` | ~93% | — |
 | `battle-message-ui-handler.js` | ~75% | `promptLevelUpStats` 트리거 연결 필요 |
 | `target-select-ui-handler.js` | ~40% | 싱글 배틀이라 field 스프라이트 접근 불가 |
 | `text.js` (helpers) | ~85% | 텍스트 왜곡 수정 적용했으나 여전히 문제 — 재분석 필요 |
+| `battle-shell-scene.js` | ~90% | 배틀러 스프라이트 완성 |
 
 ## 주요 에셋 정보
 - 게임 해상도: **320×180** (LOGICAL_WIDTH/HEIGHT) — PokeRogue와 동일 (1920/6 × 1080/6)
@@ -75,7 +76,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | playerTray | (320, 108) | (scaledCanvas.width, -72) |
 | enemyInfo | (140, 39) | super(140, -141) |
 | playerInfo | (310, 108) | super(scaledCanvas.width-10, -72) |
-| enemySprite | (236, 84) | EnemyPokemon super(236, 84) |
+| enemySprite | (216, 84) | PokeRogue origin (236, 84), 16px 왼쪽으로 조정 |
 | playerSprite | (106, 148) | PlayerPokemon super(106, 148) |
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
@@ -117,10 +118,54 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 ## 이전 완료 이력 (주요 항목)
 
+- **2026-04-11**: 배틀러 스프라이트 구현 (Phase 16) — 상세 내용은 아래 참조
 - **2026-04-10**: Navy bar 회귀 수정, 파티 아이콘 frame0 등록, levelText HINT→BATTLE_INFO_SMALL, 좌표 정수화(movesContainer -38.7→-39, 메인슬롯 -148.5→-149), footer y=-13→y=0 origin(0,1), toggle y=-62→-46
 - **2026-04-09**: wordWrapWidth 전면 수정, 폰트 크기 원본 맞춤, shadow 추가, lineSpacing 기본값, nameText truncation
 - **2026-04-08**: TEXT_RENDER_SCALE=6 도입, EXP bar mask, 배틀 전체화면, INTEGER_SCALE 모드
 - **2026-04-07**: LOGICAL_HEIGHT 수정, 레이아웃 전면 수정, 커서 origin 수정, 어빌리티 바 위치
+
+## 2026-04-11 완료한 작업 (Phase 16) — 배틀러 스프라이트
+
+### 배경
+`app.js`의 `buildBattleModel()`에서 `enemySprite`/`playerSprite` 모델 항목에 `deferred: true`가 하드코딩되어 있어 스프라이트가 의도적으로 비활성화된 상태였음.
+
+### 구현 내용
+
+1. **스프라이트 활성화** (`app.js`): `enemySprite`/`playerSprite` 모델에서 `deferred: true` 제거
+
+2. **DOM → Phaser 캔버스 전환** (`battle-shell-scene.js`):
+   - 기존: `scene.add.dom()` (Phaser DOM plugin) + HTML div + Canvas 2D 렌더링
+   - **문제**: `INTEGER_SCALE` 모드에서 CSS px 좌표와 Phaser 논리 좌표가 불일치 → 스프라이트가 엉뚱한 위치/크기로 표시됨
+   - **해결**: `scene.add.image()` (Phaser canvas 객체)로 교체 → 스케일/좌표 완전 정합
+   - `sprite-host.js` 의존성 제거 (`ensureSpriteHostStyles`, `renderAnimatedSpriteToHost`, `setHostVisibility`)
+
+3. **동적 텍스처 로딩** (`battle-shell-scene.js` — `renderBattlerSprite()`):
+   - JS `Image` → `textures.addImage()` → 수동 프레임 등록 (`tex.add(i, 0, i*frameH, 0, frameH, frameH)`)
+   - 프레임 감지: `frameH = img.height`, `frameCount = floor(img.width / frameH)` (정사각형 프레임 가정)
+   - 120ms 타이머로 `setFrame()` 애니메이션
+   - 텍스처 교체 시 null glTexture 에러 방지: 구 텍스처 remove 전에 `setTexture('pkb-battler-placeholder')` 로 전환
+   - 비동기 로드 중 URL 변경 감지 후 중단 처리 (`mount.currentUrl !== url`)
+
+4. **그림자** (`battle-shell-scene.js`):
+   - `this.add.ellipse()` 로 타원형 그림자 생성 (depth: sprite - 1)
+   - 스프라이트 발 위치(bottom-center)에 배치, 크기 = displaySize × (0.5, 0.12)
+
+5. **party-ui-handler 호환** (`battle-shell-scene.js`):
+   - `mount.dom.setVisible()` shim 유지: `img.setVisible()` + `shadow.setVisible()` 동시 제어
+   - `currentUrl` 체크로 로드 전 상태에서 그림자 표시 방지
+
+6. **ui.js 수정**:
+   - `layout()`: `anchor.setPosition()` + `dom.setPosition()` + `applyHostBox()` → `phaserSprite.setPosition()`
+   - `renderModel()`: `dom.setVisible()` + `renderAnimatedSpriteToHost()` → `env.renderBattlerToPhaser()`
+
+7. **Enemy 스프라이트 위치 조정**: x=236 → x=216 (시각적으로 더 자연스러운 위치)
+
+### 스프라이트 에셋 경로
+- Enemy (앞모습): `./assets/Pokemon/Front/{spriteId}.png` (색다른: `Front shiny/`)
+- Player (뒷모습): `./assets/Pokemon/Back/{spriteId}.png` (색다른: `Back shiny/`)
+- 스프라이트는 자연 크기(1:1 scale)로 표시. 크기 조정 필요 시 `renderBattlerSprite()` 내 `setScale()` 수정.
+
+---
 
 ### 2. 남색 바 — **해결됨** (2026-04-08/10)
 - BattleTray.setup() 마지막에 `this.container.setVisible(false)`

@@ -209,15 +209,11 @@ export class TransplantBattleUI {
     this.playerTray.container?.setPosition(320, 108);  // PokeRogue: (scaledCanvas.width, -72) in fieldUI
     this.enemyInfo.container?.setPosition(140, 39);    // PokeRogue: EnemyBattleInfo(140, -141)
     this.playerInfo.container?.setPosition(310, 108);  // PokeRogue: PlayerBattleInfo(scaledCanvas.width-10, -72)
-    if (this.enemySprite) {
-      this.enemySprite.anchor.setPosition(236, 84);    // PokeRogue: EnemyPokemon super(236, 84)
-      this.enemySprite.dom.setPosition(236, 84);
-      this.env.applyHostBox(this.enemySprite.host, 72, 72);
+    if (this.enemySprite?.phaserSprite) {
+      this.enemySprite.phaserSprite.setPosition(216, 84);   // PokeRogue origin: (236, 84), shifted left
     }
-    if (this.playerSprite) {
-      this.playerSprite.anchor.setPosition(106, 148);  // PokeRogue: PlayerPokemon super(106, 148)
-      this.playerSprite.dom.setPosition(106, 148);
-      this.env.applyHostBox(this.playerSprite.host, 88, 88);
+    if (this.playerSprite?.phaserSprite) {
+      this.playerSprite.phaserSprite.setPosition(106, 148); // PokeRogue: PlayerPokemon super(106, 148)
     }
   }
 
@@ -234,17 +230,13 @@ export class TransplantBattleUI {
     this.getMessageHandler().render(messageState);
 
     if (this.enemySprite) {
-      const spriteModel = this.adapter.getSpriteModel('enemy');
-      const deferred = Boolean(spriteModel?.deferred || !spriteModel?.url);
-      // partyModeActive 중에는 DOM 스프라이트를 다시 켜지 않음 (party-ui-handler가 숨김 제어)
-      this.enemySprite.dom.setVisible(!deferred && !this.partyModeActive);
-      this.env.renderAnimatedSpriteToHost(this.enemySprite.host, spriteModel, 'large');
+      // renderBattlerToPhaser is async; skips reload if URL unchanged (url === currentUrl).
+      // party-ui-handler hides the sprite via mount.dom.setVisible(false) shim — that call
+      // happens synchronously and persists because reload is skipped on same URL.
+      this.env.renderBattlerToPhaser(this.enemySprite, this.adapter.getSpriteModel('enemy'));
     }
     if (this.playerSprite) {
-      const spriteModel = this.adapter.getSpriteModel('player');
-      const deferred = Boolean(spriteModel?.deferred || !spriteModel?.url);
-      this.playerSprite.dom.setVisible(!deferred && !this.partyModeActive);
-      this.env.renderAnimatedSpriteToHost(this.playerSprite.host, spriteModel, 'large');
+      this.env.renderBattlerToPhaser(this.playerSprite, this.adapter.getSpriteModel('player'));
     }
 
     const nextMode = this.adapter.getMode();

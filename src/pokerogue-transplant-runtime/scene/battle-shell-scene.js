@@ -1,6 +1,5 @@
 import { ARENA_OFFSETS } from '../runtime/constants.js';
 import { preloadUiAssets } from '../runtime/assets.js';
-import { ensureSpriteHostStyles, renderAnimatedSpriteToHost, setHostVisibility } from '../runtime/sprite-host.js';
 import { clamp, textureExists, createBaseText, setHorizontalCrop, setInteractiveTarget, applyHostBox, addWindow, setTextWordWrap } from '../runtime/phaser-utils.js';
 import { buttonFromKeyboardEvent, isTypingIntoElement } from '../ui/facade/input-facade.js';
 import { TransplantBattleUI } from '../ui/ui.js';
@@ -31,9 +30,11 @@ export function createBattleShellSceneClass(Phaser, env) {
         setHorizontalCrop,
         setTextWordWrap,
         setInteractiveTarget,
-        renderAnimatedSpriteToHost,
         applyHostBox,
         addWindow,
+        // Renders a battler sprite directly onto the Phaser canvas (no DOM element).
+        // Called from ui.js renderModel().
+        renderBattlerToPhaser: (mount, spriteModel) => this.renderBattlerSprite(mount, spriteModel),
       };
     }
 
@@ -43,6 +44,13 @@ export function createBattleShellSceneClass(Phaser, env) {
       try {
         this.cameras.main.setRoundPixels(true);
         if (this.game?.canvas) this.game.canvas.style.imageRendering = 'pixelated';
+        // One-time 1×1 transparent canvas texture used as a placeholder before the real
+        // battler sprite textures are loaded asynchronously.
+        if (!this.textures.exists('pkb-battler-placeholder')) {
+          const ph = document.createElement('canvas');
+          ph.width = 1; ph.height = 1;
+          this.textures.addCanvas('pkb-battler-placeholder', ph);
+        }
         this.createArenaLayers();
         this.enemySprite = this.createSpriteMount('enemy');
         this.playerSprite = this.createSpriteMount('player');
@@ -77,16 +85,119 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     createSpriteMount(name) {
-      const anchor = this.add.container(0, 0).setDepth(18).setVisible(false);
-      const host = document.createElement('div');
-      host.className = `pkb-phaser-sprite pkb-phaser-sprite-${name}`;
-      ensureSpriteHostStyles(host);
-      setHostVisibility(host, false);
-      const dom = this.add.dom(0, 0, host);
-      dom.setOrigin(0.5, 1);
-      dom.setDepth(19);
-      dom.setVisible(false);
-      return { anchor, host, dom, name };
+      // Use a Phaser Image drawn directly on the canvas so it scales correctly with
+      // INTEGER_SCALE mode. No DOM elements — eliminates all coordinate-system mismatches.
+      const depth = name === 'enemy' ? 6 : 7; // above arena bases (4,5), below UI (42+)
+
+      // Ellipse shadow drawn just below the sprite (depth - 1 so it stays behind sprite).
+      const shadow = this.add.ellipse(0, 0, 1, 1, 0x000000, 0.35)
+        .setDepth(depth - 1)
+        .setVisible(false);
+
+      const img = this.add.image(0, 0, 'pkb-battler-placeholder')
+        .setOrigin(0.5, 1)
+        .setDepth(depth)
+        .setVisible(false);
+
+      const mount = {
+        name,
+        phaserSprite: img,
+        shadow,
+        currentUrl: '',
+        animTimer: null,
+        // Shim: party-ui-handler calls mount.dom.setVisible() to hide/show sprites.
+        // Shadow follows the same visibility; only shown when a sprite is actually loaded.
+        dom: {
+          setVisible: visible => {
+            img.setVisible(visible);
+            shadow.setVisible(visible && !!mount.currentUrl);
+          },
+        },
+      };
+      return mount;
+    }
+
+    // Loads a battler sprite from spriteModel.url and renders it on the Phaser canvas.
+    // Async: returns immediately; sprite appears once the image loads.
+    async renderBattlerSprite(mount, spriteModel) {
+      const url = spriteModel?.url || '';
+      if (!url) {
+        this._clearBattlerAnim(mount);
+        mount.currentUrl = '';
+        mount.phaserSprite.setVisible(false);
+        mount.shadow.setVisible(false);
+        return;
+      }
+      // Skip reload if same URL is already showing.
+      if (url === mount.currentUrl) return;
+      mount.currentUrl = url;
+      this._clearBattlerAnim(mount);
+
+      const key = `pkb-battler-${mount.name}`;
+      try {
+        // Switch to placeholder BEFORE removing the old texture.
+        // If Phaser renders between remove() and addImage(), it would try to access
+        // a null glTexture and throw. The placeholder is always a valid 1×1 texture.
+        mount.phaserSprite.setTexture('pkb-battler-placeholder').setVisible(false);
+        mount.shadow.setVisible(false);
+        if (this.textures.exists(key)) this.textures.remove(key);
+
+        const img = await new Promise((resolve, reject) => {
+          const i = new Image();
+          i.onload = () => resolve(i);
+          i.onerror = () => reject(new Error(`Sprite load failed: ${url}`));
+          i.src = url;
+        });
+
+        // If URL changed while awaiting (e.g. Pokemon switched), abort.
+        if (mount.currentUrl !== url) return;
+
+        // Detect animation frames: assume square frames (height = frame width).
+        const frameH = img.height;
+        const frameCount = Math.max(1, Math.floor(img.width / frameH));
+
+        // Register as a spritesheet texture so setFrame() works for animation.
+        this.textures.addImage(key, img);
+        const tex = this.textures.get(key);
+        for (let i = 0; i < frameCount; i++) {
+          tex.add(i, 0, i * frameH, 0, frameH, frameH);
+        }
+
+        mount.phaserSprite.setTexture(key, 0).setScale(1);
+        mount.phaserSprite.setVisible(true);
+
+        // Shadow: flat ellipse at the sprite's foot (bottom-center).
+        const px = mount.phaserSprite.x;
+        const py = mount.phaserSprite.y;
+        const displaySize = frameH;
+        mount.shadow.setPosition(px, py);
+        mount.shadow.setSize(displaySize * 0.5, displaySize * 0.12);
+        mount.shadow.setVisible(true);
+
+        if (frameCount > 1) {
+          let frame = 0;
+          mount.animTimer = this.time.addEvent({
+            delay: 120,
+            loop: true,
+            callback: () => {
+              frame = (frame + 1) % frameCount;
+              if (mount.phaserSprite.active) mount.phaserSprite.setFrame(frame);
+            },
+          });
+        }
+      } catch (_err) {
+        if (mount.currentUrl === url) {
+          mount.phaserSprite.setVisible(false);
+          mount.shadow.setVisible(false);
+        }
+      }
+    }
+
+    _clearBattlerAnim(mount) {
+      if (mount.animTimer) {
+        mount.animTimer.remove();
+        mount.animTimer = null;
+      }
     }
 
     handleGlobalKeyDown(event) {
