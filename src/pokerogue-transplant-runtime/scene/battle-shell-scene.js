@@ -193,22 +193,30 @@ export function createBattleShellSceneClass(Phaser, env) {
           .setPosition(baseX + offsetX, baseY - offsetY);
         mount.phaserSprite.setVisible(true);
 
-        // Shadow: positioned from the base ground line (not from the adjusted sprite pos).
-        const shadowX      = baseX + (metrics?.shadowX ?? 0);
-        const shadowOffY   = isFront ? (metrics?.shadowFrontY ?? 0) : (metrics?.shadowBackY ?? 0);
-        const shadowY      = baseY + shadowOffY;
+        // Shadow: composite sprite offset + shadow offset (follows DBK apply_metrics_to_sprite
+        // which applies front/back sprite offset AND shadow_sprite offset to the shadow position).
+        const shX  = metrics?.shadowX ?? 0;
+        const shY  = isFront ? (metrics?.shadowFrontY ?? 0) : (metrics?.shadowBackY ?? 0);
+        const shadowX = baseX + offsetX + shX;
+        const shadowY = baseY + offsetY + shY;
         const isPlayerSide = !isFront;
         const rawShadowSize = Number.isFinite(metrics?.shadowSize) ? metrics.shadowSize : 1;
         const showBySide = !isPlayerSide || DBK_DEFAULTS.showPlayerSideShadows;
         const showShadow = showBySide && rawShadowSize !== 0;
 
         if (showShadow) {
-          const effectiveShadowSize = rawShadowSize > 0 ? rawShadowSize - 1 : rawShadowSize;
-          const shadowScale = Math.max(0.05, 1 + effectiveShadowSize * 0.1);
-          const baseShadowW = frameH * sprScale * 0.45;
-          const baseShadowH = frameH * sprScale * 0.1125;
-          mount.shadow.setPosition(shadowX, shadowY);
-          mount.shadow.setSize(baseShadowW * shadowScale, baseShadowH * shadowScale);
+          // DBK size formula: zoom_x = scale + effective*0.1, zoom_y = scale*0.25 + effective*0.025
+          const effective = rawShadowSize > 0 ? rawShadowSize - 1 : rawShadowSize;
+          const zoomX = sprScale + effective * 0.1;
+          const zoomY = sprScale * 0.25 + effective * 0.025;
+          const w = frameH * 0.45 * zoomX;
+          const h = frameH * 0.45 * zoomY;
+          // Baseline correction: approximates DBK's -height/4 anchor shift.
+          // k=0.12 tuned to keep shadow near foot level for typical sprites.
+          const k = 0.12;
+          const baseline = frameH * sprScale * k;
+          mount.shadow.setPosition(shadowX, shadowY - baseline);
+          mount.shadow.setSize(w, h);
           mount.shadowVisibleByMetrics = true;
           mount.shadow.setVisible(true);
         } else {

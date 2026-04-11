@@ -40,7 +40,7 @@ assets/pokerogue/ui/            # PokeRogue UI 에셋 (PNG, JSON 아틀라스)
 - `app.js`의 `buildBattleInfoModel()` 함수가 배틀 상태를 읽어서 모델 생성
 - Phaser 씬이 매 프레임 또는 상태 변화 시 UI 핸들러의 `update(model)` 호출
 
-## 현재 이식 완성도 (Phase 16 완료 — 2026-04-11)
+## 현재 이식 완성도 (Phase 18 완료 — 2026-04-11)
 
 | 파일 | 완성도 | 주요 미구현 / 미해결 |
 |------|--------|-----------|
@@ -81,7 +81,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (Phase 15 — 2026-04-10 스크린샷 기준)
+## 다음 세션 우선순위 (Phase 18 이후 — 2026-04-11 기준)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
@@ -109,6 +109,12 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - **다음 세션 할 일**: PokeRogue 원본 파티 슬롯에서 아이콘의 정확한 좌표 확인. active slot(110×49)과 bench slot(175×24)에서 32×32 아이콘의 적절한 정렬 위치 재산출. 현재 active=(4,4), bench=(2,-4) 재검토.
 - **영향 파일**: `party-ui-handler.js`
 
+### P5. PBS 수동 보정 1라운드 — `assets/Pokemon/PBS/`
+- **배경**: Phase 18에서 shadow 좌표식을 DBK 방식(sprite offset + shadow offset 합산)으로 수정. 기존 PBS 값은 구 런타임 기준으로 튜닝되어 있을 수 있음.
+- **다음 세션 할 일**: 브라우저에서 고위험(high) 포켓몬 shadow 시각 확인 → `reports/metrics-drift.json` 상위 항목 대조 → PBS 보정 1라운드 30~50개.
+- **우선 확인 목록** (score 8): LINOONE, METAGROSS_1, MIMIKYU_1, SALAMENCE_1
+- **영향 파일**: `assets/Pokemon/PBS/pokemon_metrics*.txt`
+
 ### 보류 항목
 - `fight-ui-handler.js`: MoveInfoOverlay 이식 (원본 ts:108-121) — Pow/Acc 표시는 여기서 담당
 - `command-ui-handler.js`: Tera 색상 파이프라인
@@ -118,11 +124,43 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 ## 이전 완료 이력 (주요 항목)
 
+- **2026-04-11**: Shadow 좌표식 DBK 정합 + audit 스크립트 (Phase 18) — 상세 내용은 아래 참조
 - **2026-04-11**: 배틀러 스프라이트 구현 (Phase 16) + PBS metrics 적용 (Phase 17) — 상세 내용은 아래 참조
 - **2026-04-10**: Navy bar 회귀 수정, 파티 아이콘 frame0 등록, levelText HINT→BATTLE_INFO_SMALL, 좌표 정수화(movesContainer -38.7→-39, 메인슬롯 -148.5→-149), footer y=-13→y=0 origin(0,1), toggle y=-62→-46
 - **2026-04-09**: wordWrapWidth 전면 수정, 폰트 크기 원본 맞춤, shadow 추가, lineSpacing 기본값, nameText truncation
 - **2026-04-08**: TEXT_RENDER_SCALE=6 도입, EXP bar mask, 배틀 전체화면, INTEGER_SCALE 모드
 - **2026-04-07**: LOGICAL_HEIGHT 수정, 레이아웃 전면 수정, 커서 origin 수정, 어빌리티 바 위치
+
+## 2026-04-11 완료한 작업 (Phase 18) — Shadow 좌표식 DBK 정합 + Metrics Audit
+
+### Task A: Enemy Shadow 좌표식 보정 (`battle-shell-scene.js`)
+- **문제**: shadow가 `shadowX/Y`만 반영되고 `frontX/frontY` sprite offset이 빠짐
+- **수정**: `shadowX = baseX + offsetX + shX`, `shadowY = baseY + offsetY + shY`
+  - DBK `apply_metrics_to_sprite`와 동일하게 sprite offset + shadow offset 합산
+
+### Task B: Baseline 보정 (`battle-shell-scene.js`)
+- **문제**: DBK의 `-height/4` shadow 기준점 이동이 ellipse에 없었음
+- **수정**: `baseline = frameH * sprScale * 0.12`, `shadowY -= baseline`
+- Shadow 크기도 DBK 공식으로 교체: `zoomX = scale + eff*0.1`, `zoomY = scale*0.25 + eff*0.025`
+
+### Task D: verify-metrics-parity 정책 재정립 (`scripts/verify-metrics-parity.mjs`)
+- 1/1 scale 정책 검증 추가: `DBK_DEFAULTS.frontScale === 1 && backScale === 1`
+- shadow 합산식 존재 검증 추가: `baseX + offsetX + shX`, `baseY + offsetY + shY`
+- 결과: 14/14 PASS (기존 12/12 → 14/14)
+
+### Task E: Metrics Drift Audit 스크립트 (`scripts/audit-metrics-drift.mjs`)
+- 신규 생성. `npm run audit:metrics-drift`로 실행
+- 출력: `reports/metrics-drift.json` — 고위험 91개, 중위험 668개, 저위험 654개 플래그
+- 평가 기준: fallback coverage, |frontY| outlier, shadow anchor risk, |frontX| outlier
+- 상위 4개 (score=8): LINOONE, METAGROSS_1, MIMIKYU_1, SALAMENCE_1
+
+### Task C: Sprite Y 부호 A/B 검증 — **다음 세션으로 이월**
+- 현행 `baseY - offsetY` 유지. 시각 비교 후 확정 예정.
+
+### Task F: PBS 수동 보정 — **다음 세션으로 이월**
+- 런타임 공식 변경 직후라 시각 확인 선행 필요. `reports/metrics-drift.json` 참조.
+
+---
 
 ## 2026-04-11 완료한 작업 (Phase 16) — 배틀러 스프라이트
 

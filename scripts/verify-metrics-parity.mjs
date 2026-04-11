@@ -130,9 +130,15 @@ checks.push(check('NIDORANmA resolves (not miss)', nidoranChecks[1].resolved.typ
 checks.push(check('DBK animation delay is monotonic (1 < 2 < 3 < 4)', delays[0] < delays[1] && delays[1] < delays[2] && delays[2] < delays[3], delays.join(' < ')));
 checks.push(check('parser uppercases species/form/gender keys', /parts\[0\].*toUpperCase\(\)/.test(metricsSource) && /parts\[1\].*toUpperCase\(\)/.test(metricsSource) && /parts\[2\].*toUpperCase\(\)/.test(metricsSource)));
 checks.push(check('metrics loader preserves declared file override order', !metricsSource.includes('Promise.allSettled') && metricsSource.includes('for (const url of METRICS_FILES)')));
-checks.push(check('scene uses DBK default scales (2/3)', sceneSource.includes('DBK_DEFAULTS.frontScale') && sceneSource.includes('DBK_DEFAULTS.backScale')));
+checks.push(check('scene uses DBK default scales via DBK_DEFAULTS', sceneSource.includes('DBK_DEFAULTS.frontScale') && sceneSource.includes('DBK_DEFAULTS.backScale')));
+checks.push(check('project default scales are 1/1',
+  DBK_DEFAULTS.frontScale === 1 && DBK_DEFAULTS.backScale === 1,
+  `frontScale=${DBK_DEFAULTS.frontScale} backScale=${DBK_DEFAULTS.backScale}`));
 checks.push(check('scene shadow logic uses zero-only hide rule', sceneSource.includes('rawShadowSize !== 0')));
 checks.push(check('scene player-side shadow toggle is wired', sceneSource.includes('DBK_DEFAULTS.showPlayerSideShadows')));
+checks.push(check('scene shadow uses sprite+shadow offset composition',
+  sceneSource.includes('baseX + offsetX + shX') && sceneSource.includes('baseY + offsetY + shY'),
+  'shadow must composite front/back offset with shadow offset'));
 checks.push(check('asset family parser supports numeric+gender ids', appSource.includes('numericGenders') && appSource.includes('_(\\d+)_(female|male)')));
 checks.push(check('DOM fallback uses DBK delay formula helper', appSource.includes('calcDbkAnimationDelayMs(animSpeed)')));
 
