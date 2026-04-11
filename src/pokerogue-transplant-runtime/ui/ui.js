@@ -210,10 +210,15 @@ export class TransplantBattleUI {
     this.enemyInfo.container?.setPosition(140, 39);    // PokeRogue: EnemyBattleInfo(140, -141)
     this.playerInfo.container?.setPosition(310, 108);  // PokeRogue: PlayerBattleInfo(scaledCanvas.width-10, -72)
     if (this.enemySprite?.phaserSprite) {
-      this.enemySprite.phaserSprite.setPosition(216, 84);   // PokeRogue origin: (236, 84), shifted left
+      // Base ground-line positions. PBS metrics in renderBattlerSprite apply per-species offsets on top.
+      this.enemySprite.phaserSprite.setPosition(216, 84);
+      this.enemySprite.baseX = 216;
+      this.enemySprite.baseY = 84;
     }
     if (this.playerSprite?.phaserSprite) {
-      this.playerSprite.phaserSprite.setPosition(106, 148); // PokeRogue: PlayerPokemon super(106, 148)
+      this.playerSprite.phaserSprite.setPosition(106, 148);
+      this.playerSprite.baseX = 106;
+      this.playerSprite.baseY = 148;
     }
   }
 

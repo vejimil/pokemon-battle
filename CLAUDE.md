@@ -118,7 +118,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 ## 이전 완료 이력 (주요 항목)
 
-- **2026-04-11**: 배틀러 스프라이트 구현 (Phase 16) — 상세 내용은 아래 참조
+- **2026-04-11**: 배틀러 스프라이트 구현 (Phase 16) + PBS metrics 적용 (Phase 17) — 상세 내용은 아래 참조
 - **2026-04-10**: Navy bar 회귀 수정, 파티 아이콘 frame0 등록, levelText HINT→BATTLE_INFO_SMALL, 좌표 정수화(movesContainer -38.7→-39, 메인슬롯 -148.5→-149), footer y=-13→y=0 origin(0,1), toggle y=-62→-46
 - **2026-04-09**: wordWrapWidth 전면 수정, 폰트 크기 원본 맞춤, shadow 추가, lineSpacing 기본값, nameText truncation
 - **2026-04-08**: TEXT_RENDER_SCALE=6 도입, EXP bar mask, 배틀 전체화면, INTEGER_SCALE 모드
@@ -164,6 +164,46 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - Enemy (앞모습): `./assets/Pokemon/Front/{spriteId}.png` (색다른: `Front shiny/`)
 - Player (뒷모습): `./assets/Pokemon/Back/{spriteId}.png` (색다른: `Back shiny/`)
 - 스프라이트는 자연 크기(1:1 scale)로 표시. 크기 조정 필요 시 `renderBattlerSprite()` 내 `setScale()` 수정.
+
+---
+
+## 2026-04-11 완료한 작업 (Phase 17) — PBS Metrics 적용
+
+### 개요
+`assets/Pokemon/PBS/` 폴더의 PBS 포맷 메트릭 파일들을 파싱해 배틀러 스프라이트의 위치·그림자·애니메이션 속도를 포켓몬별로 정확하게 적용.
+
+### PBS 파일 구성
+- `pokemon_metrics.txt` — Gen 1~8 기본 폼
+- `pokemon_metrics_forms.txt` — 변형 폼 (Mega, 히스이, 팔데아 등)
+- `pokemon_metrics_female.txt` — 암컷 변형
+- `pokemon_metrics_Gen_9_Pack.txt` — Gen 9 추가
+- `pokemon_metrics_gmax.txt` — 거다이맥스 폼
+
+### PBS 필드 및 좌표 해석
+| 필드 | 값 | Phaser 적용 |
+|------|----|-------------|
+| `FrontSprite = x, y` | 적 시점 오프셋 | `spriteX = baseX + x`, `spriteY = baseY - y` (양수 y = 위로) |
+| `BackSprite = x, y` | 플레이어 시점 오프셋 | 동일 |
+| `ShadowSprite = x, backY, frontY` | 그림자 오프셋 (그라운드라인 기준) | `shadowY = baseY + frontY` |
+| `ShadowSize = n` | `≤0` = 그림자 없음, 기본 = 보통, `2` = 큼 | |
+| `AnimationSpeed = back[, front]` | `0`=정지, `1`=느림(240ms), `2`=보통(120ms) | `delay = 120 * (2/speed)` ms |
+
+### 구현 내용
+1. **`pokemon-metrics.js` 신규 생성** (`runtime/`):
+   - PBS 파싱: `[SPECIES]` → `"SPECIES"`, `[SPECIES,N]` → `"SPECIES_N"`, `[SPECIES,,female]` → `"SPECIES_female"`
+   - `loadPokemonMetrics()`: 5개 파일 병렬 fetch → 통합 Map 반환 (나중 파일이 앞 파일 override)
+   - `getMetricsForSprite(spriteId, map)`: exact match → 폼/성별 fallback → 기본종 fallback
+
+2. **`battle-shell-scene.js` 수정**:
+   - `create()` 에서 `loadPokemonMetrics()` 백그라운드 실행 (`this.pokemonMetrics`)
+   - `renderBattlerSprite()` 에서 URL 파일명으로 spriteId 추출 → metrics 조회 → 위치·스케일·그림자·애니메이션 속도 적용
+
+3. **`ui.js` 수정**:
+   - `layout()` 에서 `mount.baseX/baseY` 저장 (metrics 오프셋 계산의 기준값)
+
+### 주의 사항
+- Metrics 로드가 완료되기 전 첫 배틀 진입 시 오프셋 없이 기본 위치로 표시됨 (PBS 로딩은 비동기)
+- 같은 URL 재표시 시 early return → metrics 재적용 없음. Pokemon 교체 시에만 재계산됨
 
 ---
 

@@ -3,6 +3,7 @@ import { preloadUiAssets } from '../runtime/assets.js';
 import { clamp, textureExists, createBaseText, setHorizontalCrop, setInteractiveTarget, applyHostBox, addWindow, setTextWordWrap } from '../runtime/phaser-utils.js';
 import { buttonFromKeyboardEvent, isTypingIntoElement } from '../ui/facade/input-facade.js';
 import { TransplantBattleUI } from '../ui/ui.js';
+import { loadPokemonMetrics, getMetricsForSprite } from '../runtime/pokemon-metrics.js';
 
 export function createBattleShellSceneClass(Phaser, env) {
   return class TransplantBattleShellScene extends Phaser.Scene {
@@ -51,6 +52,9 @@ export function createBattleShellSceneClass(Phaser, env) {
           ph.width = 1; ph.height = 1;
           this.textures.addCanvas('pkb-battler-placeholder', ph);
         }
+        // Load PBS metrics in background — sprites render without them if not ready yet.
+        this.pokemonMetrics = null;
+        loadPokemonMetrics().then(m => { this.pokemonMetrics = m; }).catch(() => {});
         this.createArenaLayers();
         this.enemySprite = this.createSpriteMount('enemy');
         this.playerSprite = this.createSpriteMount('player');
@@ -163,21 +167,52 @@ export function createBattleShellSceneClass(Phaser, env) {
           tex.add(i, 0, i * frameH, 0, frameH, frameH);
         }
 
-        mount.phaserSprite.setTexture(key, 0).setScale(1);
+        // --- Apply PBS metrics (position, scale, shadow, animation speed) ---
+        // spriteId is the filename without extension, e.g. "CHARIZARD_1".
+        const spriteId = url.split('/').pop().replace(/\.png$/i, '');
+        const metrics  = getMetricsForSprite(spriteId, this.pokemonMetrics);
+        const isFront  = mount.name === 'enemy';
+
+        // Base positions stored by ui.js layout(). Fall back to current position.
+        const baseX = mount.baseX ?? mount.phaserSprite.x;
+        const baseY = mount.baseY ?? mount.phaserSprite.y;
+
+        // Sprite offset: positive pbsY lifts sprite UP (reduces Phaser y).
+        const offsetX = isFront ? (metrics?.frontX ?? 0) : (metrics?.backX ?? 0);
+        const offsetY = isFront ? (metrics?.frontY ?? 0) : (metrics?.backY ?? 0);
+        const sprScale = isFront ? (metrics?.frontScale ?? 1) : (metrics?.backScale ?? 1);
+
+        mount.phaserSprite
+          .setTexture(key, 0)
+          .setScale(sprScale)
+          .setPosition(baseX + offsetX, baseY - offsetY);
         mount.phaserSprite.setVisible(true);
 
-        // Shadow: flat ellipse at the sprite's foot (bottom-center).
-        const px = mount.phaserSprite.x;
-        const py = mount.phaserSprite.y;
-        const displaySize = frameH;
-        mount.shadow.setPosition(px, py);
-        mount.shadow.setSize(displaySize * 0.5, displaySize * 0.12);
-        mount.shadow.setVisible(true);
+        // Shadow: positioned from the base ground line (not from the adjusted sprite pos).
+        const shadowX      = baseX + (metrics?.shadowX ?? 0);
+        const shadowOffY   = isFront ? (metrics?.shadowFrontY ?? 0) : (metrics?.shadowBackY ?? 0);
+        const shadowY      = baseY + shadowOffY;
+        const shadowSize   = metrics?.shadowSize;           // undefined = default
+        const showShadow   = shadowSize === undefined || shadowSize > 0;
 
-        if (frameCount > 1) {
+        if (showShadow) {
+          // shadowSize 2 = 1.4× default; undefined or 1 = 1× default.
+          const sizeScale = shadowSize === 2 ? 1.4 : 1.0;
+          mount.shadow.setPosition(shadowX, shadowY);
+          mount.shadow.setSize(frameH * 0.45 * sizeScale, frameH * 0.11 * sizeScale);
+          mount.shadow.setVisible(true);
+        } else {
+          mount.shadow.setVisible(false);
+        }
+
+        // Animation speed: delay = 120 * (2 / speed). Speed 0 = no animation.
+        const animSpeed = isFront ? (metrics?.animFront ?? 2) : (metrics?.animBack ?? 2);
+        const delay     = animSpeed > 0 ? Math.round(120 * (2 / animSpeed)) : 0;
+
+        if (frameCount > 1 && delay > 0) {
           let frame = 0;
           mount.animTimer = this.time.addEvent({
-            delay: 120,
+            delay,
             loop: true,
             callback: () => {
               frame = (frame + 1) % frameCount;
