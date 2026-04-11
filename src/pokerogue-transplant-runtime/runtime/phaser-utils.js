@@ -34,7 +34,6 @@ export const TEXT_RENDER_SCALE = 6;
 
 export function createBaseText(scene, x, y, text = '', fontSize = 8, color = '#f8fbff', options = {}) {
   const S = TEXT_RENDER_SCALE;
-  // Scale wordWrap.width from logical pixels to the internal render canvas pixels.
   const processedOptions = { ...options };
   if (processedOptions.wordWrap) {
     processedOptions.wordWrap = { ...processedOptions.wordWrap };
@@ -42,15 +41,19 @@ export function createBaseText(scene, x, y, text = '', fontSize = 8, color = '#f
       processedOptions.wordWrap.width = processedOptions.wordWrap.width * S;
     }
   }
+  const fontFamily = processedOptions.fontFamily || 'emerald';
+  const padding = processedOptions.padding || { bottom: 6 };
+  delete processedOptions.fontFamily;
+  delete processedOptions.padding;
   const t = scene.add.text(x, y, text, {
-    fontFamily: 'emerald, pkmnems, monospace',
+    fontFamily,
     fontSize: `${fontSize * S}px`,
     color,
+    padding,
     resolution: 1,
     ...processedOptions,
   });
   t.setScale(1 / S);
-  // 원본: ret.setLineSpacing(scale * 30) = (1/6)*30 = 5 (lineSpacing 미지정 시 기본 적용)
   if (processedOptions.lineSpacing == null) {
     t.setLineSpacing(5);
   }

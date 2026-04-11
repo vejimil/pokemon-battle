@@ -81,28 +81,28 @@ class PartySlot {
       this.pb         = scene.add.image(4, 4, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(4, 4, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
       this.label      = addTextObject(this.ui, 24, 3, '', 'WINDOW').setOrigin(0, 0);
-      this.levelText  = addTextObject(this.ui, 24, 13, '', 'BATTLE_INFO_SMALL').setOrigin(0, 0);
-      this.sublabel   = addTextObject(this.ui, 24, 22, '', 'HINT').setOrigin(0, 0);
+      this.levelText  = addTextObject(this.ui, 24, 13, '', 'PARTY').setOrigin(0, 0);
+      this.sublabel   = addTextObject(this.ui, 24, 22, '', 'PARTY').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(8, 31, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(24, 33, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
       this.hpLabel    = env.textureExists(scene, env.UI_ASSETS.partySlotOverlayHp?.key)
         ? scene.add.image(23, 31, env.UI_ASSETS.partySlotOverlayHp.key).setOrigin(1, 0)
         : null;
-      this.hpText     = addTextObject(this.ui, 105, 36, '', 'BATTLE_VALUE').setOrigin(1, 0);
+      this.hpText     = addTextObject(this.ui, 105, 36, '', 'PARTY').setOrigin(1, 0);
       this.hit        = scene.add.rectangle(0, 0, 110, 49, 0xffffff, 0.001).setOrigin(0, 0);
     } else {
       // Bench slot layout (bgObj: 175×24, origin 0,0)
       this.pb         = scene.add.image(2, 12, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(2, 12, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
       this.label      = addTextObject(this.ui, 21, 2, '', 'WINDOW').setOrigin(0, 0);
-      this.levelText  = addTextObject(this.ui, 21, 12, '', 'BATTLE_INFO_SMALL').setOrigin(0, 0);
-      this.sublabel   = addTextObject(this.ui, 29, 14, '', 'HINT').setOrigin(0, 0);
+      this.levelText  = addTextObject(this.ui, 21, 12, '', 'PARTY').setOrigin(0, 0);
+      this.sublabel   = addTextObject(this.ui, 29, 14, '', 'PARTY').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(72, 6, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(88, 8, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
       this.hpLabel    = env.textureExists(scene, env.UI_ASSETS.partySlotOverlayHp?.key)
         ? scene.add.image(87, 6, env.UI_ASSETS.partySlotOverlayHp.key).setOrigin(1, 0)
         : null;
-      this.hpText     = addTextObject(this.ui, 169, 11, '', 'BATTLE_VALUE').setOrigin(1, 0);
+      this.hpText     = addTextObject(this.ui, 169, 11, '', 'PARTY').setOrigin(1, 0);
       this.hit        = scene.add.rectangle(0, 0, 175, 24, 0xffffff, 0.001).setOrigin(0, 0);
     }
 
@@ -147,7 +147,7 @@ class PartySlot {
     // Level
     const lvStr = option.level != null ? `Lv.${option.level}` : '';
     this.levelText.setText(lvStr);
-    this.levelText.setColor(option.disabled ? '#64748b' : '#a8d8f0');
+    this.levelText.setColor(option.disabled ? '#64748b' : '#f8f8f8');
 
     // Sublabel (HP + status text)
     this.sublabel.setText(option.sublabel || '');
@@ -175,6 +175,7 @@ class PartySlot {
     }
     setHorizontalCrop(this.hpBarFill, HP_FILL_WIDTH * (hpPercent / 100));
     this.hpText.setText(option.hpLabel || '');
+    this.hpText.setColor(option.disabled ? '#64748b' : '#f8f8f8');
 
     // Pokemon icon — load dynamically if URL provided
     if (option.iconUrl) {
@@ -205,8 +206,8 @@ class PartySlot {
     // Use 'frame0' (left half) as starting frame; fall back to default if not registered
     const frameKey = this.scene.textures.get(iconKey).has('frame0') ? 'frame0' : undefined;
     // active slot: icon at (4, 4), bench slot: icon at (2, -4) for 32×32 vertical centering
-    const x = this.isActive ? 4 : 2;
-    const y = this.isActive ? 4 : -4;
+    const x = this.isActive ? -8 : -10;
+    const y = this.isActive ? -4 : -4;
     if (!this.iconObj) {
       this.iconObj = this.scene.add.sprite(x, y, iconKey, frameKey)
         .setOrigin(0, 0).setDisplaySize(32, 32).setName(`party-icon-${this.index}`);

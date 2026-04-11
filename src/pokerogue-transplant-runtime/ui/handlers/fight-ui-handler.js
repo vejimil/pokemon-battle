@@ -67,15 +67,15 @@ export class FightUiHandler extends UiHandler {
     // PokeRogue 원본 기본 fight UI 오른쪽 패널: TYPE 라벨 + 타입배지 + 카테고리아이콘 (row1) + PP (row2)
     // Pow/Acc는 MoveInfoOverlay 전용 (INFO 버튼 홀드 시만 표시)
     // 원본 scale: typeIcon=0.8 (line 269), moveCategoryIcon=1.0 (line 272)
-    this.typeLabel = addTextObject(this.ui, 245, -36, 'TYPE', 'BATTLE_LABEL').setOrigin(0, 0.5).setVisible(false);
+    this.typeLabel = addTextObject(this.ui, 245, -36, 'TYPE', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
     this.typeIcon = env.textureExists(scene, env.UI_ASSETS.typesAtlas.key, 'unknown')
       ? scene.add.image(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.8).setVisible(false)
-      : addTextObject(this.ui, 263, -36, '', 'BATTLE_LABEL').setOrigin(0, 0).setVisible(false);
+      : addTextObject(this.ui, 263, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0).setVisible(false);
     this.moveCategoryIcon = env.textureExists(scene, env.UI_ASSETS.categoriesAtlas.key, 'status')
       ? scene.add.image(295, -36, env.UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(1.0).setVisible(false)
-      : addTextObject(this.ui, 295, -36, '', 'BATTLE_LABEL').setOrigin(0, 0).setVisible(false);
-    this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'BATTLE_LABEL').setOrigin(0, 0.5).setVisible(false);
-    this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'BATTLE_VALUE').setOrigin(1, 0.5).setVisible(false);
+      : addTextObject(this.ui, 295, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0).setVisible(false);
+    this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
+    this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
     this.moveInfoContainer.add([
       this.typeLabel,
       this.typeIcon,

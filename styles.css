@@ -1,11 +1,11 @@
 @font-face {
   font-family: "emerald";
-  src: url("./assets/pokerogue/fonts/pokemon-bw.ttf") format("truetype");
+  src: url("./assets/pokerogue/fonts/pokemon-emerald-pro.ttf") format("truetype");
   font-display: swap;
 }
 @font-face {
   font-family: "pkmnems";
-  src: url("./assets/pokerogue/fonts/pokemon-emerald-pro.ttf") format("truetype");
+  src: url("./assets/pokerogue/fonts/pkmnems.ttf") format("truetype");
   font-display: swap;
 }
 
