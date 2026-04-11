@@ -82,7 +82,7 @@ class PartySlot {
       this.iconHolder = scene.add.rectangle(4, 4, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
       this.label      = addTextObject(this.ui, 24, 3, '', 'WINDOW').setOrigin(0, 0);
       this.levelText  = addTextObject(this.ui, 24, 15, '', 'PARTY').setOrigin(0, 0);
-      this.sublabel   = addTextObject(this.ui, 24, 22, '', 'PARTY').setOrigin(0, 0);
+      this.sublabel   = addTextObject(this.ui, 52, 16, '', 'PARTY').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(8, 31, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(24, 33, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
       this.hpLabel    = env.textureExists(scene, env.UI_ASSETS.partySlotOverlayHp?.key)
@@ -94,9 +94,9 @@ class PartySlot {
       // Bench slot layout (bgObj: 175×24, origin 0,0)
       this.pb         = scene.add.image(2, 12, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(2, 12, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
-      this.label      = addTextObject(this.ui, 21, 2, '', 'WINDOW').setOrigin(0, 0);
+      this.label      = addTextObject(this.ui, 21, 3, '', 'PARTY_NAME').setOrigin(0, 0);
       this.levelText  = addTextObject(this.ui, 21, 12, '', 'PARTY').setOrigin(0, 0);
-      this.sublabel   = addTextObject(this.ui, 29, 14, '', 'PARTY').setOrigin(0, 0);
+      this.sublabel   = addTextObject(this.ui, 50, 12, '', 'PARTY').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(72, 6, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(88, 8, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
       this.hpLabel    = env.textureExists(scene, env.UI_ASSETS.partySlotOverlayHp?.key)
@@ -110,8 +110,8 @@ class PartySlot {
     const statusKey = env.UI_ASSETS.statusesAtlas?.key;
     this.statusSprite = statusKey && env.textureExists(scene, statusKey)
       ? scene.add.sprite(
-          this.isActive ? 24 : 21,
-          this.isActive ? 22 : 14,
+          this.isActive ? 54 : 52,
+          this.isActive ? 18 : 15,
           statusKey, 'burn'
         ).setOrigin(0, 0).setVisible(false).setScale(0.9)
       : null;
@@ -148,8 +148,7 @@ class PartySlot {
     this.levelText.setText(lvStr);
 
     // Sublabel (HP + status text)
-    const sublabelText = this.isActive ? (option.sublabel || '') : '';
-    this.sublabel.setText(sublabelText);
+    this.sublabel.setText(option.sublabel || '');
 
     // Status sprite
     const STATUS_FRAME = { brn: 'burn', par: 'paralysis', psn: 'poison', tox: 'toxic', slp: 'sleep', frz: 'freeze' };

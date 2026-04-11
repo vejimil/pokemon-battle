@@ -6300,7 +6300,7 @@ function buildPhaserPartyWindowModel(battle, player) {
       const canSwitchTo = optionMap.has(index);
       const fainted = !mon.hp || mon.fainted;
       const hpPercent = mon.maxHp ? Math.max(0, Math.min(100, (mon.hp / mon.maxHp) * 100)) : 0;
-      let sublabel = `HP ${mon.hp}/${mon.maxHp}`;
+      let sublabel = '';
       if (activeSet.has(index)) sublabel += ` · ${lang('전투 중', 'Active')}`;
       else if (fainted) sublabel += ` · ${lang('기절', 'Fainted')}`;
       else if (mon.status) sublabel += ` · ${displayStatus(mon.status)}`;

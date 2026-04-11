@@ -111,11 +111,11 @@ export class BattleInfo {
       .setOrigin(1, 0.5).setName(`pbinfo-${this.side}-bg`);
 
     // Name text
-    this.nameText = addTextObject(this.ui, pos.nameTextX, pos.nameTextY, '', 'BATTLE_INFO')
+    this.nameText = addTextObject(this.ui, pos.nameTextX, pos.nameTextY, '', 'BATTLE_INFO_NAME')
       .setOrigin(0, 0).setName(`pbinfo-${this.side}-name`);
 
     // Gender text (♂/♀) — positioned right after name text
-    this.genderText = addTextObject(this.ui, pos.nameTextX, pos.nameTextY, '', 'BATTLE_INFO')
+    this.genderText = addTextObject(this.ui, pos.nameTextX, pos.nameTextY, '', 'BATTLE_INFO_NAME')
       .setOrigin(0, 0).setName(`pbinfo-${this.side}-gender`);
 
     // Level container: overlayLv sprite + number sprites

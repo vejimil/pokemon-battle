@@ -29,8 +29,18 @@ const TEXT_STYLE = Object.freeze({
     shadowY: 3,
   },
 
+  BATTLE_INFO_NAME: {
+    fontSize: 12,
+    fontFamily: 'emerald',
+    padding: { bottom: 6 },
+    color: '#f8f8f8',
+    shadowColor: '#6b5a73',
+    shadowX: 4,
+    shadowY: 4,
+  },
+
   MOVE_INFO_CONTENT: {
-    fontSize: 8,
+    fontSize: 9,
     fontFamily: 'emerald',
     padding: { bottom: 6 },
     color: '#f8f8f8',
@@ -38,6 +48,14 @@ const TEXT_STYLE = Object.freeze({
     shadowX: 3,
     shadowY: 3,
   },
+
+  PARTY_NAME: {
+    fontSize: 8,
+    fontFamily: 'pkmnems',
+    padding: { top: 2, bottom: 16 },
+    color: '#f8f8f8'
+  },
+
 
   PARTY: {
     fontSize: 8,
