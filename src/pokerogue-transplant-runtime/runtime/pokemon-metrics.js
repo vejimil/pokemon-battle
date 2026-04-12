@@ -3,7 +3,7 @@
 // shadow placement, and animation speed for battler sprites.
 //
 // Coordinate conventions (Pokemon Essentials / RPG Maker XP):
-//   FrontSprite x, y  — enemy side: x = horizontal offset, y = pixels to lift above base
+//   FrontSprite x, y  — enemy side: x = horizontal offset, y = vertical offset from base
 //   BackSprite  x, y  — player side: same
 //   ShadowSprite x, backY, frontY — shadow offset from the base ground line
 //   ShadowSize  n     — 0 = no shadow; negative = smaller shadow; positive = larger
@@ -11,7 +11,7 @@
 //
 // In Phaser logical coordinates (origin 0.5,1 = bottom-center):
 //   spriteX = baseX + pbsX
-//   spriteY = baseY - pbsY   (positive pbsY lifts sprite up = smaller Phaser y)
+//   spriteY = baseY + pbsY   (positive pbsY moves sprite down = larger Phaser y)
 //   shadowX = baseX + shadowPbsX
 //   shadowY = baseY + shadowFrontY (or shadowBackY for player side)
 

@@ -52,9 +52,13 @@ export function createBattleShellSceneClass(Phaser, env) {
           ph.width = 1; ph.height = 1;
           this.textures.addCanvas('pkb-battler-placeholder', ph);
         }
-        // Load PBS metrics in background — sprites render without them if not ready yet.
+        // Load PBS metrics in background. If sprites rendered before metrics are ready,
+        // refresh once after load so offsets/scales are applied.
         this.pokemonMetrics = null;
-        loadPokemonMetrics().then(m => { this.pokemonMetrics = m; }).catch(() => {});
+        loadPokemonMetrics().then(m => {
+          this.pokemonMetrics = m;
+          this._refreshBattlerSpritesForMetrics();
+        }).catch(() => {});
         this.createArenaLayers();
         this.enemySprite = this.createSpriteMount('enemy');
         this.playerSprite = this.createSpriteMount('player');
@@ -110,6 +114,9 @@ export function createBattleShellSceneClass(Phaser, env) {
         shadowVisibleByMetrics: false,
         currentUrl: '',
         animTimer: null,
+        frameTextureKeys: [],
+        animMode: 'sheet',
+        metricsSnapshot: null,
         // Shim: party-ui-handler calls mount.dom.setVisible() to hide/show sprites.
         // Shadow follows the same visibility; only shown when a sprite is actually loaded.
         dom: {
@@ -122,20 +129,100 @@ export function createBattleShellSceneClass(Phaser, env) {
       return mount;
     }
 
+    _debugSpriteAnimEnabled() {
+      const win = globalThis?.window;
+      return Boolean(globalThis?.__PKB_DEBUG_SPRITE_ANIM || win?.__PKB_DEBUG_SPRITE_ANIM);
+    }
+
+    _logSpriteAnim(mount, message, payload = null) {
+      if (!this._debugSpriteAnimEnabled()) return;
+      if (payload) console.log(`[pkb-sprite-anim:${mount?.name || 'unknown'}] ${message}`, payload);
+      else console.log(`[pkb-sprite-anim:${mount?.name || 'unknown'}] ${message}`);
+    }
+
+    _clearBattlerFrameTextures(mount) {
+      if (!mount?.frameTextureKeys?.length) return;
+      for (const texKey of mount.frameTextureKeys) {
+        if (this.textures.exists(texKey)) this.textures.remove(texKey);
+      }
+      mount.frameTextureKeys = [];
+      mount.animMode = 'sheet';
+    }
+
+    _buildFrameTexturesFromStrip(mount, keyPrefix, img, frameSize, frameCount) {
+      const keys = [];
+      for (let i = 0; i < frameCount; i++) {
+        const frameKey = `${keyPrefix}-f${i}`;
+        if (this.textures.exists(frameKey)) this.textures.remove(frameKey);
+        const canvas = document.createElement('canvas');
+        canvas.width = frameSize;
+        canvas.height = frameSize;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) continue;
+        ctx.imageSmoothingEnabled = false;
+        const sx = i * frameSize;
+        ctx.drawImage(img, sx, 0, frameSize, frameSize, 0, 0, frameSize, frameSize);
+        this.textures.addCanvas(frameKey, canvas);
+        keys.push(frameKey);
+      }
+      return keys;
+    }
+
+    _applyMountMetricsSnapshot(mount) {
+      const snap = mount?.metricsSnapshot;
+      if (!mount?.phaserSprite || !snap) return;
+      const baseX = mount.baseX ?? mount.phaserSprite.x;
+      const baseY = mount.baseY ?? mount.phaserSprite.y;
+      const spriteX = baseX + snap.offsetX;
+      const spriteY = baseY + snap.offsetY;
+      mount.phaserSprite
+        .setOrigin(0.5, 1)
+        .setScale(snap.sprScale)
+        .setPosition(spriteX, spriteY);
+
+      if (!mount.shadow) return;
+      if (snap.showShadow) {
+        const shadowX = baseX + snap.offsetX + snap.shX;
+        const shadowY = baseY + snap.offsetY + snap.shY;
+        mount.shadow.setPosition(shadowX, shadowY - snap.shadowBaseline);
+        mount.shadow.setSize(snap.shadowW, snap.shadowH);
+        mount.shadowVisibleByMetrics = true;
+        mount.shadow.setVisible(true);
+      } else {
+        mount.shadowVisibleByMetrics = false;
+        mount.shadow.setVisible(false);
+      }
+    }
+
+    _refreshBattlerSpritesForMetrics() {
+      const mounts = [this.enemySprite, this.playerSprite];
+      for (const mount of mounts) {
+        const url = mount?.currentUrl || '';
+        if (!url) continue;
+        mount.currentUrl = '';
+        this.renderBattlerSprite(mount, { url });
+      }
+    }
+
     // Loads a battler sprite from spriteModel.url and renders it on the Phaser canvas.
     // Async: returns immediately; sprite appears once the image loads.
     async renderBattlerSprite(mount, spriteModel) {
       const url = spriteModel?.url || '';
       if (!url) {
         this._clearBattlerAnim(mount);
+        mount.phaserSprite.setTexture('pkb-battler-placeholder').setVisible(false);
+        this._clearBattlerFrameTextures(mount);
         mount.currentUrl = '';
+        mount.metricsSnapshot = null;
         mount.shadowVisibleByMetrics = false;
-        mount.phaserSprite.setVisible(false);
         mount.shadow.setVisible(false);
         return;
       }
       // Skip reload if same URL is already showing.
-      if (url === mount.currentUrl) return;
+      if (url === mount.currentUrl) {
+        this._logSpriteAnim(mount, 'skip reload (same url)', { url, mode: mount.animMode });
+        return;
+      }
       mount.currentUrl = url;
       this._clearBattlerAnim(mount);
 
@@ -147,6 +234,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         mount.phaserSprite.setTexture('pkb-battler-placeholder').setVisible(false);
         mount.shadowVisibleByMetrics = false;
         mount.shadow.setVisible(false);
+        this._clearBattlerFrameTextures(mount);
         if (this.textures.exists(key)) this.textures.remove(key);
 
         const img = await new Promise((resolve, reject) => {
@@ -159,16 +247,21 @@ export function createBattleShellSceneClass(Phaser, env) {
         // If URL changed while awaiting (e.g. Pokemon switched), abort.
         if (mount.currentUrl !== url) return;
 
-        // Detect animation frames: assume square frames (height = frame width).
+        // Detect animation frames: DBK strips use square cells (frame width = image height).
         const frameH = img.height;
-        const frameCount = Math.max(1, Math.floor(img.width / frameH));
-
-        // Register as a spritesheet texture so setFrame() works for animation.
-        this.textures.addImage(key, img);
-        const tex = this.textures.get(key);
-        for (let i = 0; i < frameCount; i++) {
-          tex.add(i, 0, i * frameH, 0, frameH, frameH);
-        }
+        const frameCount = Math.max(1, Math.ceil(img.width / frameH));
+        // Force per-frame texture mode to avoid platform-specific sheet frame sticking
+        // (observed as "first frame only" despite timer ticks).
+        const maxTextureSize = this.renderer?.getMaxTextureSize?.() ?? Number.MAX_SAFE_INTEGER;
+        mount.frameTextureKeys = this._buildFrameTexturesFromStrip(mount, key, img, frameH, frameCount);
+        mount.animMode = 'frames';
+        this._logSpriteAnim(mount, 'loaded per-frame strip', {
+          url,
+          width: img.width,
+          height: img.height,
+          frameCount,
+          maxTextureSize,
+        });
 
         // --- Apply PBS metrics (position, scale, shadow, animation speed) ---
         // spriteId is the filename without extension, e.g. "CHARIZARD_1".
@@ -180,17 +273,25 @@ export function createBattleShellSceneClass(Phaser, env) {
         const baseX = mount.baseX ?? mount.phaserSprite.x;
         const baseY = mount.baseY ?? mount.phaserSprite.y;
 
-        // Sprite offset: positive pbsY lifts sprite UP (reduces Phaser y).
+        // Sprite offset: positive pbsY moves sprite DOWN (matches DBK / RPG Maker y-axis).
         const offsetX = isFront ? (metrics?.frontX ?? 0) : (metrics?.backX ?? 0);
         const offsetY = isFront ? (metrics?.frontY ?? 0) : (metrics?.backY ?? 0);
+        const spriteTargetX = baseX + offsetX;
+        const spriteTargetY = baseY + offsetY;
         const sprScale = isFront
           ? (metrics?.frontScale ?? DBK_DEFAULTS.frontScale)
           : (metrics?.backScale ?? DBK_DEFAULTS.backScale);
 
+        if (mount.animMode === 'frames') {
+          const firstFrameKey = mount.frameTextureKeys[0] || 'pkb-battler-placeholder';
+          mount.phaserSprite.setTexture(firstFrameKey);
+        } else {
+          mount.phaserSprite.setTexture(key, 0);
+        }
         mount.phaserSprite
-          .setTexture(key, 0)
+          .setOrigin(0.5, 1)
           .setScale(sprScale)
-          .setPosition(baseX + offsetX, baseY - offsetY);
+          .setPosition(spriteTargetX, spriteTargetY);
         mount.phaserSprite.setVisible(true);
 
         // Shadow: composite sprite offset + shadow offset (follows DBK apply_metrics_to_sprite
@@ -203,48 +304,82 @@ export function createBattleShellSceneClass(Phaser, env) {
         const rawShadowSize = Number.isFinite(metrics?.shadowSize) ? metrics.shadowSize : 1;
         const showBySide = !isPlayerSide || DBK_DEFAULTS.showPlayerSideShadows;
         const showShadow = showBySide && rawShadowSize !== 0;
+        let shadowW = 0;
+        let shadowH = 0;
+        let shadowBaseline = 0;
 
         if (showShadow) {
           // DBK size formula: zoom_x = scale + effective*0.1, zoom_y = scale*0.25 + effective*0.025
           const effective = rawShadowSize > 0 ? rawShadowSize - 1 : rawShadowSize;
           const zoomX = sprScale + effective * 0.1;
           const zoomY = sprScale * 0.25 + effective * 0.025;
-          const w = frameH * 0.45 * zoomX;
-          const h = frameH * 0.45 * zoomY;
+          shadowW = frameH * 0.45 * zoomX;
+          shadowH = frameH * 0.45 * zoomY;
           // Baseline correction: approximates DBK's -height/4 anchor shift.
           // k=0.12 tuned to keep shadow near foot level for typical sprites.
           const k = 0.12;
-          const baseline = frameH * sprScale * k;
-          mount.shadow.setPosition(shadowX, shadowY - baseline);
-          mount.shadow.setSize(w, h);
+          shadowBaseline = frameH * sprScale * k;
+          mount.shadow.setPosition(shadowX, shadowY - shadowBaseline);
+          mount.shadow.setSize(shadowW, shadowH);
           mount.shadowVisibleByMetrics = true;
           mount.shadow.setVisible(true);
         } else {
           mount.shadowVisibleByMetrics = false;
           mount.shadow.setVisible(false);
         }
+        mount.metricsSnapshot = {
+          offsetX,
+          offsetY,
+          sprScale,
+          shX,
+          shY,
+          showShadow,
+          shadowW,
+          shadowH,
+          shadowBaseline,
+        };
 
         // Animation speed (DBK): delay = ((speed / 2.0) * frameDelayMs). Speed 0 = no animation.
         const animSpeed = isFront ? (metrics?.animFront ?? 2) : (metrics?.animBack ?? 2);
         const delay = calcDbkAnimationDelayMs(animSpeed);
-
         if (frameCount > 1 && delay > 0) {
           let frame = 0;
+          let tick = 0;
           mount.animTimer = this.time.addEvent({
             delay,
             loop: true,
             callback: () => {
               frame = (frame + 1) % frameCount;
-              if (mount.phaserSprite.active) mount.phaserSprite.setFrame(frame);
+              if (mount.currentUrl !== url || !mount.phaserSprite.active) return;
+              if (mount.animMode === 'frames') {
+                const frameKey = mount.frameTextureKeys[frame];
+                if (frameKey) mount.phaserSprite.setTexture(frameKey);
+              } else {
+                mount.phaserSprite.setFrame(frame);
+              }
+              if (tick < 4 || (tick % 60) === 0) {
+                this._logSpriteAnim(mount, 'tick', {
+                  frame,
+                  frameCount,
+                  delay,
+                  mode: mount.animMode,
+                });
+              }
+              tick += 1;
             },
           });
+        } else {
+          this._logSpriteAnim(mount, 'animation disabled', { frameCount, delay, url });
         }
       } catch (_err) {
         if (mount.currentUrl === url) {
+          this._clearBattlerFrameTextures(mount);
+          mount.metricsSnapshot = null;
           mount.phaserSprite.setVisible(false);
           mount.shadowVisibleByMetrics = false;
           mount.shadow.setVisible(false);
         }
+        this._logSpriteAnim(mount, 'load error', { url, error: _err?.message || String(_err) });
       }
     }
 
@@ -285,6 +420,8 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.arenaEnemyBase.setPosition(ARENA_OFFSETS.enemy.x, ARENA_OFFSETS.enemy.y);
       this.arenaPlayerBase.setPosition(ARENA_OFFSETS.player.x, ARENA_OFFSETS.player.y);
       this.ui?.layout?.();
+      this._applyMountMetricsSnapshot(this.enemySprite);
+      this._applyMountMetricsSnapshot(this.playerSprite);
     }
 
     renderModel(model) {
