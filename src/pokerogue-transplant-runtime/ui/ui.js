@@ -213,12 +213,12 @@ export class TransplantBattleUI {
       // Base ground-line positions. PBS metrics in renderBattlerSprite apply per-species offsets on top.
       this.enemySprite.phaserSprite.setPosition(216, 84);
       this.enemySprite.baseX = 216;
-      this.enemySprite.baseY = 84;
+      this.enemySprite.baseY = 74;
     }
     if (this.playerSprite?.phaserSprite) {
       this.playerSprite.phaserSprite.setPosition(106, 148);
-      this.playerSprite.baseX = 106;
-      this.playerSprite.baseY = 148;
+      this.playerSprite.baseX = 100;
+      this.playerSprite.baseY = 108;
     }
   }
 
