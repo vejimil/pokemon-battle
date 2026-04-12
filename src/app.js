@@ -7,8 +7,18 @@ import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA, EXTERNALLY_VERIFIED_CUR
 import {resolveItemIconUrl, applyPokerogueAtlasFrameToElement, POKEROGUE_ASSET_PATHS} from './pokerogue-assets.js';
 import {createPhaserBattleController} from './phaser-battle-controller.js';
 import {loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationDelayMs} from './pokerogue-transplant-runtime/runtime/pokemon-metrics.js';
+import {BattleTimelineExecutor} from './battle-presentation/timeline.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
+
+// Battle presentation feature flags (Sprint 1 — all false by default)
+// Exposed on window so the browser console can toggle them: window.FLAGS.battlePresentationV2 = true
+const FLAGS = window.FLAGS = {
+  battlePresentationV2: false, // timeline executor (enable to test event stream)
+  battleAudioV1: false,        // audio manager SE routing
+  battleLocaleV1: false,       // namespace-based battle messages
+  battleMsgActionTagsV1: false, // @d/@s message tag parser
+};
 const SHOWDOWN_TARGET_HINTS = {
   normal: 'single-opponent',
   adjacentFoe: 'single-opponent',
@@ -4588,6 +4598,7 @@ function cloneEngineBattleSnapshot(snapshot) {
       request: side.request || null,
     })),
     log: Array.isArray(snapshot.log) ? [...snapshot.log] : [],
+    events: Array.isArray(snapshot.events) ? [...snapshot.events] : [],
   };
 }
 function adoptEngineBattleSnapshot(snapshot) {
@@ -6764,7 +6775,20 @@ async function resolveEngineTurn(battle = state.battle) {
   pruneEnginePendingChoices(battle);
   seedEngineForcedPendingChoices(battle);
   const nextSnapshot = await submitShowdownLocalSinglesChoices({battleId: battle.id, battle});
-  state.battle = adoptEngineBattleSnapshot(nextSnapshot);
+  const adoptedBattle = adoptEngineBattleSnapshot(nextSnapshot);
+
+  if (FLAGS.battlePresentationV2 && Array.isArray(adoptedBattle?.events) && adoptedBattle.events.length > 0) {
+    // Presentation V2: play events, then apply snapshot
+    state.battle = adoptedBattle;
+    const executor = new BattleTimelineExecutor({
+      onComplete: () => { renderBattle(); },
+      applySnapshot: () => { renderBattle(); },
+    });
+    await executor.play(adoptedBattle.events);
+  } else {
+    // Presentation V1 (default): apply snapshot immediately
+    state.battle = adoptedBattle;
+  }
 }
 async function resolveTurn() {
   const battle = ensureBattleUiState(state.battle);

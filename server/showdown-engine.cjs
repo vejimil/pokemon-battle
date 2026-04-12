@@ -261,7 +261,8 @@ function normalizeLogTextFromLine(line) {
       return {text: `${source} ${stat} -${amount} / ${source} ${stat} fell by ${amount}.`, tone: 'accent'};
     }
     case '-weather':
-      return {text: `날씨: ${b || a} / Weather: ${b || a}`, tone: 'accent'};
+      // Use `a` (parts[2]) unconditionally — `b` may be '[upkeep]' on tick lines, which must NOT be shown as weather name.
+      return a === 'none' ? null : {text: `날씨: ${a} / Weather: ${a}`, tone: 'accent'};
     case '-fieldstart':
       return {text: `필드 효과 시작: ${b || a} / Field effect started: ${b || a}`, tone: 'accent'};
     case '-fieldend':
@@ -299,6 +300,284 @@ function normalizeLogTextFromLine(line) {
       return {text: `엔진 오류 / Engine error: ${a}`, tone: 'accent'};
     default:
       return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Structured event builder (M1/M2 — Sprint 1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a Showdown protocol ident token like "p1a: Pikachu" into side/slot.
+ * Returns { side: 'p1'|'p2', slot: 0 } (slot is always 0 for singles).
+ */
+function parseIdentForEvent(token) {
+  const m = /^(p[12])([a-z])?:/.exec(String(token || ''));
+  if (!m) return {side: 'p1', slot: 0};
+  const letterSlot = m[2] ? m[2].charCodeAt(0) - 97 : 0;
+  return {side: m[1], slot: letterSlot};
+}
+
+/**
+ * Parse a condition string like "120/300" or "120/300 brn" into { hp, maxHp }.
+ */
+function parseConditionForEvent(token) {
+  const m = /^(\d+)(?:\/(\d+))?/.exec(String(token || ''));
+  if (!m) return {hp: 0, maxHp: 0};
+  return {hp: Number(m[1]), maxHp: m[2] !== undefined ? Number(m[2]) : Number(m[1])};
+}
+
+/**
+ * Parse species name from the details token like "Pikachu, L50, M" → "Pikachu".
+ */
+function parseDetailsSpeciesForEvent(token) {
+  return String(token || '').split(',')[0].trim();
+}
+
+/**
+ * Convert structured events from Showdown protocol lines.
+ * Returns an array of zero or more event objects.
+ *
+ * ctx shape (mutable, persists across calls within one turn resolution):
+ *   ctx.turn          {number|null}
+ *   ctx.seq           {number}  — monotonic counter
+ *   ctx.hpCache       {Map<string, {hp,maxHp}>}
+ *   ctx.pendingCrit   {Map<string, boolean>}
+ *   ctx.pendingHitResult {Map<string, string>}
+ */
+function normalizeEventsFromLine(line, ctx) {
+  const parts = String(line || '').split('|');
+  if (parts[0] !== '') return [];  // malformed
+  const tag = parts[1] || '';
+
+  switch (tag) {
+    case 'turn': {
+      const newTurn = Number(parts[2]) || 0;
+      const out = [];
+      if (ctx.turn !== null) {
+        out.push({type: 'turn_end', turn: ctx.turn, seq: ctx.seq++});
+      }
+      ctx.turn = newTurn;
+      out.push({type: 'turn_start', turn: ctx.turn, seq: ctx.seq++});
+      return out;
+    }
+
+    case 'switch':
+    case 'drag': {
+      const id = parseIdentForEvent(parts[2]);
+      const species = parseDetailsSpeciesForEvent(parts[3]);
+      const cond = parseConditionForEvent(parts[4]);
+      // Seed hpCache so the first -damage can compute delta
+      ctx.hpCache.set(parts[2], {hp: cond.hp, maxHp: cond.maxHp});
+      return [{
+        type: 'switch_in',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        side: id.side,
+        slot: id.slot,
+        species,
+        cause: tag === 'drag' ? 'drag' : 'switch',
+        fromBall: tag === 'switch',
+      }];
+    }
+
+    case 'move': {
+      const id = parseIdentForEvent(parts[2]);
+      const targetRaw = parts[4];
+      const targetId = targetRaw ? parseIdentForEvent(targetRaw) : null;
+      return [{
+        type: 'move_use',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        actor: {side: id.side, slot: id.slot},
+        move: parts[3] || '',
+        target: targetId,
+      }];
+    }
+
+    case 'faint': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{
+        type: 'faint',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        side: id.side,
+        slot: id.slot,
+      }];
+    }
+
+    case '-damage':
+    case '-heal': {
+      const id = parseIdentForEvent(parts[2]);
+      const identKey = parts[2];
+      const cond = parseConditionForEvent(parts[3]);
+      const prev = ctx.hpCache.get(identKey);
+      const prevHp = prev ? prev.hp : cond.hp;
+      const maxHp = prev ? prev.maxHp : cond.maxHp;
+      const amount = Math.abs(prevHp - cond.hp);
+      ctx.hpCache.set(identKey, {hp: cond.hp, maxHp});
+      if (tag === '-damage') {
+        const critical = ctx.pendingCrit.get(identKey) ?? false;
+        const hitResult = ctx.pendingHitResult.get(identKey) ?? 'effective';
+        ctx.pendingCrit.delete(identKey);
+        ctx.pendingHitResult.delete(identKey);
+        return [{
+          type: 'damage',
+          turn: ctx.turn,
+          seq: ctx.seq++,
+          target: {side: id.side, slot: id.slot},
+          hpAfter: cond.hp,
+          maxHp,
+          amount,
+          hitResult,
+          critical,
+        }];
+      } else {
+        return [{
+          type: 'heal',
+          turn: ctx.turn,
+          seq: ctx.seq++,
+          target: {side: id.side, slot: id.slot},
+          hpAfter: cond.hp,
+          maxHp,
+          amount,
+        }];
+      }
+    }
+
+    // Accumulators: set flag, consumed by next -damage line
+    case '-crit': {
+      ctx.pendingCrit.set(parts[2], true);
+      return [];
+    }
+    case '-supereffective': {
+      ctx.pendingHitResult.set(parts[2], 'super');
+      return [];
+    }
+    case '-resisted': {
+      ctx.pendingHitResult.set(parts[2], 'not_very');
+      return [];
+    }
+    case '-immune': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'immune', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}}];
+    }
+
+    case '-ability': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{
+        type: 'ability_show',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        side: id.side,
+        slot: id.slot,
+        ability: parts[3] || '',
+        passive: false,
+      }];
+    }
+
+    case '-weather': {
+      const weatherName = parts[2];
+      const isUpkeep = parts[3] === '[upkeep]';
+      if (weatherName === 'none') {
+        return [{type: 'weather_end', turn: ctx.turn, seq: ctx.seq++}];
+      }
+      return [{
+        type: isUpkeep ? 'weather_tick' : 'weather_start',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        weather: weatherName,
+      }];
+    }
+
+    case '-fieldstart': {
+      const effectId = parts[3] || parts[2];
+      return [{type: 'terrain_start', turn: ctx.turn, seq: ctx.seq++, effect: effectId, raw: parts[2]}];
+    }
+    case '-fieldend': {
+      const effectId = parts[3] || parts[2];
+      return [{type: 'terrain_end', turn: ctx.turn, seq: ctx.seq++, effect: effectId, raw: parts[2]}];
+    }
+
+    case '-status': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'status_apply', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, status: parts[3] || ''}];
+    }
+    case '-curestatus': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'status_cure', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, status: parts[3] || ''}];
+    }
+
+    case '-boost': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'boost', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, stat: parts[3] || '', amount: Number(parts[4]) || 0}];
+    }
+    case '-unboost': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'unboost', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, stat: parts[3] || '', amount: Number(parts[4]) || 0}];
+    }
+
+    case '-sidestart': {
+      const side = /^p[12]/.exec(parts[2] || '')?.[0] ?? '';
+      return [{type: 'side_start', turn: ctx.turn, seq: ctx.seq++, side, effect: parts[3] || ''}];
+    }
+    case '-sideend': {
+      const side = /^p[12]/.exec(parts[2] || '')?.[0] ?? '';
+      return [{type: 'side_end', turn: ctx.turn, seq: ctx.seq++, side, effect: parts[3] || ''}];
+    }
+
+    case '-activate': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'effect_activate', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, effect: parts[3] || ''}];
+    }
+    case '-singleturn': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'single_turn_effect', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, effect: parts[3] || ''}];
+    }
+
+    case 'miss': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'miss', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}}];
+    }
+    case '-miss': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'miss', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}}];
+    }
+    case 'cant': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'cant_move', turn: ctx.turn, seq: ctx.seq++, actor: {side: id.side, slot: id.slot}, reason: parts[3] || ''}];
+    }
+
+    case 'callback': {
+      return [{type: 'callback_event', turn: ctx.turn, seq: ctx.seq++, reason: parts[2] || ''}];
+    }
+
+    case 'win': {
+      const out = [];
+      if (ctx.turn !== null) {
+        out.push({type: 'turn_end', turn: ctx.turn, seq: ctx.seq++});
+        ctx.turn = null;
+      }
+      out.push({type: 'battle_end', seq: ctx.seq++, winner: parts[2] || ''});
+      return out;
+    }
+
+    case '-mega':
+    case '-zpower':
+    case '-terastallize':
+    case '-formechange':
+    case 'detailschange': {
+      const id = parseIdentForEvent(parts[2]);
+      return [{type: 'forme_change', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, to: parts[3] || '', mechanism: tag}];
+    }
+
+    // Raw passthrough for unknown/debug/meta tags
+    case 'error':
+      return [{type: 'engine_error', turn: ctx.turn, seq: ctx.seq++, message: parts[2] || ''}];
+
+    default:
+      // meta/control/unknown tags — passthrough, never silent-drop
+      return [{type: 'raw_event', turn: ctx.turn, seq: ctx.seq++, tag, raw: line}];
   }
 }
 
@@ -460,6 +739,9 @@ class ShowdownLocalSinglesSession {
     this.logEntries = [{text: '로컬 Showdown 싱글 엔진으로 배틀 시작 / Battle started with the local Showdown singles engine.', tone: 'accent'}];
     this.protocol = [];
     this.rawOutputs = [];
+    // Event stream state (M1)
+    this.eventsBuffer = [];
+    this._evtCtx = {turn: null, seq: 0, hpCache: new Map(), pendingCrit: new Map(), pendingHitResult: new Map()};
   }
 
   write(line) {
@@ -499,6 +781,7 @@ class ShowdownLocalSinglesSession {
           const entry = normalizeLogTextFromLine(line);
           if (entry) this.logEntries.unshift(entry);
           this.protocol.push(line);
+          for (const ev of normalizeEventsFromLine(line, this._evtCtx)) this.eventsBuffer.push(ev);
         }
       } else {
         const lines = body.split('\n').filter(Boolean).filter(line => line !== '|split|p1' && line !== '|split|p2');
@@ -510,6 +793,7 @@ class ShowdownLocalSinglesSession {
           const entry = normalizeLogTextFromLine(line);
           if (entry) this.logEntries.unshift(entry);
           this.protocol.push(line);
+          for (const ev of normalizeEventsFromLine(line, this._evtCtx)) this.eventsBuffer.push(ev);
         }
       }
       if (this.logEntries.length > 120) this.logEntries.length = 120;
@@ -559,6 +843,11 @@ class ShowdownLocalSinglesSession {
   async choose(choiceMap = {}) {
     const p1 = choiceMap.p1 || '';
     const p2 = choiceMap.p2 || '';
+    // Reset event buffer and per-turn accumulators.
+    // hpCache is intentionally preserved across turns — it tracks current HP for delta calculation.
+    this.eventsBuffer = [];
+    this._evtCtx.pendingCrit = new Map();
+    this._evtCtx.pendingHitResult = new Map();
     if (p1) this.write(`>p1 ${p1}`);
     if (p2) this.write(`>p2 ${p2}`);
     await this.drainOutputs(5);
@@ -715,6 +1004,7 @@ class ShowdownLocalSinglesSession {
       terrainTurns: Number(battle.field.terrainState?.duration || 0),
       trickRoomTurns: Number(battle.field.pseudoWeather?.trickroom?.duration || 0),
       log: [...this.logEntries],
+      events: [...this.eventsBuffer],
       engineMeta: {
         engineName: '@pkmn/sim (vendored local package)',
         formatid: this.formatid,
