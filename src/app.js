@@ -844,6 +844,10 @@ function resolveAutomaticBuilderSpecies(mon, manualSpecies = '') {
   return candidates[0]?.name || manualSpecies || family.baseSpeciesName;
 }
 function getAutoSpriteIdForSpecies(speciesName, gender = '', baseSpeciesName = '') {
+  // Reserve the spare Mimikyu asset for the busted form so Disguise flips the
+  // battle sprite instead of reusing the disguised sprite family entry.
+  const speciesId = toId(speciesName || baseSpeciesName || '');
+  if (speciesId === 'mimikyubusted' || speciesId === 'mimikyubustedtotem') return 'MIMIKYU_1';
   const family = getFamilyForSpecies(speciesName || baseSpeciesName);
   if (!family) return '';
   const resolvedSpecies = normalizeLocalizedInput('species', speciesName || baseSpeciesName, state.allSpeciesChoices || state.speciesChoices || []) || speciesName || baseSpeciesName || family.baseSpeciesName;
