@@ -21,6 +21,7 @@ export class BattleAudioManager {
     this.seVol    = 1.0;
     this.uiVol    = 1.0;
     this._loadingCries = new Set();
+    this._moveAnimCache = new Map();  // moveName slug → audio key or null
   }
 
   /**
@@ -91,6 +92,61 @@ export class BattleAudioManager {
       // Missing cry file — silent fallback, battle continues.
     } finally {
       this._loadingCries.delete(key);
+    }
+  }
+
+  /**
+   * Lazy-load and play the first sound effect for a move from anim-data.
+   * moveName is the Showdown display name (e.g. 'Flamethrower', 'Ice Beam').
+   * Silently returns null if anim-data is missing, has no sound, or load fails.
+   * @param {string} moveName
+   */
+  async playMoveSe(moveName) {
+    if (!moveName) return null;
+    const slug = moveName.toLowerCase().replace(/\s+/g, '-');
+
+    if (this._moveAnimCache.has(slug)) {
+      const audioKey = this._moveAnimCache.get(slug);
+      if (!audioKey) return null;
+      if (!this.scene.cache.audio.has(audioKey)) {
+        try {
+          const resourceName = audioKey.replace('battle_anims/', '');
+          await this._loadAudioRuntime(audioKey, `battle_anims/${resourceName}`);
+        } catch { return null; }
+      }
+      return this.play(audioKey);
+    }
+
+    // Fetch anim-data to find the sound resource name
+    try {
+      const res = await fetch(`./assets/pokerogue/anim-data/${slug}.json`);
+      if (!res.ok) { this._moveAnimCache.set(slug, null); return null; }
+      const data = await res.json();
+      const animObj = Array.isArray(data) ? data[0] : data;
+      const fte = animObj?.frameTimedEvents ?? {};
+
+      let resourceName = null;
+      outer: for (const frameVal of Object.values(fte)) {
+        const arr = Array.isArray(frameVal) ? frameVal : [frameVal];
+        for (const ev of arr) {
+          if (ev?.eventType === 'AnimTimedSoundEvent' && ev.resourceName) {
+            resourceName = ev.resourceName;
+            break outer;
+          }
+        }
+      }
+
+      if (!resourceName) { this._moveAnimCache.set(slug, null); return null; }
+      const audioKey = `battle_anims/${resourceName}`;
+      this._moveAnimCache.set(slug, audioKey);
+
+      if (!this.scene.cache.audio.has(audioKey)) {
+        await this._loadAudioRuntime(audioKey, `battle_anims/${resourceName}`);
+      }
+      return this.play(audioKey);
+    } catch {
+      this._moveAnimCache.set(slug, null);
+      return null;
     }
   }
 

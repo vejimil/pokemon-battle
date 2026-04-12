@@ -81,42 +81,49 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (Phase 18 이후 — 2026-04-11 기준) (배틀 완성 이후로.)
+## 다음 세션 우선순위 (Sprint 3 — 2026-04-12 기준)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
 > **작업 원칙3: 나를 위한 설명은 한글로 하되, 작업 및 사고 자체는 영어로 진행할 것 - 토큰 절약을 위함**
 
-### P1. 텍스트 왜곡 재분석 — `text.js` + `phaser-utils.js` + `controller.js`
+### BA-1. 배틀 메시지 순차 표시 (Sprint 3 최우선)
+- **현상**: `damage`/`move_use`/`faint` 이벤트 중에는 메시지창이 업데이트되지 않음. 타임라인 재생 완료 후 `renderBattle()`에서 최종 로그만 한꺼번에 표시됨.
+- **할 일**: `timeline.js`의 각 이벤트 핸들러에서 `battle-message-ui-handler`에 직접 메시지를 표시. 메시지 한 줄 + 잠깐 대기 패턴 (PokeRogue의 `showText` 방식 참조).
+- **영향 파일**: `timeline.js`, `battle-message-ui-handler.js`
+
+### BA-2. 울음소리(Cry) 연결 — switch_in
+- **현상**: `switch_in` 이벤트에서 `se/pb_rel` 재생 후 포켓몬 울음소리가 없음.
+- **할 일**: `switch_in.species` → Pokédex 번호 변환 → `cry/<num>.m4a` 재생.
+  - `local-dex.js`에 species→dex 번호 매핑이 있는지 확인.
+  - `BattleAudioManager.playCry()` 인터페이스는 이미 있음 (`cry/<spriteId>` 키 방식). 번호 매핑만 추가하면 됨.
+- **영향 파일**: `audio-manager.js`, `timeline.js`
+
+### BA-3. 어빌리티 바 + 날씨/지형 연출
+- **할 일**: `ability_show` → `abilityBar.update(...)` 호출 + 일정 시간 표시. `weather_start/tick/end` / `terrain_start/end` → 메시지창 텍스트 표시.
+- **영향 파일**: `timeline.js`
+
+### UI-P1. 텍스트 왜곡 재분석 — `text.js` + `phaser-utils.js` + `controller.js`
 - **현상**: Phase 14에서 `fontSize: 56/6`, `HINT: 8` 수정 적용 후에도 여전히 텍스트가 뭉개져 보임
-- **다음 세션 할 일**: 8px 그리드 수정이 실제로 적용되었는지 재확인. `createBaseText` 내부에서 fontSize 처리 방식 재검토. 혹시 `Math.round`, `Math.floor` 등이 개입해 `56/6`을 정수로 반올림하지는 않는지 확인.
+- **할 일**: 8px 그리드 수정이 실제로 적용되었는지 재확인.
 - **영향 파일**: `text.js`, `phaser-utils.js` (createBaseText), `controller.js`
 
-### P2. Fight UI 레이아웃 부자연스러움 — `fight-ui-handler.js`
+### UI-P2. Fight UI 레이아웃 부자연스러움 — `fight-ui-handler.js`
 - **현상**: 타입배지, PP, 기타 스탯의 레이아웃이 비정상적/부자연스럽게 보임
-- **다음 세션 할 일**: PokeRogue 원본 fight-ui-handler.ts의 오른쪽 패널 좌표를 정밀 재확인. TYPE 라벨과 타입배지 간격, PP 라벨·값 위치가 원본과 정확히 일치하는지 검토. moveInfoContainer의 로컬 좌표(container x=1) 감안해서 절대좌표 역산.
+- **할 일**: PokeRogue 원본 fight-ui-handler.ts 오른쪽 패널 좌표 정밀 재확인.
 - **영향 파일**: `fight-ui-handler.js`
 
-### P3. Switch/Tera 버튼 처리 — `fight-ui-handler.js`
-- **현상**: Switch 버튼과 Tera(Toggle) 버튼이 어색하게 표시됨
-- **다음 세션 할 일**: PokeRogue 원본에서 Switch 버튼, Tera 버튼의 존재 여부 및 표시 방식 정밀 확인.
-  - 원본에 없거나 다른 방식(커서 교체 등)으로 구현된 경우 → 이식본에서 제거하고 원본 방식으로 대체
-  - Back 버튼도 원본 구현 방식 재확인 (키보드 B키 vs 버튼 UI)
-- **영향 파일**: `fight-ui-handler.js`
+### UI-P3. Switch/Tera 버튼 처리 — `fight-ui-handler.js`
+- PokeRogue 원본 방식으로 재확인 후 이식본 정렬.
 
-### P4. 파티 아이콘 위치 조정 — `party-ui-handler.js`
-- **현상**: 아이콘 애니메이션은 정상 작동하나, 슬롯 내 아이콘 위치(x, y)가 부자연스러움 (스크린샷 `screenshots/20260410screenshot party.png` 참조)
-- **다음 세션 할 일**: PokeRogue 원본 파티 슬롯에서 아이콘의 정확한 좌표 확인. active slot(110×49)과 bench slot(175×24)에서 32×32 아이콘의 적절한 정렬 위치 재산출. 현재 active=(4,4), bench=(2,-4) 재검토.
-- **영향 파일**: `party-ui-handler.js`
+### UI-P4. 파티 아이콘 위치 조정 — `party-ui-handler.js`
+- active=(4,4), bench=(2,-4) 재검토. 스크린샷 `screenshots/20260410screenshot party.png` 참조.
 
-### P5. PBS 수동 보정 1라운드 — `assets/Pokemon/PBS/`
-- **배경**: Phase 18에서 shadow 좌표식을 DBK 방식(sprite offset + shadow offset 합산)으로 수정. 기존 PBS 값은 구 런타임 기준으로 튜닝되어 있을 수 있음.
-- **다음 세션 할 일**: 브라우저에서 고위험(high) 포켓몬 shadow 시각 확인 → `reports/metrics-drift.json` 상위 항목 대조 → PBS 보정 1라운드 30~50개.
-- **우선 확인 목록** (score 8): LINOONE, METAGROSS_1, MIMIKYU_1, SALAMENCE_1
-- **영향 파일**: `assets/Pokemon/PBS/pokemon_metrics*.txt`
+### UI-P5. PBS 수동 보정 1라운드 — `assets/Pokemon/PBS/`
+- `reports/metrics-drift.json` 상위 4개 (score=8): LINOONE, METAGROSS_1, MIMIKYU_1, SALAMENCE_1
 
 ### 보류 항목
-- `fight-ui-handler.js`: MoveInfoOverlay 이식 (원본 ts:108-121) — Pow/Acc 표시는 여기서 담당
+- `fight-ui-handler.js`: MoveInfoOverlay 이식 (원본 ts:108-121) — Pow/Acc 표시
 - `command-ui-handler.js`: Tera 색상 파이프라인
 - `battle-info.js`: nameTextY(-11.2, -15.2) 비정수 블러 — 원본과 동일값이라 일단 유지
 
@@ -124,12 +131,43 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 ## 이전 완료 이력 (주요 항목)
 
+- **2026-04-12**: Sprint 2a/2b 배틀 연출 이벤트 시스템 구현 — 상세 내용은 아래 참조
 - **2026-04-11**: Shadow 좌표식 DBK 정합 + audit 스크립트 (Phase 18) — 상세 내용은 아래 참조
 - **2026-04-11**: 배틀러 스프라이트 구현 (Phase 16) + PBS metrics 적용 (Phase 17) — 상세 내용은 아래 참조
 - **2026-04-10**: Navy bar 회귀 수정, 파티 아이콘 frame0 등록, levelText HINT→BATTLE_INFO_SMALL, 좌표 정수화(movesContainer -38.7→-39, 메인슬롯 -148.5→-149), footer y=-13→y=0 origin(0,1), toggle y=-62→-46
 - **2026-04-09**: wordWrapWidth 전면 수정, 폰트 크기 원본 맞춤, shadow 추가, lineSpacing 기본값, nameText truncation
 - **2026-04-08**: TEXT_RENDER_SCALE=6 도입, EXP bar mask, 배틀 전체화면, INTEGER_SCALE 모드
 - **2026-04-07**: LOGICAL_HEIGHT 수정, 레이아웃 전면 수정, 커서 origin 수정, 어빌리티 바 위치
+
+## 2026-04-12 완료한 작업 — 배틀 연출 이벤트 시스템 (Sprint 1~2b)
+
+### 아키텍처
+- **이벤트 스트림**: `server/showdown-engine.cjs`에 `normalizeEventsFromLine()` 추가. 매 턴 Showdown 프로토콜 라인을 구조화 이벤트로 변환해 `snapshot.events` 배열에 포함.
+- **타임라인 executor**: `src/battle-presentation/timeline.js` — 이벤트 배열을 순차 재생. `FLAGS.battlePresentationV2: true`일 때 활성.
+- **이벤트 스키마**: `src/battle-presentation/event-schema.js` — `EVENT_TYPES` const + `isCoreEvent()` guard.
+
+### Sprint 2a — 오디오 기반
+- `BattleAudioManager` (`runtime/audio-manager.js`) 신규: `preloadBasic()`, `play()`, `playHitByResult()`, `playCry()`, `playMoveSe()`
+- `playSelect()` / `playError()` UI 핸들러 마우스 클릭에 연결 (모든 `setInteractiveTarget` 콜백 8곳)
+- disabled 버튼 클릭 시 `playError()` 재생 (`command-ui-handler`, `fight-ui-handler`)
+
+### Sprint 2b — 핵심 연출
+- `BattleAudioManager.playMoveSe(moveName)`: `anim-data/<slug>.json` lazy fetch → `AnimTimedSoundEvent.resourceName` 추출 → `battle_anims/<file>` 런타임 로드 및 재생. `_moveAnimCache`로 중복 fetch 방지.
+- `BattleInfo.tweenHpTo(hpPercent)`: HP 바 트윈을 Promise로 공개 API화. executor에서 직접 await 가능.
+- `BattleTimelineExecutor` 핸들러 구현:
+  - `switch_in` → `se/pb_rel` + 300ms
+  - `move_use` → `playMoveSe()` + 200ms
+  - `damage` → `playHitByResult()` + 100ms + `tweenHpTo()` await
+  - `heal` → `tweenHpTo()` await
+  - `faint` → `se/faint` + 600ms
+- `app.js`: executor 생성 시 `scene: () => phaserBattleRenderer?.scene` 전달, `playerSide: 'p1'`
+
+### 미구현 (Sprint 3 대상)
+- 배틀 메시지 순차 표시 (이벤트 중 메시지창 업데이트)
+- 울음소리 연결 (species → dex번호 매핑 필요)
+- 어빌리티 바 / 날씨 / 지형 연출
+
+---
 
 ## 2026-04-11 완료한 작업 (Phase 18) — Shadow 좌표식 DBK 정합 + Metrics Audit
 

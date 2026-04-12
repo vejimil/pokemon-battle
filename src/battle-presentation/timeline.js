@@ -1,12 +1,11 @@
 /**
- * BattleTimelineExecutor (M3 — Sprint 1: no-op mode)
+ * BattleTimelineExecutor (M3 — Sprint 2b: core presentation)
  *
  * Consumes the `events` array from a snapshot and plays them sequentially.
- * In Sprint 1, all handlers are no-ops; execution just logs events to console.
- * Real presentation handlers will be wired in Sprint 2a/2b.
+ * Sprint 2b wires: switch_in (pb_rel SE), move_use (move SE), damage (hit SE + HP tween), faint (faint SE).
  *
  * Usage:
- *   const executor = new BattleTimelineExecutor({ onInputRequired, onComplete });
+ *   const executor = new BattleTimelineExecutor({ onInputRequired, onComplete, applySnapshot, scene });
  *   await executor.play(snapshot.events, context);
  *
  * Feature flag: only instantiated when FLAGS.battlePresentationV2 === true.
@@ -17,13 +16,35 @@ export class BattleTimelineExecutor {
    * @param {function(string): void} [opts.onInputRequired]  called when request_gate fires
    * @param {function(): void}       [opts.onComplete]       called when all events are played
    * @param {function(): void}       [opts.applySnapshot]    called by fastForward to apply final state
+   * @param {function(): object}     [opts.scene]            getter returning current Phaser scene (may be null)
+   * @param {string}                 [opts.playerSide]       Showdown side id for local player ('p1'|'p2'), default 'p1'
    */
-  constructor({ onInputRequired, onComplete, applySnapshot } = {}) {
+  constructor({ onInputRequired, onComplete, applySnapshot, scene, playerSide } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
     this.onComplete = onComplete ?? (() => {});
     this._applySnapshot = applySnapshot ?? (() => {});
+    this._scene = scene ?? (() => null);
+    this._playerSide = playerSide ?? 'p1';
     this.running = false;
   }
+
+  // ── accessors ─────────────────────────────────────────────────────────────
+
+  get _audio() { return this._scene()?.audio ?? null; }
+  get _ui()    { return this._scene()?.ui    ?? null; }
+
+  /** Returns the BattleInfo panel for the given Showdown side id ('p1'|'p2'). */
+  _infoForSide(side) {
+    const ui = this._ui;
+    if (!ui) return null;
+    return side === this._playerSide ? ui.playerInfo : ui.enemyInfo;
+  }
+
+  _delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // ── public API ─────────────────────────────────────────────────────────────
 
   /**
    * Play events array sequentially.
@@ -36,8 +57,6 @@ export class BattleTimelineExecutor {
       return;
     }
     this.running = true;
-    // Dev panel: log the full event stream once
-    console.log('[BattleEvents] turn events received:', events.length, 'events', events);
     try {
       for (const ev of events) {
         if (!this.running) break;  // fastForward was called
@@ -53,27 +72,76 @@ export class BattleTimelineExecutor {
   }
 
   /**
-   * Apply a single event. All handlers are no-ops in Sprint 1.
-   * @param {object} ev
-   * @param {object} context
+   * Skip remaining events and apply the final snapshot state immediately.
    */
+  fastForward() {
+    this.running = false;
+    this._applySnapshot();
+  }
+
+  // ── event handlers ─────────────────────────────────────────────────────────
+
   async _applyEvent(ev, context) {  // eslint-disable-line no-unused-vars
-    // Sprint 1: log each event, do nothing else.
-    // Sprint 2+: replace with real presentation handlers per ev.type.
     switch (ev.type) {
+
+      case 'switch_in': {
+        // Play Pokéball release SE when a Pokémon is sent out from a ball.
+        if (ev.fromBall) this._audio?.play('se/pb_rel');
+        // Cry playback requires species → dex-number mapping (not yet implemented).
+        // Sprint 3: resolve cry from species name.
+        await this._delay(ev.fromBall ? 300 : 100);
+        break;
+      }
+
+      case 'move_use': {
+        // Play move animation sound effect (lazy-loaded from anim-data/).
+        // Silently skips if no audio file exists for this move.
+        await this._audio?.playMoveSe(ev.move);
+        await this._delay(200);
+        break;
+      }
+
+      case 'damage': {
+        // Play hit SE appropriate to hit result, then animate HP bar.
+        this._audio?.playHitByResult(ev.hitResult ?? 'effective');
+        await this._delay(100);
+        const hpPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
+        const info = this._infoForSide(ev.target?.side);
+        if (info?.tweenHpTo) {
+          await info.tweenHpTo(hpPct);
+        } else {
+          await this._delay(500);
+        }
+        break;
+      }
+
+      case 'heal': {
+        // Animate HP bar upward without a hit SE.
+        const healPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
+        const healInfo = this._infoForSide(ev.target?.side);
+        if (healInfo?.tweenHpTo) {
+          await healInfo.tweenHpTo(healPct);
+        } else {
+          await this._delay(300);
+        }
+        break;
+      }
+
+      case 'faint': {
+        this._audio?.play('se/faint');
+        await this._delay(600);
+        break;
+      }
+
+      // ── no-op events (will be wired in Sprint 3+) ──────────────────────────
       case 'turn_start':
       case 'turn_end':
-      case 'switch_in':
       case 'ability_show':
       case 'weather_start':
       case 'weather_tick':
       case 'weather_end':
       case 'terrain_start':
       case 'terrain_end':
-      case 'move_use':
-      case 'damage':
-      case 'heal':
-      case 'faint':
       case 'status_apply':
       case 'status_cure':
       case 'boost':
@@ -88,7 +156,6 @@ export class BattleTimelineExecutor {
       case 'forme_change':
       case 'battle_end':
       case 'engine_error':
-        // no-op in Sprint 1
         break;
 
       case 'callback_event':
@@ -101,14 +168,5 @@ export class BattleTimelineExecutor {
       default:
         break;
     }
-  }
-
-  /**
-   * Skip remaining events and apply the final snapshot state immediately.
-   * Call on error/timeout, or expose to user as a "skip animation" control.
-   */
-  fastForward() {
-    this.running = false;
-    this._applySnapshot();
   }
 }

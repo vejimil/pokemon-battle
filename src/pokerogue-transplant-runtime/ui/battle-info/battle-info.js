@@ -221,6 +221,38 @@ export class BattleInfo {
     this.levelContainer.setX(this.pos.levelX - 8 * overflow);
   }
 
+  /**
+   * Animate the HP bar to a new percentage. Returns a Promise that resolves when
+   * the tween completes (or immediately if no tween system is available).
+   * Called by BattleTimelineExecutor on damage/heal events.
+   * @param {number} hpPercent  0–100
+   */
+  tweenHpTo(hpPercent) {
+    const { scene, env } = this;
+    const newPct = env.clamp(Number(hpPercent ?? 0), 0, 100);
+    scene.tweens?.killTweensOf?.(this.hpFill);
+    const duration = this.lastHpPercent < 0
+      ? 0
+      : env.clamp(Math.abs(this.lastHpPercent - newPct) * 25, 100, 3000);
+    this.lastHpPercent = newPct;
+    return new Promise(resolve => {
+      if (!scene.tweens || duration === 0) {
+        this.hpFill.setScale(newPct / 100, 1);
+        this._updateHpFrame();
+        resolve();
+        return;
+      }
+      scene.tweens.add({
+        targets: this.hpFill,
+        scaleX: newPct / 100,
+        ease: 'Sine.easeOut',
+        duration,
+        onUpdate: () => this._updateHpFrame(),
+        onComplete: () => { this._updateHpFrame(); resolve(); },
+      });
+    });
+  }
+
   /** Update HP frame (high/medium/low) based on current scaleX. */
   _updateHpFrame() {
     const pct = this.hpFill.scaleX * 100;

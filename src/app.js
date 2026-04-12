@@ -14,7 +14,7 @@ const STORAGE_KEY = 'pkb-static-state-v3';
 // Battle presentation feature flags (Sprint 1 — all false by default)
 // Exposed on window so the browser console can toggle them: window.FLAGS.battlePresentationV2 = true
 const FLAGS = window.FLAGS = {
-  battlePresentationV2: false, // timeline executor (enable to test event stream)
+  battlePresentationV2: true,  // timeline executor (Sprint 2b: on by default)
   battleAudioV1: false,        // audio manager SE routing
   battleLocaleV1: false,       // namespace-based battle messages
   battleMsgActionTagsV1: false, // @d/@s message tag parser
@@ -6778,11 +6778,13 @@ async function resolveEngineTurn(battle = state.battle) {
   const adoptedBattle = adoptEngineBattleSnapshot(nextSnapshot);
 
   if (FLAGS.battlePresentationV2 && Array.isArray(adoptedBattle?.events) && adoptedBattle.events.length > 0) {
-    // Presentation V2: play events, then apply snapshot
+    // Presentation V2: play events sequentially, then apply final snapshot via onComplete.
     state.battle = adoptedBattle;
     const executor = new BattleTimelineExecutor({
       onComplete: () => { renderBattle(); },
       applySnapshot: () => { renderBattle(); },
+      scene: () => phaserBattleRenderer?.scene ?? null,
+      playerSide: 'p1',
     });
     await executor.play(adoptedBattle.events);
   } else {

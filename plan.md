@@ -621,8 +621,8 @@ export function parseMessageActions(text = '') {
 - 3번(서버 이벤트 스키마/응답 필드 추가) **완료** (2026-04-12) — `normalizeEventsFromLine`, `eventsBuffer`, `snapshot.events`
 - 4번(클라이언트 no-op executor) **완료** (2026-04-12) — `FLAGS.battlePresentationV2`, `BattleTimelineExecutor` (no-op), console 덤프
 - 5번(오디오 매니저) **완료** (2026-04-12) — `BattleAudioManager`, `playSelect()`/`playError()` 연결
-- 다음 착수 지점: 6번(Batch A 핵심 재생 — Sprint 2b)
-- 5번(오디오)이 6번(switch_in 연출)의 선행 조건임을 주의 — Sprint 2에서 오디오가 switch_in보다 먼저 연결되어야 함.
+- 6번(Batch A 핵심 재생) **완료** (2026-04-12) — Sprint 2b: `switch_in/pb_rel`, `move_use/playMoveSe`, `damage/HP tween`, `faint/SE`, `heal/HP tween`. `battlePresentationV2: true` 기본값 ON.
+- 다음 착수 지점: Sprint 3 (Batch B/C 확장 + 메시지 순차 연출 + PARTY/SUMMARY)
 
 ---
 
@@ -703,12 +703,24 @@ const FLAGS = {
 - `playSelect()` / `playError()` stub 실제 동작으로 연결
 - 산출물: 기본 SE가 재생됨 (연출 없이 단독 검증 가능)
 
-## Sprint 2b (핵심 연출 + PARTY/SUMMARY 병렬)
-- `switch_in` → `faint` → `request_gate` → `callback_event` 타임라인 재생
-- `damage` HP tween + hit SE 연결
-- `message` 순차 재생
-- M3.5: PARTY -> SUMMARY 모드 체인 이식 (턴 연출과 독립)
-- 산출물: 선출/데미지/메시지의 순차 재생 + 포켓몬 요약 화면 진입
+## Sprint 2b (핵심 연출) — **완료 (2026-04-12)**
+- `switch_in` → `se/pb_rel` + 300ms 대기
+- `move_use` → `playMoveSe(moveName)` (anim-data lazy fetch + runtime load) + 200ms
+- `damage` → `playHitByResult(hitResult)` + 100ms + `info.tweenHpTo(hpPct)` await
+- `heal` → `info.tweenHpTo(hpPct)` await
+- `faint` → `se/faint` + 600ms
+- `BattleAudioManager.playMoveSe()` 신규 추가, `BattleInfo.tweenHpTo()` 신규 추가
+- `FLAGS.battlePresentationV2: true` 기본값으로 ON
+- 산출물: 기술/데미지/기절 효과음 + HP 바 애니메이션 순차 재생 확인
+
+## Sprint 3 (확장) — **다음 착수 지점**
+- **메시지 순차 재생**: `move_use` / `damage` / `faint` 이벤트마다 배틀 메시지창에 텍스트 표시 (현재는 즉시 renderBattle()로 최종 로그만 표시됨)
+- **능력/날씨/지형 연출**: `ability_show` → 어빌리티 바 노출/숨김, `weather_start/tick/end` → 메시지, `terrain_start/end` → 메시지
+- **크라이(울음소리) 연결**: `switch_in.species` → Pokédex 번호 → `cry/<num>.m4a` 재생. species→dex 번호 매핑 테이블 필요.
+- **M3.5: PARTY→SUMMARY 모드 체인**: 파티 화면에서 요약/능력치 진입 경로 이식
+- **fastForward/skip 입력 연결**: 스킵 버튼 또는 키 입력으로 타임라인 즉시 완료
+- 로케일 namespace 기반 메시지 전환
+- 산출물: "실게임 느낌" 핵심 루프 완성
 
 ## Sprint 3 (확장)
 - 능력/날씨/지형/기술 연출 확장 (Batch B/C)
