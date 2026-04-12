@@ -78,11 +78,13 @@ Target: `/workspaces/pokemon-battle`
   - `weather_start` / `weather_tick` / `weather_end`
   - `terrain_start` / `terrain_end`
   - `move_use`
-  - `move_anim`
+  - `move_anim` — 비주얼 + 오디오 모두 구현 가능 (`anim-data/` 923 JSON + `battle__anims/` 646 PNG + `audio/battle_anims/` 1310 WAV 전부 존재 확인). 단, `BattleAnim`/`MoveAnim` 재생 시스템 이식이 필요하므로 **Sprint 2a에서는 오디오 선행, 비주얼은 Sprint 2b 이후**로 순서 분리.
   - `damage`
   - `faint`
+  - `callback_event` — 기절 후 강제 교체 게이트 (`|callback|` 태그. 현재 서버 미처리)
+  - `request_gate` — 플레이어 입력 대기 경계 (`|request|` type 전환 시 합성)
   - `message`
-  - `turn_end`
+  - `turn_end` (**합성 이벤트** — Showdown에 `|turn_end|` 태그 없음. 다음 `turn_start` 또는 `battle_end` 직전에 서버가 삽입)
 - Batch B (상태/폼/보조 판정):
   - `status_apply` / `status_cure`
   - `boost` / `unboost`
@@ -106,6 +108,22 @@ Target: `/workspaces/pokemon-battle`
   - 이벤트 재생
   - 완료 후 snapshot 반영
 - 페이즈 잠금 상태(`battle.resolvingTurn`)와 동기화.
+- `request_gate` 이벤트 수신 시 `battle.resolvingTurn` 해제 + 커맨드 UI 복원.
+- `fastForward()` 메서드: 남은 이벤트 건너뛰고 즉시 최종 snapshot 상태로 수렴. 에러/누락 발생 시 자동 호출.
+
+## M3.5. PARTY -> SUMMARY 모드 체인 이식
+- `ui-parity-checklist.md`에서 식별된 gap을 구현으로 연결.
+- 범위:
+  - `src/pokerogue-transplant-runtime/ui/ui-mode.js`: `SUMMARY` 모드 추가 + alias 등록.
+  - `src/pokerogue-transplant-runtime/ui/handlers/summary-ui-handler.js`: 신규 생성. PokeRogue `summary-ui-handler.ts` 이식.
+  - `src/pokerogue-transplant-runtime/ui/ui.js`: handler registry에 summary handler 등록. `PARTY <-> SUMMARY` 복귀 체인 규칙 연결.
+  - `src/app.js`:
+    - `buildPhaserPartyWindowModel()`: slot 클릭 시 단일 `switch` 액션 → 서브메뉴(`switch` / `SUMMARY` / `cancel`) 옵션 레이어로 확장.
+    - mode whitelist에 `summary` 추가 (`app.js:5550` 기준).
+    - state-window builder에 summary 분기 추가 (`app.js:6467` 기준).
+    - `open-summary` / `close-summary` 액션 처리 추가.
+- 인터랙션 규칙: `battle.resolvingTurn` 동안 신규 overlay 진입 차단. 이미 열린 summary는 cancel만 허용.
+- 착수 조건: M3 Timeline Executor no-op 연결 완료 후. (summary 자체는 턴 연출과 독립적이므로 M4 이전에 진행 가능)
 
 ## M4. Phaser transplant Audio Manager
 - `src/pokerogue-transplant-runtime`에 오디오 로더/라우터 추가.
@@ -232,8 +250,34 @@ Target: `/workspaces/pokemon-battle`
  *   hpAfter: number,
  *   maxHp: number,
  *   hitResult: 'effective'|'super'|'not_very'|'indirect'|'ohko',
- *   critical: boolean
+ *   critical: boolean   // populated from preceding |-crit| line via accumulator, not from this line alone
  * }} DamageEvent
+ */
+
+/**
+ * @typedef {BattleEventBase & {
+ *   type: 'callback_event',
+ *   side: 'p1'|'p2',
+ *   reason: string     // e.g. 'trapped', 'cantUndo'
+ * }} CallbackEvent
+ */
+
+/**
+ * @typedef {BattleEventBase & {
+ *   type: 'request_gate',
+ *   side: 'p1'|'p2',
+ *   requestType: 'move'|'switch'|'wait'|'teamPreview'
+ * }} RequestGateEvent
+ * // Synthesized from |request| JSON transitions. 'move'/'switch' = yield for input.
+ * // 'wait' = continue playback. Only transitions are emitted (not every |request|).
+ */
+
+/**
+ * turn_end: synthesized by server event builder.
+ * Emitted retroactively when next |turn|N+1| or |win| is encountered.
+ * No direct Showdown protocol tag exists for turn end.
+ *
+ * @typedef {BattleEventBase & { type: 'turn_end' }} TurnEndEvent
  */
 ```
 
@@ -243,28 +287,49 @@ Target: `/workspaces/pokemon-battle`
 
 ```js
 // server/showdown-engine.cjs (planned pseudo code)
+//
+// ctx shape (stateful across lines in one turn):
+//   ctx.turn          — current turn number
+//   ctx.nextSeq()     — monotonic sequence counter
+//   ctx.hpCache       — Map<ident, {hp, maxHp}>  for damage amount derivation
+//   ctx.pendingCrit   — Map<ident, bool>          for -crit -> -damage pairing
+//   ctx.pendingHitResult — Map<ident, string>     for -supereffective/-resisted -> -damage pairing
+//   ctx.lastRequestType — Map<side, string>       for request_gate transition detection
+//
+// NOTE: turn_end is NOT emitted here directly; it is flushed by the caller before
+// emitting a new turn_start (buffered-emit pattern, see flushTurnEnd() below).
+
 function normalizeEventFromLine(line, ctx) {
   const parts = String(line || '').split('|');
   const tag = parts[1] || '';
 
   if (tag === 'turn') {
-    return { type: 'turn_start', turn: Number(parts[2]), seq: ctx.nextSeq() };
+    const events = [];
+    if (ctx.turn !== null) {
+      events.push({ type: 'turn_end', turn: ctx.turn, seq: ctx.nextSeq() });
+    }
+    ctx.turn = Number(parts[2]);
+    events.push({ type: 'turn_start', turn: ctx.turn, seq: ctx.nextSeq() });
+    return events; // caller must handle array return
   }
+
   if (tag === 'switch' || tag === 'drag') {
     const ident = parseIdent(parts[2]); // p1a: Name
-    return {
+    return [{
       type: 'switch_in',
       turn: ctx.turn,
       seq: ctx.nextSeq(),
       side: ident.side,
       slot: toFieldSlot(ident.position),
       species: parseDetailsSpecies(parts[3]),
+      cause: tag === 'drag' ? 'drag' : 'switch',
       fromBall: true
-    };
+    }];
   }
+
   if (tag === '-ability') {
     const ident = parseIdent(parts[2]);
-    return {
+    return [{
       type: 'ability_show',
       turn: ctx.turn,
       seq: ctx.nextSeq(),
@@ -272,30 +337,97 @@ function normalizeEventFromLine(line, ctx) {
       slot: toFieldSlot(ident.position),
       ability: parts[3] || '',
       passive: false
-    };
+    }];
   }
+
+  // Accumulate -crit flag; consumed by the following -damage line
+  if (tag === '-crit') {
+    ctx.pendingCrit[parts[2]] = true;
+    return []; // no standalone event; merged into damage
+  }
+
+  // Accumulate hit-result flag; consumed by the following -damage line
+  if (tag === '-supereffective') {
+    ctx.pendingHitResult[parts[2]] = 'super';
+    return [];
+  }
+  if (tag === '-resisted') {
+    ctx.pendingHitResult[parts[2]] = 'not_very';
+    return [];
+  }
+
   if (tag === '-damage') {
     const ident = parseIdent(parts[2]);
-    const cond = parseCondition(parts[3]); // e.g. 120/300
-    return {
+    const cond = parseCondition(parts[3]); // e.g. "120/300 brn"
+    const identKey = parts[2];
+    const critical = ctx.pendingCrit[identKey] ?? false;
+    const hitResult = ctx.pendingHitResult[identKey] ?? 'effective';
+    delete ctx.pendingCrit[identKey];
+    delete ctx.pendingHitResult[identKey];
+    const prev = ctx.hpCache.get(identKey);
+    const amount = prev ? (prev.hp - (cond.hp ?? 0)) : 0;
+    ctx.hpCache.set(identKey, { hp: cond.hp ?? 0, maxHp: cond.maxHp ?? 0 });
+    return [{
       type: 'damage',
       turn: ctx.turn,
       seq: ctx.nextSeq(),
       target: { side: ident.side, slot: toFieldSlot(ident.position) },
       hpAfter: cond.hp ?? 0,
       maxHp: cond.maxHp ?? 0,
-      amount: ctx.diffDamage(ident, cond), // derived from cached last hp
-      hitResult: 'effective',
-      critical: false
-    };
+      amount,
+      hitResult,
+      critical
+    }];
   }
-  return null;
+
+  // -weather: must check parts[3] for [upkeep] to discriminate tick vs start/end
+  // WARNING: do NOT use `parts[3] || parts[2]` — this renders "[upkeep]" as weather name (existing bug in normalizeLogTextFromLine)
+  if (tag === '-weather') {
+    const weatherName = parts[2]; // always use parts[2] for the actual name
+    const isUpkeep = parts[3] === '[upkeep]';
+    if (weatherName === 'none') {
+      return [{ type: 'weather_end', turn: ctx.turn, seq: ctx.nextSeq() }];
+    }
+    return [{
+      type: isUpkeep ? 'weather_tick' : 'weather_start',
+      turn: ctx.turn,
+      seq: ctx.nextSeq(),
+      weather: weatherName
+    }];
+  }
+
+  // |callback| tag: forced-switch gate after faint (currently unhandled in server)
+  if (tag === 'callback') {
+    return [{
+      type: 'callback_event',
+      turn: ctx.turn,
+      seq: ctx.nextSeq(),
+      side: ctx.activeSide, // derived from context; server must track which side the callback is for
+      reason: parts[2] || ''
+    }];
+  }
+
+  if (tag === 'win') {
+    const events = [];
+    if (ctx.turn !== null) {
+      events.push({ type: 'turn_end', turn: ctx.turn, seq: ctx.nextSeq() });
+      ctx.turn = null;
+    }
+    events.push({ type: 'battle_end', seq: ctx.nextSeq(), winner: parts[2] || '' });
+    return events;
+  }
+
+  return [];
 }
 ```
 
 주의:
-- `amount`는 `-damage` line 단독으로는 계산 불완전할 수 있으므로 side-state 캐시 필요.
+- 함수가 단일 이벤트가 아닌 배열을 반환하도록 변경됨 (turn_end + turn_start 동시 방출 필요).
+- `amount`는 side-state hpCache로 delta 계산. 배틀 시작 시 초기 HP를 `switch_in` 처리 시점에 캐시에 세팅해야 함.
+- `-crit`와 `-supereffective`/`-resisted`는 accumulator 패턴으로 다음 `-damage`에 병합.
 - `move priority`는 Showdown 내부 순서를 직접 받기 어려우므로 1차는 실행 순서(seq)로 처리.
+- `|callback|` 처리 시 `activeSide` 추적은 서버에서 현재 `|request|` 상태로 역산해야 함.
+- `-weather [upkeep]` 버그 수정: `normalizeLogTextFromLine`의 `b || a` 패턴도 `a`로 수정 필요 (별도 버그 fix).
 
 ---
 
@@ -334,18 +466,41 @@ export class BattleTimelineExecutor {
         // await this.ui.showAbilityBar(ev);
         break;
       case 'move_use':
-        // await this.scene.playMoveAnim(ev);
+        // Sprint 2a: await this.audio.playMoveSe(ev.move);  // battle_anims/<sfx> 오디오 먼저
+        // Sprint 2b+: await this.scene.playMoveAnim(ev);    // BattleAnim 비주얼 이식 후 대체
         break;
       case 'damage':
         // this.audio.playHitByResult(ev.hitResult);
         // await this.ui.tweenHp(ev.target, ev.hpAfter, ev.maxHp);
         break;
+      case 'request_gate':
+        // Pause playback and yield for player input.
+        // Unlocks battle.resolvingTurn and surfaces command/switch UI.
+        // this.running = false;
+        // context.onInputRequired(ev.requestType);
+        return; // do NOT continue event loop; caller re-enters after choice submitted
+      case 'callback_event':
+        // Force switch gate after faint.
+        // await this.ui.enterForcedSwitch(ev.side);
+        return; // same: execution resumes after player selects replacement
       case 'message':
         // await this.ui.showBattleMessage(ev.text, {prompt: ev.prompt});
         break;
       default:
         break;
     }
+  }
+
+  /**
+   * fastForward: skip remaining events and apply the final snapshot directly.
+   * Called automatically on error/timeout, or manually by skip/2x user input.
+   * @param {Function} applySnapshot - callback that applies the post-turn snapshot to UI state.
+   */
+  fastForward(applySnapshot) {
+    this.running = false;
+    // cancel any pending scene tweens/timers created by this executor
+    // this.scene.tweens.killAll(); // or track and cancel individually
+    applySnapshot();
   }
 }
 ```
@@ -450,18 +605,20 @@ export function parseMessageActions(text = '') {
 
 ## 10. 통합 순서 (중요)
 
-1. M0 coverage matrix/ui parity checklist 고정 (누락 목록 먼저 확정)  
-2. 서버 이벤트 스키마와 응답 필드 추가 (기존 필드 유지)  
-3. 클라이언트에서 이벤트 수신/무시 가능한 안전 파서 추가  
-4. Timeline Executor를 no-op 모드로 연결  
-5. Batch A(`switch_in`, `message`, `damage` 등 P0) 재생 연결  
-6. PARTY 옵션 + SUMMARY 모드 체인 이식(PARTY -> SUMMARY -> PARTY)  
-7. Batch B/C 이벤트 확장 + 오디오/locale 매핑 확장  
-8. coverage matrix 100% 달성 후 기존 휴리스틱 fallback 단계적 제거  
+1. M0 coverage matrix/ui parity checklist 고정 (누락 목록 먼저 확정) → **완료**
+2. `normalizeLogTextFromLine` `-weather` 버그 수정 (`b || a` → `a`) — 선행 버그픽스, M1 전에 적용
+3. 서버 이벤트 스키마와 응답 필드 추가 (기존 필드 유지). `events` 배열 + 배열-반환 파서 도입
+4. 클라이언트에서 이벤트 수신/무시 가능한 안전 파서 추가 (no-op executor 연결)
+5. **오디오 매니저 기본 SE 먼저 연결** (`se/pb_rel`, `se/hit*`, `se/faint`, `ui/select`, `ui/error`) — `switch_in` 연출보다 선행 필요
+6. Batch A 핵심 재생 연결: `switch_in` → `message` → `damage` → `faint` → `request_gate` → `callback_event`
+7. PARTY 옵션 + SUMMARY 모드 체인 이식 (M3.5) — 턴 연출과 독립적이므로 5-6번 병렬 진행 가능
+8. Batch B/C 이벤트 확장 + locale namespace 기반 메시지 전환
+9. coverage matrix 100% 달성 후 기존 휴리스틱 fallback 단계적 제거
 
 진행 상태 메모:
 - 1번(M0 고정)은 완료.
-- 다음 착수 지점은 2번(서버 이벤트 스키마/응답 필드 추가)부터 시작.
+- 다음 착수 지점은 2번(`-weather` 버그픽스)부터 시작. 이후 3번(M1) 순서로 진행.
+- 5번(오디오)이 6번(switch_in 연출)의 선행 조건임을 주의 — Sprint 2에서 오디오가 switch_in보다 먼저 연결되어야 함.
 
 ---
 
@@ -487,18 +644,28 @@ const FLAGS = {
 ## 필수 시나리오
 - 선출 시 `switch_in -> pb_rel -> cry -> message` 순서 확인
 - Intimidate류 특성: 능력 바 노출/숨김 순서
-- 날씨 시작/지속/종료 메시지와 연출 순서
+- 날씨 시작/지속/종료 메시지와 연출 순서. 특히 upkeep tick에서 "날씨: [upkeep]" 렌더 버그 미발생 확인
 - 우선도 다른 기술 2개 선택 시 실행 순서가 서버 seq와 일치
-- multi-hit 기술에서 hit count 메시지와 HP 틱 횟수 일치
-- 급소/상성 메시지 표시 순서
-- 기절 시 faint 연출 후 교체 요청 UI 진입
-- PARTY에서 슬롯 선택 시 옵션 노출 -> `SUMMARY` 진입 -> 뒤로 복귀 시 PARTY 상태 복원
+- multi-hit 기술에서 `-damage` 이벤트가 hit 횟수만큼 개별 발생하고, HP 틱 + hit count 메시지 일치
+- 급소 발생 시 `-crit` accumulator 정상 작동 → `damage.critical = true` 확인
+- `-supereffective` / `-resisted` accumulator → `damage.hitResult` 올바르게 반영 확인
+- 기절 시 `faint` 이벤트 → `se/faint` 재생 → `callback_event` 발생 → 교체 요청 UI 진입 → 교체 후 재개
+- 강제 교체(`drag`) 시 `switch_in(cause: drag)` 이벤트 정상 처리
+- PARTY에서 슬롯 선택 시 옵션 노출 (`switch` / `SUMMARY` / `cancel`) → `SUMMARY` 진입 → 뒤로 복귀 시 PARTY 상태 복원
+- `turn_end` 합성 이벤트가 올바른 위치(다음 `turn_start` 직전)에 삽입되는지 로그로 확인
+
+## 추가 커버리지 시나리오 (M0 scan에서 미관측 태그 검증용)
+- 상태이상 부여(`-status`) 및 회복(`-curestatus`) 시나리오 — `cant` 태그도 함께 관측 가능
+- 폼 변환(`-formechange` / `detailschange`) 시나리오 — Rotom 폼, Zygarde 등
+- 강제 교체(`drag`) 시나리오 — 로어/드래곤테일 사용 포켓몬 구성
+- 배틀 에러 (`error` 태그) 시나리오 — 잘못된 커맨드 전송으로 재현 가능
 
 ## 회귀 시나리오
-- 이벤트 누락/파싱 실패 시 기존 로그 렌더가 유지되는지
+- 이벤트 누락/파싱 실패 시 `fastForward()` 호출로 기존 snapshot 렌더로 수렴하는지
 - 오디오 파일 누락 시 무음 fallback 및 게임 진행 지속
-- locale key 누락 시 key 출력 또는 EN fallback
-- 파티 창에서 포켓몬 클릭 시 요약/능력치 확인이 동작하고, 턴 처리 중 상호작용 규칙이 일관적인지
+- locale key 누락 시 key 문자열 출력 또는 EN fallback
+- 파티 창에서 포켓몬 클릭 시 요약/능력치 확인이 동작하고, `battle.resolvingTurn` 중 신규 진입 차단 규칙이 일관적인지
+- `battlePresentationV2` flag `false` 시 기존 즉시 렌더 경로가 정상 동작하는지 (feature flag 롤백 검증)
 
 ---
 
@@ -520,20 +687,29 @@ const FLAGS = {
 
 ## 14. 예상 작업 순서와 산출물
 
-## Sprint 1 (기반)
-- 이벤트 스키마 초안 확정
-- 서버 response에 `events` 추가
-- 클라이언트 수신 파이프 추가(no-op executor)
+## Sprint 1 (기반 + 선행 버그픽스)
+- `-weather [upkeep]` 렌더 버그 수정 (`normalizeLogTextFromLine`, M1 전 선행)
+- 이벤트 스키마 초안 확정 (배열-반환 파서, hpCache/pendingCrit/pendingHitResult accumulator 구조 포함)
+- 서버 response에 `events` 배열 추가 (기존 `log`/`snapshot` 유지)
+- 클라이언트 수신 파이프 + no-op executor 연결
 - 산출물: 이벤트 덤프가 dev panel에서 확인 가능
 
-## Sprint 2 (핵심 연출)
-- `switch_in`, `message`, `damage` 타임라인 재생
-- 오디오 매니저 기본 SE 연결
-- 산출물: 선출/데미지/메시지의 순차 재생
+## Sprint 2a (오디오 기반 — switch_in 선행 조건)
+- 오디오 매니저 기본 SE 연결: `se/pb_rel`, `se/hit*`, `se/faint`, `ui/select`, `ui/error`
+- `playSelect()` / `playError()` stub 실제 동작으로 연결
+- 산출물: 기본 SE가 재생됨 (연출 없이 단독 검증 가능)
+
+## Sprint 2b (핵심 연출 + PARTY/SUMMARY 병렬)
+- `switch_in` → `faint` → `request_gate` → `callback_event` 타임라인 재생
+- `damage` HP tween + hit SE 연결
+- `message` 순차 재생
+- M3.5: PARTY -> SUMMARY 모드 체인 이식 (턴 연출과 독립)
+- 산출물: 선출/데미지/메시지의 순차 재생 + 포켓몬 요약 화면 진입
 
 ## Sprint 3 (확장)
-- 능력/날씨/지형/기술 연출 확장
+- 능력/날씨/지형/기술 연출 확장 (Batch B/C)
 - 로케일 namespace 기반 메시지 전환
+- `fastForward()` skip/2x 입력 연결
 - 산출물: 요청한 "실게임 느낌" 핵심 루프 완성
 
 ---
@@ -559,3 +735,15 @@ const FLAGS = {
   - PKB party는 현재 교체 전용이므로 summary parity는 신규 이식 대상이며 우선순위 High.
 - 게이트 판정:
   - M1 착수 가능 (선행단계 미정 항목 없음).
+
+## 계획 보강 완료 (2026-04-12 post-M0 review)
+- 추가 발견 사항은 `research.md §11`에 기록.
+- 주요 반영 내용:
+  - `callback_event` / `request_gate` Batch A 추가 (M0 inventory에 누락됨)
+  - `turn_end` 합성 방식 명시 (Showdown 프로토콜 태그 없음)
+  - `-crit` / `-supereffective` / `-resisted` accumulator 패턴 추가
+  - `-weather [upkeep]` 렌더 버그 식별 및 수정 정책 기록
+  - `move_anim` scope 수정: 비주얼 + 오디오 모두 가능 (anim-data/battle__anims/audio 전부 존재 확인). Sprint 순서상 오디오 선행, 비주얼은 BattleAnim 이식 후 추가.
+  - M3.5 PARTY->SUMMARY 전용 마일스톤 신설
+  - Sprint 순서 재조정: 오디오(Sprint 2a) → switch_in 연출(Sprint 2b) 순서 고정
+  - `fastForward()` 메커니즘 구체화

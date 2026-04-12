@@ -335,3 +335,89 @@ Key decisions fixed by M0:
 - Unknown/extra protocol tags are not silently dropped; they must map to typed events or explicit `raw_event`.
 - `PARTY -> SUMMARY -> PARTY` parity is mandatory scope, not optional polish.
 - `playSelect`/`playError` audio restoration and message action-tag support are required for battle-presentation parity.
+
+---
+
+## 11) Post-M0 Protocol Gaps and Plan Corrections
+
+This section documents gaps found during cross-review of the M0 artifacts and plan.md after M0 completion.
+None of these require reopening M0 gate; they are inputs to M1 schema design and server parser work.
+
+### 11.1 `|request|` and `|callback|` absent from M0 tag inventory
+
+Both tags were missing from the M0 inventory (neither `parserTags` nor `observedTags` in `m0-tag-scan.json`).
+
+**`|request|`** is already handled by the server: `showdown-engine.cjs:490-496` parses it into `this.requests[sideId]` and explicitly skips it from log text. However, it is the primary player-input gate in the Showdown protocol stream. For the timeline executor, it defines the boundary where event playback must pause and wait for a player choice:
+- `request.type === 'wait'` → continue playing events, no input needed.
+- `request.type === 'move'` or `'switch'` → gate execution; surface command UI.
+
+Without modeling this gate as an explicit event, the timeline executor has no principled way to know when to yield for input vs when to continue.
+
+**`|callback|`** is the forced-switch trigger. After a faint where the player must send out a replacement, Showdown emits `|callback|trapped` (or similar). This is currently unhandled anywhere in the server codebase. It must be added to the event catalog as `callback_event` so the timeline executor can correctly gate execution for post-faint switch selection.
+
+Action items for M1:
+- Add `request_gate` event type (synthesized from `|request|` type transitions).
+- Add `callback_event` type (from `|callback|` tag, currently unhandled in server).
+- Both are P0: they are part of the faint → forced-switch flow, which is a required battle scenario.
+
+### 11.2 `-crit` precedes `-damage` in protocol stream — stateful accumulator required
+
+In the Showdown protocol stream, `|-crit|IDENT|` is emitted on the line immediately before `|-damage|IDENT|HP/MAXHP|` when a critical hit occurs. The M0 event schema defines `critical: boolean` on the `damage` event, but this cannot be determined from the `-damage` line alone.
+
+A stateful pre-event accumulator is required in the server-side event parser:
+1. When `|-crit|IDENT|` is seen: set `ctx.pendingCrit[ident] = true`.
+2. When `|-damage|IDENT|...` is seen: copy `ctx.pendingCrit[ident]` into `event.critical`, then clear the flag.
+
+Without this pattern, `event.critical` will always be `false`. The current `normalizeLogTextFromLine` returns `null` for `-crit` (falls to `default` case), so no existing text path is affected — but the new event parser must handle it.
+
+Note: `-supereffective` / `-resisted` follow the same "line before `-damage`" pattern and should use the same accumulator approach for `hitResult` field population.
+
+### 11.3 `-weather [upkeep]` disambiguation — existing rendering bug found
+
+The Showdown protocol disambiguates weather events via an inline bracket token in `parts[3]`:
+- Weather start/change: `|-weather|SUN|` → `parts[3]` is empty.
+- Weather upkeep tick: `|-weather|SUN|[upkeep]` → `parts[3]` is `[upkeep]`.
+- Weather clear: `|-weather|none|` → weather name is `none`.
+
+**Existing bug in `normalizeLogTextFromLine`** (`showdown-engine.cjs:263`):
+```js
+case '-weather':
+  return {text: `날씨: ${b || a} / Weather: ${b || a}`, tone: 'accent'};
+```
+When `parts[3]` is `[upkeep]`, `b = '[upkeep]'`, so `b || a` evaluates to `'[upkeep]'`. This renders `"날씨: [upkeep] / Weather: [upkeep]"` — a display bug triggered every upkeep tick for any active weather.
+
+Fix needed in `normalizeLogTextFromLine`: use `a` (the weather name) unconditionally for display, not `b || a`.
+
+For the new structured event parser, the discrimination logic is:
+- `parts[3] === '[upkeep]'` → emit `weather_tick`.
+- `parts[2] === 'none'` → emit `weather_end`.
+- Otherwise → emit `weather_start`.
+
+The M0 coverage matrix note "upkeep correlation required for tick/end disambiguation" was correct in intent but incorrectly attributed the disambiguation to the separate `upkeep` tag. The `upkeep` tag is a global turn-upkeep boundary marker (not weather-specific); the actual discrimination is inside the `-weather` line itself.
+
+### 11.4 Move animation data IS present — `move_anim` visual scope is implementable
+
+Earlier draft stated animation JSON was absent. This was **incorrect** (confirmed by post-M0 asset audit).
+
+All necessary data is present:
+
+| Directory | File count | Content |
+|---|---|---|
+| `assets/pokerogue/anim-data/` | 923 JSON | Per-move frame animation sequences (`id`, `graphic`, `frames`, `frameTimedEvents`, `position`, `hue`) |
+| `assets/pokerogue/battle-anims/` | 193 JSON | Same format, subset of moves |
+| `assets/pokerogue/battle__anims/` | 646 PNG | Sprite sheets for animation graphics (referenced by `graphic` field in JSON) |
+| `assets/pokerogue/audio/battle_anims/` | 1310 WAV | Audio SFX (timed via `frameTimedEvents`) |
+
+These match the data structures consumed by `pokerogue_codes/src/data/battle-anims.ts` (`loadMoveAnimAssets`, `MoveAnim`). Visual move animation is implementable via porting the `BattleAnim`/`MoveAnim` playback system.
+
+Scheduling note: delivering audio-first (Sprint 2a) and visual animation later is still a valid ordering choice — but it is a **scheduling decision**, not an asset constraint. Update plan.md M1 Batch A and event-coverage-matrix §6 accordingly.
+
+### 11.5 `turn_end` is not a Showdown protocol tag — synthesis required
+
+The plan's M1 Batch A lists `turn_end` as an event type, but Showdown does not emit a `|turn_end|` protocol tag. The `|turn|N|` tag marks turn START, not end. Turn boundaries are implicit.
+
+`turn_end` must be synthesized by the server-side event builder:
+- Insert `turn_end` event when the next `|turn|N+1|` tag is encountered (retroactively closing the previous turn).
+- Or when `|win|` or `|tie|` is encountered (final turn end).
+
+This means the event builder must maintain a `ctx.currentTurn` and flush a `turn_end` event for the previous turn before emitting the new `turn_start`. This is a buffered-emit pattern, not a direct line-to-event mapping.

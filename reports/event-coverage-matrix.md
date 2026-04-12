@@ -123,3 +123,22 @@ Locale inventory (`assets/pokerogue/locales`):
 - `silent drop` policy: not allowed.
 - M0 event catalog is complete enough to start M1 schema work without unresolved tag class.
 
+---
+
+## 6) Post-M0 Addendum (2026-04-12)
+
+Additional entries added to catalog after cross-review of plan.md and server code.
+These were absent from both `parserTags` and `observedTags` in `m0-tag-scan.json`.
+
+| Protocol tag / source | Target event type | Presentation hooks | Priority | Status | Notes |
+|---|---|---|---|---|---|
+| `|request|` (JSON body, side-specific) | `request_gate` (synthesized on type transition) | yield execution; surface command/switch UI | P0 | Spec-Fixed | Already parsed by server into `this.requests`; not in log stream. Gate fires only on `move`/`switch` type. |
+| `|callback|` (e.g. `trapped`, `cantUndo`) | `callback_event` | forced-switch UI gate | P0 | Spec-Fixed | Currently **unhandled** in server. Must be added. |
+| `turn_end` (synthesized) | `turn_end` | turn boundary; clear transient state | P0 | Spec-Fixed | No Showdown tag. Server emits retroactively on next `|turn|` or `|win|`. |
+
+Additional parser corrections needed before M1:
+- **`-weather [upkeep]` rendering bug**: `normalizeLogTextFromLine:263` uses `b || a` which renders `[upkeep]` as weather name on upkeep ticks. Fix: use `a` unconditionally.
+- **`-crit` accumulator**: must pair with subsequent `-damage` line for `critical: boolean` field. Not a standalone display event.
+- **`-supereffective` / `-resisted` accumulator**: pair with subsequent `-damage` for `hitResult` field.
+- **`move_anim` scope**: visual animation IS implementable. `anim-data/` (923 JSON), `battle-anims/` (193 JSON), `battle__anims/` (646 PNG), `audio/battle_anims/` (1310 WAV) 모두 존재 확인. Sprint 순서상 오디오 선행, 비주얼은 `BattleAnim` 이식 후 추가.
+
