@@ -892,8 +892,48 @@ function applySpeciesSelection(mon, speciesName) {
   mon.displaySpecies = mon.formSpecies || mon.baseSpecies;
   mon.spriteOverrideId = '';
 }
+function resolveCommittedSpeciesInput(rawValue) {
+  const resolved = resolveSpeciesSelection(rawValue);
+  const committedName = resolved.speciesName || resolved.baseSpeciesName || '';
+  if (!committedName) return '';
+  const speciesData = state.dex?.species?.get?.(committedName);
+  if (!speciesData?.exists) return '';
+  return speciesData.name;
+}
+async function commitSpeciesInputSelection(selectedPlayer = state.selected.player, selectedSlot = state.selected.slot) {
+  if (state.selected.player !== selectedPlayer || state.selected.slot !== selectedSlot) return false;
+  const mon = getSelectedMon();
+  if (!mon) return false;
+  const committedName = resolveCommittedSpeciesInput(els.speciesInput?.value || '');
+  if (!committedName) return false;
+  const currentSpeciesName = mon.data?.name || mon.formSpecies || mon.species || mon.baseSpecies || '';
+  if (toId(currentSpeciesName) === toId(committedName)) return false;
+  applySpeciesSelection(mon, committedName);
+  await hydrateSelectedSpecies({render: false, persist: false});
+  randomizeLearnsetMoves(mon);
+  renderEditor();
+  renderRoster();
+  await renderValidation();
+  saveState();
+  return true;
+}
 function isMegaSpeciesName(speciesName = '') {
   return /-mega/i.test(speciesName);
+}
+function randomizeLearnsetMoves(mon) {
+  const movePool = getCurrentMoveChoices(mon).map(choice => choice.english);
+  const shuffledMoves = [...movePool];
+  for (let i = shuffledMoves.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffledMoves[i], shuffledMoves[j]] = [shuffledMoves[j], shuffledMoves[i]];
+  }
+  const uniqueMoves = [];
+  for (const moveName of shuffledMoves) {
+    if (!uniqueMoves.includes(moveName)) uniqueMoves.push(moveName);
+    if (uniqueMoves.length === 4) break;
+  }
+  mon.moves = Array.from({length: 4}, (_, idx) => uniqueMoves[idx] || '');
+  return mon.moves;
 }
 function resolveMegaSpeciesNameFromItem(mon) {
   const item = state.dex?.items?.get?.(mon?.item || '');
@@ -2188,9 +2228,6 @@ function normalizeLocalizedInput(kind, value, fallbackChoices = []) {
     if ((choice.searchKeys || []).includes(normalizedRawKey)) return english;
   }
   return raw;
-}
-function normalizeBuilderSpeciesInput(value) {
-  return normalizeLocalizedInput('species', value, state.speciesChoices || []);
 }
 function makeChoice(kind, english, extra = {}) {
   const choice = {
@@ -3796,7 +3833,6 @@ function bindElements() {
 }
 function buildStaticLists() {
   relocalizeChoiceCaches();
-  setDatalistOptions(els.speciesList, state.speciesChoices);
   const dexItems = state.dex
     ? state.dex.items.all().filter(item => isDexSupported(item, 'items')).map(item => item.name)
     : [];
@@ -3917,7 +3953,8 @@ function implementedItemNote(name) {
       : `${displayItemName(name)} is stored and validated in the team builder, but the currently selected runtime is blocked from battle start.`);
   return [supportSummary, runtimeSummary].filter(Boolean).join(' ');
 }
-async function hydrateSelectedSpecies() {
+async function hydrateSelectedSpecies(options = {}) {
+  const {render = true, persist = true} = options;
   const mon = getSelectedMon();
   const rawSelection = mon.manualFormSpecies || mon.formSpecies || mon.species || mon.baseSpecies || mon.displaySpecies;
   const resolved = resolveSpeciesSelection(rawSelection);
@@ -3936,8 +3973,8 @@ async function hydrateSelectedSpecies() {
     if (els.speciesStatus) els.speciesStatus.textContent = mon.species
       ? lang('업로드된 스프라이트와 일치하는 포켓몬이 없습니다.', 'No uploaded sprite matched that species name.')
       : lang('포켓몬을 선택하면 로컬 전투 데이터를 불러옵니다.', 'Choose a species to load local battle data.');
-    saveState();
-    renderAll();
+    if (persist) saveState();
+    if (render) renderAll();
     return;
   }
 
@@ -3973,8 +4010,8 @@ async function hydrateSelectedSpecies() {
     syncMonSprite(mon);
     if (els.speciesStatus) els.speciesStatus.textContent = lang('로컬 전투 데이터에서 포켓몬 정보를 불러오지 못했습니다.', 'Species data could not be loaded from local battle data.');
   }
-  saveState();
-  renderAll();
+  if (persist) saveState();
+  if (render) renderAll();
 }
 
 function renderEditor() {
@@ -4250,12 +4287,12 @@ function wireEditorEvents() {
   els.player1Name.addEventListener('input', syncPlayerNames);
   els.player2Name.addEventListener('input', syncPlayerNames);
   els.speciesInput.addEventListener('change', async () => {
-    const mon = getSelectedMon();
-    applySpeciesSelection(mon, normalizeBuilderSpeciesInput(els.speciesInput.value.trim()));
-    mon.displaySpecies = mon.formSpecies || mon.species;
-    mon.spriteOverrideId = '';
-    await hydrateSelectedSpecies();
-    await renderValidation();
+    if (!(await commitSpeciesInputSelection())) renderEditor();
+  });
+  els.speciesInput.addEventListener('keydown', async (event) => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    event.preventDefault();
+    if (!(await commitSpeciesInputSelection())) renderEditor();
   });
   els.formeSelect?.addEventListener('change', async () => {
     const mon = getSelectedMon();
@@ -4369,24 +4406,14 @@ function wireEditorEvents() {
     mon.shiny = Math.random() < 0.1;
     mon.nickname = '';
     mon.level = 100;
-    await hydrateSelectedSpecies();
+    await hydrateSelectedSpecies({render: false, persist: false});
     if (mon.data?.abilities?.length) {
       mon.ability = mon.data.abilities[Math.floor(Math.random() * mon.data.abilities.length)] || mon.data.abilities[0] || '';
     }
-    const movePool = getCurrentMoveChoices(mon).map(choice => choice.english);
-    const uniqueMoves = [];
-    const shuffledMoves = [...movePool];
-    for (let i = shuffledMoves.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffledMoves[i], shuffledMoves[j]] = [shuffledMoves[j], shuffledMoves[i]];
-    }
-    for (const moveName of shuffledMoves) {
-      if (!uniqueMoves.includes(moveName)) uniqueMoves.push(moveName);
-      if (uniqueMoves.length === 4) break;
-    }
-    mon.moves = Array.from({length: 4}, (_, idx) => uniqueMoves[idx] || '');
+    randomizeLearnsetMoves(mon);
     if (!mon.teraType) mon.teraType = mon.data?.types?.[0] || 'normal';
     renderEditor();
+    renderRoster();
     await renderValidation();
     saveState();
   });

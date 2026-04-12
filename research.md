@@ -1,11 +1,17 @@
 # Research: 그림자 위치 이상 + 일부 포켓몬 metrics 어긋남 조사
 
 작성일: 2026-04-11 (UTC)  
-**상태: 구현 완료 (Phase 18) — 하단 섹션 9 참조**
+**상태: 구현 완료 (Phase 18) — 오늘은 sprite Y A/B 확인과 PBS Round 1 준비**
 
 대상 요청:
 1. 적군 그림자 위치 이상 원인 조사  
 2. 일부 포켓몬 metrics 어긋남을 에셋 단위로 보정 가능한지 조사
+
+현재 검증 상태:
+- `npm run verify:metrics-parity` PASS
+- `npm run verify:passb` PASS
+- `npm run verify:stage22` PASS
+- `npm run audit:metrics-drift` 현재 리포트는 `reports/metrics-drift.json`
 
 ---
 
@@ -69,7 +75,14 @@
 - 현재 enemy/player 공통으로 `setPosition(baseX + offsetX, baseY - offsetY)`
 - 즉, `FrontSprite/BackSprite`의 Y를 **위로 올리는 값**으로 해석 중
 - 근거: `battle-shell-scene.js` `L183-L194`
-- **Phase 18 이후 상태**: 현행 유지 (시각 A/B 검증 이월)
+- 기준 좌표는 `ui.js` `layout()`에서 enemy `216,84`, player `106,148`으로 고정된다.
+- `verify:metrics-parity`는 이 부호를 확인하지 않으므로, 결론은 브라우저 A/B로만 낸다.
+- **오늘의 상태**: 현행 유지, 종별 metrics 조정이 우선이다
+- 오늘 실험 결과:
+  - `VENUSAUR` / `DONDOZO`: 약간 떠 보임
+  - `DRIFLOON` / `CELEBI`: 약간 낮아 보임
+  - 대형 폼: 대체로 정상
+- 해석: 이 패턴은 글로벌 부호 반전보다 종별 `frontY`/`backY` 보정이 더 맞는 신호다.
 
 ### B. shadow 좌표 계산 — **Phase 18에서 수정 완료**
 - ~~현재: shadow 위치 계산에 `frontX/frontY(backX/backY)`가 포함되지 않음~~
@@ -87,17 +100,18 @@
 ### E. verify 스크립트의 허점 — **Phase 18에서 수정 완료**
 - ~~`DBK_DEFAULTS` 숫자값 자체를 검증하지 않음~~
 - **수정 후**: `1/1` 직접 검증 + shadow 합산식 존재 검증 추가 → **14/14 PASS**
+- 현재 verify는 shadow 합산과 정책값은 확인하지만, sprite Y 부호의 시각적 타당성은 확인하지 않는다.
 
 ---
 
 ## 4) 이슈 1 분석: "적군 그림자 위치가 이상함"
 
 ## 결론 — **Phase 18에서 해소**
-원인은 3개가 겹친 결과였으며, A+B 두 가지를 수정 완료. C는 이월.
+원인은 3개가 겹친 결과였으며, A+B 두 가지를 수정 완료. C는 오늘 확인.
 
 1. ~~shadow 좌표 계산에서 `frontX/frontY`가 빠짐~~ → **수정 완료**
 2. ~~DBK shadow baseline(`-height/4`) 보정이 빠짐~~ → **수정 완료**
-3. sprite Y 부호 문제는 시각 A/B 검증으로 판정 예정 → **이월**
+3. sprite Y 부호 문제는 오늘 실험 결과상 글로벌 부호 반전 대상이 아님 → **종별 metrics 조정으로 처리**
 
 ---
 
@@ -144,7 +158,7 @@ metrics 1342개 통계:
 가능. **권장 순서대로 진행 중**:
 1. ~~런타임 좌표식 정합화~~ → **Phase 18 완료**
 2. ~~자동 감사 리포트 생성~~ → **Phase 18 완료** (`reports/metrics-drift.json`)
-3. 상위 이상치부터 수동 보정 → **다음 세션으로 이월**
+3. 상위 이상치부터 수동 보정 → **오늘 Round 1**
 
 ---
 
@@ -166,6 +180,43 @@ metrics 1342개 통계:
 - Sprite Editor에 `pbAutoPosition`이 존재하며, 밑변 탐색 기반 자동 Y 보정 로직 사용.
 - 우리도 동일 철학: 자동 후보 산출(`audit-metrics-drift.mjs`) → 수동 보정
 
+### D. Round 1 고정 batch (current audit top 30)
+1. `LINOONE`
+2. `METAGROSS_1`
+3. `MIMIKYU_1`
+4. `SALAMENCE_1`
+5. `AVALUGG`
+6. `CHARJABUG`
+7. `CLAUNCHER`
+8. `DARKRAI_1`
+9. `DARMANITAN_2`
+10. `DARUMAKA_2`
+11. `DEDENNE`
+12. `DOTTLER`
+13. `FALINKS`
+14. `FIDOUGH`
+15. `GRUBBIN`
+16. `HEATMOR`
+17. `HEATRAN`
+18. `KLAWF`
+19. `KORAIDON`
+20. `LINOONE_1`
+21. `LITTEN`
+22. `LUGIA`
+23. `MALAMAR_1`
+24. `PINCURCHIN`
+25. `PUMPKABOO`
+26. `SIZZLIPEDE`
+27. `STARAPTOR_1`
+28. `STUNFISK_1`
+29. `THUNDURUS_1`
+30. `TINKATINK`
+
+### E. Round 1 triage
+- 직접 확인: `LINOONE`, `METAGROSS_1`, `MIMIKYU_1`, `SALAMENCE_1`, `HEATMOR`, `KORAIDON`, `THUNDURUS_1`, `TINKATINK`
+- 패턴 조정: `AVALUGG`, `CHARJABUG`, `CLAUNCHER`, `DARKRAI_1`, `DARMANITAN_2`, `DARUMAKA_2`, `DEDENNE`, `DOTTLER`, `FALINKS`, `FIDOUGH`, `GRUBBIN`, `HEATRAN`, `KLAWF`, `LINOONE_1`, `LITTEN`, `LUGIA`, `MALAMAR_1`, `PINCURCHIN`, `PUMPKABOO`, `SIZZLIPEDE`, `STARAPTOR_1`, `STUNFISK_1`
+- 보류: 없음
+
 ---
 
 ## 6) 실무 판단
@@ -182,7 +233,7 @@ metrics 1342개 통계:
 ## 7) 구현 전 체크포인트 — Phase 18 처리 결과
 
 1. `DBK_DEFAULTS` scale은 `1/1` 정책 유지 → **확정 유지**
-2. sprite Y 부호(`baseY - offsetY`) — 시각 A/B 검증 → **다음 세션 이월**
+2. sprite Y 부호(`baseY - offsetY`) — 현재 유지, 종별 metrics 조정으로 보정
 3. shadow 위치 계산에 `front/back + shadow` 합산 → **Phase 18 완료**
 4. shadow baseline(`-height/4`) ellipse 근사(k=0.12) → **Phase 18 완료**
 5. verify 스크립트 재정립(1/1 + shadow 합산식) → **Phase 18 완료**
@@ -208,10 +259,21 @@ metrics 1342개 통계:
 |------|-----------|------|
 | A: shadow 합산식 | `battle-shell-scene.js` | **완료** |
 | B: baseline 보정 + 크기 DBK화 | `battle-shell-scene.js` | **완료** |
-| C: sprite Y 부호 A/B | — | 이월 |
-| D: verify 정책 재정립 | `verify-metrics-parity.mjs` | **완료 (14/14 PASS)** |
+| C: sprite Y 부호 A/B | `battle-shell-scene.js` | 글로벌 반전 없음, 종별 metrics 조정 |
+| D: verify 정책 재정립 | `verify-metrics-parity.mjs` | **완료 (14/14 PASS, 오늘도 재실행 대상)** |
 | E: audit 스크립트 | `audit-metrics-drift.mjs` | **완료** |
-| F: PBS 수동 보정 | `assets/Pokemon/PBS/` | 이월 |
+| F: PBS 수동 보정 | `assets/Pokemon/PBS/` | 오늘 Round 1 시작 |
+
+## 10) 오늘 작업 요약
+
+1. 브라우저에서 `baseY - offsetY`와 `baseY + offsetY`를 같은 샘플셋으로 비교한다.
+2. 샘플은 `VENUSAUR`, `DONDOZO`, `DRIFLOON`, `CELEBI`, `CORVIKNIGHT_1`, `TERAPAGOS_1`, `NECROZMA_3`를 기본으로 쓴다.
+3. 판단 기준은 바닥 접지, 부유감, 그리고 enemy/player 공통 일관성이다.
+4. 이 샘플 패턴이면 글로벌 부호는 유지하고, 종별 `frontY`/`backY` 보정으로 넘어간다.
+5. `reports/metrics-drift.json`의 high-risk 상위 30~50개를 첫 PBS batch로 잡는다.
+6. 시작 우선순위는 `LINOONE`, `METAGROSS_1`, `MIMIKYU_1`, `SALAMENCE_1`이고, 그 다음은 score 7 그룹이다.
+7. 실제 수정은 `assets/Pokemon/PBS/pokemon_metrics.txt`, `pokemon_metrics_forms.txt`, 필요 시 `pokemon_metrics_female.txt`에만 한다.
+8. PBS batch를 끝낸 뒤 `npm run audit:metrics-drift`, `npm run verify:metrics-parity`, `npm run verify:stage22`, `npm run verify:passb`를 다시 확인한다.
 
 ---
 
