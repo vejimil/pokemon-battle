@@ -1,5 +1,6 @@
 import { ARENA_OFFSETS } from '../runtime/constants.js';
 import { preloadUiAssets } from '../runtime/assets.js';
+import { BattleAudioManager } from '../runtime/audio-manager.js';
 import { clamp, textureExists, createBaseText, setHorizontalCrop, setInteractiveTarget, applyHostBox, addWindow, setTextWordWrap } from '../runtime/phaser-utils.js';
 import { buttonFromKeyboardEvent, isTypingIntoElement } from '../ui/facade/input-facade.js';
 import { TransplantBattleUI } from '../ui/ui.js';
@@ -44,7 +45,11 @@ export function createBattleShellSceneClass(Phaser, env) {
       };
     }
 
-    preload() { preloadUiAssets(this); }
+    preload() {
+      this.audio = new BattleAudioManager(this);
+      this.audio.preloadBasic();
+      preloadUiAssets(this);
+    }
 
     create() {
       try {
@@ -67,6 +72,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         this.createArenaLayers();
         this.enemySprite = this.createSpriteMount('enemy');
         this.playerSprite = this.createSpriteMount('player');
+        this.runtimeEnv.audio = this.audio; // expose audio manager to UI handlers
         this.ui = new TransplantBattleUI(this, this.controller, this.runtimeEnv);
         this.ui.attachSpriteMounts({ enemy: this.enemySprite, player: this.playerSprite });
         this.ui.setup();

@@ -62,7 +62,7 @@ export class TargetSelectUiHandler extends UiHandler {
       this.footer.setColor(footerAction.disabled ? '#94a3b8' : '#f8fbff');
       this.backZone.removeAllListeners();
       if (!footerAction.disabled && footerAction.action) {
-        this.env.setInteractiveTarget(this.backZone, () => this.globalScene.dispatchAction(footerAction.action));
+        this.env.setInteractiveTarget(this.backZone, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(footerAction.action); });
       }
     }
     return true;

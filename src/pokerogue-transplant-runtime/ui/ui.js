@@ -126,11 +126,11 @@ export class TransplantBattleUI {
   }
 
   playSelect() {
-    return false;
+    return this.scene.audio?.play('ui/select') ?? false;
   }
 
   playError() {
-    return false;
+    return this.scene.audio?.play('ui/error') ?? false;
   }
 
   setModeInternal(mode, clear = true, force = false, chainMode = false, args = null) {

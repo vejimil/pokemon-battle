@@ -76,7 +76,9 @@ export class CommandUiHandler extends UiHandler {
       entry.label.setColor(command.disabled ? '#64748b' : '#f8fbff');
       entry.zone.removeAllListeners();
       if (!command.disabled && command.action) {
-        this.env.setInteractiveTarget(entry.zone, () => this.globalScene.dispatchAction(command.action));
+        this.env.setInteractiveTarget(entry.zone, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(command.action); });
+      } else if (command.disabled) {
+        this.env.setInteractiveTarget(entry.zone, () => this.getUi().playError());
       }
     });
 
@@ -90,7 +92,7 @@ export class CommandUiHandler extends UiHandler {
       this.teraButton.setAlpha(tera.disabled ? 0.45 : 1);
       this.teraButton.removeAllListeners?.();
       if (!tera.disabled && tera.action) {
-        this.env.setInteractiveTarget(this.teraButton, () => this.globalScene.dispatchAction(tera.action));
+        this.env.setInteractiveTarget(this.teraButton, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(tera.action); });
       }
     } else {
       this.teraButton.setVisible(false);

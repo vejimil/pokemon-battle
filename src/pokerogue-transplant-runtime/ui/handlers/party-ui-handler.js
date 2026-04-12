@@ -193,7 +193,7 @@ class PartySlot {
 
     this.hit.removeAllListeners();
     if (!option.disabled && option.action) {
-      this.env.setInteractiveTarget(this.hit, () => this.handler.globalScene.dispatchAction(option.action));
+      this.env.setInteractiveTarget(this.hit, () => { this.handler.getUi().playSelect(); this.handler.globalScene.dispatchAction(option.action); });
     }
   }
 
@@ -328,7 +328,7 @@ export class PartyUiHandler extends UiHandler {
     this.cancelLabel.setText(footerAction?.label || '');
     this.cancelZone.removeAllListeners();
     if (footerAction && !footerAction.disabled && footerAction.action) {
-      this.env.setInteractiveTarget(this.cancelZone, () => this.globalScene.dispatchAction(footerAction.action));
+      this.env.setInteractiveTarget(this.cancelZone, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(footerAction.action); });
     }
     const selection = this.globalScene.getPartySelectionState(this.getCursor());
     this.setCursor(selection.cursor, true);

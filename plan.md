@@ -620,7 +620,8 @@ export function parseMessageActions(text = '') {
 - 2번(`-weather` 버그픽스) **완료** (2026-04-12)
 - 3번(서버 이벤트 스키마/응답 필드 추가) **완료** (2026-04-12) — `normalizeEventsFromLine`, `eventsBuffer`, `snapshot.events`
 - 4번(클라이언트 no-op executor) **완료** (2026-04-12) — `FLAGS.battlePresentationV2`, `BattleTimelineExecutor` (no-op), console 덤프
-- 다음 착수 지점: 5번(오디오 매니저 — Sprint 2a)
+- 5번(오디오 매니저) **완료** (2026-04-12) — `BattleAudioManager`, `playSelect()`/`playError()` 연결
+- 다음 착수 지점: 6번(Batch A 핵심 재생 — Sprint 2b)
 - 5번(오디오)이 6번(switch_in 연출)의 선행 조건임을 주의 — Sprint 2에서 오디오가 switch_in보다 먼저 연결되어야 함.
 
 ---

@@ -157,7 +157,9 @@ export class FightUiHandler extends UiHandler {
       button.hit.removeAllListeners();
       if (!move.disabled) {
         const hoverAction = move.focusAction ? () => this.globalScene.dispatchAction(move.focusAction) : null;
-        this.env.setInteractiveTarget(button.hit, move.action ? () => this.globalScene.dispatchAction(move.action) : null, hoverAction);
+        this.env.setInteractiveTarget(button.hit, move.action ? () => { this.getUi().playSelect(); this.globalScene.dispatchAction(move.action); } : null, hoverAction);
+      } else {
+        this.env.setInteractiveTarget(button.hit, () => this.getUi().playError());
       }
     });
 
@@ -335,7 +337,7 @@ export class FightUiHandler extends UiHandler {
       }
       entry.hit.removeAllListeners();
       if (!toggle.disabled && toggle.action) {
-        this.env.setInteractiveTarget(entry.hit, () => this.globalScene.dispatchAction(toggle.action));
+        this.env.setInteractiveTarget(entry.hit, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(toggle.action); });
       }
     });
   }
@@ -354,7 +356,7 @@ export class FightUiHandler extends UiHandler {
       entry.bg.setAlpha(action.disabled ? 0.6 : 1);
       entry.hit.removeAllListeners();
       if (!action.disabled && action.action) {
-        this.env.setInteractiveTarget(entry.hit, () => this.globalScene.dispatchAction(action.action));
+        this.env.setInteractiveTarget(entry.hit, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(action.action); });
       }
     });
   }
