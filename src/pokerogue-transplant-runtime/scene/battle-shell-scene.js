@@ -5,6 +5,11 @@ import { buttonFromKeyboardEvent, isTypingIntoElement } from '../ui/facade/input
 import { TransplantBattleUI } from '../ui/ui.js';
 import { loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationDelayMs } from '../runtime/pokemon-metrics.js';
 
+// Global shadow nudge for visual alignment tuning.
+// Negative x = left, negative y = up.
+const SHADOW_GLOBAL_OFFSET = Object.freeze({ x: 0, y: 0 });
+const ENABLE_BATTLER_SHADOWS = false;
+
 export function createBattleShellSceneClass(Phaser, env) {
   return class TransplantBattleShellScene extends Phaser.Scene {
     constructor(controller) {
@@ -122,7 +127,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         dom: {
           setVisible: visible => {
             img.setVisible(visible);
-            shadow.setVisible(visible && !!mount.currentUrl && !!mount.shadowVisibleByMetrics);
+            shadow.setVisible(ENABLE_BATTLER_SHADOWS && visible && !!mount.currentUrl && !!mount.shadowVisibleByMetrics);
           },
         },
       };
@@ -138,6 +143,17 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (!this._debugSpriteAnimEnabled()) return;
       if (payload) console.log(`[pkb-sprite-anim:${mount?.name || 'unknown'}] ${message}`, payload);
       else console.log(`[pkb-sprite-anim:${mount?.name || 'unknown'}] ${message}`);
+    }
+
+    _debugShadowMetricsEnabled() {
+      const win = globalThis?.window;
+      return Boolean(globalThis?.__PKB_DEBUG_SHADOW_METRICS || win?.__PKB_DEBUG_SHADOW_METRICS);
+    }
+
+    _logShadowMetrics(mount, message, payload = null) {
+      if (!this._debugShadowMetricsEnabled()) return;
+      if (payload) console.log(`[pkb-shadow-metrics:${mount?.name || 'unknown'}] ${message}`, payload);
+      else console.log(`[pkb-shadow-metrics:${mount?.name || 'unknown'}] ${message}`);
     }
 
     _clearBattlerFrameTextures(mount) {
@@ -181,13 +197,32 @@ export function createBattleShellSceneClass(Phaser, env) {
         .setPosition(spriteX, spriteY);
 
       if (!mount.shadow) return;
+      if (!ENABLE_BATTLER_SHADOWS) {
+        mount.shadowVisibleByMetrics = false;
+        mount.shadow.setVisible(false);
+        return;
+      }
       if (snap.showShadow) {
-        const shadowX = baseX + snap.offsetX + snap.shX;
-        const shadowY = baseY + snap.offsetY + snap.shY;
-        mount.shadow.setPosition(shadowX, shadowY - snap.shadowBaseline);
+        const shadowX = baseX + snap.offsetX + snap.shX + SHADOW_GLOBAL_OFFSET.x;
+        const shadowY = baseY + snap.offsetY + snap.shY + SHADOW_GLOBAL_OFFSET.y;
+        const finalShadowY = shadowY - snap.shadowBaseline;
+        mount.shadow.setPosition(shadowX, finalShadowY);
         mount.shadow.setSize(snap.shadowW, snap.shadowH);
         mount.shadowVisibleByMetrics = true;
         mount.shadow.setVisible(true);
+        this._logShadowMetrics(mount, 'reapply', {
+          baseX,
+          baseY,
+          offsetX: snap.offsetX,
+          offsetY: snap.offsetY,
+          shX: snap.shX,
+          shY: snap.shY,
+          shadowBaseline: snap.shadowBaseline,
+          shadowW: snap.shadowW,
+          shadowH: snap.shadowH,
+          finalShadowX: shadowX,
+          finalShadowY,
+        });
       } else {
         mount.shadowVisibleByMetrics = false;
         mount.shadow.setVisible(false);
@@ -303,7 +338,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         const isPlayerSide = !isFront;
         const rawShadowSize = Number.isFinite(metrics?.shadowSize) ? metrics.shadowSize : 1;
         const showBySide = !isPlayerSide || DBK_DEFAULTS.showPlayerSideShadows;
-        const showShadow = showBySide && rawShadowSize !== 0;
+        const showShadow = ENABLE_BATTLER_SHADOWS && showBySide && rawShadowSize !== 0;
         let shadowW = 0;
         let shadowH = 0;
         let shadowBaseline = 0;
@@ -315,14 +350,39 @@ export function createBattleShellSceneClass(Phaser, env) {
           const zoomY = sprScale * 0.25 + effective * 0.025;
           shadowW = frameH * 0.45 * zoomX;
           shadowH = frameH * 0.45 * zoomY;
-          // Baseline correction: approximates DBK's -height/4 anchor shift.
-          // k=0.12 tuned to keep shadow near foot level for typical sprites.
-          const k = 0.12;
-          shadowBaseline = frameH * sprScale * k;
-          mount.shadow.setPosition(shadowX, shadowY - shadowBaseline);
+          // Baseline correction:
+          // DBK does `self.y -= (self.height / 4)`, where height is post-zoom bitmap height.
+          // Our ellipse height (`shadowH`) is stylized (0.45 factor), so compute baseline from
+          // DBK-equivalent rendered shadow height instead of ellipse display height.
+          const legacyBaseline = shadowH * 0.25;
+          const dbkRenderedShadowH = frameH * zoomY;
+          shadowBaseline = dbkRenderedShadowH * 0.25;
+          mount.shadow.setPosition(
+            shadowX + SHADOW_GLOBAL_OFFSET.x,
+            shadowY + SHADOW_GLOBAL_OFFSET.y - shadowBaseline
+          );
           mount.shadow.setSize(shadowW, shadowH);
           mount.shadowVisibleByMetrics = true;
           mount.shadow.setVisible(true);
+          this._logShadowMetrics(mount, 'init', {
+            url,
+            spriteId,
+            isFront,
+            baseX,
+            baseY,
+            offsetX,
+            offsetY,
+            shX,
+            shY,
+            zoomX,
+            zoomY,
+            shadowW,
+            shadowH,
+            legacyBaseline,
+            dbkBaseline: shadowBaseline,
+            finalShadowX: shadowX + SHADOW_GLOBAL_OFFSET.x,
+            finalShadowY: shadowY + SHADOW_GLOBAL_OFFSET.y - shadowBaseline,
+          });
         } else {
           mount.shadowVisibleByMetrics = false;
           mount.shadow.setVisible(false);
