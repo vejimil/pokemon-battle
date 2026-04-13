@@ -245,7 +245,11 @@ export class TransplantBattleUI {
     }
 
     const nextMode = this.adapter.getMode();
-    const nextArgs = this.getArgsForMode(nextMode);
+    // Always fetch fresh args from adapter (bypasses stale modeArgs cache).
+    // modeArgs only caches args set via setMode/setModeInternal; adapter has the
+    // authoritative up-to-date state after setModel() so we must read it directly.
+    const nextArgs = this.adapter.getUiArgsForMode(nextMode);
+    this.storeModeArgs(nextMode, nextArgs);
     if (nextMode !== this.mode) {
       this.setModeInternal(nextMode, true, true, false, nextArgs);
     } else {

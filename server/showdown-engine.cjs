@@ -482,17 +482,43 @@ function normalizeEventsFromLine(line, ctx) {
       if (weatherName === 'none') {
         return [{type: 'weather_end', turn: ctx.turn, seq: ctx.seq++}];
       }
-      return [{
+      const weatherEvents = [];
+      // Generate ability_show when weather is triggered by an ability
+      // e.g. "|-weather|SunnyDay|[from] ability: Drought|[of] p1a: Groudon"
+      if (!isUpkeep) {
+        const fromAbilityTag = parts.slice(3).find(p => /^\[from\] ability:/i.test(p));
+        if (fromAbilityTag) {
+          const abilityName = fromAbilityTag.replace(/^\[from\] ability:\s*/i, '').trim();
+          const ofTag = parts.slice(3).find(p => /^\[of\]/i.test(p));
+          const ident = ofTag ? ofTag.replace(/^\[of\]\s*/i, '').trim() : '';
+          const id = ident ? parseIdentForEvent(ident) : {side: 'p1', slot: 0};
+          weatherEvents.push({type: 'ability_show', turn: ctx.turn, seq: ctx.seq++, side: id.side, slot: id.slot, ability: abilityName, passive: false});
+        }
+      }
+      weatherEvents.push({
         type: isUpkeep ? 'weather_tick' : 'weather_start',
         turn: ctx.turn,
         seq: ctx.seq++,
         weather: weatherName,
-      }];
+      });
+      return weatherEvents;
     }
 
     case '-fieldstart': {
+      const terrainEvents = [];
+      // Generate ability_show when terrain is triggered by an ability
+      // e.g. "|-fieldstart|move: Electric Terrain|[from] ability: Electric Surge|[of] p1a: Tapu Koko"
+      const fromAbilityTag = parts.slice(3).find(p => /^\[from\] ability:/i.test(p));
+      if (fromAbilityTag) {
+        const abilityName = fromAbilityTag.replace(/^\[from\] ability:\s*/i, '').trim();
+        const ofTag = parts.slice(3).find(p => /^\[of\]/i.test(p));
+        const ident = ofTag ? ofTag.replace(/^\[of\]\s*/i, '').trim() : '';
+        const id = ident ? parseIdentForEvent(ident) : {side: 'p1', slot: 0};
+        terrainEvents.push({type: 'ability_show', turn: ctx.turn, seq: ctx.seq++, side: id.side, slot: id.slot, ability: abilityName, passive: false});
+      }
       const effectId = parts[3] || parts[2];
-      return [{type: 'terrain_start', turn: ctx.turn, seq: ctx.seq++, effect: effectId, raw: parts[2]}];
+      terrainEvents.push({type: 'terrain_start', turn: ctx.turn, seq: ctx.seq++, effect: effectId, raw: parts[2]});
+      return terrainEvents;
     }
     case '-fieldend': {
       const effectId = parts[3] || parts[2];

@@ -22,6 +22,25 @@ function speciesToDexNum(species) {
   return Pokedex[toId(species)]?.num ?? 0;
 }
 
+const STATUS_LABELS = {
+  brn: '화상에 걸렸다!',
+  par: '마비됐다!',
+  psn: '독에 걸렸다!',
+  tox: '맹독에 걸렸다!',
+  slp: '잠들었다!',
+  frz: '얼어붙었다!',
+};
+
+const STAT_LABELS = {
+  atk: '공격',
+  def: '방어',
+  spa: '특수공격',
+  spd: '특수방어',
+  spe: '스피드',
+  acc: '명중',
+  eva: '회피',
+};
+
 const WEATHER_LABELS = {
   raindance:     '비가 내리기 시작했다!',
   rain:          '비가 내리기 시작했다!',
@@ -268,18 +287,61 @@ export class BattleTimelineExecutor {
         break;
       }
 
+      // ── BA-4: Status apply ───────────────────────────────────────────────
+      case 'status_apply': {
+        const statusName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
+        const statusLabel = STATUS_LABELS[toId(ev.status)] ?? `${ev.status} 상태`;
+        this._showMsg(`${statusName}은(는) ${statusLabel}`);
+        await this._delay(700);
+        break;
+      }
+
+      // ── BA-4: Stat boost / unboost ───────────────────────────────────────
+      case 'boost': {
+        const boostName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
+        const statLabel = STAT_LABELS[toId(ev.stat)] ?? ev.stat;
+        const amount = Number(ev.amount) || 1;
+        const suffix = amount >= 2 ? ' 크게 올랐다!' : ' 올랐다!';
+        this._showMsg(`${boostName}의 ${statLabel}이${suffix}`);
+        await this._delay(600);
+        break;
+      }
+
+      case 'unboost': {
+        const unboostName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
+        const unstatLabel = STAT_LABELS[toId(ev.stat)] ?? ev.stat;
+        const uamount = Number(ev.amount) || 1;
+        const usuffix = uamount >= 2 ? ' 크게 내려갔다!' : ' 내려갔다!';
+        this._showMsg(`${unboostName}의 ${unstatLabel}이${usuffix}`);
+        await this._delay(600);
+        break;
+      }
+
+      // ── BA-4: Miss ───────────────────────────────────────────────────────
+      case 'miss': {
+        // In Showdown protocol, miss/−miss stores the ATTACKER as ev.target (field is misnamed).
+        // The attacker's move missed, so message: "X의 공격이 빗나갔다!"
+        const missName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
+        this._showMsg(`${missName}의 공격이 빗나갔다!`);
+        await this._delay(500);
+        break;
+      }
+
+      // ── BA-4: Can't move ─────────────────────────────────────────────────
+      case 'cant_move': {
+        const cantName = this._slotName(ev.actor?.side, ev.actor?.slot ?? 0);
+        this._showMsg(`${cantName}은(는) 움직일 수 없다.`);
+        await this._delay(600);
+        break;
+      }
+
       // ── no-op events ──────────────────────────────────────────────────────
       case 'weather_tick':
       case 'turn_end':
-      case 'status_apply':
       case 'status_cure':
-      case 'boost':
-      case 'unboost':
       case 'side_start':
       case 'side_end':
       case 'immune':
-      case 'miss':
-      case 'cant_move':
       case 'effect_activate':
       case 'single_turn_effect':
       case 'forme_change':

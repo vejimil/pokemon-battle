@@ -81,7 +81,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (Sprint 3 버그픽스 완료 후 — 2026-04-13 기준)
+## 다음 세션 우선순위 (Sprint 4 완료 후 — 2026-04-13 기준)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
@@ -104,19 +104,25 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - `weather_tick` 의도적으로 silent (매 턴 메시지 스팸 방지)
 - `ui.js`: `abilityBar.container.setDepth(42 → 60)` — FIGHT(55) 위로 z-order 수정
 
-### ✅ Sprint 3 버그픽스 — 완료 (2026-04-13, 브라우저 확인 대기)
-- **커맨드 화면 메시지 수정**: `buildPhaserCommandWindowModel`에 `prompt` 필드 추가 ("귀뚤톡크, 무엇을 할까?"). `command-ui-handler.js` `show()`에서 `state.prompt || state.title` 사용
+### ✅ Sprint 3 버그픽스 — 완료 (2026-04-13)
+- **커맨드 화면 메시지 수정**: `buildPhaserCommandWindowModel`에 `prompt` 필드 추가 ("귀뚤톡크, 무엇을 할까?")
 - **FIGHT 화면 텍스트 오버랩 제거**: `fight-ui-handler.js` `show()`에서 `battleMessage.message?.setText?.('')` 호출
 - **어빌리티 바 z-order 수정**: `ui.js`에서 depth 42 → 60
-- **필드명 불일치 수정** (`pkb-battle-ui-adapter.js`): `normalizeMessageText()`가 `message.primary`와 `message.primaryText` 모두 읽도록 수정
-- **⚠️ 브라우저에서 실제 동작 미확인 — 다음 세션 첫 번째로 확인할 것**
+- **필드명 불일치 수정** (`pkb-battle-ui-adapter.js`): `message.primary`와 `message.primaryText` 모두 읽도록 수정
 
-### BA-4. 상태이상 / 스탯 변화 메시지 (Sprint 4 대상)
-- `status_apply` → "{pokemon} {상태이상}에 걸렸다!" (독/마비/화상/수면/빙결)
-- `boost`/`unboost` → "{pokemon}의 공격이 올랐다!" 등
-- `miss` → "{pokemon}의 공격이 빗나갔다!"
-- `cant_move` → "{pokemon}은 움직일 수 없다."
-- **영향 파일**: `timeline.js`
+### ✅ Sprint 4 버그픽스 + BA-4 — 완료 (2026-04-13)
+- **Bug #1 커맨드 이름 고정 수정** (`ui.js`): `renderModel()`에서 `this.getArgsForMode()` (캐시 반환) → `this.adapter.getUiArgsForMode()` (항상 fresh args) 로 변경. 차례가 바뀌어도 현재 활성 포켓몬 이름이 올바르게 표시됨.
+- **Bug #3 어빌리티 바 weather/terrain 트리거 수정** (`showdown-engine.cjs`): `-weather`/`-fieldstart` 라인에 `[from] ability: X|[of] p1a: Y` 태그 있을 때 `ability_show` 이벤트 선행 생성. Drought, Drizzle, Sand Stream, Desolate Land, Primordial Sea, 지형 특성 등 날씨/필드를 유발하는 특성의 어빌리티 바가 이제 표시됨.
+- **BA-4 status/boost/miss/cant_move 메시지** (`timeline.js`): STATUS_LABELS, STAT_LABELS Map 추가. `status_apply` / `boost` / `unboost` / `miss` / `cant_move` 이벤트 핸들러 구현.
+
+### ⚠️ 브라우저 확인 대기 항목 (2026-04-13 기준)
+다음 항목을 브라우저에서 직접 확인해야 함:
+1. **Bug #1** — 포켓몬 교체 후 커맨드 화면에 새 포켓몬 이름 표시되는지
+2. **Bug #3** — Drought/Sand Stream 등 날씨 특성 투입 시 어빌리티 바 표시되는지
+3. **BA-4 상태이상** — 독/마비/화상 걸릴 때 메시지 한글로 나오는지
+4. **BA-4 스탯 변화** — 스탯 오르내릴 때 "X의 공격이 올랐다!" 나오는지
+5. **BA-4 빗나감** — 빗나갔을 때 "X의 공격이 빗나갔다!" 나오는지
+6. **BA-4 행동 불가** — 마비/잠듦 행동 불가 시 "X은(는) 움직일 수 없다." 나오는지
 
 ### UI-P1. 텍스트 왜곡 재분석 — `text.js` + `phaser-utils.js` + `controller.js`
 - **현상**: Phase 14에서 `fontSize: 56/6`, `HINT: 8` 수정 적용 후에도 여전히 텍스트가 뭉개져 보임
@@ -146,6 +152,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 ## 이전 완료 이력 (주요 항목)
 
+- **2026-04-13**: Sprint 4 (BA-4) + 버그픽스 (커맨드 이름 고정, weather 어빌리티 바) — 상세 내용은 아래 참조
 - **2026-04-13**: Sprint 3 (BA-1/2/3) 구현 + 버그픽스 — 상세 내용은 아래 참조
 - **2026-04-12**: Sprint 2a/2b 배틀 연출 이벤트 시스템 구현 — 상세 내용은 아래 참조
 - **2026-04-11**: Shadow 좌표식 DBK 정합 + audit 스크립트 (Phase 18) — 상세 내용은 아래 참조
@@ -154,6 +161,32 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - **2026-04-09**: wordWrapWidth 전면 수정, 폰트 크기 원본 맞춤, shadow 추가, lineSpacing 기본값, nameText truncation
 - **2026-04-08**: TEXT_RENDER_SCALE=6 도입, EXP bar mask, 배틀 전체화면, INTEGER_SCALE 모드
 - **2026-04-07**: LOGICAL_HEIGHT 수정, 레이아웃 전면 수정, 커서 origin 수정, 어빌리티 바 위치
+
+## 2026-04-13 완료한 작업 — Sprint 4 (BA-4) + 버그픽스
+
+### Bug #1 커맨드 이름 고정 (ui.js)
+- **원인**: `ui.js`의 `getArgsForMode()`가 `modeArgs` Map을 캐시로 사용하는데, COMMAND 모드가 유지되는 동안 첫 번째 args를 계속 반환. 포켓몬 교체 후에도 old pokemon 이름이 표시됨.
+- **수정**: `renderModel()`에서 `this.getArgsForMode(nextMode)` → `this.adapter.getUiArgsForMode(nextMode)` (항상 adapter에서 fresh args 가져오기). 이후 `this.storeModeArgs(nextMode, nextArgs)`로 캐시 갱신.
+
+### Bug #3 어빌리티 바 날씨 특성 미표시 (showdown-engine.cjs)
+- **원인**: Drought, Drizzle, Sand Stream, Desolate Land, Primordial Sea 등 날씨를 유발하는 특성은 Showdown이 `-weather|...|[from] ability: X|[of] Y` 형식으로 보내고, 별도 `-ability` 라인을 보내지 않음. 따라서 `ability_show` 이벤트가 생성되지 않아 어빌리티 바가 표시 안됨. 지형 특성(Electric Surge 등)도 동일.
+- **수정**: `-weather` / `-fieldstart` 라인에서 `[from] ability: X` 태그 감지 시 `ability_show` 이벤트를 weather/terrain 이벤트 앞에 선행 push.
+
+### BA-4 (timeline.js)
+- `STATUS_LABELS` Map 추가 (brn/par/psn/tox/slp/frz → 한글)
+- `STAT_LABELS` Map 추가 (atk/def/spa/spd/spe/acc/eva → 한글)
+- `status_apply`: "{name}은(는) {상태이상}" 메시지 + 700ms
+- `boost`: "{name}의 {스탯}이 올랐다/크게 올랐다!" + 600ms (amount ≥ 2이면 "크게")
+- `unboost`: "{name}의 {스탯}이 내려갔다/크게 내려갔다!" + 600ms
+- `miss`: "{name}의 공격이 빗나갔다!" + 500ms (ev.target = attacker in Showdown protocol)
+- `cant_move`: "{name}은(는) 움직일 수 없다." + 600ms
+
+### 영향 파일
+- `src/pokerogue-transplant-runtime/ui/ui.js`
+- `server/showdown-engine.cjs`
+- `src/battle-presentation/timeline.js`
+
+---
 
 ## 2026-04-13 완료한 작업 — Sprint 3 (BA-1/2/3) + 버그픽스
 
