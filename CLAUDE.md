@@ -81,26 +81,41 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (Sprint 3 — 2026-04-12 기준)
+## 다음 세션 우선순위 (Sprint 3 버그픽스 완료 후 — 2026-04-13 기준)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
 > **작업 원칙3: 나를 위한 설명은 한글로 하되, 작업 및 사고 자체는 영어로 진행할 것 - 토큰 절약을 위함**
 
-### BA-1. 배틀 메시지 순차 표시 (Sprint 3 최우선)
-- **현상**: `damage`/`move_use`/`faint` 이벤트 중에는 메시지창이 업데이트되지 않음. 타임라인 재생 완료 후 `renderBattle()`에서 최종 로그만 한꺼번에 표시됨.
-- **할 일**: `timeline.js`의 각 이벤트 핸들러에서 `battle-message-ui-handler`에 직접 메시지를 표시. 메시지 한 줄 + 잠깐 대기 패턴 (PokeRogue의 `showText` 방식 참조).
-- **영향 파일**: `timeline.js`, `battle-message-ui-handler.js`
+### ✅ BA-1. 배틀 메시지 순차 표시 — 완료 (2026-04-13)
+- `timeline.js` `_showMsg()` + `MessageUiHandler.showText()` 직접 호출
+- switch_in / move_use / damage(critical/super/not_very) / faint / ability_show / weather / terrain 메시지 구현
+- `turn_start` 메시지 제거 (불필요)
 
-### BA-2. 울음소리(Cry) 연결 — switch_in
-- **현상**: `switch_in` 이벤트에서 `se/pb_rel` 재생 후 포켓몬 울음소리가 없음.
-- **할 일**: `switch_in.species` → Pokédex 번호 변환 → `cry/<num>.m4a` 재생.
-  - `local-dex.js`에 species→dex 번호 매핑이 있는지 확인.
-  - `BattleAudioManager.playCry()` 인터페이스는 이미 있음 (`cry/<spriteId>` 키 방식). 번호 매핑만 추가하면 됨.
-- **영향 파일**: `audio-manager.js`, `timeline.js`
+### ✅ BA-2. 울음소리(Cry) 연결 — 완료 (2026-04-13)
+- `BattleAudioManager.playCryByNum(dexNum)` 추가 → `cry/<num>.m4a` 로드
+- `timeline.js`에서 `Pokedex` 임포트, `speciesToDexNum()` 헬퍼로 dex 번호 변환
+- `switch_in` 핸들러에서 pb_rel SE → 700ms → `await playCryByNum()` → 300/100ms
+- `startBattle()`에서 `await syncPhaserBattleRenderer()` 후 initExecutor 실행 (첫 울음소리 보장)
 
-### BA-3. 어빌리티 바 + 날씨/지형 연출
-- **할 일**: `ability_show` → `abilityBar.update(...)` 호출 + 일정 시간 표시. `weather_start/tick/end` / `terrain_start/end` → 메시지창 텍스트 표시.
+### ✅ BA-3. 어빌리티 바 + 날씨/지형 연출 — 완료 (2026-04-13)
+- `ability_show` → `abilityBar.update()` 1200ms 표시 후 hide
+- `weather_start/end` / `terrain_start/end` → 메시지 표시 + 600~800ms 딜레이
+- `weather_tick` 의도적으로 silent (매 턴 메시지 스팸 방지)
+- `ui.js`: `abilityBar.container.setDepth(42 → 60)` — FIGHT(55) 위로 z-order 수정
+
+### ✅ Sprint 3 버그픽스 — 완료 (2026-04-13, 브라우저 확인 대기)
+- **커맨드 화면 메시지 수정**: `buildPhaserCommandWindowModel`에 `prompt` 필드 추가 ("귀뚤톡크, 무엇을 할까?"). `command-ui-handler.js` `show()`에서 `state.prompt || state.title` 사용
+- **FIGHT 화면 텍스트 오버랩 제거**: `fight-ui-handler.js` `show()`에서 `battleMessage.message?.setText?.('')` 호출
+- **어빌리티 바 z-order 수정**: `ui.js`에서 depth 42 → 60
+- **필드명 불일치 수정** (`pkb-battle-ui-adapter.js`): `normalizeMessageText()`가 `message.primary`와 `message.primaryText` 모두 읽도록 수정
+- **⚠️ 브라우저에서 실제 동작 미확인 — 다음 세션 첫 번째로 확인할 것**
+
+### BA-4. 상태이상 / 스탯 변화 메시지 (Sprint 4 대상)
+- `status_apply` → "{pokemon} {상태이상}에 걸렸다!" (독/마비/화상/수면/빙결)
+- `boost`/`unboost` → "{pokemon}의 공격이 올랐다!" 등
+- `miss` → "{pokemon}의 공격이 빗나갔다!"
+- `cant_move` → "{pokemon}은 움직일 수 없다."
 - **영향 파일**: `timeline.js`
 
 ### UI-P1. 텍스트 왜곡 재분석 — `text.js` + `phaser-utils.js` + `controller.js`
@@ -131,6 +146,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 ## 이전 완료 이력 (주요 항목)
 
+- **2026-04-13**: Sprint 3 (BA-1/2/3) 구현 + 버그픽스 — 상세 내용은 아래 참조
 - **2026-04-12**: Sprint 2a/2b 배틀 연출 이벤트 시스템 구현 — 상세 내용은 아래 참조
 - **2026-04-11**: Shadow 좌표식 DBK 정합 + audit 스크립트 (Phase 18) — 상세 내용은 아래 참조
 - **2026-04-11**: 배틀러 스프라이트 구현 (Phase 16) + PBS metrics 적용 (Phase 17) — 상세 내용은 아래 참조
@@ -138,6 +154,30 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - **2026-04-09**: wordWrapWidth 전면 수정, 폰트 크기 원본 맞춤, shadow 추가, lineSpacing 기본값, nameText truncation
 - **2026-04-08**: TEXT_RENDER_SCALE=6 도입, EXP bar mask, 배틀 전체화면, INTEGER_SCALE 모드
 - **2026-04-07**: LOGICAL_HEIGHT 수정, 레이아웃 전면 수정, 커서 origin 수정, 어빌리티 바 위치
+
+## 2026-04-13 완료한 작업 — Sprint 3 (BA-1/2/3) + 버그픽스
+
+### Sprint 3 구현
+- **BA-1 배틀 메시지**: `timeline.js`에 `_showMsg()`, `_slotName()`, `_slotNames` Map 추가. switch_in / move_use / damage(critical/super/not_very) / faint / ability_show / weather / terrain 이벤트에 한글 메시지 연결. `turn_start` 메시지 제거.
+- **BA-2 울음소리**: `BattleAudioManager.playCryByNum(dexNum)` 추가 (`cry/<num>.m4a` lazy load). `speciesToDexNum()` 헬퍼로 species 이름 → dex번호 변환. `switch_in`에서 `await playCryByNum()`. `startBattle()`에서 `await syncPhaserBattleRenderer()` 후 initExecutor.play() — 배틀 시작 시 첫 울음소리 보장.
+- **BA-3 어빌리티 바/날씨/지형**: `ability_show` → abilityBar 1200ms 표시 후 hide. weather/terrain 한글 라벨 Map + 딜레이.
+
+### 버그픽스
+- **커맨드 화면 메시지** (`app.js` + `command-ui-handler.js`): "player1 · 귀뚤톡크" 대신 "귀뚤톡크, 무엇을 할까?" 표시. `buildPhaserCommandWindowModel`에 `prompt` 필드 추가, handler에서 `state.prompt || state.title` 사용.
+- **FIGHT 텍스트 오버랩** (`fight-ui-handler.js`): `show()` 진입 시 `battleMessage.message.setText('')` 호출 → "기술을 선택하세요" 텍스트가 기술 버튼들 위에 겹치는 현상 제거.
+- **어빌리티 바 z-order** (`ui.js`): `abilityBar.container.setDepth(42 → 60)` — FIGHT 컨테이너(55) 뒤로 가려지던 문제 수정.
+- **메시지 필드명 불일치** (`pkb-battle-ui-adapter.js`): `normalizeMessageText()`에서 `message.primary`와 `message.primaryText` 둘 다 읽도록 수정. `buildBattleMessageModel`이 `{ primary, secondary }` 반환하는데 adapter가 `primaryText`만 읽던 버그. //지금 상대 화면에서도 player1의 포켓몬만 나오는 버그 있음.
+
+### 영향 파일
+- `src/battle-presentation/timeline.js`
+- `src/pokerogue-transplant-runtime/runtime/audio-manager.js`
+- `src/app.js`
+- `src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js`
+- `src/pokerogue-transplant-runtime/ui/handlers/command-ui-handler.js`
+- `src/pokerogue-transplant-runtime/ui/handlers/fight-ui-handler.js`
+- `src/pokerogue-transplant-runtime/ui/ui.js`
+
+---
 
 ## 2026-04-12 완료한 작업 — 배틀 연출 이벤트 시스템 (Sprint 1~2b)
 

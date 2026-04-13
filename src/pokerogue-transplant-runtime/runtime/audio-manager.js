@@ -96,6 +96,30 @@ export class BattleAudioManager {
   }
 
   /**
+   * Lazy-load and play a Pokémon cry by National Dex number.
+   * Files are at assets/pokerogue/audio/cry/<num>.m4a
+   * @param {number} dexNum  e.g. 25 for Pikachu
+   */
+  async playCryByNum(dexNum) {
+    if (!dexNum) return;
+    const key = `cry/${dexNum}`;
+    if (this.scene.cache.audio.has(key)) {
+      this.play(key);
+      return;
+    }
+    if (this._loadingCries.has(key)) return;
+    this._loadingCries.add(key);
+    try {
+      await this._loadAudioRuntime(key, `cry/${dexNum}.m4a`);
+      this.play(key);
+    } catch {
+      // Missing cry file — silent fallback.
+    } finally {
+      this._loadingCries.delete(key);
+    }
+  }
+
+  /**
    * Lazy-load and play the first sound effect for a move from anim-data.
    * moveName is the Showdown display name (e.g. 'Flamethrower', 'Ice Beam').
    * Silently returns null if anim-data is missing, has no sound, or load fails.

@@ -4648,6 +4648,21 @@ async function startBattle() {
     showRuntime(runtime.startMessage, 'ready', runtime.detail);
     els.battlePanel.classList.remove('hidden');
     renderBattle();
+
+    // BA-2: play initial switch_in events (cries etc.) through the timeline executor.
+    // Wait for Phaser scene + audio to be ready first, then fire events in background.
+    if (FLAGS.battlePresentationV2 && Array.isArray(state.battle?.events) && state.battle.events.length > 0) {
+      await syncPhaserBattleRenderer(state.battle);
+      const initExecutor = new BattleTimelineExecutor({
+        onComplete: () => { renderBattle(); },
+        applySnapshot: () => { renderBattle(); },
+        scene: () => phaserBattleRenderer?.scene ?? null,
+        playerSide: 'p1',
+        initialNames: {},
+      });
+      initExecutor.play(state.battle.events);  // fire-and-forget; don't block return
+    }
+
     return;
   } catch (error) {
     console.error('Local Showdown singles engine start failed.', error);
@@ -6314,10 +6329,12 @@ function buildPhaserCommandWindowModel(battle, player) {
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
+  const pokemonName = displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon');
   return {
     mode: 'command',
     fieldIndex: requestSlot,
-    title: `${side?.name || `P${player + 1}`} · ${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}`,
+    title: `${side?.name || `P${player + 1}`} · ${pokemonName}`,
+    prompt: lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`),
     commands: [
       {label: lang('싸운다', 'Fight'), sublabel: lang('기술 선택', 'Choose a move'), disabled: false, active: selectedChoice.kind !== 'switch', action: {type: 'command', key: 'fight'}},
       {label: lang('볼', 'Ball'), sublabel: lang('사용 안 함', 'Unused'), disabled: true, action: null},
@@ -6779,12 +6796,27 @@ async function resolveEngineTurn(battle = state.battle) {
 
   if (FLAGS.battlePresentationV2 && Array.isArray(adoptedBattle?.events) && adoptedBattle.events.length > 0) {
     // Presentation V2: play events sequentially, then apply final snapshot via onComplete.
+
+    // Capture active pokemon names from the PREVIOUS state before overwriting.
+    // Gives move_use/faint messages the right species name for turns 2+ (no switch_in events).
+    const initialNames = {};
+    if (state.battle?.players) {
+      state.battle.players.forEach((side, idx) => {
+        const sideId = idx === 0 ? 'p1' : 'p2';
+        (side.active || []).forEach((teamIdx, slot) => {
+          const mon = side.team?.[teamIdx];
+          if (mon) initialNames[`${sideId}_${slot}`] = mon.species || mon.formSpecies || '';
+        });
+      });
+    }
+
     state.battle = adoptedBattle;
     const executor = new BattleTimelineExecutor({
       onComplete: () => { renderBattle(); },
       applySnapshot: () => { renderBattle(); },
       scene: () => phaserBattleRenderer?.scene ?? null,
       playerSide: 'p1',
+      initialNames,
     });
     await executor.play(adoptedBattle.events);
   } else {

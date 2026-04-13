@@ -65,8 +65,9 @@ export class CommandUiHandler extends UiHandler {
     // 원본: Tera불가 setWordWrapWidth(1110) → 1110/6=185px logical
     //        Tera가능 setWordWrapWidth(910)  → 910/6≈152px logical
     this.env.setTextWordWrap(messageHandler.message, this.canTera() ? 152 : 185, true);
-    if (state.title) {
-      messageHandler.showText(state.title, 0, null, null, false);
+    const prompt = state.prompt || state.title || '';
+    if (prompt) {
+      messageHandler.showText(prompt, 0, null, null, false);
     }
 
     this.entries.forEach((entry, index) => {

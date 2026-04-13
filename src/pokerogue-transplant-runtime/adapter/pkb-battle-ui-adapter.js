@@ -10,8 +10,9 @@ function clampIndex(value, min, max) {
 }
 
 function normalizeMessageText(message = {}, stateWindow = {}) {
-  const primary = String(message.primaryText || '').trim();
-  const secondary = String(message.secondaryText || '').trim();
+  // Accept both primaryText (adapter canonical) and primary (buildBattleMessageModel output)
+  const primary = String(message.primaryText || message.primary || '').trim();
+  const secondary = String(message.secondaryText || message.secondary || '').trim();
   const placeholder = String(stateWindow.placeholder || '').trim();
   const text = [primary, secondary].filter(Boolean).join('\n') || placeholder || '';
   return {

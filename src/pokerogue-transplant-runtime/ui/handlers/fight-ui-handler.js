@@ -148,6 +148,8 @@ export class FightUiHandler extends UiHandler {
     battleMessage.bg.setVisible(false);
     battleMessage.commandWindow.setVisible(false);
     battleMessage.movesWindowContainer.setVisible(true);
+    // Clear any lingering message text (e.g. "기술을 선택하세요") that overlaps move buttons
+    battleMessage.message?.setText?.('');
 
     this.moveButtons.forEach((button, index) => {
       const move = this.getMoves()[index] || { label: '', disabled: true };

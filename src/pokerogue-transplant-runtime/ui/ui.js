@@ -56,7 +56,7 @@ export class TransplantBattleUI {
     this.playerTray.container?.setDepth(42);
     this.enemyInfo.container?.setDepth(42);
     this.playerInfo.container?.setDepth(42);
-    this.abilityBar.container?.setDepth(42);
+    this.abilityBar.container?.setDepth(60);
     // COMMAND and TARGET_SELECT have no setDepth call — default 0 would go under battle info.
     this.handlers[UiMode.COMMAND]?.container?.setDepth(50);
     this.handlers[UiMode.TARGET_SELECT]?.container?.setDepth(50);

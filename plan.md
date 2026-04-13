@@ -616,13 +616,14 @@ export function parseMessageActions(text = '') {
 9. coverage matrix 100% 달성 후 기존 휴리스틱 fallback 단계적 제거
 
 진행 상태 메모:
-- 1번(M0 고정)은 완료.
+- 1번(M0 고정) **완료**
 - 2번(`-weather` 버그픽스) **완료** (2026-04-12)
 - 3번(서버 이벤트 스키마/응답 필드 추가) **완료** (2026-04-12) — `normalizeEventsFromLine`, `eventsBuffer`, `snapshot.events`
 - 4번(클라이언트 no-op executor) **완료** (2026-04-12) — `FLAGS.battlePresentationV2`, `BattleTimelineExecutor` (no-op), console 덤프
 - 5번(오디오 매니저) **완료** (2026-04-12) — `BattleAudioManager`, `playSelect()`/`playError()` 연결
 - 6번(Batch A 핵심 재생) **완료** (2026-04-12) — Sprint 2b: `switch_in/pb_rel`, `move_use/playMoveSe`, `damage/HP tween`, `faint/SE`, `heal/HP tween`. `battlePresentationV2: true` 기본값 ON.
-- 다음 착수 지점: Sprint 3 (Batch B/C 확장 + 메시지 순차 연출 + PARTY/SUMMARY)
+- 7번(Sprint 3 메시지/크라이/어빌리티 바/날씨/지형) **코드 완료 (2026-04-13), 브라우저 확인 대기**
+- **다음 착수 지점: Sprint 3 브라우저 확인 후 → Sprint 4 (BA-4: 상태이상/스탯변화 메시지)**
 
 ---
 
@@ -713,20 +714,26 @@ const FLAGS = {
 - `FLAGS.battlePresentationV2: true` 기본값으로 ON
 - 산출물: 기술/데미지/기절 효과음 + HP 바 애니메이션 순차 재생 확인
 
-## Sprint 3 (확장) — **다음 착수 지점**
-- **메시지 순차 재생**: `move_use` / `damage` / `faint` 이벤트마다 배틀 메시지창에 텍스트 표시 (현재는 즉시 renderBattle()로 최종 로그만 표시됨)
-- **능력/날씨/지형 연출**: `ability_show` → 어빌리티 바 노출/숨김, `weather_start/tick/end` → 메시지, `terrain_start/end` → 메시지
-- **크라이(울음소리) 연결**: `switch_in.species` → Pokédex 번호 → `cry/<num>.m4a` 재생. species→dex 번호 매핑 테이블 필요.
-- **M3.5: PARTY→SUMMARY 모드 체인**: 파티 화면에서 요약/능력치 진입 경로 이식
-- **fastForward/skip 입력 연결**: 스킵 버튼 또는 키 입력으로 타임라인 즉시 완료
-- 로케일 namespace 기반 메시지 전환
-- 산출물: "실게임 느낌" 핵심 루프 완성
+## Sprint 3 (확장) — **완료 (2026-04-13), 브라우저 확인 대기**
+- ✅ **BA-1 메시지 순차 재생**: `switch_in` / `move_use` / `damage` / `faint` / `ability_show` / `weather` / `terrain` 이벤트마다 배틀 메시지창에 한글 텍스트 표시. `turn_start` 메시지 제거.
+- ✅ **BA-2 크라이(울음소리) 연결**: `playCryByNum(dexNum)` — `cry/<num>.m4a` lazy load. `speciesToDexNum()` 헬퍼로 species 이름 → dex 번호 변환. `startBattle()`에서 `await syncPhaserBattleRenderer()` 후 첫 울음소리 보장.
+- ✅ **BA-3 어빌리티 바 / 날씨 / 지형 연출**: `ability_show` → 어빌리티 바 1200ms 노출 후 hide. `weather_start/end` / `terrain_start/end` 한글 메시지 + 딜레이. `weather_tick` 의도적 silent.
+- ✅ **버그픽스**:
+  - 커맨드 화면 메시지: `buildPhaserCommandWindowModel`에 `prompt` 필드 추가 → "귀뚤톡크, 무엇을 할까?" 표시
+  - FIGHT 텍스트 오버랩: `fight-ui-handler.js show()`에서 `battleMessage.message.setText('')` 호출
+  - 어빌리티 바 z-order: `ui.js`에서 `abilityBar.container.setDepth(42 → 60)`
+  - 메시지 필드명 불일치: `normalizeMessageText()`에서 `message.primary`와 `message.primaryText` 둘 다 읽도록 수정
+- ⚠️ 브라우저 동작 미확인 — 다음 세션에서 유저가 직접 확인 후 이상 있으면 수정
+- 산출물: "실게임 느낌" 핵심 루프 구현 완성 (시각 검증 남음)
 
-## Sprint 3 (확장)
-- 능력/날씨/지형/기술 연출 확장 (Batch B/C)
-- 로케일 namespace 기반 메시지 전환
-- `fastForward()` skip/2x 입력 연결
-- 산출물: 요청한 "실게임 느낌" 핵심 루프 완성
+## Sprint 4 (Batch B 확장) — **다음 착수 지점**
+- **BA-4 상태이상 / 스탯 변화 메시지** (`timeline.js`):
+  - `status_apply` → "{pokemon} {상태이상}에 걸렸다!" (독/마비/화상/수면/빙결)
+  - `boost` / `unboost` → "{pokemon}의 공격이 올랐다!" 등 스탯명 한글화
+  - `miss` → "{pokemon}의 공격이 빗나갔다!"
+  - `cant_move` → "{pokemon}은 움직일 수 없다."
+- 영향 파일: `timeline.js` 단독
+- 산출물: 배틀 메시지 커버리지 Batch B 완성
 
 ---
 
