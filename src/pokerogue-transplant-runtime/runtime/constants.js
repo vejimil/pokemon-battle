@@ -16,6 +16,7 @@ export const UI_ASSETS = Object.freeze({
   categoriesAtlas: { key: 'pkb-ui-categories', json: './assets/pokerogue/ui/misc/categories.json', path: './assets/pokerogue/ui/misc/' },
   teraAtlas: { key: 'pkb-ui-button-tera', image: './assets/pokerogue/ui/button_tera.png', json: './assets/pokerogue/ui/button_tera.json' },
   trayAtlas: { key: 'pkb-ui-pb-tray-ball', image: './assets/pokerogue/ui/pb_tray_ball.png', json: './assets/pokerogue/ui/pb_tray_ball.json' },
+  pokeballAtlas: { key: 'pkb-ui-pokeball', image: './assets/pokerogue/ui/misc/pb.png', json: './assets/pokerogue/ui/misc/pb.json' },
   overlayHpAtlas: { key: 'pkb-ui-overlay-hp', image: './assets/pokerogue/ui/overlay_hp.png', json: './assets/pokerogue/ui/overlay_hp.json' },
   overlayMessage: { key: 'pkb-ui-overlay-message', url: './assets/pokerogue/ui/overlay_message.png' },
   overlayExp: { key: 'pkb-ui-overlay-exp', url: './assets/pokerogue/ui/overlay_exp.png' },

@@ -15,6 +15,7 @@ const STORAGE_KEY = 'pkb-static-state-v3';
 // Exposed on window so the browser console can toggle them: window.FLAGS.battlePresentationV2 = true
 const FLAGS = window.FLAGS = {
   battlePresentationV2: true,  // timeline executor (Sprint 2b: on by default)
+  battleDualViewV1: true,      // split UI: top=P1, bottom=P2 (no pass-device perspective switching)
   battleAudioV1: false,        // audio manager SE routing
   battleLocaleV1: false,       // namespace-based battle messages
   battleMsgActionTagsV1: false, // @d/@s message tag parser
@@ -1529,6 +1530,7 @@ const state = {
     perspective: 0,
     modeByPlayer: {0: 'command', 1: 'command'},
     moveDetailByPlayer: {0: {}, 1: {}},
+    timelineSpriteOverrides: {},
     passPrompt: '',
     lastFlyoutKey: '',
     flyoutTimer: null,
@@ -1539,7 +1541,180 @@ const state = {
 
 const els = {};
 let pickerReturnFocusEl = null;
-let phaserBattleRenderer = null;
+const phaserBattleRenderers = { 0: null, 1: null };
+
+function getPhaserBattleRenderer(player = 0) {
+  return phaserBattleRenderers[player] || null;
+}
+
+function getPrimaryBattleScene() {
+  return getPhaserBattleRenderer(0)?.scene
+    ?? getPhaserBattleRenderer(1)?.scene
+    ?? null;
+}
+
+function getTimelineExecutorConfigs() {
+  const p1Scene = () => getPhaserBattleRenderer(0)?.scene ?? null;
+  const p2Scene = () => getPhaserBattleRenderer(1)?.scene ?? null;
+  const dualView = FLAGS.battleDualViewV1 === true;
+  if (dualView && p1Scene() && p2Scene()) {
+    return [
+      { scene: p1Scene, playerSide: 'p1', audioEnabled: true },
+      { scene: p2Scene, playerSide: 'p2', audioEnabled: false },
+    ];
+  }
+  const perspective = clamp(Number(state.battleUi?.perspective || 0), 0, 1);
+  return [{ scene: () => getPrimaryBattleScene(), playerSide: perspective === 1 ? 'p2' : 'p1', audioEnabled: true }];
+}
+
+function getTimelineSpriteOverride(side) {
+  const ui = state.battleUi || (state.battleUi = {});
+  ui.timelineSpriteOverrides = ui.timelineSpriteOverrides || {};
+  return ui.timelineSpriteOverrides[side] || null;
+}
+
+function setTimelineSpriteOverride(side, value) {
+  if (side !== 'p1' && side !== 'p2') return;
+  const ui = state.battleUi || (state.battleUi = {});
+  ui.timelineSpriteOverrides = ui.timelineSpriteOverrides || {};
+  if (value && value.spriteId) {
+    ui.timelineSpriteOverrides[side] = {
+      spriteId: String(value.spriteId || ''),
+      shiny: Boolean(value.shiny),
+    };
+    return;
+  }
+  delete ui.timelineSpriteOverrides[side];
+}
+
+function clearTimelineSpriteOverrides() {
+  const ui = state.battleUi || (state.battleUi = {});
+  ui.timelineSpriteOverrides = {};
+}
+
+function resolveTimelineSwitchSpriteOverride(ev, battle = state.battle) {
+  if (!ev || ev.type !== 'switch_in' || !battle?.players) return null;
+  const sideIndex = ev.side === 'p2' ? 1 : 0;
+  const side = battle.players?.[sideIndex];
+  if (!side?.team?.length) return null;
+
+  const slot = Number.isInteger(ev.slot) ? ev.slot : 0;
+  const activeTeamIndex = side.active?.[slot];
+  const candidates = [];
+  if (Number.isInteger(activeTeamIndex) && side.team[activeTeamIndex]) {
+    candidates.push(side.team[activeTeamIndex]);
+  }
+
+  const speciesId = toId(ev.species || '');
+  if (speciesId) {
+    for (const mon of side.team) {
+      if (!mon) continue;
+      const ids = [
+        toId(mon.formSpecies || ''),
+        toId(mon.species || ''),
+        toId(mon.baseSpecies || ''),
+      ];
+      if (ids.includes(speciesId)) candidates.push(mon);
+    }
+  }
+
+  const mon = candidates.find(Boolean);
+  if (!mon) return null;
+  const spriteId = resolveBattleRenderSpriteId(mon);
+  if (!spriteId) return null;
+  return { spriteId, shiny: Boolean(mon.shiny) };
+}
+
+function primeTimelineSpriteOverrides(events = [], battle = state.battle) {
+  clearTimelineSpriteOverrides();
+  if (!Array.isArray(events) || !events.length) return;
+  events
+    .filter(ev => ev?.type === 'switch_in' && (ev.side === 'p1' || ev.side === 'p2'))
+    .forEach(ev => {
+      const override = resolveTimelineSwitchSpriteOverride(ev, battle);
+      if (override) setTimelineSpriteOverride(ev.side, override);
+    });
+}
+
+async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, onComplete = () => {}, onInputRequired = () => {}, preHideSwitchInSides = false } = {}) {
+  clearTimelineSpriteOverrides();
+  if (!Array.isArray(events) || !events.length) {
+    onComplete();
+    return;
+  }
+  primeTimelineSpriteOverrides(events, state.battle);
+  const configs = getTimelineExecutorConfigs().filter(cfg => cfg.scene());
+  if (!configs.length) {
+    onComplete();
+    return;
+  }
+  let inputHandled = false;
+  const handleInputRequired = requestType => {
+    if (inputHandled) return;
+    inputHandled = true;
+    onInputRequired(requestType);
+  };
+  const switchInSides = [...new Set(
+    events
+      .filter(ev => ev?.type === 'switch_in')
+      .map(ev => ev.side)
+      .filter(side => side === 'p1' || side === 'p2')
+  )];
+  if (switchInSides.length) {
+    await Promise.all(configs.flatMap(cfg => {
+      const scene = cfg.scene?.();
+      if (!scene?.prepareSwitchInBattler) return [];
+      const perspective = cfg.playerSide === 'p2' ? 1 : 0;
+      return switchInSides.map(async side => {
+        const override = getTimelineSpriteOverride(side);
+        if (!override?.spriteId) return;
+        const sideIndex = side === 'p2' ? 1 : 0;
+        const facing = sideIndex === perspective ? 'back' : 'front';
+        const spriteUrl = spritePath(override.spriteId, facing, Boolean(override.shiny));
+        try {
+          await scene.prepareSwitchInBattler(side, spriteUrl);
+        } catch (_error) {}
+      });
+    }));
+  }
+  if (preHideSwitchInSides) {
+    const switchSides = [...new Set(
+      events
+        .filter(ev => ev?.type === 'switch_in' && ev?.fromBall)
+        .map(ev => ev.side)
+        .filter(side => side === 'p1' || side === 'p2')
+    )];
+    for (const cfg of configs) {
+      const scene = cfg.scene?.();
+      if (!scene?.concealBattler) continue;
+      switchSides.forEach(side => {
+        try { scene.concealBattler(side); } catch (_error) {}
+      });
+    }
+  }
+  const executors = configs.map(cfg => new BattleTimelineExecutor({
+    onComplete: () => {},
+    applySnapshot: () => {},
+    onInputRequired: handleInputRequired,
+    initialNames,
+    ...cfg,
+  }));
+  await Promise.all(executors.map(executor => executor.play(events)));
+  onComplete();
+}
+
+function hidePhaserBattleRenderers() {
+  [0, 1].forEach(player => {
+    try { getPhaserBattleRenderer(player)?.hide?.(); } catch (_error) {}
+  });
+}
+
+function destroyPhaserBattleRenderers() {
+  [0, 1].forEach(player => {
+    try { getPhaserBattleRenderer(player)?.destroy?.(); } catch (_error) {}
+    phaserBattleRenderers[player] = null;
+  });
+}
 
 function getBundledServerContext() {
   const raw = window.__PKB_SERVER_CONTEXT__ || {};
@@ -3814,7 +3989,10 @@ function bindElements() {
     turnNumber: document.getElementById('turn-number'),
     battleFieldStatus: document.getElementById('battle-field-status'),
     battlePhaserRoot: document.getElementById('battle-phaser-root'),
-    battlePhaserMount: document.getElementById('battle-phaser-mount'),
+    battlePhaserMountP1: document.getElementById('battle-phaser-mount-p1'),
+    battlePhaserMountP2: document.getElementById('battle-phaser-mount-p2'),
+    battlePhaserLabelP1: document.getElementById('battle-phaser-label-p1'),
+    battlePhaserLabelP2: document.getElementById('battle-phaser-label-p2'),
     battlePhaserStatus: document.getElementById('battle-phaser-status'),
     battleExitFullscreenBtn: document.getElementById('battle-exit-fullscreen-btn'),
     battleLog: document.getElementById('battle-log'),
@@ -4653,14 +4831,16 @@ async function startBattle() {
     // Wait for Phaser scene + audio to be ready first, then fire events in background.
     if (FLAGS.battlePresentationV2 && Array.isArray(state.battle?.events) && state.battle.events.length > 0) {
       await syncPhaserBattleRenderer(state.battle);
-      const initExecutor = new BattleTimelineExecutor({
-        onComplete: () => { renderBattle(); },
-        applySnapshot: () => { renderBattle(); },
-        scene: () => phaserBattleRenderer?.scene ?? null,
-        playerSide: 'p1',
+      playTimelineAcrossActiveViews(state.battle.events, {
+        onComplete: () => {
+          clearTimelineSpriteOverrides();
+          renderBattle();
+        },
         initialNames: {},
-      });
-      initExecutor.play(state.battle.events);  // fire-and-forget; don't block return
+        preHideSwitchInSides: true,
+      }).catch(error => {
+        console.warn('[BattleTimeline] initial play failed:', error);
+      });  // fire-and-forget; don't block return
     }
 
     return;
@@ -5534,6 +5714,7 @@ function getBattleUiState(battle = state.battle) {
   if (!Number.isInteger(ui.perspective)) ui.perspective = 0;
   ui.modeByPlayer = ui.modeByPlayer || {0: 'command', 1: 'command'};
   ui.moveDetailByPlayer = ui.moveDetailByPlayer || {0: {}, 1: {}};
+  ui.timelineSpriteOverrides = ui.timelineSpriteOverrides || {};
   if (typeof ui.passPrompt !== 'string') ui.passPrompt = '';
   if (typeof ui.lastFlyoutKey !== 'string') ui.lastFlyoutKey = '';
   if (!('flyoutTimer' in ui)) ui.flyoutTimer = null;
@@ -5551,11 +5732,17 @@ function getDefaultBattleUiModeForPlayer(player, battle = state.battle) {
 function syncBattleUiState(battle = state.battle) {
   const ui = getBattleUiState(battle);
   if (!ui || !battle) return ui;
+  const dualView = FLAGS.battleDualViewV1 === true;
   const actionablePlayers = isShowdownLocalBattle(battle) ? getEnginePlayersNeedingAction(battle) : [];
-  if (actionablePlayers.length && !actionablePlayers.includes(ui.perspective)) {
-    ui.perspective = actionablePlayers[0];
-  } else if (!actionablePlayers.length) {
+  if (!dualView) {
+    if (actionablePlayers.length && !actionablePlayers.includes(ui.perspective)) {
+      ui.perspective = actionablePlayers[0];
+    } else if (!actionablePlayers.length) {
+      ui.perspective = clamp(Number(ui.perspective || 0), 0, 1);
+    }
+  } else {
     ui.perspective = clamp(Number(ui.perspective || 0), 0, 1);
+    ui.passPrompt = '';
   }
   [0, 1].forEach(player => {
     const defaultMode = getDefaultBattleUiModeForPlayer(player, battle);
@@ -5603,6 +5790,7 @@ function resetBattlePresentationState({perspective = 0, passPrompt = ''} = {}) {
   ui.perspective = clamp(Number(perspective || 0), 0, 1);
   ui.modeByPlayer = {0: 'command', 1: 'command'};
   ui.moveDetailByPlayer = {0: {}, 1: {}};
+  ui.timelineSpriteOverrides = {};
   ui.passPrompt = passPrompt || '';
   ui.lastFlyoutKey = '';
   if (ui.flyoutTimer) clearTimeout(ui.flyoutTimer);
@@ -5615,6 +5803,20 @@ function handleBattleChoiceCommitted(player, battle = state.battle) {
   const ui = getBattleUiState(battle);
   if (!ui || !battle) return;
   ui.modeByPlayer[player] = 'message';
+
+  // Dual-view mode: both player screens stay visible simultaneously.
+  // Do not switch perspective or display pass-device prompts.
+  if (FLAGS.battleDualViewV1) {
+    ui.passPrompt = '';
+    const actionablePlayers = isShowdownLocalBattle(battle) ? getEnginePlayersNeedingAction(battle) : [];
+    actionablePlayers.forEach(nextPlayer => {
+      if (Number.isInteger(nextPlayer) && nextPlayer !== player) {
+        ui.modeByPlayer[nextPlayer] = getDefaultBattleUiModeForPlayer(nextPlayer, battle);
+      }
+    });
+    return;
+  }
+
   const actionablePlayers = isShowdownLocalBattle(battle) ? getEnginePlayersNeedingAction(battle) : [];
   if (!actionablePlayers.length) {
     ui.passPrompt = '';
@@ -6489,9 +6691,24 @@ function buildPhaserMessageWindowModel(battle, player) {
   };
 }
 
-function buildPkbPokerogueUiModel(battle) {
+function resolveSpriteUrlForBattleSide(sideIndex, perspective, mon, isRenderable) {
+  const sideId = sideIndex === 1 ? 'p2' : 'p1';
+  const facing = sideIndex === perspective ? 'back' : 'front';
+  if (isRenderable && mon) {
+    const spriteId = resolveBattleRenderSpriteId(mon);
+    if (spriteId) return spritePath(spriteId, facing, Boolean(mon.shiny));
+  }
+  const override = getTimelineSpriteOverride(sideId);
+  if (override?.spriteId) return spritePath(override.spriteId, facing, Boolean(override.shiny));
+  return '';
+}
+
+function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
   const ui = syncBattleUiState(battle);
-  const perspective = ui?.perspective ?? 0;
+  const useForcedPerspective = Number.isInteger(forcedPerspective);
+  const perspective = useForcedPerspective
+    ? clamp(Number(forcedPerspective), 0, 1)
+    : (ui?.perspective ?? 0);
   const allyPlayer = perspective;
   const enemyPlayer = perspective === 0 ? 1 : 0;
   const mode = ui?.modeByPlayer?.[perspective] || getDefaultBattleUiModeForPlayer(perspective, battle);
@@ -6505,6 +6722,8 @@ function buildPkbPokerogueUiModel(battle) {
   const playerInfo = buildBattleInfoModel(allyPlayer, battle);
   const enemyMon = getActiveMons(enemyPlayer, battle)[0] || null;
   const playerMon = getActiveMons(allyPlayer, battle)[0] || null;
+  const enemyRenderable = Boolean(enemyMon && Number(enemyMon.hp || 0) > 0 && !enemyMon.fainted);
+  const playerRenderable = Boolean(playerMon && Number(playerMon.hp || 0) > 0 && !playerMon.fainted);
   const rawAbilityBar = updateBattleAbilityBarState(battle);
   const abilityBar = rawAbilityBar?.visible ? {
     ...rawAbilityBar,
@@ -6514,22 +6733,26 @@ function buildPkbPokerogueUiModel(battle) {
     turn: battle.turn,
     perspective,
     language: state.language || 'ko',
-    perspectiveOptions: [
-      {label: battle.players?.[0]?.name || 'P1', active: perspective === 0, action: {type: 'perspective', player: 0}},
-      {label: battle.players?.[1]?.name || 'P2', active: perspective === 1, action: {type: 'perspective', player: 1}},
-    ],
+    perspectiveOptions: FLAGS.battleDualViewV1 && useForcedPerspective
+      ? []
+      : [
+        {label: battle.players?.[0]?.name || 'P1', active: perspective === 0, action: {type: 'perspective', player: 0}},
+        {label: battle.players?.[1]?.name || 'P2', active: perspective === 1, action: {type: 'perspective', player: 1}},
+      ],
     turnChip: `${lang('턴', 'Turn')} ${battle.turn}`,
-    bannerText: ui?.passPrompt || `${battle.players?.[perspective]?.name || `P${perspective + 1}`} · ${bannerChip.text || lang('배틀 화면', 'Battle screen')}`,
+    bannerText: (FLAGS.battleDualViewV1 && useForcedPerspective)
+      ? `${battle.players?.[perspective]?.name || `P${perspective + 1}`} · ${bannerChip.text || lang('배틀 화면', 'Battle screen')}`
+      : (ui?.passPrompt || `${battle.players?.[perspective]?.name || `P${perspective + 1}`} · ${bannerChip.text || lang('배틀 화면', 'Battle screen')}`),
     fieldStatus: getBattleFieldStatusText(battle),
     message: buildBattleMessageModel(battle, perspective),
     enemyInfo,
     playerInfo,
     enemySprite: {
-      url: enemyMon ? spritePath(resolveBattleRenderSpriteId(enemyMon), 'front', enemyMon.shiny) : '',
+      url: resolveSpriteUrlForBattleSide(enemyPlayer, perspective, enemyMon, enemyRenderable),
       mount: 'enemy',
     },
     playerSprite: {
-      url: playerMon ? spritePath(resolveBattleRenderSpriteId(playerMon), 'back', playerMon.shiny) : '',
+      url: resolveSpriteUrlForBattleSide(allyPlayer, perspective, playerMon, playerRenderable),
       mount: 'player',
     },
     enemyTray: buildBattleTrayModel(enemyPlayer, battle),
@@ -6539,13 +6762,14 @@ function buildPkbPokerogueUiModel(battle) {
   };
 }
 
-function dispatchPkbPokerogueUiAction(action) {
+function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
   const battle = ensureBattleUiState(state.battle);
   if (!battle || !action) return;
   const ui = getBattleUiState(battle);
-  const player = ui?.perspective ?? 0;
+  const player = Number.isInteger(playerOverride) ? clamp(Number(playerOverride), 0, 1) : (ui?.perspective ?? 0);
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   if (action.type === 'perspective') {
+    if (FLAGS.battleDualViewV1 && Number.isInteger(playerOverride)) return;
     setBattlePerspective(action.player);
     return;
   }
@@ -6580,12 +6804,6 @@ function dispatchPkbPokerogueUiAction(action) {
   }
 }
 
-
-const pkbPokerogueUiAdapter = Object.freeze({
-  buildModel: battle => buildPkbPokerogueUiModel(battle),
-  dispatchAction: action => dispatchPkbPokerogueUiAction(action),
-});
-
 function enterBattleFullscreen() {
   if (!els.battlePhaserRoot) return;
   els.battlePhaserRoot.classList.add('battle-fullscreen');
@@ -6605,17 +6823,49 @@ async function syncPhaserBattleRenderer(battle) {
     els.battlePanel.classList.remove('is-phaser-active');
     exitBattleFullscreen();
     if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = true;
-    phaserBattleRenderer?.hide();
+    hidePhaserBattleRenderers();
     return false;
   }
-  if (!phaserBattleRenderer && els.battlePhaserMount) {
-    phaserBattleRenderer = createPhaserBattleController({mount: els.battlePhaserMount, statusEl: els.battlePhaserStatus});
+
+  const dualView = FLAGS.battleDualViewV1 === true;
+  if (els.battlePhaserLabelP1) {
+    els.battlePhaserLabelP1.textContent = battle.players?.[0]?.name || 'Player 1';
   }
-  if (!phaserBattleRenderer) return false;
+  if (els.battlePhaserLabelP2) {
+    els.battlePhaserLabelP2.textContent = battle.players?.[1]?.name || 'Player 2';
+  }
+
   try {
-    const model = pkbPokerogueUiAdapter.buildModel(battle);
-    enterBattleFullscreen();
-    await phaserBattleRenderer.show(model, {onAction: pkbPokerogueUiAdapter.dispatchAction});
+    if (dualView) {
+      exitBattleFullscreen();
+      if (!getPhaserBattleRenderer(0) && els.battlePhaserMountP1) {
+        phaserBattleRenderers[0] = createPhaserBattleController({ mount: els.battlePhaserMountP1 });
+      }
+      if (!getPhaserBattleRenderer(1) && els.battlePhaserMountP2) {
+        phaserBattleRenderers[1] = createPhaserBattleController({ mount: els.battlePhaserMountP2 });
+      }
+      const p1Renderer = getPhaserBattleRenderer(0);
+      const p2Renderer = getPhaserBattleRenderer(1);
+      if (!p1Renderer || !p2Renderer) return false;
+
+      const modelP1 = buildPkbPokerogueUiModel(battle, 0);
+      const modelP2 = buildPkbPokerogueUiModel(battle, 1);
+      await Promise.all([
+        p1Renderer.show(modelP1, { onAction: action => dispatchPkbPokerogueUiAction(action, { playerOverride: 0 }) }),
+        p2Renderer.show(modelP2, { onAction: action => dispatchPkbPokerogueUiAction(action, { playerOverride: 1 }) }),
+      ]);
+      if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = false;
+      if (els.battlePhaserStatus) els.battlePhaserStatus.hidden = true;
+    } else {
+      if (!getPhaserBattleRenderer(0) && els.battlePhaserMountP1) {
+        phaserBattleRenderers[0] = createPhaserBattleController({ mount: els.battlePhaserMountP1, statusEl: els.battlePhaserStatus });
+      }
+      const renderer = getPhaserBattleRenderer(0);
+      if (!renderer) return false;
+      const model = buildPkbPokerogueUiModel(battle);
+      enterBattleFullscreen();
+      await renderer.show(model, { onAction: action => dispatchPkbPokerogueUiAction(action) });
+    }
     els.battlePanel.classList.add('is-phaser-active');
     return true;
   } catch (error) {
@@ -6626,14 +6876,8 @@ async function syncPhaserBattleRenderer(battle) {
       els.battlePhaserStatus.dataset.tone = 'error';
       els.battlePhaserStatus.textContent = `Phaser battle renderer error: ${error.message}`;
     }
-    try {
-      phaserBattleRenderer?.destroy?.();
-    } catch (_destroyError) {
-      // no-op
-    }
-    phaserBattleRenderer = null;
+    destroyPhaserBattleRenderers();
     if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = true;
-    if (els.battlePhaserMount) els.battlePhaserMount.hidden = true;
     els.battlePanel.classList.remove('is-phaser-active');
     return false;
   }
@@ -6816,7 +7060,7 @@ async function resolveEngineTurn(battle = state.battle) {
     }
 
     state.battle = adoptedBattle;
-    const executor = new BattleTimelineExecutor({
+    await playTimelineAcrossActiveViews(adoptedBattle.events, {
       onComplete: () => {
         // New turn starting: always reset perspective to p1 and clear modes so the
         // player-side UI is shown first, regardless of what perspective was active
@@ -6825,19 +7069,17 @@ async function resolveEngineTurn(battle = state.battle) {
         if (ui) {
           ui.perspective = 0;
           ui.modeByPlayer = { 0: 'command', 1: 'command' };
-          ui.passPrompt = null;
+          ui.passPrompt = '';
         }
+        clearTimelineSpriteOverrides();
         renderBattle();
       },
-      applySnapshot: () => { renderBattle(); },
-      scene: () => phaserBattleRenderer?.scene ?? null,
-      playerSide: 'p1',
       initialNames,
     });
-    await executor.play(adoptedBattle.events);
   } else {
     // Presentation V1 (default): apply snapshot immediately
     state.battle = adoptedBattle;
+    clearTimelineSpriteOverrides();
   }
 }
 async function resolveTurn() {
@@ -6877,7 +7119,7 @@ function wireBattleEvents() {
     state.battle = null;
     resetBattlePresentationState();
     exitBattleFullscreen();
-    phaserBattleRenderer?.hide();
+    hidePhaserBattleRenderers();
     if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = true;
     els.battlePanel.classList.remove('is-phaser-active');
     els.battlePanel.classList.add('hidden');
@@ -6925,7 +7167,6 @@ function renderAll() {
 }
 async function bootstrap() {
   bindElements();
-  phaserBattleRenderer = createPhaserBattleController({mount: els.battlePhaserMount, statusEl: els.battlePhaserStatus});
   applyLanguageToStaticUi();
   syncLanguageControls();
   showRuntime('업로드한 에셋과 현지화된 전투 데이터를 불러오는 중… / Loading uploaded assets and fully localized battle data…', 'loading');

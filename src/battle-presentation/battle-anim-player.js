@@ -9,8 +9,8 @@
  *     AnimFocus.USER   (2)      → relative to user battler position
  *     AnimFocus.USER_TARGET (3) → interpolated along user→target axis
  *
- * Phase 1: GRAPHIC overlay sprites only.
- *   USER (0) and TARGET (1) battler sprite copies deferred to Phase 2.
+ * Phase 2: GRAPHIC + USER/TARGET battler-copy overlays.
+ *   USER/TARGET behavior transplanted from battle-anims.ts lines 944-983.
  *
  * AnimFrameTarget (from PokeRogue enum, move-anims-common.ts):
  *   USER = 0, TARGET = 1, GRAPHIC = 2
@@ -31,7 +31,7 @@ const FT_GRAPHIC = 2;
 const AF_TARGET      = 1;
 const AF_USER        = 2;
 const AF_USER_TARGET = 3;
-// AF_SCREEN = 4 not used in Phase 1
+// AF_SCREEN = 4 not used
 
 // AnimBlendType
 const AB_NORMAL   = 0;
@@ -40,6 +40,11 @@ const AB_ADD      = 1;
 
 // 30fps (PokeRogue: getFrameMs(3) = 1000/30 ≈ 33.33ms per frame)
 const FRAME_MS = 1000 / 30;
+
+// Sprint 6 hotfix:
+// Temporarily disable USER/TARGET battler-copy motion frames.
+// Keep GRAPHIC-only move animations until the original behavior is re-reviewed.
+const ENABLE_BATTLER_COPY_PHASE2 = false;
 
 // PokeRogue hardcoded focus reference points (logical 320×180 space).
 // Derived from: userFocusX/Y and targetFocusX/Y in battle-anims.ts lines 669-672.
@@ -66,11 +71,12 @@ export class BattleAnimPlayer {
    * Play the visual animation for a move.
    * Cancels any previous animation still running before starting the new one.
    * @param {string} moveName        — Showdown display name (e.g. 'Flamethrower')
-   * @param {{ x:number, y:number, displayHeight:number }} userInfo
-   * @param {{ x:number, y:number, displayHeight:number }} targetInfo
+   * @param {{ x:number, y:number, displayHeight:number, sprite?:Phaser.GameObjects.Image }} userInfo
+   * @param {{ x:number, y:number, displayHeight:number, sprite?:Phaser.GameObjects.Image }} targetInfo
+   * @param {{ audioEnabled?: boolean }} [options]
    * @returns {Promise<void>} resolves when animation finishes (or immediately on error)
    */
-  async play(moveName, userInfo, targetInfo) {
+  async play(moveName, userInfo, targetInfo, options = {}) {
     // Cancel any animation still running from a previous call — prevents sprite accumulation.
     if (this._activeCancel) {
       this._activeCancel();
@@ -89,7 +95,9 @@ export class BattleAnimPlayer {
     if (!this.scene.textures.exists(texKey)) return;  // load failed silently
 
     return new Promise(resolve => {
-      const cancel = this._runAnim(anim, texKey, userInfo, targetInfo, () => {
+      const cancel = this._runAnim(anim, texKey, userInfo, targetInfo, {
+        audioEnabled: options.audioEnabled !== false,
+      }, () => {
         // Clear our cancel handle when the animation finishes normally.
         if (this._activeCancel === cancel) this._activeCancel = null;
         resolve();
@@ -164,33 +172,48 @@ export class BattleAnimPlayer {
 
   /**
    * Execute the frame loop using Phaser's `time.delayedCall` for 33ms pacing.
-   * Phase 1: renders GRAPHIC (target=2) elements only.
+   * Renders GRAPHIC + USER/TARGET battler-copy elements (Phase 2).
    *
    * Returns a cancel function — calling it immediately destroys all sprites and
    * resolves the callback. Used by play() to cancel in-flight animations.
    * @returns {function} cancel — call to abort animation and free resources
    */
-  _runAnim(anim, texKey, userInfo, targetInfo, callback) {
+  _runAnim(anim, texKey, userInfo, targetInfo, options, callback) {
     const frames = anim.frames;
     const frameCount = frames.length;
     if (!frameCount) { callback(); return () => {}; }
+    const audioEnabled = options?.audioEnabled !== false;
 
     const uX = userInfo.x,   uY = userInfo.y,   uH = userInfo.displayHeight ?? 64;
     const tX = targetInfo.x, tY = targetInfo.y, tH = targetInfo.displayHeight ?? 64;
+    const uSrc = userInfo.sprite ?? null;
+    const tSrc = targetInfo.sprite ?? null;
     const srcLine = [USER_FOCUS_X, USER_FOCUS_Y, TARGET_FOCUS_X, TARGET_FOCUS_Y];
     const dstLine = [uX, uY, tX, tY];
 
-    // Pool of GRAPHIC overlay sprites; reused across frames to avoid GC churn.
-    const pool = [];
+    const graphicPool = [];
+    const userPool = [];
+    const targetPool = [];
+    const prevUserVisible = uSrc?.visible ?? true;
+    const prevTargetVisible = tSrc?.visible ?? true;
+    const hasBattlerFrames = ENABLE_BATTLER_COPY_PHASE2 && frames.some(spriteFrames =>
+      Array.isArray(spriteFrames) && spriteFrames.some(frame => frame?.target === FT_USER || frame?.target === FT_TARGET)
+    );
     let destroyed = false;
 
     const cleanUp = () => {
       if (destroyed) return;
       destroyed = true;
-      for (const spr of pool) {
+      for (const spr of [...graphicPool, ...userPool, ...targetPool]) {
         try { spr.destroy(); } catch {}
       }
-      pool.length = 0;
+      graphicPool.length = 0;
+      userPool.length = 0;
+      targetPool.length = 0;
+      if (hasBattlerFrames) {
+        try { if (uSrc?.active) uSrc.setVisible(prevUserVisible); } catch {}
+        try { if (tSrc?.active) tSrc.setVisible(prevTargetVisible); } catch {}
+      }
       callback();
     };
 
@@ -200,51 +223,95 @@ export class BattleAnimPlayer {
       if (destroyed) return;
       if (f >= frameCount) { cleanUp(); return; }
 
-      const spriteFrames = frames[f];
+      if (!f && hasBattlerFrames) {
+        try { if (uSrc?.active) uSrc.setVisible(false); } catch {}
+        try { if (tSrc?.active) tSrc.setVisible(false); } catch {}
+      }
+
+      const spriteFrames = frames[f] || [];
+      let u = 0;
+      let t = 0;
       let g = 0;
 
       for (const frame of spriteFrames) {
-        if (frame.target !== FT_GRAPHIC) continue;  // Phase 1: skip USER(0)/TARGET(1)
+        const frameData = this._computeFrameData(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine);
+        if (frame.target === FT_GRAPHIC) {
+          if (g >= graphicPool.length) {
+            const spr = this.scene.add.sprite(0, 0, texKey, 0);
+            spr.setDepth(12);  // above battlers (6-7), below UI (30+)
+            graphicPool.push(spr);
+          }
+          const spr = graphicPool[g++];
 
-        // Allocate sprite from pool if needed
-        if (g >= pool.length) {
-          const spr = this.scene.add.sprite(0, 0, texKey, 0);
-          spr.setDepth(12);  // above battlers (6-7), below UI (30+)
-          pool.push(spr);
+          // Position in scene coordinates
+          spr.setPosition(frameData.x, frameData.y);
+
+          // Frame of the spritesheet
+          const frameIdx = frame.graphicFrame ?? 0;
+          try { spr.setFrame(frameIdx); } catch {}
+
+          // Transform
+          spr.setScale(frameData.scaleX, frameData.scaleY);
+          spr.setAngle(frameData.angle);
+          spr.setAlpha((frame.opacity ?? 255) / 255);
+          spr.setVisible(frame.visible !== false);
+          this._setBlendMode(spr, frame.blendType ?? AB_NORMAL);
+          continue;
         }
-        const spr = pool[g++];
 
-        // Position in scene coordinates
-        const pos = this._computePos(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine);
-        spr.setPosition(pos.x, pos.y);
+        const isUser = frame.target === FT_USER;
+        const isTarget = frame.target === FT_TARGET;
+        if (!isUser && !isTarget) continue;
+        if (!ENABLE_BATTLER_COPY_PHASE2) continue;
+        if (isUser && uSrc === tSrc) continue;
 
-        // Frame of the spritesheet
-        const frameIdx = frame.graphicFrame ?? 0;
-        try { spr.setFrame(frameIdx); } catch {}
+        const srcSprite = isUser ? uSrc : tSrc;
+        if (!srcSprite || !srcSprite.active) continue;
 
-        // Transform
-        const scaleX = ((frame.zoomX ?? 100) / 100) * (frame.mirror ? -1 : 1);
-        const scaleY  = (frame.zoomY ?? 100) / 100;
-        spr.setScale(scaleX, scaleY);
-        spr.setAngle(-(frame.angle ?? 0));
-        spr.setAlpha((frame.opacity ?? 255) / 255);
-        spr.setVisible(frame.visible !== false);
+        const pool = isUser ? userPool : targetPool;
+        const spriteIndex = isUser ? u++ : t++;
+        if (spriteIndex >= pool.length) {
+          const copy = this.scene.add.image(0, 0, srcSprite.texture.key, srcSprite.frame?.name);
+          copy.setOrigin(srcSprite.originX ?? 0.5, srcSprite.originY ?? 1);
+          copy.setDepth(srcSprite.depth ?? 7);
+          pool.push(copy);
+        }
+        const copySprite = pool[spriteIndex];
 
-        const blend = frame.blendType ?? AB_NORMAL;
-        spr.setBlendMode(
-          blend === AB_ADD ? 1  :   // Phaser.BlendModes.ADD = 1
-          blend === 2      ? 11 :   // Phaser.BlendModes.DIFFERENCE = 11
-          0                         // Phaser.BlendModes.NORMAL = 0
+        this._syncBattlerCopyTexture(copySprite, srcSprite);
+        const sourceScaleX = Number.isFinite(srcSprite.scaleX) ? srcSprite.scaleX : 1;
+        const sourceScaleY = Number.isFinite(srcSprite.scaleY) ? srcSprite.scaleY : sourceScaleX;
+        const absSourceScaleY = Math.abs(sourceScaleY) || 1;
+        const sourceHeight = Number.isFinite(srcSprite.height) && srcSprite.height > 0
+          ? srcSprite.height
+          : (srcSprite.displayHeight ?? 64) / absSourceScaleY;
+
+        // Keep source-scale correction from PokeRogue's BattleAnim.play (line 992).
+        copySprite.setPosition(
+          frameData.x,
+          frameData.y - (sourceHeight / 2) * (absSourceScaleY - 1)
         );
+        copySprite.setAngle(frameData.angle);
+        copySprite.setScale(
+          frameData.scaleX * sourceScaleX,
+          frameData.scaleY * sourceScaleY
+        );
+        copySprite.setAlpha((frame.opacity ?? 255) / 255);
+        // Source battlers are intentionally hidden during USER/TARGET overlay frames.
+        // Do not gate overlay visibility on source visibility, or the battler vanishes.
+        copySprite.setVisible(frame.visible !== false);
+        this._setBlendMode(copySprite, frame.blendType ?? AB_NORMAL);
       }
 
-      // Hide any pool sprites not used in this frame
-      for (let i = g; i < pool.length; i++) pool[i].setVisible(false);
+      // Hide any pool sprites not used in this frame.
+      for (let i = g; i < graphicPool.length; i++) graphicPool[i].setVisible(false);
+      for (let i = u; i < userPool.length; i++) userPool[i].setVisible(false);
+      for (let i = t; i < targetPool.length; i++) targetPool[i].setVisible(false);
 
       // Timed events at this frame index
       const fte = anim.fte.get(f);
       if (fte) {
-        for (const ev of fte) this._fireSoundEvent(ev);
+        for (const ev of fte) this._fireSoundEvent(ev, audioEnabled);
       }
 
       f++;
@@ -263,18 +330,14 @@ export class BattleAnimPlayer {
   // ──────────────────────────────────────────────── coordinate transform ─
 
   /**
-   * Compute final scene (x, y) for a GRAPHIC frame element.
+   * Compute frame data in scene coordinates.
    * Ported from getGraphicFrameData() in battle-anims.ts lines 789-834.
-   *
-   * @param {object} frame         — raw frame object from anim JSON
-   * @param {number} uX, uY, uH   — user sprite position (x = center, y = bottom) + height
-   * @param {number} tX, tY, tH   — target sprite position (x = center, y = bottom) + height
-   * @param {number[]} srcLine     — [USER_FOCUS_X, USER_FOCUS_Y, TARGET_FOCUS_X, TARGET_FOCUS_Y]
-   * @param {number[]} dstLine     — [uX, uY, tX, tY]
    */
-  _computePos(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine) {
+  _computeFrameData(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine) {
     let x = (frame.x ?? 0) + USER_FOCUS_X;
     let y = (frame.y ?? 0) + USER_FOCUS_Y;
+    let scaleX = ((frame.zoomX ?? 100) / 100) * (frame.mirror ? -1 : 1);
+    const scaleY = (frame.zoomY ?? 100) / 100;
     const focus = frame.focus ?? AF_TARGET;
 
     switch (focus) {
@@ -297,6 +360,9 @@ export class BattleAnimPlayer {
         );
         x = pt[0];
         y = pt[1];
+        if (frame.target === FT_GRAPHIC && this._isReversed(srcLine[0], srcLine[2], dstLine[0], dstLine[2])) {
+          scaleX *= -1;
+        }
         break;
       }
       case 0:  // some frames have focus:0 — treat as TARGET fallback
@@ -305,7 +371,7 @@ export class BattleAnimPlayer {
         y += tY - (tH / 2) - TARGET_FOCUS_Y;
         break;
     }
-    return { x, y };
+    return { x, y, scaleX, scaleY, angle: -(frame.angle ?? 0) };
   }
 
   // Ports transformPoint / yAxisIntersect / repositionY from battle-anims.ts lines 674-721.
@@ -324,13 +390,44 @@ export class BattleAnimPlayer {
     return [x1 + tx * (x2 - x1), y1 + ty * (y2 - y1)];
   }
 
+  _isReversed(src1, src2, dst1, dst2) {
+    if (src1 === src2) return false;
+    if (src1 < src2) return dst1 > dst2;
+    return dst1 < dst2;
+  }
+
+  _syncBattlerCopyTexture(copy, source) {
+    if (!copy || !source?.texture) return;
+    const key = source.texture.key;
+    const frameName = source.frame?.name;
+    if (!key || !this.scene.textures.exists(key)) return;
+    try {
+      if (frameName !== undefined && frameName !== null) {
+        copy.setTexture(key, frameName);
+      } else {
+        copy.setTexture(key);
+      }
+    } catch {}
+    copy.setOrigin(source.originX ?? 0.5, source.originY ?? 1);
+    copy.setDepth(source.depth ?? copy.depth);
+  }
+
+  _setBlendMode(sprite, blend) {
+    sprite.setBlendMode(
+      blend === AB_ADD ? 1  :   // Phaser.BlendModes.ADD = 1
+      blend === 2      ? 11 :   // Phaser.BlendModes.DIFFERENCE = 11
+      0                         // Phaser.BlendModes.NORMAL = 0
+    );
+  }
+
   // ─────────────────────────────────────────────────── timed sound events ─
 
   /**
    * Fire an AnimTimedSoundEvent: lazy-load the audio file if needed, then play.
    * Mirrors AnimTimedSoundEvent.execute() in battle-anims.ts lines 291-309.
    */
-  _fireSoundEvent(ev) {
+  _fireSoundEvent(ev, audioEnabled = true) {
+    if (!audioEnabled) return;
     if (ev.eventType !== 'AnimTimedSoundEvent' || !ev.resourceName) return;
     const audio = this.scene.audio;
     if (!audio) return;

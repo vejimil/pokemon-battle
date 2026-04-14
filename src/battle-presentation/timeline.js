@@ -72,13 +72,15 @@ export class BattleTimelineExecutor {
    * @param {function(): object}       [opts.scene]            getter returning current Phaser scene (may be null)
    * @param {string}                   [opts.playerSide]       Showdown side id for local player ('p1'|'p2')
    * @param {Record<string, string>}   [opts.initialNames]     pre-seeded slot→species map (key: "p1_0", "p2_0")
+   * @param {boolean}                  [opts.audioEnabled]     play timeline audio for this executor
    */
-  constructor({ onInputRequired, onComplete, applySnapshot, scene, playerSide, initialNames } = {}) {
+  constructor({ onInputRequired, onComplete, applySnapshot, scene, playerSide, initialNames, audioEnabled = true } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
     this.onComplete = onComplete ?? (() => {});
     this._applySnapshot = applySnapshot ?? (() => {});
     this._scene = scene ?? (() => null);
     this._playerSide = playerSide ?? 'p1';
+    this._audioEnabled = audioEnabled !== false;
     this.running = false;
     // Tracks species name per slot. Key: "${side}_${slot}" e.g. "p1_0", "p2_0".
     // Pre-seeded from initialNames (previous turn's final roster).
@@ -101,6 +103,26 @@ export class BattleTimelineExecutor {
 
   _delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  _playAudio(key) {
+    if (!this._audioEnabled || !key) return;
+    this._audio?.play?.(key);
+  }
+
+  _playHitByResult(result) {
+    if (!this._audioEnabled) return;
+    this._audio?.playHitByResult?.(result);
+  }
+
+  async _playCryByNum(dexNum) {
+    if (!this._audioEnabled || !dexNum) return;
+    await this._audio?.playCryByNum?.(dexNum);
+  }
+
+  async _playMoveSe(moveName) {
+    if (!this._audioEnabled || !moveName) return;
+    await this._audio?.playMoveSe?.(moveName);
   }
 
   /** Set battle message box text immediately (reading time provided by surrounding _delay calls). */
@@ -171,13 +193,18 @@ export class BattleTimelineExecutor {
           : `상대의 ${species} 등장!`;
         this._showMsg(label);
 
-        if (ev.fromBall) this._audio?.play('se/pb_rel');
-        await this._delay(700);
+        const scene = this._scene();
+        if (scene?.switchInBattler) {
+          await scene.switchInBattler(ev.side, !!ev.fromBall, { audioEnabled: this._audioEnabled });
+        } else if (ev.fromBall) {
+          this._playAudio('se/pb_rel');
+        }
+        await this._delay(ev.fromBall ? 300 : 100);
 
         // BA-2: play Pokémon cry via dex number → cry/<num>.m4a
         // Await the load so the cry plays even on first load (avoids 500ms timeout miss).
         const dexNum = speciesToDexNum(species);
-        if (dexNum) await this._audio?.playCryByNum?.(dexNum);
+        if (dexNum) await this._playCryByNum(dexNum);
         await this._delay(ev.fromBall ? 300 : 100);
         break;
       }
@@ -194,12 +221,12 @@ export class BattleTimelineExecutor {
           // Max duration: generous upper bound so even long animations always complete.
           const ANIM_TIMEOUT_MS = 5000;
           await Promise.race([
-            scene.playMoveAnim(ev.move, ev.actor?.side, ev.target?.side),
+            scene.playMoveAnim(ev.move, ev.actor?.side, ev.target?.side, { audioEnabled: this._audioEnabled }),
             new Promise(resolve => setTimeout(resolve, ANIM_TIMEOUT_MS)),
           ]);
         } else {
           // Fallback: SE-only when scene not available.
-          await this._audio?.playMoveSe(ev.move);
+          await this._playMoveSe(ev.move);
           await this._delay(500);
         }
         break;
@@ -207,7 +234,7 @@ export class BattleTimelineExecutor {
 
       // ── BA-1: Damage ─────────────────────────────────────────────────────
       case 'damage': {
-        this._audio?.playHitByResult(ev.hitResult ?? 'effective');
+        this._playHitByResult(ev.hitResult ?? 'effective');
         await this._delay(100);
         const hpPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
         const info = this._infoForSide(ev.target?.side);
@@ -244,8 +271,14 @@ export class BattleTimelineExecutor {
       case 'faint': {
         const faintName = this._slotName(ev.side, ev.slot ?? 0);
         this._showMsg(`${faintName} 기절!`);
-        this._audio?.play('se/faint');
-        await this._delay(900);
+        this._playAudio('se/faint');
+        const scene = this._scene();
+        if (scene?.faintBattler) {
+          await scene.faintBattler(ev.side);
+        } else {
+          await this._delay(500);
+        }
+        await this._delay(300);
         break;
       }
 
@@ -316,7 +349,7 @@ export class BattleTimelineExecutor {
         const amount = Number(ev.amount) || 1;
         const suffix = amount >= 2 ? ' 크게 올랐다!' : ' 올랐다!';
         this._showMsg(`${boostName}의 ${statLabel}이${suffix}`);
-        this._audio?.play('se/stat_up');
+        this._playAudio('se/stat_up');
         await this._delay(600);
         break;
       }
@@ -327,7 +360,7 @@ export class BattleTimelineExecutor {
         const uamount = Number(ev.amount) || 1;
         const usuffix = uamount >= 2 ? ' 크게 내려갔다!' : ' 내려갔다!';
         this._showMsg(`${unboostName}의 ${unstatLabel}이${usuffix}`);
-        this._audio?.play('se/stat_down');
+        this._playAudio('se/stat_down');
         await this._delay(600);
         break;
       }
@@ -371,7 +404,7 @@ export class BattleTimelineExecutor {
         // ev.winner is the Showdown player name of the winner.
         if (ev.winner) {
           this._showMsg(`${ev.winner} 승리!`);
-          this._audio?.play('se/level_up');
+          this._playAudio('se/level_up');
           await this._delay(1500);
         }
         break;

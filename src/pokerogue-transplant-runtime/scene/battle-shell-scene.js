@@ -1,4 +1,4 @@
-import { ARENA_OFFSETS } from '../runtime/constants.js';
+import { ARENA_OFFSETS, UI_ASSETS } from '../runtime/constants.js';
 import { preloadUiAssets } from '../runtime/assets.js';
 import { BattleAudioManager } from '../runtime/audio-manager.js';
 import { clamp, textureExists, createBaseText, setHorizontalCrop, setInteractiveTarget, applyHostBox, addWindow, setTextWordWrap } from '../runtime/phaser-utils.js';
@@ -500,6 +500,168 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.ui?.renderModel?.(model || {});
     }
 
+    _mountForBattleSide(side) {
+      const perspective = Number.isInteger(this.currentModel?.perspective)
+        ? clamp(Number(this.currentModel.perspective), 0, 1)
+        : 0;
+      const sideIndex = side === 'p2' ? 1 : 0;
+      const isPlayerViewSide = sideIndex === perspective;
+      return isPlayerViewSide ? this.playerSprite : this.enemySprite;
+    }
+
+    concealBattler(side) {
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active) return;
+      this.tweens.killTweensOf(spr);
+      spr.setAlpha(1);
+      spr.setVisible(false);
+      if (mount?.shadow) mount.shadow.setVisible(false);
+    }
+
+    async prepareSwitchInBattler(side, spriteUrl = '') {
+      const mount = this._mountForBattleSide(side);
+      if (!mount) return;
+      if (spriteUrl) {
+        await this.renderBattlerSprite(mount, { url: spriteUrl });
+      }
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active) return;
+      this.tweens.killTweensOf(spr);
+      spr.setAlpha(1);
+      spr.setVisible(false);
+      if (mount?.shadow) mount.shadow.setVisible(false);
+    }
+
+    /**
+     * BA-12: faint visual — slide battler downward, then hide.
+     * Ported timing from PokeRogue faint-phase.ts (duration 500, Sine.easeIn).
+     */
+    async faintBattler(side) {
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active || !spr.visible) return;
+
+      const startY = spr.y;
+      const dropDistance = spr.displayHeight || 64;
+      this.tweens.killTweensOf(spr);
+
+      await new Promise(resolve => {
+        this.tweens.add({
+          targets: spr,
+          duration: 500,
+          y: startY + dropDistance,
+          alpha: 0,
+          ease: 'Sine.easeIn',
+          onComplete: resolve,
+          onStop: resolve,
+        });
+      });
+
+      if (!spr.active) return;
+      spr.setVisible(false);
+      spr.setAlpha(1);
+      spr.setY(startY);
+      if (mount?.shadow) mount.shadow.setVisible(false);
+    }
+
+    /**
+     * BA-13: switch-in visual — pokeball arc then battler fade-in.
+     * Arc profile follows summon-phase.ts (x travel + y up/down chain).
+     */
+    async switchInBattler(side, fromBall = true, options = {}) {
+      const audioEnabled = options?.audioEnabled !== false;
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active) return;
+
+      // Restore metric-aligned base transform before playing switch visuals.
+      this._applyMountMetricsSnapshot(mount);
+      spr.setAlpha(1);
+
+      if (!fromBall) {
+        spr.setVisible(true);
+        return;
+      }
+
+      const pbKey = UI_ASSETS.pokeballAtlas.key;
+      if (!this.textures.exists(pbKey)) {
+        spr.setVisible(true);
+        if (audioEnabled) this.audio?.play?.('se/pb_rel');
+        return;
+      }
+
+      const isPlayerSide = mount?.name === 'player';
+      const releaseX = spr.x;
+      const releaseY = spr.y + (isPlayerSide ? -16 : 2);
+      const startX = isPlayerSide ? 36 : 248;
+      const startY = isPlayerSide ? 80 : 44;
+      const peakY = releaseY - (isPlayerSide ? 62 : 52);
+
+      const pokeball = this.add.sprite(startX, startY, pbKey, 'pb')
+        .setOrigin(0.5, 0.625)
+        .setDepth((spr.depth ?? 7) + 1);
+
+      this.tweens.killTweensOf(spr);
+      spr.setVisible(false);
+      spr.setAlpha(0);
+      if (mount?.shadow) mount.shadow.setVisible(false);
+
+      const xTween = this.tweens.add({
+        targets: pokeball,
+        duration: 650,
+        x: releaseX,
+      });
+
+      let completedArc = false;
+      await new Promise(resolve => {
+        this.tweens.add({
+          targets: pokeball,
+          duration: 150,
+          ease: 'Cubic.easeOut',
+          y: peakY,
+          onComplete: () => {
+            this.tweens.add({
+              targets: pokeball,
+              duration: 500,
+              ease: 'Cubic.easeIn',
+              angle: 1440,
+              y: releaseY,
+              onComplete: () => {
+                completedArc = true;
+                resolve();
+              },
+              onStop: resolve,
+            });
+          },
+          onStop: resolve,
+        });
+      });
+
+      if (xTween?.isPlaying()) xTween.stop();
+      if (pokeball?.active) pokeball.destroy();
+
+      if (!spr.active) return;
+      spr.setVisible(true);
+
+      if (!completedArc) {
+        spr.setAlpha(1);
+        return;
+      }
+
+      if (audioEnabled) this.audio?.play?.('se/pb_rel');
+      await new Promise(resolve => {
+        this.tweens.add({
+          targets: spr,
+          duration: 250,
+          ease: 'Sine.easeIn',
+          alpha: 1,
+          onComplete: resolve,
+          onStop: resolve,
+        });
+      });
+    }
+
     /**
      * Play the visual animation for a move.
      * Called by the timeline executor for move_use events.
@@ -509,12 +671,11 @@ export function createBattleShellSceneClass(Phaser, env) {
      * @param {string} targetSide   — 'p1' | 'p2'  (who is being hit)
      * @returns {Promise<void>}
      */
-    async playMoveAnim(moveName, actorSide, targetSide) {
+    async playMoveAnim(moveName, actorSide, targetSide, options = {}) {
       if (!this.animPlayer || !moveName) return;
 
-      // p1 = player side (back sprite), p2 = enemy side (front sprite)
-      const userMount   = actorSide  === 'p1' ? this.playerSprite : this.enemySprite;
-      const targetMount = targetSide === 'p1' ? this.playerSprite : this.enemySprite;
+      const userMount = this._mountForBattleSide(actorSide);
+      const targetMount = this._mountForBattleSide(targetSide);
       if (!userMount || !targetMount) return;
 
       const uSpr = userMount.phaserSprite;
@@ -522,10 +683,20 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (!uSpr || !tSpr) return;
 
       // Battler sprites use origin(0.5, 1): x = horizontal center, y = bottom edge.
-      const userInfo   = { x: uSpr.x, y: uSpr.y, displayHeight: uSpr.displayHeight || 64 };
-      const targetInfo = { x: tSpr.x, y: tSpr.y, displayHeight: tSpr.displayHeight || 64 };
+      const userInfo = {
+        x: uSpr.x,
+        y: uSpr.y,
+        displayHeight: uSpr.displayHeight || 64,
+        sprite: uSpr,
+      };
+      const targetInfo = {
+        x: tSpr.x,
+        y: tSpr.y,
+        displayHeight: tSpr.displayHeight || 64,
+        sprite: tSpr,
+      };
 
-      await this.animPlayer.play(moveName, userInfo, targetInfo);
+      await this.animPlayer.play(moveName, userInfo, targetInfo, options);
     }
   };
 }

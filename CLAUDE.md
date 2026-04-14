@@ -81,7 +81,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (Sprint 6 시작 — 2026-04-15 기준)
+## 다음 세션 우선순위 (Sprint 7 시작 — 2026-04-15 기준)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
@@ -138,6 +138,70 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - `player-battle-info.js`: `_onHpNumbersUpdate(scaleX, maxHp)` 오버라이드 — `Math.round(scaleX * maxHp)` → `setHpNumbers()`. `lastHpNum` 동기화.
 - `timeline.js`: damage/heal 핸들러 — `tweenHpTo(pct, ev.maxHp)` 전달
 
+### ✅ Sprint 6 — 완료 (2026-04-15)
+
+**BA-11: Phase 2 USER/TARGET 배틀러 복사본 애니메이션**
+- 원본 참조: `pokerogue_codes/src/data/battle-anims.ts` lines 944-983
+- `battle-anim-player.js`: USER/TARGET/GRAPHIC 3개 타겟 풀 렌더링 + 프레임별 transform/blend 적용
+- `battle-anim-player.js`: battler 복사본 텍스처/프레임 동기화 + 원본 battler 숨김/복원
+
+**BA-12: faint 시각 연출**
+- 원본 참조: `pokerogue_codes/src/phases/faint-phase.ts` lines 194-220
+- `battle-shell-scene.js`: `faintBattler(side)` 추가 (`duration:500`, `Sine.easeIn`, `y += displayHeight`, `alpha:0`)
+- `timeline.js`: `faint`에서 `await scene.faintBattler(ev.side)` 호출
+
+**BA-13: switch_in 시각 연출**
+- 원본 참조: `pokerogue_codes/src/phases/summon-phase.ts` lines 125-209
+- `constants.js`/`assets.js`: `assets/pokerogue/ui/misc/pb.(png|json)` 포켓볼 atlas preload 추가
+- `battle-shell-scene.js`: `switchInBattler(side, fromBall)` 추가 (포켓볼 arc → battler fadeIn)
+- `timeline.js`: `switch_in`에서 `await scene.switchInBattler(ev.side, !!ev.fromBall)` 호출
+
+### ✅ UX-DS1 — 배틀 화면 분할(상=P1, 하=P2) 완료 (2026-04-15)
+
+- 단일 `perspective` 전환형 구조를 dual-view로 변경 (pass-device UI 의존도 제거)
+- `index.html`: Phaser mount 2개(`battle-phaser-mount-p1`, `battle-phaser-mount-p2`)로 분할
+- `styles.css`: split view 레이아웃 + view header 스타일 추가
+- `app.js`:
+  - `phaserBattleRenderers[0|1]` 도입, 플레이어별 렌더러 독립 구동
+  - `buildPkbPokerogueUiModel(battle, forcedPerspective)` 추가
+  - `dispatchPkbPokerogueUiAction(action, {playerOverride})`로 입력 플레이어 컨텍스트 고정
+  - dual-view 모드에서 `handleBattleChoiceCommitted()`의 perspective 전환/패스 프롬프트 비활성화
+- `app.js` + `timeline.js`:
+  - `playTimelineAcrossActiveViews()` 도입으로 이벤트 타임라인을 P1/P2 씬에 동시 재생
+  - 보조 화면 executor는 `audioEnabled=false`로 실행(중복 SE 방지)
+- `battle-shell-scene.js`:
+  - `p1/p2` side 매핑을 `currentModel.perspective` 기준으로 변환해 P2 화면에서 faint/switch/move 대상이 뒤바뀌는 문제 수정
+- `battle-anim-player.js`:
+  - `play(..., {audioEnabled})` 옵션 추가, move animation timed sound를 화면별로 제어
+
+### ✅ UX-DS1 후속 버그픽스 — 완료 (2026-04-15)
+
+- `battle-anim-player.js`: USER/TARGET copy overlay가 원본 battler hidden 상태에서도 렌더되도록 visibility 조건 수정 (기술 연출 시 battler 소실 문제 수정)
+- `battle-shell-scene.js`: `concealBattler(side)` 추가
+- `app.js`:
+  - 초기 switch_in 타임라인 시작 전 `preHideSwitchInSides` 옵션으로 battler 선숨김 적용
+  - `buildPkbPokerogueUiModel()`에서 `hp<=0 || fainted` active의 sprite URL 비움(기절 후 재노출 방지)
+- `battle-anim-player.js`:
+  - USER/TARGET battler-copy 이동 프레임 임시 비활성화 (원본 연출 재검토 전까지 GRAPHIC-only)
+- `app.js`:
+  - `timelineSpriteOverrides` 도입. `switch_in` 이벤트에서 spriteId/shiny를 선반영해, 교체 후 즉시 기절하는 턴에서도 교체 스프라이트가 타임라인 중 누락되지 않도록 수정
+  - `resolveEngineTurn()`에서 `switch_in` 선처리를 위해 최종 스냅샷 전체를 미리 렌더하지 않고, 타임라인 시작 전 씬별 `prepareSwitchInBattler()`만 호출하도록 변경 (강제교체 UI 조기노출 방지)
+
+#### 코드 변경 포인트 (파일 단위)
+
+- `src/battle-presentation/battle-anim-player.js`
+  - `ENABLE_BATTLER_COPY_PHASE2 = false` 추가로 USER/TARGET battler 이동 프레임 임시 OFF
+  - 현재 기술 연출은 GRAPHIC 레이어 중심으로만 재생
+- `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+  - `concealBattler(side)`: switch_in 직전 battler 선숨김
+  - `prepareSwitchInBattler(side, spriteUrl)`: switch_in 대상 sprite 텍스처 선로딩 후 숨김 상태 준비
+- `src/app.js`
+  - `timelineSpriteOverrides` 상태 및 헬퍼 추가 (`get/set/clear/prime`)
+  - `playTimelineAcrossActiveViews()`에서 `switch_in` 이벤트 사전 스캔 후 씬별 `prepareSwitchInBattler()` 호출
+  - `buildPkbPokerogueUiModel()`에 `resolveSpriteUrlForBattleSide()` 추가:
+    - active sprite가 없거나 fainted여도 timeline override sprite를 fallback으로 사용
+  - 타임라인 종료 시 `clearTimelineSpriteOverrides()`로 임시 상태 정리
+
 ### 🐛 미확인 항목
 
 - **battle_end** — 아직 브라우저 확인 못함
@@ -148,21 +212,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 > UI 폴리시(UI-P1~P5)는 아래 배틀 연출 작업이 모두 완성된 후에 착수한다.
 
-### Sprint 6. 배틀러 시각 연출
-
-**BA-11: Phase 2 — USER/TARGET 배틀러 복사본 애니메이션** (`battle-anim-player.js`)
-- `AnimFrameTarget.USER (0)`: 유저 포켓몬 고스트 복사본 생성 → 공격 시 앞으로 이동
-- `AnimFrameTarget.TARGET (1)`: 타겟 포켓몬 고스트 복사본 생성 → 피격 시 flinch/shake
-- 원본 `BattleAnim.play()` lines 944-983 이식
-- `phaserSprite`에서 현재 텍스처·프레임·스케일 복사 → 별도 `scene.add.image()` 생성 후 tween
-
-**BA-12: 기절(faint) 시각 연출** (`battle-shell-scene.js`, `timeline.js`)
-- `faint` 이벤트: 배틀러 스프라이트 아래로 슬라이드 tween (`y += displayHeight`, alpha 0, 500ms)
-- tween 완료 후 executor 다음 이벤트 진행
-
-**BA-13: 교체 시각 연출** (`battle-shell-scene.js`, `timeline.js`)
-- `switch_in` + `fromBall: true` 케이스: 포켓볼 이미지 호를 그리며 착지 후 스프라이트 등장 tween
-- 포켓볼 이미지: `pokeball.png` 에셋 사용 (기존 로드 여부 확인 필요)
+### ✅ Sprint 6. 배틀러 시각 연출 — 완료 (2026-04-15)
 
 ### Sprint 7. 배틀 완성도
 
@@ -182,6 +232,14 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 **BA-15: 폼 체인지 연출** (`battle-shell-scene.js`, `timeline.js`)
 - `forme_change`: 스프라이트 교체 + 메시지
+
+**BA-18: 교체 시 정보창 즉시 반영** (`app.js`, `timeline.js`, `battle-shell-scene.js`)
+- 목표: switch_in 시점에 이름/HP/상태 정보창이 턴 종료 전 즉시 갱신
+- 현재: 일부 케이스에서 턴 종료 후 최종 스냅샷 반영 시점까지 지연
+
+**BA-19: 폼체인지 즉시 반영** (`showdown-engine.cjs`, `timeline.js`, `app.js`)
+- 목표: 메가진화/원시회귀/울트라버스트 등 폼체인지 시점에 sprite/info/ability 즉시 갱신
+- 현재: 일부 케이스에서 턴 종료 후 갱신됨
 
 ---
 

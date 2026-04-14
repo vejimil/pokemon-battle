@@ -252,7 +252,22 @@
           <div id="battle-phaser-root" class="pkbattle-phaser-root" hidden>
             <button id="battle-exit-fullscreen-btn" class="battle-exit-fullscreen-btn" type="button" hidden>← 빌더로</button>
             <div id="battle-phaser-status" class="pkbattle-phaser-status" hidden></div>
-            <div id="battle-phaser-mount" class="pkbattle-phaser-mount"></div>
+            <div class="pkbattle-phaser-split">
+              <section class="pkbattle-phaser-view" aria-label="Player 1 battle view">
+                <header class="pkbattle-phaser-view-head">
+                  <strong id="battle-phaser-label-p1">Player 1</strong>
+                  <span class="small-note">Top Screen</span>
+                </header>
+                <div id="battle-phaser-mount-p1" class="pkbattle-phaser-mount"></div>
+              </section>
+              <section class="pkbattle-phaser-view" aria-label="Player 2 battle view">
+                <header class="pkbattle-phaser-view-head">
+                  <strong id="battle-phaser-label-p2">Player 2</strong>
+                  <span class="small-note">Bottom Screen</span>
+                </header>
+                <div id="battle-phaser-mount-p2" class="pkbattle-phaser-mount"></div>
+              </section>
+            </div>
           </div>
 
           <div class="pkbattle-shell">

@@ -3192,6 +3192,30 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   margin-bottom: 14px;
 }
 
+.pkbattle-phaser-split {
+  display: grid;
+  gap: 14px;
+}
+
+.pkbattle-phaser-view {
+  display: grid;
+  gap: 8px;
+}
+
+.pkbattle-phaser-view-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 4px;
+  color: var(--muted);
+}
+
+.pkbattle-phaser-view-head strong {
+  color: var(--text);
+  font-size: 0.98rem;
+}
+
 .pkbattle-phaser-status {
   padding: 10px 12px;
   border-radius: 12px;
@@ -3212,10 +3236,11 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-phaser-mount {
-  width: min(100%, 1120px);
+  width: 100%;
+  max-width: 1120px;
   aspect-ratio: 16 / 9;
   min-height: 0;
-  max-height: 82vh;
+  max-height: 46vh;
   margin-inline: auto;
   border-radius: 22px;
   overflow: hidden;
@@ -3254,6 +3279,9 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   max-height: 100vh;
   aspect-ratio: 16 / 9;
   border-radius: 0;
+}
+.pkbattle-phaser-root.battle-fullscreen .pkbattle-phaser-view-head {
+  display: none;
 }
 
 /* Exit button shown only in fullscreen mode */

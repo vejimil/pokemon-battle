@@ -9,6 +9,7 @@ export function preloadUiAssets(scene) {
   if (!textures.exists(UI_ASSETS.categoriesAtlas.key)) load.multiatlas(UI_ASSETS.categoriesAtlas.key, UI_ASSETS.categoriesAtlas.json, UI_ASSETS.categoriesAtlas.path);
   if (!textures.exists(UI_ASSETS.teraAtlas.key)) load.atlas(UI_ASSETS.teraAtlas.key, UI_ASSETS.teraAtlas.image, UI_ASSETS.teraAtlas.json);
   if (!textures.exists(UI_ASSETS.trayAtlas.key)) load.multiatlas(UI_ASSETS.trayAtlas.key, UI_ASSETS.trayAtlas.json, './assets/pokerogue/ui/');
+  if (!textures.exists(UI_ASSETS.pokeballAtlas.key)) load.atlas(UI_ASSETS.pokeballAtlas.key, UI_ASSETS.pokeballAtlas.image, UI_ASSETS.pokeballAtlas.json);
   if (!textures.exists(UI_ASSETS.overlayHpAtlas.key)) load.atlas(UI_ASSETS.overlayHpAtlas.key, UI_ASSETS.overlayHpAtlas.image, UI_ASSETS.overlayHpAtlas.json);
   if (!textures.exists(UI_ASSETS.overlayMessage.key)) load.image(UI_ASSETS.overlayMessage.key, UI_ASSETS.overlayMessage.url);
   if (!textures.exists(UI_ASSETS.overlayExp.key)) load.image(UI_ASSETS.overlayExp.key, UI_ASSETS.overlayExp.url);
