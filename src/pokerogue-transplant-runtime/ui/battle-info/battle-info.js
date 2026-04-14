@@ -226,8 +226,9 @@ export class BattleInfo {
    * the tween completes (or immediately if no tween system is available).
    * Called by BattleTimelineExecutor on damage/heal events.
    * @param {number} hpPercent  0–100
+   * @param {number} [maxHp]    When provided, HP numbers are updated in sync with the bar.
    */
-  tweenHpTo(hpPercent) {
+  tweenHpTo(hpPercent, maxHp = 0) {
     const { scene, env } = this;
     const newPct = env.clamp(Number(hpPercent ?? 0), 0, 100);
     scene.tweens?.killTweensOf?.(this.hpFill);
@@ -239,6 +240,7 @@ export class BattleInfo {
       if (!scene.tweens || duration === 0) {
         this.hpFill.setScale(newPct / 100, 1);
         this._updateHpFrame();
+        if (maxHp > 0) this._onHpNumbersUpdate(newPct / 100, maxHp);
         resolve();
         return;
       }
@@ -247,11 +249,27 @@ export class BattleInfo {
         scaleX: newPct / 100,
         ease: 'Sine.easeOut',
         duration,
-        onUpdate: () => this._updateHpFrame(),
-        onComplete: () => { this._updateHpFrame(); resolve(); },
+        onUpdate: () => {
+          this._updateHpFrame();
+          if (maxHp > 0) this._onHpNumbersUpdate(this.hpFill.scaleX, maxHp);
+        },
+        onComplete: () => {
+          this._updateHpFrame();
+          if (maxHp > 0) this._onHpNumbersUpdate(newPct / 100, maxHp);
+          resolve();
+        },
       });
     });
   }
+
+  /**
+   * Hook for subclasses to update HP number display during the tween.
+   * Called every tween step when maxHp > 0 was passed to tweenHpTo().
+   * @param {number} scaleX  current hpFill scaleX (0–1)
+   * @param {number} maxHp
+   */
+  // eslint-disable-next-line no-unused-vars
+  _onHpNumbersUpdate(scaleX, maxHp) { /* overridden in PlayerBattleInfo */ }
 
   /** Update HP frame (high/medium/low) based on current scaleX. */
   _updateHpFrame() {

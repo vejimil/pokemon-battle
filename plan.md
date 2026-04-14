@@ -1,6 +1,6 @@
 # PKB Battle Presentation 구현 계획
 
-Last updated: 2026-04-14  
+Last updated: 2026-04-15  
 Target: `/workspaces/pokemon-battle`
 
 ---
@@ -19,7 +19,7 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
-## 1. 현재 구현 상태 (2026-04-14 기준)
+## 1. 현재 구현 상태 (2026-04-15 기준)
 
 ### ✅ 완료된 Milestone
 
@@ -33,6 +33,8 @@ Target: `/workspaces/pokemon-battle`
 | Sprint 3 | 배틀 메시지·울음소리·어빌리티 바/날씨/지형 | 2026-04-13 |
 | Sprint 4 | 상태이상/스탯변화/빗나감/행동불가 + 버그픽스 | 2026-04-13 |
 | Sprint 5 | immune/fail 메시지, 스탯 SE, callback, battle_end, BA-10 기술 애니메이션 Phase 1 | 2026-04-14 |
+| Sprint 5 버그픽스 | Phaser BlendMode ReferenceError, 파티화면 미닫힘, 턴 후 p2 화면 먼저 표시 | 2026-04-15 |
+| BA-16 | HP 숫자 바와 동시 감소 | 2026-04-15 |
 
 ### ✅ 완료된 이벤트 핸들러 목록 (`timeline.js`)
 
@@ -40,8 +42,8 @@ Target: `/workspaces/pokemon-battle`
 |--------|------|
 | `switch_in` | `se/pb_rel` + 300ms + 메시지 |
 | `move_use` | 기술명 메시지 + `playMoveAnim()` (GRAPHIC overlay, Phase 1) |
-| `damage` | `playHitByResult()` + 100ms + `tweenHpTo()` |
-| `heal` | `tweenHpTo()` |
+| `damage` | `playHitByResult()` + 100ms + `tweenHpTo(pct, maxHp)` — HP 숫자 동시 감소 |
+| `heal` | `tweenHpTo(pct, maxHp)` — HP 숫자 동시 증가 |
 | `faint` | `se/faint` + 메시지 + 600ms |
 | `ability_show` | 어빌리티 바 1200ms 표시 |
 | `weather_start/tick/end` | 한글 메시지 + 딜레이 |
@@ -57,15 +59,15 @@ Target: `/workspaces/pokemon-battle`
 | `callback_event` | "교체할 포켓몬을 선택해 주세요!" + stop |
 | `battle_end` | "${winner} 승리!" + `se/level_up` + 1500ms |
 
-### 🐛 Sprint 5 브라우저 확인 결과 (2026-04-14)
+### ✅ Sprint 5 브라우저 확인 결과 (2026-04-14 → 2026-04-15 수정 완료)
 
-| 항목 | 결과 | 원인 추정 |
-|------|------|-----------|
-| immune 메시지 | ❌ 미표시 | 타임라인 hang 또는 이벤트 skip |
-| move_fail 메시지 | ❌ 미표시 | 동일 |
+| 항목 | 결과 | 비고 |
+|------|------|------|
+| immune 메시지 | ✅ 수정 | FIX-1(BlendMode) 수정 후 정상 표시 |
+| move_fail 메시지 | ✅ 수정 | 동일 |
 | battle_end | ❓ 미확인 | — |
 | BA-10 스프라이트 위치 | ✅ 맞음 | — |
-| BA-10 애니메이션 | ❌ 버그 3종 | 아래 참조 |
+| BA-10 애니메이션 | ✅ 수정 | 3종 버그 모두 수정 완료 |
 
 **BA-10 버그 상세:**
 1. 스프라이트가 애니메이션 후 사라지지 않음 (`cleanUp()` 미호출 또는 pool destroy 실패)
@@ -78,7 +80,7 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
-### 🐛 Sprint 5 재확인 버그 (2026-04-14 — 신규 분석)
+### ✅ Sprint 5 재확인 버그 (2026-04-15 수정 완료)
 
 > BA-10 애니메이션 부분 수정(취소 메커니즘, 5000ms timeout) 이후 브라우저에서 추가 버그 발견.
 
@@ -192,6 +194,15 @@ Target: `/workspaces/pokemon-battle`
   2. `timeline.js` 한글 하드코딩 → `t('battle', 'switchIn', {name})` 형태로 교체
   3. 키 매핑 확인: `pokerogue_codes/src/plugins/utils-plugins.ts` 참조
 
+#### BA-17: 배틀 연출 타이밍 정확도 개선 (`timeline.js`, `battle-message-ui-handler.js`)
+- **현황**: 각 이벤트 핸들러가 고정 ms 딜레이(`await delay(N)`)로 다음 이벤트로 넘어감. 메시지 표시 완료나 애니메이션 완료를 정확히 기다리지 않음.
+- **목표**: 실제 포켓몬 게임처럼 — 메시지 표시 완료 + A버튼(또는 자동 진행) 후 다음 이벤트 진행. 각 연출이 완전히 끝난 뒤에야 다음 연출 시작.
+- **구현 방향**:
+  1. **메시지 대기**: `_showMsg()`가 메시지를 표시하고 일정 시간 또는 사용자 입력(A버튼)을 기다린 후 resolve하는 Promise 반환
+  2. **연출 완료 대기**: SE 재생, tween 완료, 어빌리티 바 표시 등 모든 비동기 연출이 정확히 끝날 때 await
+  3. **자동 진행 모드**: 현재처럼 자동 진행이지만 타이밍은 연출 완료 기준 (고정 ms 제거)
+- **참고**: PokeRogue는 `awaitMoveEnd()`, `awaitMessageComplete()` 패턴으로 이 문제를 해결함
+
 #### BA-14: 사이드 컨디션 연출 (`timeline.js`)
 - `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 설치/해제 메시지
 - 영향: `showdown-engine.cjs`에서 이미 `side_start/end` 이벤트 생성하는지 확인 필요
@@ -272,6 +283,28 @@ Showdown protocol lines
 ---
 
 ## 5. 완료 이력 (스프린트별)
+
+### Sprint 5 버그픽스 + BA-16 (2026-04-15)
+
+**FIX-1: `Phaser is not defined` — `battle-anim-player.js`**
+- 원인: ESM 모듈에서 `Phaser.BlendModes.*` 글로벌 참조
+- 수정: 숫자 상수 직접 사용 (ADD=1, DIFFERENCE=11, NORMAL=0)
+- 효과: 기술 애니메이션 실행 + immune/move_fail 등 후속 이벤트 정상 처리
+
+**FIX-2: 파티화면 미닫힘 — `app.js syncBattleUiState()`**
+- 원인: 강제 교체 분기에서 `modeByPlayer[player] = 'party'` 무조건 덮어씌움
+- 수정: `if (!isPlayerReady(player))` 가드 추가
+- 효과: 포켓몬 클릭 1회로 즉시 파티화면 닫힘
+
+**FIX-3: 강제 교체 후 p2 화면 먼저 표시 — `app.js resolveEngineTurn()`**
+- 원인: `handleBattleChoiceCommitted()` 호출 시 `ui.perspective=1`로 전환된 채 유지
+- 수정: `onComplete` 콜백에서 `ui.perspective=0`, `modeByPlayer={0:'command',1:'command'}` 리셋
+- 효과: 강제 교체 후 다음 턴에 항상 p1(플레이어) 화면 먼저 표시
+
+**BA-16: HP 숫자 바와 동시 감소**
+- `battle-info.js`: `tweenHpTo(hpPercent, maxHp=0)` — maxHp 파라미터 추가. tween onUpdate에서 `_onHpNumbersUpdate(scaleX, maxHp)` 호출
+- `player-battle-info.js`: `_onHpNumbersUpdate()` 오버라이드 — `Math.round(scaleX * maxHp)` 계산 후 `setHpNumbers()` 호출
+- `timeline.js`: damage/heal 핸들러에서 `tweenHpTo(pct, ev.maxHp)` 전달
 
 ### Sprint 5 (2026-04-14)
 - BA-5a: immune/move_fail 메시지 (`timeline.js`, `showdown-engine.cjs`, `event-schema.js`)

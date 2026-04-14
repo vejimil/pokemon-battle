@@ -81,7 +81,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (Sprint 5 완료 후 — 2026-04-14 기준)
+## 다음 세션 우선순위 (Sprint 6 시작 — 2026-04-15 기준)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
@@ -118,7 +118,27 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - `timeline.js` `move_use` 핸들러: `Promise.race([playMoveAnim(), timeout(5000)])` — hang 방지 safety timeout.
 - `battle-shell-scene.js` `handleShutdown`: 씬 종료 시 `animPlayer._activeCancel()` 호출 → 씬 재시작 시 Promise 미해결 방지.
 
-### 🐛 미확인 항목 (2026-04-14)
+### ✅ Sprint 5 버그픽스 + BA-16 — 완료 (2026-04-15)
+
+**FIX-1: `Phaser is not defined` — `battle-anim-player.js`**
+- 원인: ESM 모듈에서 `Phaser.BlendModes.*` 글로벌 참조 (tick 콜백 내)
+- 수정: 숫자 상수 직접 사용 — ADD=1, DIFFERENCE=11, NORMAL=0
+- 효과: 기술 애니메이션 정상 실행 + immune/move_fail 후속 이벤트 정상 처리
+
+**FIX-2: 파티화면 미닫힘 — `app.js syncBattleUiState()`**
+- 원인: 강제 교체 분기에서 선택 완료 여부와 무관하게 `modeByPlayer[player] = 'party'` 덮어씌움
+- 수정: `if (!isPlayerReady(player))` 가드 추가 → 선택 완료 후에는 mode 변경 안 함
+
+**FIX-3: 강제 교체 후 p2 화면 먼저 표시 — `app.js resolveEngineTurn()`**
+- 원인: `handleBattleChoiceCommitted()` 호출 시 `ui.perspective=1`로 전환된 상태가 다음 턴까지 유지
+- 수정: `onComplete` 콜백에서 `ui.perspective=0`, `modeByPlayer={0:'command',1:'command'}` 리셋
+
+**BA-16: HP 숫자 바와 동시 감소**
+- `battle-info.js`: `tweenHpTo(hpPercent, maxHp=0)` — maxHp 파라미터 추가. tween `onUpdate`에서 `_onHpNumbersUpdate(scaleX, maxHp)` 호출 (베이스 no-op)
+- `player-battle-info.js`: `_onHpNumbersUpdate(scaleX, maxHp)` 오버라이드 — `Math.round(scaleX * maxHp)` → `setHpNumbers()`. `lastHpNum` 동기화.
+- `timeline.js`: damage/heal 핸들러 — `tweenHpTo(pct, ev.maxHp)` 전달
+
+### 🐛 미확인 항목
 
 - **battle_end** — 아직 브라우저 확인 못함
 
@@ -151,6 +171,11 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - `timeline.js` 하드코딩 한글 → locale 키 기반으로 교체
 - 1차 네임스페이스: `battle`, `ability-trigger`, `move-trigger`, `weather`, `terrain`
 - 현재 `timeline.js` 한글 하드코딩과 locale 파일 내용이 중복 — locale이 정답 소스
+
+**BA-17: 배틀 연출 타이밍 정확도 개선** (`timeline.js`)
+- **현황**: 각 이벤트 핸들러가 고정 ms 딜레이로 다음 이벤트 진행. 메시지/애니메이션 완료를 기다리지 않음.
+- **목표**: 실제 포켓몬처럼 연출 완료 후 다음 이벤트 진행 (메시지 표시 완료 대기, tween 완료 대기 등)
+- **참고**: PokeRogue `awaitMoveEnd()`, `awaitMessageComplete()` 패턴 참조
 
 **BA-14: 사이드 컨디션 연출** (`timeline.js`)
 - `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 메시지

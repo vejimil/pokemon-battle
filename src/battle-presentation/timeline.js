@@ -212,7 +212,7 @@ export class BattleTimelineExecutor {
         const hpPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
         const info = this._infoForSide(ev.target?.side);
         if (info?.tweenHpTo) {
-          await info.tweenHpTo(hpPct);
+          await info.tweenHpTo(hpPct, ev.maxHp);
         } else {
           await this._delay(500);
         }
@@ -233,7 +233,7 @@ export class BattleTimelineExecutor {
         const healPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
         const healInfo = this._infoForSide(ev.target?.side);
         if (healInfo?.tweenHpTo) {
-          await healInfo.tweenHpTo(healPct);
+          await healInfo.tweenHpTo(healPct, ev.maxHp);
         } else {
           await this._delay(300);
         }

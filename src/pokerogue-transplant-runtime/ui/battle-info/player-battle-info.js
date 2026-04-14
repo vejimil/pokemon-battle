@@ -151,6 +151,17 @@ export class PlayerBattleInfo extends BattleInfo {
     }
   }
 
+  /**
+   * Update HP number sprites in real-time as the HP bar tweens.
+   * Overrides the no-op stub in BattleInfo.
+   */
+  _onHpNumbersUpdate(scaleX, maxHp) {
+    const currentHp = Math.max(0, Math.round(scaleX * maxHp));
+    this.setHpNumbers(currentHp, maxHp);
+    // Keep lastHpNum in sync so update() doesn't re-render with stale value
+    this.lastHpNum = currentHp;
+  }
+
   update(info = {}) {
     // Skip the parent's instant exp update — we handle it here with animation
     super.update(info);
