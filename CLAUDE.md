@@ -106,17 +106,21 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `AnimTimedSoundEvent` 발화 (lazy-load 내장)
   - `scene.playMoveAnim(moveName, actorSide, targetSide)` → `timeline.js` `move_use` 핸들러에 연결
 
-### 🐛 브라우저 확인 결과 — 버그 목록 (2026-04-14)
+### ✅ BA-10 버그픽스 — 완료 (2026-04-14)
 
-1. **immune/move_fail 메시지 미표시** — Sprint 5 수정 이후 배틀 자체가 불안정해짐. 간헐적으로 되는 경우도 있음. 타임라인 executor가 hang하거나 이벤트를 skip하는 문제로 추정.
+**원인 분석:**
+- `BattleAnimPlayer`에 이전 애니메이션 취소 메커니즘 없음 → 같은 기술 반복 시 이전 pool의 스프라이트가 잔존, 누적되어 진해 보임 / 고정된 이미지처럼 보임
+- `playMoveAnim()` Promise가 Phaser `delayedCall` 취소 시 영원히 resolve 안 됨 → executor hang → `immune`/`move_fail` 등 후속 이벤트 미처리
 
-2. **BA-10 애니메이션 버그** (우선 수정 대상):
-   - GRAPHIC 오버레이 스프라이트가 사라지지 않음 — `cleanUp()` 미호출 또는 pool destroy 실패
-   - 같은 기술 반복 사용 시 스프라이트가 누적되어 점점 진해짐 — 이전 pool이 해제되지 않고 쌓임
-   - 애니메이션처럼 보이지 않음 — 흐릿한 이미지 하나가 고정됨 (30fps 루프 미동작 가능성)
-   - 스프라이트 위치 자체는 맞는 것으로 보임
+**수정 내용:**
+- `battle-anim-player.js`: `_activeCancel` 추가. `play()` 진입 시 이전 애니메이션 즉시 취소 (sprites destroy + Promise resolve). `_runAnim()`이 `cleanUp`을 cancel handle로 반환.
+- `battle-anim-player.js`: `_runAnim()` 반환값을 `cleanUp` 함수로 변경.
+- `timeline.js` `move_use` 핸들러: `Promise.race([playMoveAnim(), timeout(5000)])` — hang 방지 safety timeout.
+- `battle-shell-scene.js` `handleShutdown`: 씬 종료 시 `animPlayer._activeCancel()` 호출 → 씬 재시작 시 Promise 미해결 방지.
 
-3. **battle_end** — 아직 확인 못함
+### 🐛 미확인 항목 (2026-04-14)
+
+- **battle_end** — 아직 브라우저 확인 못함
 
 ---
 

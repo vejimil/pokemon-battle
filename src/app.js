@@ -5566,7 +5566,12 @@ function syncBattleUiState(battle = state.battle) {
       return;
     }
     if (isEngineForceSwitchRequest(request)) {
-      ui.modeByPlayer[player] = 'party';
+      // Only force 'party' if the player has NOT yet committed a choice.
+      // Without this guard, syncBattleUiState re-enters after handleBattleChoiceCommitted
+      // and overwrites mode='message' back to 'party', preventing the screen from closing.
+      if (!isPlayerReady(player)) {
+        ui.modeByPlayer[player] = 'party';
+      }
       return;
     }
     if (current === 'party' && !getEngineSwitchOptions(player, getEngineActionSlots(player, battle)[0] ?? 0, battle).length) {
@@ -6812,7 +6817,18 @@ async function resolveEngineTurn(battle = state.battle) {
 
     state.battle = adoptedBattle;
     const executor = new BattleTimelineExecutor({
-      onComplete: () => { renderBattle(); },
+      onComplete: () => {
+        // New turn starting: always reset perspective to p1 and clear modes so the
+        // player-side UI is shown first, regardless of what perspective was active
+        // during the previous turn's forced-switch flow.
+        const ui = getBattleUiState(state.battle);
+        if (ui) {
+          ui.perspective = 0;
+          ui.modeByPlayer = { 0: 'command', 1: 'command' };
+          ui.passPrompt = null;
+        }
+        renderBattle();
+      },
       applySnapshot: () => { renderBattle(); },
       scene: () => phaserBattleRenderer?.scene ?? null,
       playerSide: 'p1',

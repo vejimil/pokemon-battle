@@ -78,6 +78,75 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
+### 🐛 Sprint 5 재확인 버그 (2026-04-14 — 신규 분석)
+
+> BA-10 애니메이션 부분 수정(취소 메커니즘, 5000ms timeout) 이후 브라우저에서 추가 버그 발견.
+
+#### FIX-1 (CRITICAL): `Phaser is not defined` — `battle-anim-player.js:234-238`
+
+- **증상**: 기술 사용 시 콘솔에 `Uncaught ReferenceError: Phaser is not defined at tick (battle-anim-player.js:237)` 발생
+- **원인**: `battle-anim-player.js`는 ESM 모듈이며 Phaser를 import하지 않음. `_runAnim()` 내부 `tick()` 콜백에서 `Phaser.BlendModes.ADD / DIFFERENCE / NORMAL` 글로벌 참조
+- **연쇄 영향**: ReferenceError가 `tick` 내에서 throw → `delayedCall` 루프 중단 → `cleanUp()`/`callback()` 미호출 → `playMoveAnim()` Promise가 resolve되지 않아 timeline executor hang → immune/move_fail/battle_end 등 후속 이벤트 전부 skip됨
+- **수정 방법**: `Phaser.BlendModes.*` 상수를 숫자로 교체
+  ```javascript
+  // Before (broken):
+  spr.setBlendMode(
+    blend === AB_ADD ? Phaser.BlendModes.ADD        :
+    blend === 2      ? Phaser.BlendModes.DIFFERENCE :
+    Phaser.BlendModes.NORMAL
+  );
+  // After (fixed):
+  spr.setBlendMode(
+    blend === AB_ADD ? 1  :   // Phaser.BlendModes.ADD = 1
+    blend === 2      ? 11 :   // Phaser.BlendModes.DIFFERENCE = 11
+    0                         // Phaser.BlendModes.NORMAL = 0
+  );
+  ```
+- **영향 파일**: `src/battle-presentation/battle-anim-player.js` lines 234-238
+
+#### FIX-2: 파티 화면이 첫 클릭 후 닫히지 않음 — `app.js syncBattleUiState()`
+
+- **증상**: 강제 교체 중 파티 화면에서 포켓몬을 클릭해도 화면이 유지됨. 두 번째 클릭 시 닫히며 엉뚱한 포켓몬이 선택됨.
+- **원인**: `syncBattleUiState()`의 강제 교체 분기:
+  ```javascript
+  if (isEngineForceSwitchRequest(request)) {
+    ui.modeByPlayer[player] = 'party';  // 무조건 'party'로 덮어씀
+    return;
+  }
+  ```
+  `handleBattleChoiceCommitted()`가 `mode='message'`로 설정한 직후 `renderBattle()` → `syncBattleUiState()` 재호출 시 다시 `'party'`로 덮어써 UI가 닫히지 않음.
+- **연쇄 영향**: 파티 화면이 열린 채로 `resolveTurn()` 비동기 실행 → `state.battle`이 `adoptedBattle2`(다음 턴)로 교체 → 여전히 열린 파티 화면에서 추가 클릭이 새 턴의 배틀 상태에 잘못 dispatch됨 (엉뚱한 포켓몬 선택)
+- **수정 방법**: `isPlayerReady(player)` 체크 후 이미 선택 완료 시 mode를 'party'로 강제 덮지 않음
+  ```javascript
+  if (isEngineForceSwitchRequest(request)) {
+    if (!isPlayerReady(player, battle)) {  // ← 가드 추가
+      ui.modeByPlayer[player] = 'party';
+    }
+    return;
+  }
+  ```
+  여기서 `isPlayerReady(player, battle)` = `battle.pendingChoices[player]?.committed === true` 또는 유사 조건 (기존 코드 확인 필요)
+- **영향 파일**: `src/app.js` — `syncBattleUiState()` 함수
+
+#### FIX-3: 강제 교체 후 다음 턴에 p2(적) 화면이 먼저 표시됨 — `app.js resolveEngineTurn()`
+
+- **증상**: p1이 강제 교체 완료 → 다음 턴 시작 시 p2(가이오가) 기술 선택 화면이 먼저 표시됨. p2가 기술을 선택하면 p1의 포켓몬이 공격을 받음.
+- **원인**: `handleBattleChoiceCommitted(0)` 호출 시 내부에서 `actionablePlayers`에서 다음 플레이어(index=1, p2)를 찾아 `ui.perspective = 1`로 전환함. 이 상태가 다음 턴 `renderBattle()` 호출까지 남아있어 p2 화면이 먼저 표시됨.
+- **수정 방법**: `resolveEngineTurn()` 내 `onComplete` 콜백(또는 `adoptEngineBattleSnapshot()` 직후)에서 perspective와 mode를 초기값으로 리셋:
+  ```javascript
+  onComplete: () => {
+    // 새 턴 시작 — 항상 p1(플레이어)이 먼저 행동
+    ui.perspective = 0;
+    ui.modeByPlayer = { 0: 'command', 1: 'command' };
+    ui.passPrompt = null;
+    renderBattle();
+  }
+  ```
+- **주의**: `applySnapshot` 콜백도 동일하게 처리 필요 여부 확인 (중간 스냅샷 적용 시 perspective가 바뀌지 않아야 함)
+- **영향 파일**: `src/app.js` — `resolveEngineTurn()` 내 executor 생성 시 `onComplete` 콜백
+
+---
+
 ## 2. 다음 작업 목록 (배틀 연출 완성 우선)
 
 ### Sprint 6. 배틀러 시각 연출

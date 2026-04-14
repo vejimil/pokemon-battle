@@ -189,7 +189,14 @@ export class BattleTimelineExecutor {
         const scene = this._scene();
         if (scene?.playMoveAnim) {
           // BA-10: play visual animation (includes timed sound events internally).
-          await scene.playMoveAnim(ev.move, ev.actor?.side, ev.target?.side);
+          // Safety timeout prevents executor hang if the Promise never resolves
+          // (e.g. Phaser delayedCall cancelled on scene reset / loaderror).
+          // Max duration: generous upper bound so even long animations always complete.
+          const ANIM_TIMEOUT_MS = 5000;
+          await Promise.race([
+            scene.playMoveAnim(ev.move, ev.actor?.side, ev.target?.side),
+            new Promise(resolve => setTimeout(resolve, ANIM_TIMEOUT_MS)),
+          ]);
         } else {
           // Fallback: SE-only when scene not available.
           await this._audio?.playMoveSe(ev.move);

@@ -57,16 +57,26 @@ export class BattleAnimPlayer {
     this._animCache   = new Map();   // slug → anim config (or null if missing)
     this._texLoaded   = new Set();   // graphic keys already loaded
     this._texLoading  = new Map();   // graphic key → Promise (in-flight)
+    // Bug fix: track the cancel function of the currently running animation.
+    // Calling it destroys all pool sprites and resolves the Promise immediately.
+    this._activeCancel = null;
   }
 
   /**
    * Play the visual animation for a move.
+   * Cancels any previous animation still running before starting the new one.
    * @param {string} moveName        — Showdown display name (e.g. 'Flamethrower')
    * @param {{ x:number, y:number, displayHeight:number }} userInfo
    * @param {{ x:number, y:number, displayHeight:number }} targetInfo
    * @returns {Promise<void>} resolves when animation finishes (or immediately on error)
    */
   async play(moveName, userInfo, targetInfo) {
+    // Cancel any animation still running from a previous call — prevents sprite accumulation.
+    if (this._activeCancel) {
+      this._activeCancel();
+      this._activeCancel = null;
+    }
+
     if (!moveName || !userInfo || !targetInfo) return;
     const slug = moveName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
 
@@ -78,7 +88,14 @@ export class BattleAnimPlayer {
     const texKey = `pkb-ba/${anim.graphic}`;
     if (!this.scene.textures.exists(texKey)) return;  // load failed silently
 
-    return new Promise(resolve => this._runAnim(anim, texKey, userInfo, targetInfo, resolve));
+    return new Promise(resolve => {
+      const cancel = this._runAnim(anim, texKey, userInfo, targetInfo, () => {
+        // Clear our cancel handle when the animation finishes normally.
+        if (this._activeCancel === cancel) this._activeCancel = null;
+        resolve();
+      });
+      this._activeCancel = cancel;
+    });
   }
 
   // ─────────────────────────────────────────────────── asset loading ─────
@@ -148,11 +165,15 @@ export class BattleAnimPlayer {
   /**
    * Execute the frame loop using Phaser's `time.delayedCall` for 33ms pacing.
    * Phase 1: renders GRAPHIC (target=2) elements only.
+   *
+   * Returns a cancel function — calling it immediately destroys all sprites and
+   * resolves the callback. Used by play() to cancel in-flight animations.
+   * @returns {function} cancel — call to abort animation and free resources
    */
   _runAnim(anim, texKey, userInfo, targetInfo, callback) {
     const frames = anim.frames;
     const frameCount = frames.length;
-    if (!frameCount) { callback(); return; }
+    if (!frameCount) { callback(); return () => {}; }
 
     const uX = userInfo.x,   uY = userInfo.y,   uH = userInfo.displayHeight ?? 64;
     const tX = targetInfo.x, tY = targetInfo.y, tH = targetInfo.displayHeight ?? 64;
@@ -211,9 +232,9 @@ export class BattleAnimPlayer {
 
         const blend = frame.blendType ?? AB_NORMAL;
         spr.setBlendMode(
-          blend === AB_ADD      ? Phaser.BlendModes.ADD        :
-          blend === 2           ? Phaser.BlendModes.DIFFERENCE :
-          Phaser.BlendModes.NORMAL
+          blend === AB_ADD ? 1  :   // Phaser.BlendModes.ADD = 1
+          blend === 2      ? 11 :   // Phaser.BlendModes.DIFFERENCE = 11
+          0                         // Phaser.BlendModes.NORMAL = 0
         );
       }
 
@@ -236,6 +257,7 @@ export class BattleAnimPlayer {
     };
 
     tick();  // start frame 0 immediately
+    return cleanUp;  // expose as cancel handle
   }
 
   // ──────────────────────────────────────────────── coordinate transform ─

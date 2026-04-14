@@ -29,6 +29,9 @@ export function createBattleShellSceneClass(Phaser, env) {
         try { this.scale?.off?.('resize', this.handleResize, this); } catch (_error) {}
         try { window.removeEventListener('keydown', this.handleWindowKeyDown, true); } catch (_error) {}
         try { window.removeEventListener('keyup', this.handleWindowKeyUp, true); } catch (_error) {}
+        // Cancel any in-flight move animation so its Promise resolves and the
+        // timeline executor doesn't hang if the scene shuts down mid-animation.
+        try { this.animPlayer?._activeCancel?.(); } catch (_error) {}
       };
       this.runtimeEnv = {
         ...env,
