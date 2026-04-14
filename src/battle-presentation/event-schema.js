@@ -58,8 +58,9 @@ export const EVENT_TYPES = /** @type {const} */ ({
   SIDE_START:          'side_start',
   SIDE_END:            'side_end',
 
-  // Hit result markers (no standalone UI, folded into damage.hitResult)
-  IMMUNE:              'immune',
+  // Hit result markers
+  IMMUNE:              'immune',    // move had no effect (type immunity)
+  MOVE_FAIL:           'move_fail', // move failed (protect, no target, etc.)
   MISS:                'miss',
   CANT_MOVE:           'cant_move',
 

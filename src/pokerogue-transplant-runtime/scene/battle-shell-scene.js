@@ -5,6 +5,7 @@ import { clamp, textureExists, createBaseText, setHorizontalCrop, setInteractive
 import { buttonFromKeyboardEvent, isTypingIntoElement } from '../ui/facade/input-facade.js';
 import { TransplantBattleUI } from '../ui/ui.js';
 import { loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationDelayMs } from '../runtime/pokemon-metrics.js';
+import { BattleAnimPlayer } from '../../battle-presentation/battle-anim-player.js';
 
 // Global shadow nudge for visual alignment tuning.
 // Negative x = left, negative y = up.
@@ -73,6 +74,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         this.enemySprite = this.createSpriteMount('enemy');
         this.playerSprite = this.createSpriteMount('player');
         this.runtimeEnv.audio = this.audio; // expose audio manager to UI handlers
+        this.animPlayer = new BattleAnimPlayer(this);  // move visual animation player
         this.ui = new TransplantBattleUI(this, this.controller, this.runtimeEnv);
         this.ui.attachSpriteMounts({ enemy: this.enemySprite, player: this.playerSprite });
         this.ui.setup();
@@ -493,6 +495,34 @@ export function createBattleShellSceneClass(Phaser, env) {
     renderModel(model) {
       this.currentModel = model;
       this.ui?.renderModel?.(model || {});
+    }
+
+    /**
+     * Play the visual animation for a move.
+     * Called by the timeline executor for move_use events.
+     *
+     * @param {string} moveName     — Showdown display name (e.g. 'Flamethrower')
+     * @param {string} actorSide    — 'p1' | 'p2'  (who used the move)
+     * @param {string} targetSide   — 'p1' | 'p2'  (who is being hit)
+     * @returns {Promise<void>}
+     */
+    async playMoveAnim(moveName, actorSide, targetSide) {
+      if (!this.animPlayer || !moveName) return;
+
+      // p1 = player side (back sprite), p2 = enemy side (front sprite)
+      const userMount   = actorSide  === 'p1' ? this.playerSprite : this.enemySprite;
+      const targetMount = targetSide === 'p1' ? this.playerSprite : this.enemySprite;
+      if (!userMount || !targetMount) return;
+
+      const uSpr = userMount.phaserSprite;
+      const tSpr = targetMount.phaserSprite;
+      if (!uSpr || !tSpr) return;
+
+      // Battler sprites use origin(0.5, 1): x = horizontal center, y = bottom edge.
+      const userInfo   = { x: uSpr.x, y: uSpr.y, displayHeight: uSpr.displayHeight || 64 };
+      const targetInfo = { x: tSpr.x, y: tSpr.y, displayHeight: tSpr.displayHeight || 64 };
+
+      await this.animPlayer.play(moveName, userInfo, targetInfo);
     }
   };
 }

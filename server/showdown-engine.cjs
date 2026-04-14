@@ -552,6 +552,13 @@ function normalizeEventsFromLine(line, ctx) {
       return [{type: 'side_end', turn: ctx.turn, seq: ctx.seq++, side, effect: parts[3] || ''}];
     }
 
+    case '-fail': {
+      // Move failed (e.g. Protect already used, no valid target, etc.)
+      // parts[2] may be empty (field-level fail) or an ident (pokemon-level fail)
+      const id = parts[2] ? parseIdentForEvent(parts[2]) : null;
+      return [{type: 'move_fail', turn: ctx.turn, seq: ctx.seq++, actor: id ? {side: id.side, slot: id.slot} : null, reason: parts[3] || ''}];
+    }
+
     case '-activate': {
       const id = parseIdentForEvent(parts[2]);
       return [{type: 'effect_activate', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, effect: parts[3] || ''}];

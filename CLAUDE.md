@@ -81,48 +81,82 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (Sprint 4 완료 후 — 2026-04-13 기준)
+## 다음 세션 우선순위 (Sprint 5 완료 후 — 2026-04-14 기준)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
 > **작업 원칙3: 나를 위한 설명은 한글로 하되, 작업 및 사고 자체는 영어로 진행할 것 - 토큰 절약을 위함**
+> **작업 원칙4: UI 폴리시 작업(UI-P1~P5)은 배틀 연출이 완성된 후에 한다. 배틀이 먼저.**
 
 ### ✅ BA-1. 배틀 메시지 순차 표시 — 완료 (2026-04-13)
-- `timeline.js` `_showMsg()` + `MessageUiHandler.showText()` 직접 호출
-- switch_in / move_use / damage(critical/super/not_very) / faint / ability_show / weather / terrain 메시지 구현
-- `turn_start` 메시지 제거 (불필요)
-
 ### ✅ BA-2. 울음소리(Cry) 연결 — 완료 (2026-04-13)
-- `BattleAudioManager.playCryByNum(dexNum)` 추가 → `cry/<num>.m4a` 로드
-- `timeline.js`에서 `Pokedex` 임포트, `speciesToDexNum()` 헬퍼로 dex 번호 변환
-- `switch_in` 핸들러에서 pb_rel SE → 700ms → `await playCryByNum()` → 300/100ms
-- `startBattle()`에서 `await syncPhaserBattleRenderer()` 후 initExecutor 실행 (첫 울음소리 보장)
-
 ### ✅ BA-3. 어빌리티 바 + 날씨/지형 연출 — 완료 (2026-04-13)
-- `ability_show` → `abilityBar.update()` 1200ms 표시 후 hide
-- `weather_start/end` / `terrain_start/end` → 메시지 표시 + 600~800ms 딜레이
-- `weather_tick` 의도적으로 silent (매 턴 메시지 스팸 방지)
-- `ui.js`: `abilityBar.container.setDepth(42 → 60)` — FIGHT(55) 위로 z-order 수정
+### ✅ BA-4. 상태이상/스탯변화/빗나감/행동불가 메시지 — 완료 (2026-04-13)
+### ✅ Sprint 5 — 완료 (2026-04-14)
+- **BA-5a: immune/fail 메시지** (`timeline.js`, `showdown-engine.cjs`, `event-schema.js`): `immune` → "X에게는 효과가 없는 것 같다…", `move_fail` 신규 이벤트 → "그러나 실패하고 말았다!!" 메시지
+- **BA-5b: 스탯 변화 사운드** (`audio-manager.js`, `timeline.js`): `se/stat_up.wav` / `se/stat_down.wav` / `se/level_up.wav` 프리로드. boost/unboost 핸들러에 SE 연결.
+- **5-C: 강제 교체 메시지** (`timeline.js`): `callback_event` → "교체할 포켓몬을 선택해 주세요!" 메시지 + 600ms 후 executor 중단. 이후 기존 `request.forceSwitch` 메커니즘이 파티 화면 자동 표시.
+- **5-C: 배틀 종료 메시지** (`timeline.js`): `battle_end` → "${winner} 승리!" + `se/level_up` + 1500ms
+- **BA-10: 기술 시각 애니메이션** (`battle-anim-player.js` 신규, `battle-shell-scene.js`, `timeline.js`):
+  - PokeRogue `BattleAnim.play()` Phase 1 이식 (GRAPHIC 스프라이트 only; USER/TARGET 배틀러 복사본은 Phase 2 대상)
+  - `anim-data/<slug>.json` fetch → AnimConfig 파싱
+  - `battle__anims/<graphic>.png` Phaser 스프라이트시트 (96×96 프레임) 동적 로딩
+  - PokeRogue 좌표 변환 (USER_FOCUS=106,116 / TARGET_FOCUS=234,52) + USER_TARGET 이중선형 보간 완전 이식
+  - 30fps (33.33ms/frame) `time.delayedCall` 루프
+  - `AnimTimedSoundEvent` 발화 (lazy-load 내장)
+  - `scene.playMoveAnim(moveName, actorSide, targetSide)` → `timeline.js` `move_use` 핸들러에 연결
 
-### ✅ Sprint 3 버그픽스 — 완료 (2026-04-13)
-- **커맨드 화면 메시지 수정**: `buildPhaserCommandWindowModel`에 `prompt` 필드 추가 ("귀뚤톡크, 무엇을 할까?")
-- **FIGHT 화면 텍스트 오버랩 제거**: `fight-ui-handler.js` `show()`에서 `battleMessage.message?.setText?.('')` 호출
-- **어빌리티 바 z-order 수정**: `ui.js`에서 depth 42 → 60
-- **필드명 불일치 수정** (`pkb-battle-ui-adapter.js`): `message.primary`와 `message.primaryText` 모두 읽도록 수정
+### 🐛 브라우저 확인 결과 — 버그 목록 (2026-04-14)
 
-### ✅ Sprint 4 버그픽스 + BA-4 — 완료 (2026-04-13)
-- **Bug #1 커맨드 이름 고정 수정** (`ui.js`): `renderModel()`에서 `this.getArgsForMode()` (캐시 반환) → `this.adapter.getUiArgsForMode()` (항상 fresh args) 로 변경. 차례가 바뀌어도 현재 활성 포켓몬 이름이 올바르게 표시됨.
-- **Bug #3 어빌리티 바 weather/terrain 트리거 수정** (`showdown-engine.cjs`): `-weather`/`-fieldstart` 라인에 `[from] ability: X|[of] p1a: Y` 태그 있을 때 `ability_show` 이벤트 선행 생성. Drought, Drizzle, Sand Stream, Desolate Land, Primordial Sea, 지형 특성 등 날씨/필드를 유발하는 특성의 어빌리티 바가 이제 표시됨.
-- **BA-4 status/boost/miss/cant_move 메시지** (`timeline.js`): STATUS_LABELS, STAT_LABELS Map 추가. `status_apply` / `boost` / `unboost` / `miss` / `cant_move` 이벤트 핸들러 구현.
+1. **immune/move_fail 메시지 미표시** — Sprint 5 수정 이후 배틀 자체가 불안정해짐. 간헐적으로 되는 경우도 있음. 타임라인 executor가 hang하거나 이벤트를 skip하는 문제로 추정.
 
-### ⚠️ 브라우저 확인 대기 항목 (2026-04-13 기준)
-다음 항목을 브라우저에서 직접 확인해야 함:
-1. **Bug #1** — 포켓몬 교체 후 커맨드 화면에 새 포켓몬 이름 표시되는지
-2. **Bug #3** — Drought/Sand Stream 등 날씨 특성 투입 시 어빌리티 바 표시되는지
-3. **BA-4 상태이상** — 독/마비/화상 걸릴 때 메시지 한글로 나오는지
-4. **BA-4 스탯 변화** — 스탯 오르내릴 때 "X의 공격이 올랐다!" 나오는지
-5. **BA-4 빗나감** — 빗나갔을 때 "X의 공격이 빗나갔다!" 나오는지
-6. **BA-4 행동 불가** — 마비/잠듦 행동 불가 시 "X은(는) 움직일 수 없다." 나오는지
+2. **BA-10 애니메이션 버그** (우선 수정 대상):
+   - GRAPHIC 오버레이 스프라이트가 사라지지 않음 — `cleanUp()` 미호출 또는 pool destroy 실패
+   - 같은 기술 반복 사용 시 스프라이트가 누적되어 점점 진해짐 — 이전 pool이 해제되지 않고 쌓임
+   - 애니메이션처럼 보이지 않음 — 흐릿한 이미지 하나가 고정됨 (30fps 루프 미동작 가능성)
+   - 스프라이트 위치 자체는 맞는 것으로 보임
+
+3. **battle_end** — 아직 확인 못함
+
+---
+
+## 배틀 연출 — 다음 작업 목록 (Sprint 6~)
+
+> UI 폴리시(UI-P1~P5)는 아래 배틀 연출 작업이 모두 완성된 후에 착수한다.
+
+### Sprint 6. 배틀러 시각 연출
+
+**BA-11: Phase 2 — USER/TARGET 배틀러 복사본 애니메이션** (`battle-anim-player.js`)
+- `AnimFrameTarget.USER (0)`: 유저 포켓몬 고스트 복사본 생성 → 공격 시 앞으로 이동
+- `AnimFrameTarget.TARGET (1)`: 타겟 포켓몬 고스트 복사본 생성 → 피격 시 flinch/shake
+- 원본 `BattleAnim.play()` lines 944-983 이식
+- `phaserSprite`에서 현재 텍스처·프레임·스케일 복사 → 별도 `scene.add.image()` 생성 후 tween
+
+**BA-12: 기절(faint) 시각 연출** (`battle-shell-scene.js`, `timeline.js`)
+- `faint` 이벤트: 배틀러 스프라이트 아래로 슬라이드 tween (`y += displayHeight`, alpha 0, 500ms)
+- tween 완료 후 executor 다음 이벤트 진행
+
+**BA-13: 교체 시각 연출** (`battle-shell-scene.js`, `timeline.js`)
+- `switch_in` + `fromBall: true` 케이스: 포켓볼 이미지 호를 그리며 착지 후 스프라이트 등장 tween
+- 포켓볼 이미지: `pokeball.png` 에셋 사용 (기존 로드 여부 확인 필요)
+
+### Sprint 7. 배틀 완성도
+
+**M5: locale 네임스페이스 로더** (`src/battle-i18n/locale-manager.js` 신규)
+- `assets/pokerogue/locales/ko/*.json` 로드 → 배틀 메시지 키 우선 사용
+- `timeline.js` 하드코딩 한글 → locale 키 기반으로 교체
+- 1차 네임스페이스: `battle`, `ability-trigger`, `move-trigger`, `weather`, `terrain`
+- 현재 `timeline.js` 한글 하드코딩과 locale 파일 내용이 중복 — locale이 정답 소스
+
+**BA-14: 사이드 컨디션 연출** (`timeline.js`)
+- `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 메시지
+
+**BA-15: 폼 체인지 연출** (`battle-shell-scene.js`, `timeline.js`)
+- `forme_change`: 스프라이트 교체 + 메시지
+
+---
+
+## UI 폴리시 — 배틀 완성 후 착수
 
 ### UI-P1. 텍스트 왜곡 재분석 — `text.js` + `phaser-utils.js` + `controller.js`
 - **현상**: Phase 14에서 `fontSize: 56/6`, `HINT: 8` 수정 적용 후에도 여전히 텍스트가 뭉개져 보임
@@ -143,7 +177,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 ### UI-P5. PBS 수동 보정 1라운드 — `assets/Pokemon/PBS/`
 - `reports/metrics-drift.json` 상위 4개 (score=8): LINOONE, METAGROSS_1, MIMIKYU_1, SALAMENCE_1
 
-### 보류 항목
+### 보류 항목 (UI)
 - `fight-ui-handler.js`: MoveInfoOverlay 이식 (원본 ts:108-121) — Pow/Acc 표시
 - `command-ui-handler.js`: Tera 색상 파이프라인
 - `battle-info.js`: nameTextY(-11.2, -15.2) 비정수 블러 — 원본과 동일값이라 일단 유지

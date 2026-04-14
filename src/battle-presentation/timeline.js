@@ -182,13 +182,19 @@ export class BattleTimelineExecutor {
         break;
       }
 
-      // ── BA-1: Move use ───────────────────────────────────────────────────
+      // ── BA-1 + BA-10: Move use (message + visual animation) ─────────────
       case 'move_use': {
         const actorName = this._slotName(ev.actor?.side, ev.actor?.slot ?? 0);
         this._showMsg(`${actorName}의 ${ev.move}!`);
-        // Play move animation sound effect (lazy-loaded from anim-data/).
-        await this._audio?.playMoveSe(ev.move);
-        await this._delay(500);
+        const scene = this._scene();
+        if (scene?.playMoveAnim) {
+          // BA-10: play visual animation (includes timed sound events internally).
+          await scene.playMoveAnim(ev.move, ev.actor?.side, ev.target?.side);
+        } else {
+          // Fallback: SE-only when scene not available.
+          await this._audio?.playMoveSe(ev.move);
+          await this._delay(500);
+        }
         break;
       }
 
@@ -303,6 +309,7 @@ export class BattleTimelineExecutor {
         const amount = Number(ev.amount) || 1;
         const suffix = amount >= 2 ? ' 크게 올랐다!' : ' 올랐다!';
         this._showMsg(`${boostName}의 ${statLabel}이${suffix}`);
+        this._audio?.play('se/stat_up');
         await this._delay(600);
         break;
       }
@@ -313,6 +320,7 @@ export class BattleTimelineExecutor {
         const uamount = Number(ev.amount) || 1;
         const usuffix = uamount >= 2 ? ' 크게 내려갔다!' : ' 내려갔다!';
         this._showMsg(`${unboostName}의 ${unstatLabel}이${usuffix}`);
+        this._audio?.play('se/stat_down');
         await this._delay(600);
         break;
       }
@@ -335,25 +343,56 @@ export class BattleTimelineExecutor {
         break;
       }
 
+      // ── BA-5a: Immune / fail ─────────────────────────────────────────────
+      case 'immune': {
+        // "X에게는 효과가 없는 것 같다…"
+        const immuneName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
+        this._showMsg(`${immuneName}에게는\n효과가 없는 것 같다…`);
+        await this._delay(700);
+        break;
+      }
+
+      case 'move_fail': {
+        // "그러나 실패하고 말았다!!"
+        this._showMsg('그러나 실패하고 말았다!!');
+        await this._delay(600);
+        break;
+      }
+
+      // ── 5-C: Battle end ─────────────────────────────────────────────────
+      case 'battle_end': {
+        // ev.winner is the Showdown player name of the winner.
+        if (ev.winner) {
+          this._showMsg(`${ev.winner} 승리!`);
+          this._audio?.play('se/level_up');
+          await this._delay(1500);
+        }
+        break;
+      }
+
       // ── no-op events ──────────────────────────────────────────────────────
       case 'weather_tick':
       case 'turn_end':
       case 'status_cure':
       case 'side_start':
       case 'side_end':
-      case 'immune':
       case 'effect_activate':
       case 'single_turn_effect':
       case 'forme_change':
-      case 'battle_end':
       case 'engine_error':
         break;
 
-      case 'callback_event':
-        // Input gate: pause and notify caller to surface switch UI.
+      // ── 5-C: Forced switch gate ──────────────────────────────────────────
+      case 'callback_event': {
+        // Show "교체할 포켓몬을 선택해 주세요!" then pause for player input.
+        this._showMsg('교체할 포켓몬을 선택해 주세요!');
+        await this._delay(600);
+        // Pause the timeline and notify caller to show the party/switch UI.
+        // The UI system (app.js) will pick up request.forceSwitch and surface party mode.
         this.running = false;
         this.onInputRequired(ev.requestType ?? 'switch');
-        return;  // do not continue; caller must re-invoke play() after choice is made
+        return;  // do not continue; the next turn's events will play after the switch choice
+      }
 
       case 'raw_event':
       default:

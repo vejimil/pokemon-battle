@@ -37,6 +37,9 @@ export class BattleAudioManager {
     this._queueLoad('se/hit_weak',   'se/hit_weak.wav');
     this._queueLoad('se/pb_rel',     'se/pb_rel.wav');
     this._queueLoad('se/faint',      'se/faint.wav');
+    this._queueLoad('se/stat_up',    'se/stat_up.wav');
+    this._queueLoad('se/stat_down',  'se/stat_down.wav');
+    this._queueLoad('se/level_up',   'se/level_up.wav');
   }
 
   /**
