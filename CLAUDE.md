@@ -202,6 +202,34 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
     - active sprite가 없거나 fainted여도 timeline override sprite를 fallback으로 사용
   - 타임라인 종료 시 `clearTimelineSpriteOverrides()`로 임시 상태 정리
 
+### ✅ BA-18/BA-19 — 즉시 반영 버그픽스 완료 (2026-04-15)
+
+**원본 참조**
+- `pokerogue_codes/src/phases/summon-phase.ts` lines 125-209 (`summon()` 내 `pokemon.showInfo()` 타이밍)
+- `pokerogue_codes/src/field/pokemon.ts` lines 3297-3348 (`showInfo()`/`updateInfo()`)
+- `pokerogue_codes/src/phases/quiet-form-change-phase.ts` lines 67-161
+- `pokerogue_codes/src/field/pokemon.ts` lines 4586-4633 (`changeForm()` → `loadAssets()`/`updateInfo()`)
+
+**반영 내용**
+- `server/showdown-engine.cjs`
+  - `parseConditionForEvent()` 확장: `status` 파싱 추가 (`brn/par/psn/tox/slp/frz/fnt`)
+  - `switch_in` 이벤트에 `hpAfter`, `maxHp`, `status` 포함
+  - `damage/heal` 이벤트에 condition status 포함
+  - `forme_change` 이벤트에 `toSpecies` 필드 추가 (`detailschange`/`-formechange` 우선)
+- `src/battle-presentation/timeline.js`
+  - executor에 `initialSlotInfo`/`resolveVisualState` 옵션 추가
+  - `_slotInfo` 맵으로 side+slot별 이름/HP/상태를 타임라인 중 실시간 유지
+  - `switch_in` 즉시 info panel 업데이트 (name/hp/status)
+  - `forme_change` 핸들러 구현: sprite/info 즉시 갱신 + `_slotNames` 동기화(ability_show owner명 즉시 반영)
+  - `status_apply/status_cure/damage/heal/faint`에서도 `_slotInfo` 동기화
+- `src/app.js`
+  - `resolveTimelineEventMon()`/`resolveTimelineEventVisualState()` 추가
+  - executor 생성 시 `resolveVisualState` 콜백 전달
+  - `collectTimelineInitialSlotInfo()` 추가 및 `resolveEngineTurn()`에서 전달
+  - `buildBattleInfoModelFromMon()` 공통 함수로 분리
+- `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+  - `setBattlerSprite(side, spriteUrl)` 추가: 폼체인지 시점 즉시 텍스처 교체
+
 ### 🐛 미확인 항목
 
 - **battle_end** — 아직 브라우저 확인 못함
@@ -233,13 +261,11 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 **BA-15: 폼 체인지 연출** (`battle-shell-scene.js`, `timeline.js`)
 - `forme_change`: 스프라이트 교체 + 메시지
 
-**BA-18: 교체 시 정보창 즉시 반영** (`app.js`, `timeline.js`, `battle-shell-scene.js`)
-- 목표: switch_in 시점에 이름/HP/상태 정보창이 턴 종료 전 즉시 갱신
-- 현재: 일부 케이스에서 턴 종료 후 최종 스냅샷 반영 시점까지 지연
+**✅ BA-18: 교체 시 정보창 즉시 반영 — 완료 (2026-04-15)** (`app.js`, `timeline.js`, `showdown-engine.cjs`)
+- switch_in 이벤트 시점에 이름/HP/상태 정보창을 즉시 갱신하도록 `_slotInfo` 기반 타임라인 동기화 구현
 
-**BA-19: 폼체인지 즉시 반영** (`showdown-engine.cjs`, `timeline.js`, `app.js`)
-- 목표: 메가진화/원시회귀/울트라버스트 등 폼체인지 시점에 sprite/info/ability 즉시 갱신
-- 현재: 일부 케이스에서 턴 종료 후 갱신됨
+**✅ BA-19: 폼체인지 즉시 반영 — 완료 (2026-04-15)** (`showdown-engine.cjs`, `timeline.js`, `app.js`, `battle-shell-scene.js`)
+- forme_change 시점에 sprite/info/name 캐시를 즉시 갱신하도록 executor + scene 교체 경로 추가
 
 ---
 

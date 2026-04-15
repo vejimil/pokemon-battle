@@ -246,13 +246,34 @@ Target: `/workspaces/pokemon-battle`
 - `forme_change`: 스프라이트 교체 + "X는 폼 체인지했다!" 메시지
 - 현재 `forme_change` 이벤트가 showdown-engine에서 생성되는지 확인 필요
 
-#### BA-18: 교체 시 정보창 즉시 반영 (`app.js`, `timeline.js`, `battle-shell-scene.js`)
-- **목표**: 교체(switch_in) 발생 시 HP/이름/상태 정보창이 턴 종료를 기다리지 않고 즉시 새 포켓몬 기준으로 갱신
-- **현황**: 일부 케이스에서 정보창이 턴 종료 후 최종 스냅샷 적용 시점에만 변경됨
+#### ✅ BA-18: 교체 시 정보창 즉시 반영 — 완료 (2026-04-15)
+- **원본 참조**:
+  - `pokerogue_codes/src/phases/summon-phase.ts` lines 125-209 (`summon()` 내 `pokemon.showInfo()` 타이밍)
+  - `pokerogue_codes/src/field/pokemon.ts` lines 3297-3348 (`showInfo()`/`updateInfo()` 호출 흐름)
+- **반영 내용**:
+  - `server/showdown-engine.cjs`: `switch_in` 이벤트에 `hpAfter`, `maxHp`, `status`를 포함하도록 파서 확장
+  - `src/battle-presentation/timeline.js`:
+    - `initialSlotInfo`/`_slotInfo` 도입으로 타임라인 중 side+slot별 정보 상태 유지
+    - `switch_in` 처리 시 `displayName/hp/status`를 즉시 `BattleInfo.update()`에 반영
+    - `damage/heal/status_apply/status_cure/faint`에서도 `_slotInfo`를 동기화해 정보창 정합 유지
+  - `src/app.js`: `collectTimelineInitialSlotInfo()` 추가 후 executor 생성 시 `initialSlotInfo` 전달
 
-#### BA-19: 폼체인지 즉시 반영 (`showdown-engine.cjs`, `timeline.js`, `app.js`)
-- **목표**: 메가진화/원시회귀/울트라버스트 등 폼체인지가 발생한 시점에 스프라이트/정보창/특성 표시 즉시 변경
-- **현황**: 일부 폼 변경이 턴 종료 후 최종 스냅샷 적용 시점까지 지연됨
+#### ✅ BA-19: 폼체인지 즉시 반영 — 완료 (2026-04-15)
+- **원본 참조**:
+  - `pokerogue_codes/src/phases/quiet-form-change-phase.ts` lines 67-161 (`doChangeForm()` 직후 시각/텍스트 반영)
+  - `pokerogue_codes/src/field/pokemon.ts` lines 4586-4633 (`changeForm()` 내 `loadAssets()` + `updateInfo()` 순서)
+- **반영 내용**:
+  - `server/showdown-engine.cjs`:
+    - `forme_change` 이벤트에 `toSpecies` 필드 추가(`detailschange`/`-formechange` 우선 파싱)
+    - `damage/heal` 이벤트에도 condition status를 포함해 타임라인 상태 추적 보강
+  - `src/app.js`:
+    - `resolveTimelineEventVisualState()` 추가: 이벤트 시점 side별 `spriteUrl`/`infoPatch` 제공
+    - executor에 `resolveVisualState` 콜백 전달
+  - `src/battle-presentation/timeline.js`:
+    - `forme_change` 핸들러 구현: `_slotNames` 갱신 + info panel 즉시 갱신 + `scene.setBattlerSprite()` 호출
+    - 폼체인지 직후 ability_show 메시지에서 새 폼 이름이 즉시 사용되도록 이름 캐시 동기화
+  - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`:
+    - `setBattlerSprite(side, spriteUrl)` 추가: 이벤트 시점 battler 텍스처 즉시 교체
 
 ---
 

@@ -1592,24 +1592,47 @@ function clearTimelineSpriteOverrides() {
   ui.timelineSpriteOverrides = {};
 }
 
-function resolveTimelineSwitchSpriteOverride(ev, battle = state.battle) {
-  if (!ev || ev.type !== 'switch_in' || !battle?.players) return null;
-  const sideIndex = ev.side === 'p2' ? 1 : 0;
+function resolveTimelineEventSideSlot(ev) {
+  if (!ev) return null;
+  if (ev.type === 'switch_in') {
+    return {
+      side: ev.side,
+      slot: Number.isInteger(ev.slot) ? ev.slot : 0,
+    };
+  }
+  return {
+    side: ev?.target?.side,
+    slot: Number.isInteger(ev?.target?.slot) ? ev.target.slot : 0,
+  };
+}
+
+function resolveTimelineEventMon(ev, battle = state.battle) {
+  if (!battle?.players || !ev) return null;
+  const sideSlot = resolveTimelineEventSideSlot(ev);
+  const sideId = sideSlot?.side;
+  if (sideId !== 'p1' && sideId !== 'p2') return null;
+  const sideIndex = sideId === 'p2' ? 1 : 0;
+  const slot = sideSlot.slot;
   const side = battle.players?.[sideIndex];
   if (!side?.team?.length) return null;
 
-  const slot = Number.isInteger(ev.slot) ? ev.slot : 0;
-  const activeTeamIndex = side.active?.[slot];
   const candidates = [];
+  const activeTeamIndex = side.active?.[slot];
   if (Number.isInteger(activeTeamIndex) && side.team[activeTeamIndex]) {
     candidates.push(side.team[activeTeamIndex]);
   }
 
-  const speciesId = toId(ev.species || '');
+  const speciesId = toId(
+    ev?.toSpecies
+    || ev?.species
+    || (ev?.type === 'forme_change' ? '' : ev?.to)
+    || ''
+  );
   if (speciesId) {
     for (const mon of side.team) {
       if (!mon) continue;
       const ids = [
+        toId(getBattleRenderSpeciesName(mon) || ''),
         toId(mon.formSpecies || ''),
         toId(mon.species || ''),
         toId(mon.baseSpecies || ''),
@@ -1618,11 +1641,75 @@ function resolveTimelineSwitchSpriteOverride(ev, battle = state.battle) {
     }
   }
 
-  const mon = candidates.find(Boolean);
+  return candidates.find(Boolean) || null;
+}
+
+function resolveTimelineSwitchSpriteOverride(ev, battle = state.battle) {
+  if (!ev || ev.type !== 'switch_in') return null;
+  const mon = resolveTimelineEventMon(ev, battle);
   if (!mon) return null;
   const spriteId = resolveBattleRenderSpriteId(mon);
   if (!spriteId) return null;
   return { spriteId, shiny: Boolean(mon.shiny) };
+}
+
+function buildTimelineStaticInfoPatch(mon) {
+  if (!mon) return null;
+  const info = buildBattleInfoModelFromMon(mon);
+  return {
+    displayName: info.displayName,
+    levelLabel: info.levelLabel,
+    types: info.types,
+    gender: info.gender,
+    shiny: info.shiny,
+    teraType: info.teraType,
+    badges: info.badges,
+  };
+}
+
+function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state.battle } = {}) {
+  if (!ev || !battle?.players) return null;
+  const sideSlot = resolveTimelineEventSideSlot(ev);
+  const side = sideSlot?.side;
+  if (side !== 'p1' && side !== 'p2') return null;
+  const sideIndex = side === 'p2' ? 1 : 0;
+  const perspective = playerSide === 'p2' ? 1 : 0;
+  const mon = resolveTimelineEventMon(ev, battle);
+  const infoPatch = buildTimelineStaticInfoPatch(mon);
+  let spriteId = '';
+  let shiny = false;
+
+  if (ev.type === 'switch_in') {
+    const override = getTimelineSpriteOverride(side);
+    spriteId = String(override?.spriteId || '');
+    shiny = Boolean(override?.shiny);
+  }
+  if (!spriteId && mon) {
+    spriteId = resolveBattleRenderSpriteId(mon);
+    shiny = Boolean(mon.shiny);
+  }
+  const facing = sideIndex === perspective ? 'back' : 'front';
+  const spriteUrl = spriteId ? spritePath(spriteId, facing, shiny) : '';
+  return {
+    side,
+    slot: sideSlot.slot,
+    spriteUrl,
+    infoPatch,
+  };
+}
+
+function collectTimelineInitialSlotInfo(battle = state.battle) {
+  const initialSlotInfo = {};
+  if (!battle?.players) return initialSlotInfo;
+  battle.players.forEach((side, index) => {
+    const sideId = index === 1 ? 'p2' : 'p1';
+    (side.active || []).forEach((teamIndex, slot) => {
+      const mon = side.team?.[teamIndex];
+      if (!mon) return;
+      initialSlotInfo[`${sideId}_${slot}`] = buildBattleInfoModelFromMon(mon, index);
+    });
+  });
+  return initialSlotInfo;
 }
 
 function primeTimelineSpriteOverrides(events = [], battle = state.battle) {
@@ -1636,7 +1723,7 @@ function primeTimelineSpriteOverrides(events = [], battle = state.battle) {
     });
 }
 
-async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, onComplete = () => {}, onInputRequired = () => {}, preHideSwitchInSides = false } = {}) {
+async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, initialSlotInfo = {}, onComplete = () => {}, onInputRequired = () => {}, preHideSwitchInSides = false } = {}) {
   clearTimelineSpriteOverrides();
   if (!Array.isArray(events) || !events.length) {
     onComplete();
@@ -1697,6 +1784,8 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, o
     applySnapshot: () => {},
     onInputRequired: handleInputRequired,
     initialNames,
+    initialSlotInfo,
+    resolveVisualState: ev => resolveTimelineEventVisualState(ev, { playerSide: cfg.playerSide, battle: state.battle }),
     ...cfg,
   }));
   await Promise.all(executors.map(executor => executor.play(events)));
@@ -6480,8 +6569,7 @@ function buildBattleMessageModel(battle, player) {
   };
 }
 
-function buildBattleInfoModel(player, battle = state.battle) {
-  const mon = getActiveMons(player, battle)[0] || null;
+function buildBattleInfoModelFromMon(mon, player = Number(mon?.player ?? 0)) {
   if (!mon) {
     return {
       displayName: lang('빈 자리', 'No battler'),
@@ -6516,6 +6604,11 @@ function buildBattleInfoModel(player, battle = state.battle) {
     fainted: Boolean(mon.fainted),
     spriteUrl: spritePath(resolveBattleRenderSpriteId(mon), player === 0 ? 'back' : 'front', mon.shiny),
   };
+}
+
+function buildBattleInfoModel(player, battle = state.battle) {
+  const mon = getActiveMons(player, battle)[0] || null;
+  return buildBattleInfoModelFromMon(mon, player);
 }
 
 function buildBattleTrayModel(player, battle = state.battle) {
@@ -7049,6 +7142,7 @@ async function resolveEngineTurn(battle = state.battle) {
     // Capture active pokemon names from the PREVIOUS state before overwriting.
     // Gives move_use/faint messages the right species name for turns 2+ (no switch_in events).
     const initialNames = {};
+    const initialSlotInfo = collectTimelineInitialSlotInfo(state.battle);
     if (state.battle?.players) {
       state.battle.players.forEach((side, idx) => {
         const sideId = idx === 0 ? 'p1' : 'p2';
@@ -7075,6 +7169,7 @@ async function resolveEngineTurn(battle = state.battle) {
         renderBattle();
       },
       initialNames,
+      initialSlotInfo,
     });
   } else {
     // Presentation V1 (default): apply snapshot immediately

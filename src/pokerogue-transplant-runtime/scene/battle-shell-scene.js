@@ -534,6 +534,25 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     /**
+     * Replace the current battler sprite for a battle side immediately.
+     * Used by timeline forme_change handling so the sprite swaps before turn end.
+     */
+    async setBattlerSprite(side, spriteUrl = '') {
+      const mount = this._mountForBattleSide(side);
+      if (!mount) return;
+      if (spriteUrl) {
+        await this.renderBattlerSprite(mount, { url: spriteUrl });
+      }
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active) return;
+      spr.setAlpha(1);
+      spr.setVisible(true);
+      if (mount?.shadow) {
+        mount.shadow.setVisible(Boolean(mount.shadowVisibleByMetrics));
+      }
+    }
+
+    /**
      * BA-12: faint visual — slide battler downward, then hide.
      * Ported timing from PokeRogue faint-phase.ts (duration 500, Sine.easeIn).
      */

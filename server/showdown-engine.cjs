@@ -322,9 +322,18 @@ function parseIdentForEvent(token) {
  * Parse a condition string like "120/300" or "120/300 brn" into { hp, maxHp }.
  */
 function parseConditionForEvent(token) {
-  const m = /^(\d+)(?:\/(\d+))?/.exec(String(token || ''));
-  if (!m) return {hp: 0, maxHp: 0};
-  return {hp: Number(m[1]), maxHp: m[2] !== undefined ? Number(m[2]) : Number(m[1])};
+  const raw = String(token || '').trim();
+  const m = /^(\d+)(?:\/(\d+))?/.exec(raw);
+  if (!m) return {hp: 0, maxHp: 0, status: ''};
+  const suffix = raw.slice(m[0].length).trim();
+  const statusToken = suffix
+    .split(/\s+/)
+    .find(part => /^(brn|par|psn|tox|slp|frz|fnt)$/i.test(part));
+  return {
+    hp: Number(m[1]),
+    maxHp: m[2] !== undefined ? Number(m[2]) : Number(m[1]),
+    status: statusToken ? String(statusToken).toLowerCase() : '',
+  };
 }
 
 /**
@@ -376,6 +385,9 @@ function normalizeEventsFromLine(line, ctx) {
         side: id.side,
         slot: id.slot,
         species,
+        hpAfter: cond.hp,
+        maxHp: cond.maxHp,
+        status: cond.status,
         cause: tag === 'drag' ? 'drag' : 'switch',
         fromBall: tag === 'switch',
       }];
@@ -429,6 +441,7 @@ function normalizeEventsFromLine(line, ctx) {
           hpAfter: cond.hp,
           maxHp,
           amount,
+          status: cond.status,
           hitResult,
           critical,
         }];
@@ -441,6 +454,7 @@ function normalizeEventsFromLine(line, ctx) {
           hpAfter: cond.hp,
           maxHp,
           amount,
+          status: cond.status,
         }];
       }
     }
@@ -601,7 +615,25 @@ function normalizeEventsFromLine(line, ctx) {
     case '-formechange':
     case 'detailschange': {
       const id = parseIdentForEvent(parts[2]);
-      return [{type: 'forme_change', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, to: parts[3] || '', mechanism: tag}];
+      const detailsSpecies = parseDetailsSpeciesForEvent(parts[3] || '');
+      const identSpecies = displayNameForPokemonProtocol(parts[2] || '');
+      const identLooksLikeForm = /-(mega|mega-x|mega-y|primal|ultra)\b/i.test(identSpecies);
+      const toSpecies = tag === 'detailschange'
+        ? (detailsSpecies || identSpecies || '')
+        : tag === '-formechange'
+          ? detailsSpecies
+          : tag === '-mega'
+            ? (identLooksLikeForm ? identSpecies : '')
+            : '';
+      return [{
+        type: 'forme_change',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        target: {side: id.side, slot: id.slot},
+        to: parts[3] || '',
+        toSpecies,
+        mechanism: tag,
+      }];
     }
 
     // Raw passthrough for unknown/debug/meta tags

@@ -72,19 +72,34 @@ export class BattleTimelineExecutor {
    * @param {function(): object}       [opts.scene]            getter returning current Phaser scene (may be null)
    * @param {string}                   [opts.playerSide]       Showdown side id for local player ('p1'|'p2')
    * @param {Record<string, string>}   [opts.initialNames]     pre-seeded slot→species map (key: "p1_0", "p2_0")
+   * @param {Record<string, object>}   [opts.initialSlotInfo]  pre-seeded slot→battle-info map
+   * @param {function(object): object} [opts.resolveVisualState] resolve sprite/info patch for an event
    * @param {boolean}                  [opts.audioEnabled]     play timeline audio for this executor
    */
-  constructor({ onInputRequired, onComplete, applySnapshot, scene, playerSide, initialNames, audioEnabled = true } = {}) {
+  constructor({
+    onInputRequired,
+    onComplete,
+    applySnapshot,
+    scene,
+    playerSide,
+    initialNames,
+    initialSlotInfo,
+    resolveVisualState,
+    audioEnabled = true,
+  } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
     this.onComplete = onComplete ?? (() => {});
     this._applySnapshot = applySnapshot ?? (() => {});
     this._scene = scene ?? (() => null);
     this._playerSide = playerSide ?? 'p1';
     this._audioEnabled = audioEnabled !== false;
+    this._resolveVisualState = resolveVisualState ?? (() => null);
     this.running = false;
     // Tracks species name per slot. Key: "${side}_${slot}" e.g. "p1_0", "p2_0".
     // Pre-seeded from initialNames (previous turn's final roster).
     this._slotNames = new Map(Object.entries(initialNames ?? {}));
+    // Tracks live battle-info state (name/hp/status/etc) per side+slot during timeline playback.
+    this._slotInfo = new Map(Object.entries(initialSlotInfo ?? {}));
   }
 
   // ── accessors ─────────────────────────────────────────────────────────────
@@ -135,6 +150,47 @@ export class BattleTimelineExecutor {
     return this._slotNames.get(`${side}_${slot}`) || '???';
   }
 
+  _slotKey(side, slot = 0) {
+    return `${side}_${slot}`;
+  }
+
+  _slotInfoFor(side, slot = 0) {
+    return this._slotInfo.get(this._slotKey(side, slot)) || null;
+  }
+
+  _updateSlotInfo(side, slot = 0, patch = {}) {
+    const key = this._slotKey(side, slot);
+    const current = this._slotInfo.get(key) || {};
+    const next = {
+      ...current,
+      ...patch,
+    };
+    this._slotInfo.set(key, next);
+    return next;
+  }
+
+  _applyInfoForSlot(side, slot = 0, patch = {}) {
+    const nextInfo = this._updateSlotInfo(side, slot, patch);
+    const info = this._infoForSide(side);
+    info?.update?.(nextInfo);
+    return nextInfo;
+  }
+
+  async _setBattlerSprite(side, spriteUrl = '') {
+    if (!side || !spriteUrl) return;
+    const scene = this._scene();
+    if (!scene?.setBattlerSprite) return;
+    await scene.setBattlerSprite(side, spriteUrl);
+  }
+
+  async _resolveVisual(ev) {
+    try {
+      return await this._resolveVisualState?.(ev);
+    } catch (_error) {
+      return null;
+    }
+  }
+
   // ── public API ─────────────────────────────────────────────────────────────
 
   /**
@@ -183,19 +239,42 @@ export class BattleTimelineExecutor {
 
       // ── BA-1 + BA-2: Pokémon switch-in ───────────────────────────────────
       case 'switch_in': {
-        const species = ev.species || '???';
+        const side = ev.side;
+        const slot = ev.slot ?? 0;
+        const species = ev.species || this._slotName(side, slot) || '???';
         // Track this pokemon for later move/faint messages
-        this._slotNames.set(`${ev.side}_${ev.slot ?? 0}`, species);
+        this._slotNames.set(this._slotKey(side, slot), species);
+
+        const visual = await this._resolveVisual(ev);
+        const switchPatch = {
+          displayName: species,
+          ...(visual?.infoPatch || {}),
+        };
+        if (Number.isFinite(ev.hpAfter) && Number.isFinite(ev.maxHp) && ev.maxHp > 0) {
+          switchPatch.hp = ev.hpAfter;
+          switchPatch.maxHp = ev.maxHp;
+          switchPatch.hpPercent = (ev.hpAfter / ev.maxHp) * 100;
+          switchPatch.hpLabel = `${ev.hpAfter}/${ev.maxHp}`;
+          switchPatch.fainted = ev.hpAfter <= 0 || ev.status === 'fnt';
+        }
+        if (ev.status) {
+          switchPatch.statusEffect = ev.status === 'fnt' ? '' : ev.status;
+          switchPatch.statusLabel = ev.status === 'fnt' ? '' : ev.status;
+        }
+        this._applyInfoForSlot(side, slot, switchPatch);
 
         // BA-1: Show switch message
-        const label = ev.side === this._playerSide
+        const label = side === this._playerSide
           ? `가라! ${species}!`
           : `상대의 ${species} 등장!`;
         this._showMsg(label);
 
         const scene = this._scene();
+        if (!ev.fromBall && visual?.spriteUrl) {
+          await this._setBattlerSprite(side, visual.spriteUrl);
+        }
         if (scene?.switchInBattler) {
-          await scene.switchInBattler(ev.side, !!ev.fromBall, { audioEnabled: this._audioEnabled });
+          await scene.switchInBattler(side, !!ev.fromBall, { audioEnabled: this._audioEnabled });
         } else if (ev.fromBall) {
           this._playAudio('se/pb_rel');
         }
@@ -237,6 +316,21 @@ export class BattleTimelineExecutor {
         this._playHitByResult(ev.hitResult ?? 'effective');
         await this._delay(100);
         const hpPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
+        this._updateSlotInfo(ev.target?.side, ev.target?.slot ?? 0, {
+          hp: ev.hpAfter,
+          maxHp: ev.maxHp,
+          hpPercent: hpPct,
+          hpLabel: `${ev.hpAfter}/${ev.maxHp}`,
+          ...(ev.status && ev.status !== 'fnt' ? {
+            statusEffect: ev.status,
+            statusLabel: ev.status,
+          } : {}),
+          ...(ev.status === 'fnt' ? {
+            statusEffect: '',
+            statusLabel: '',
+          } : {}),
+          fainted: ev.hpAfter <= 0 || ev.status === 'fnt',
+        });
         const info = this._infoForSide(ev.target?.side);
         if (info?.tweenHpTo) {
           await info.tweenHpTo(hpPct, ev.maxHp);
@@ -258,6 +352,21 @@ export class BattleTimelineExecutor {
       // ── Heal ─────────────────────────────────────────────────────────────
       case 'heal': {
         const healPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
+        this._updateSlotInfo(ev.target?.side, ev.target?.slot ?? 0, {
+          hp: ev.hpAfter,
+          maxHp: ev.maxHp,
+          hpPercent: healPct,
+          hpLabel: `${ev.hpAfter}/${ev.maxHp}`,
+          ...(ev.status && ev.status !== 'fnt' ? {
+            statusEffect: ev.status,
+            statusLabel: ev.status,
+          } : {}),
+          ...(ev.status === 'fnt' ? {
+            statusEffect: '',
+            statusLabel: '',
+          } : {}),
+          fainted: ev.hpAfter <= 0 || ev.status === 'fnt',
+        });
         const healInfo = this._infoForSide(ev.target?.side);
         if (healInfo?.tweenHpTo) {
           await healInfo.tweenHpTo(healPct, ev.maxHp);
@@ -270,6 +379,17 @@ export class BattleTimelineExecutor {
       // ── BA-1: Faint ──────────────────────────────────────────────────────
       case 'faint': {
         const faintName = this._slotName(ev.side, ev.slot ?? 0);
+        const prevInfo = this._slotInfoFor(ev.side, ev.slot ?? 0);
+        const maxHp = Number(prevInfo?.maxHp || 0);
+        this._updateSlotInfo(ev.side, ev.slot ?? 0, {
+          hp: 0,
+          maxHp,
+          hpPercent: 0,
+          hpLabel: `0/${maxHp || 0}`,
+          fainted: true,
+          statusEffect: '',
+          statusLabel: '',
+        });
         this._showMsg(`${faintName} 기절!`);
         this._playAudio('se/faint');
         const scene = this._scene();
@@ -335,10 +455,22 @@ export class BattleTimelineExecutor {
 
       // ── BA-4: Status apply ───────────────────────────────────────────────
       case 'status_apply': {
+        this._applyInfoForSlot(ev.target?.side, ev.target?.slot ?? 0, {
+          statusEffect: ev.status || '',
+          statusLabel: ev.status || '',
+        });
         const statusName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
         const statusLabel = STATUS_LABELS[toId(ev.status)] ?? `${ev.status} 상태`;
         this._showMsg(`${statusName}은(는) ${statusLabel}`);
         await this._delay(700);
+        break;
+      }
+
+      case 'status_cure': {
+        this._applyInfoForSlot(ev.target?.side, ev.target?.slot ?? 0, {
+          statusEffect: '',
+          statusLabel: '',
+        });
         break;
       }
 
@@ -399,6 +531,30 @@ export class BattleTimelineExecutor {
         break;
       }
 
+      // ── BA-19: Form change immediate update ──────────────────────────────
+      case 'forme_change': {
+        const side = ev.target?.side;
+        const slot = ev.target?.slot ?? 0;
+        const toSpecies = String(ev.toSpecies || ev.to || '').trim();
+        if (toSpecies) {
+          this._slotNames.set(this._slotKey(side, slot), toSpecies);
+        }
+        const visual = await this._resolveVisual(ev);
+        if (visual?.spriteUrl) {
+          await this._setBattlerSprite(side, visual.spriteUrl);
+        }
+        if (toSpecies || visual?.infoPatch) {
+          const formPatch = {
+            ...(visual?.infoPatch || {}),
+          };
+          if (toSpecies && !formPatch.displayName) formPatch.displayName = toSpecies;
+          this._applyInfoForSlot(side, slot, {
+            ...formPatch,
+          });
+        }
+        break;
+      }
+
       // ── 5-C: Battle end ─────────────────────────────────────────────────
       case 'battle_end': {
         // ev.winner is the Showdown player name of the winner.
@@ -413,12 +569,10 @@ export class BattleTimelineExecutor {
       // ── no-op events ──────────────────────────────────────────────────────
       case 'weather_tick':
       case 'turn_end':
-      case 'status_cure':
       case 'side_start':
       case 'side_end':
       case 'effect_activate':
       case 'single_turn_effect':
-      case 'forme_change':
       case 'engine_error':
         break;
 
