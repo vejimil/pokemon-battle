@@ -618,6 +618,7 @@ function normalizeEventsFromLine(line, ctx) {
       const detailsSpecies = parseDetailsSpeciesForEvent(parts[3] || '');
       const identSpecies = displayNameForPokemonProtocol(parts[2] || '');
       const identLooksLikeForm = /-(mega|mega-x|mega-y|primal|ultra)\b/i.test(identSpecies);
+      const silent = parts.slice(4).some(part => /^\[silent\]$/i.test(String(part || '').trim()));
       const toSpecies = tag === 'detailschange'
         ? (detailsSpecies || identSpecies || '')
         : tag === '-formechange'
@@ -633,6 +634,7 @@ function normalizeEventsFromLine(line, ctx) {
         to: parts[3] || '',
         toSpecies,
         mechanism: tag,
+        silent,
       }];
     }
 

@@ -242,9 +242,31 @@ Target: `/workspaces/pokemon-battle`
 - `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 설치/해제 메시지
 - 영향: `showdown-engine.cjs`에서 이미 `side_start/end` 이벤트 생성하는지 확인 필요
 
-#### BA-15: 폼 체인지 연출 (`battle-shell-scene.js`, `timeline.js`)
-- `forme_change`: 스프라이트 교체 + "X는 폼 체인지했다!" 메시지
-- 현재 `forme_change` 이벤트가 showdown-engine에서 생성되는지 확인 필요
+#### BA-20: 폼체인지 연출 정합 (FormChangePhase/QuietFormChangePhase 분기 이식)
+- **원본 분기 확인**:
+  - `pokerogue_codes/src/battle-scene.ts` lines 3339-3383 (`triggerPokemonFormChange`)
+  - `pokerogue_codes/src/phases/form-change-phase.ts` (`FormChangePhase`: 진화씬 스타일 연출)
+  - `pokerogue_codes/src/phases/quiet-form-change-phase.ts` (`QuietFormChangePhase`: 전투 중 경량 연출)
+- **확인 결론**:
+  - `modal`은 "게임 종료 후 진화" 의미가 아니라, 파티 UI에서 `EVOLUTION_SCENE` 오버레이를 강제로 띄우는 제어값
+  - 전투 중 메가/원시/울트라도 조건에 따라 `FormChangePhase` 또는 `QuietFormChangePhase`를 탄다
+- **다음 구현 목표**:
+  - 현재 즉시 교체(sprite/info)는 유지하고, 원본처럼 폼체인지 시각 연출(경량/진화씬 스타일)을 이벤트 컨텍스트별로 분기
+  - QA 재현 케이스: 양측 동시 메가 + 한쪽 즉시 KO, 파티 모달 폼체인지, 비활성/비가시 폼체인지
+
+#### ✅ BA-15: 폼 체인지 연출 — 완료 (2026-04-15)
+- **원본 참조**:
+  - `pokerogue_codes/src/phases/quiet-form-change-phase.ts` lines 60-66 (`showFormChangeTextAndEnd`)
+  - `pokerogue_codes/src/data/pokemon-forms/form-change-triggers.ts` lines 314-341 (`getSpeciesFormChangeMessage`)
+  - `assets/pokerogue/locales/ko/pokemon-form-battle.json` (`megaChange`, `formChange` 메시지 키)
+- **반영 내용**:
+  - `src/battle-presentation/timeline.js`:
+    - `forme_change`에서 원본 톤의 메시지 출력 추가 (메가진화/일반 폼변화 분기)
+    - 같은 턴의 중복 폼 이벤트(`-formechange` + `detailschange`)에서 메시지 중복을 피하도록 이름 변화 기준 가드 추가
+    - 메시지 출력 전에 BA-19 경로로 sprite/info 즉시 갱신을 먼저 수행해 원본과 동일한 체감 순서 확보
+- **원본 분기 메모 (2026-04-15 후속 확인)**:
+  - `battle-scene.ts` 분기상 `modal=true`는 파티 오버레이 제어이며, "배틀 종료 후 진화 전용" 의미가 아님
+  - 메가/원시/울트라도 트리거/quiet 플래그에 따라 `FormChangePhase`(연출 큼) 또는 `QuietFormChangePhase`(연출 경량)로 갈린다
 
 #### ✅ BA-18: 교체 시 정보창 즉시 반영 — 완료 (2026-04-15)
 - **원본 참조**:
@@ -274,6 +296,12 @@ Target: `/workspaces/pokemon-battle`
     - 폼체인지 직후 ability_show 메시지에서 새 폼 이름이 즉시 사용되도록 이름 캐시 동기화
   - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`:
     - `setBattlerSprite(side, spriteUrl)` 추가: 이벤트 시점 battler 텍스처 즉시 교체
+  - 후속 안정화(동일 세션):
+    - Showdown의 `detailschange(메가) + -mega + [silent] detailschange` 연쇄 케이스 처리
+    - `-mega` 페어 마커(종 정보 없음)는 타임라인에서 skip
+    - `detailschange`의 `[silent]` 플래그를 이벤트에 포함해 메시지 출력 억제
+    - 폼체인지 sprite 해석 시 최종 스냅샷 대신 이벤트 `toSpecies` 우선 사용
+    - 재현 버그 픽스: A/B 동시 메가 + B가 A를 원턴 KO하는 경우, A의 메가 메시지만 나오고 sprite/info가 미변경되던 케이스 수정
 
 ---
 

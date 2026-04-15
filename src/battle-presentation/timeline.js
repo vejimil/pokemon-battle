@@ -191,6 +191,34 @@ export class BattleTimelineExecutor {
     }
   }
 
+  _buildFormChangeMessage(preName, nextName, mechanism = '') {
+    const pre = String(preName || '').trim();
+    const next = String(nextName || '').trim();
+    const mechId = toId(mechanism);
+    const nextId = toId(next);
+    if (!pre) return '';
+
+    if (mechId === 'mega' || nextId.includes('mega')) {
+      return next
+        ? `${pre}은(는)\n${next}로 메가진화했다!`
+        : `${pre}은(는)\n메가진화했다!`;
+    }
+    if (nextId.includes('gigantamax') || nextId.includes('gmax')) {
+      return next
+        ? `${pre}은(는)\n${next}가 되었다!`
+        : `${pre}은(는)\n거다이맥스했다!`;
+    }
+    if (nextId.includes('eternamax')) {
+      return next
+        ? `${pre}은(는)\n${next}가 되었다!`
+        : `${pre}은(는)\n무한다이맥스했다!`;
+    }
+    if (next && toId(pre) !== toId(next)) {
+      return `${pre}은(는)\n${next}(으)로 변화했다!`;
+    }
+    return `${pre}은(는)\n다른 모습으로 변화했다!`;
+  }
+
   // ── public API ─────────────────────────────────────────────────────────────
 
   /**
@@ -535,22 +563,37 @@ export class BattleTimelineExecutor {
       case 'forme_change': {
         const side = ev.target?.side;
         const slot = ev.target?.slot ?? 0;
+        const isMegaPairMarker = ev.mechanism === '-mega' && !String(ev.toSpecies || '').trim();
+        if (isMegaPairMarker) break;
+        const preName = this._slotName(side, slot);
         const toSpecies = String(ev.toSpecies || ev.to || '').trim();
-        if (toSpecies) {
-          this._slotNames.set(this._slotKey(side, slot), toSpecies);
-        }
         const visual = await this._resolveVisual(ev);
         if (visual?.spriteUrl) {
           await this._setBattlerSprite(side, visual.spriteUrl);
         }
+        let nextName = toSpecies;
+        if (!nextName && visual?.infoPatch?.displayName) {
+          nextName = String(visual.infoPatch.displayName || '').trim();
+        }
+        if (nextName) this._slotNames.set(this._slotKey(side, slot), nextName);
         if (toSpecies || visual?.infoPatch) {
           const formPatch = {
             ...(visual?.infoPatch || {}),
           };
-          if (toSpecies && !formPatch.displayName) formPatch.displayName = toSpecies;
+          if (toSpecies) formPatch.displayName = toSpecies;
+          else if (nextName && !formPatch.displayName) formPatch.displayName = nextName;
           this._applyInfoForSlot(side, slot, {
             ...formPatch,
           });
+        }
+        const changed = nextName && toId(nextName) !== toId(preName);
+        const shouldShowFallback = ev.mechanism === '-formechange' && !nextName;
+        if (!ev.silent && (changed || shouldShowFallback)) {
+          const msg = this._buildFormChangeMessage(preName, nextName, ev.mechanism);
+          if (msg) {
+            this._showMsg(msg);
+            await this._delay(700);
+          }
         }
         break;
       }

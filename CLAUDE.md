@@ -88,6 +88,11 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 > **작업 원칙3: 나를 위한 설명은 한글로 하되, 작업 및 사고 자체는 영어로 진행할 것 - 토큰 절약을 위함**
 > **작업 원칙4: UI 폴리시 작업(UI-P1~P5)은 배틀 연출이 완성된 후에 한다. 배틀이 먼저.**
 
+### 🔜 BA-20. 폼체인지 연출 정합 (다음 세션 우선)
+- 원본 분기 기준: `battle-scene.ts` `triggerPokemonFormChange()`에서 `player && !quiet`면 `FormChangePhase`, 그 외는 `QuietFormChangePhase`
+- `modal`은 파티 UI 오버레이(`EVOLUTION_SCENE`) 제어값이며, "배틀 종료 후 진화 전용" 플래그가 아님
+- 목표: 현재 즉시 반영(BA-19) 위에 원본 연출 레이어(경량/진화씬 스타일)를 컨텍스트별로 추가 이식
+
 ### ✅ BA-1. 배틀 메시지 순차 표시 — 완료 (2026-04-13)
 ### ✅ BA-2. 울음소리(Cry) 연결 — 완료 (2026-04-13)
 ### ✅ BA-3. 어빌리티 바 + 날씨/지형 연출 — 완료 (2026-04-13)
@@ -216,19 +221,27 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `switch_in` 이벤트에 `hpAfter`, `maxHp`, `status` 포함
   - `damage/heal` 이벤트에 condition status 포함
   - `forme_change` 이벤트에 `toSpecies` 필드 추가 (`detailschange`/`-formechange` 우선)
+  - `forme_change` 이벤트에 `silent` 플래그 추가 (`[silent]` detailschange 감지)
 - `src/battle-presentation/timeline.js`
   - executor에 `initialSlotInfo`/`resolveVisualState` 옵션 추가
   - `_slotInfo` 맵으로 side+slot별 이름/HP/상태를 타임라인 중 실시간 유지
   - `switch_in` 즉시 info panel 업데이트 (name/hp/status)
   - `forme_change` 핸들러 구현: sprite/info 즉시 갱신 + `_slotNames` 동기화(ability_show owner명 즉시 반영)
+  - `forme_change` 메시지 추가(메가/일반 폼변화 분기) + 중복 이벤트(`-formechange`/`detailschange`) 메시지 중복 방지
+  - `-mega` 페어 마커(종 정보 없음) skip 처리 + `silent` 이벤트 메시지 억제
   - `status_apply/status_cure/damage/heal/faint`에서도 `_slotInfo` 동기화
 - `src/app.js`
   - `resolveTimelineEventMon()`/`resolveTimelineEventVisualState()` 추가
+  - `forme_change`의 sprite 해석을 `toSpecies` 우선으로 변경(최종 스냅샷 역전 방지)
   - executor 생성 시 `resolveVisualState` 콜백 전달
   - `collectTimelineInitialSlotInfo()` 추가 및 `resolveEngineTurn()`에서 전달
   - `buildBattleInfoModelFromMon()` 공통 함수로 분리
 - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
   - `setBattlerSprite(side, spriteUrl)` 추가: 폼체인지 시점 즉시 텍스처 교체
+- 재현 버그 픽스
+  - A/B 동시 메가 + B가 A를 즉시 KO하는 턴에서, A의 메가 메시지만 표시되고 sprite/info가 갱신되지 않던 케이스 수정
+  - 원인 체인: `detailschange(메가) -> -mega -> [silent] detailschange(복귀)` 연쇄에서 최종 스냅샷 역전이 선행 이벤트를 덮어씀
+  - 대응: `toSpecies` 우선 sprite 해석 + `-mega` 마커 skip + `[silent]` 메시지 억제
 
 ### 🐛 미확인 항목
 
@@ -258,8 +271,14 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 **BA-14: 사이드 컨디션 연출** (`timeline.js`)
 - `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 메시지
 
-**BA-15: 폼 체인지 연출** (`battle-shell-scene.js`, `timeline.js`)
-- `forme_change`: 스프라이트 교체 + 메시지
+**BA-20: 폼체인지 연출 정합 (FormChangePhase/QuietFormChangePhase)** (`timeline.js`, `battle-shell-scene.js`, `app.js`)
+- 원본 분기 이식: `FormChangePhase`(진화씬 스타일) vs `QuietFormChangePhase`(전투 중 경량 transform) 컨텍스트별 재현
+- `modal`은 파티 UI 오버레이 제어로 해석하고, 전투 중 메가/원시/울트라 연출 경로와 분리해 구현
+- 검증 케이스: 동시 메가+즉시 KO, 파티 화면 item-trigger 폼체인지, 비가시(active 아님) 폼체인지
+
+**✅ BA-15: 폼 체인지 연출 — 완료 (2026-04-15)** (`timeline.js`)
+- `forme_change`에서 원본 `pokemon-form-battle` 메시지 톤(메가진화/일반 폼변화)을 반영한 메시지 출력 추가
+- `-formechange`/`detailschange` 연쇄 시 메시지 중복 방지 가드 추가
 
 **✅ BA-18: 교체 시 정보창 즉시 반영 — 완료 (2026-04-15)** (`app.js`, `timeline.js`, `showdown-engine.cjs`)
 - switch_in 이벤트 시점에 이름/HP/상태 정보창을 즉시 갱신하도록 `_slotInfo` 기반 타임라인 동기화 구현

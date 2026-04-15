@@ -1675,7 +1675,12 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
   const sideIndex = side === 'p2' ? 1 : 0;
   const perspective = playerSide === 'p2' ? 1 : 0;
   const mon = resolveTimelineEventMon(ev, battle);
-  const infoPatch = buildTimelineStaticInfoPatch(mon);
+  const infoPatch = buildTimelineStaticInfoPatch(mon) || {};
+  if (ev.type === 'forme_change') {
+    // Forme change name comes from event stream (detailschange) and can differ from
+    // the final snapshot (e.g. KO + silent detailschange in the same turn).
+    delete infoPatch.displayName;
+  }
   let spriteId = '';
   let shiny = false;
 
@@ -1683,6 +1688,17 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
     const override = getTimelineSpriteOverride(side);
     spriteId = String(override?.spriteId || '');
     shiny = Boolean(override?.shiny);
+  }
+  if (!spriteId && ev.type === 'forme_change') {
+    const formSpecies = String(ev.toSpecies || '').trim();
+    if (formSpecies) {
+      const baseSpecies = mon?.baseSpecies || mon?.originalData?.baseSpecies || formSpecies;
+      const formSpriteId = getAutoSpriteIdForSpecies(formSpecies, mon?.gender || '', baseSpecies);
+      if (formSpriteId) {
+        spriteId = formSpriteId;
+        shiny = Boolean(mon?.shiny);
+      }
+    }
   }
   if (!spriteId && mon) {
     spriteId = resolveBattleRenderSpriteId(mon);
@@ -1694,7 +1710,7 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
     side,
     slot: sideSlot.slot,
     spriteUrl,
-    infoPatch,
+    infoPatch: Object.keys(infoPatch).length ? infoPatch : null,
   };
 }
 
