@@ -1546,7 +1546,7 @@ let pickerReturnFocusEl = null;
 const phaserBattleRenderers = { 0: null, 1: null };
 const battleLocaleManager = createBattleLocaleManager({
   language: 'ko',
-  namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag'],
+  namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag', 'status-effect'],
 });
 
 function getPhaserBattleRenderer(player = 0) {
@@ -1852,6 +1852,9 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
     localeManager: localeEnabled ? battleLocaleManager : null,
     localeLanguage,
     resolveVisualState: ev => resolveTimelineEventVisualState(ev, { playerSide: cfg.playerSide, battle: state.battle }),
+    // BA-22: localize raw English names from Showdown events into the UI language
+    localizeMonName: name => displaySpeciesName(name) || name,
+    localizeMoveName: name => displayMoveName(name) || name,
     ...cfg,
   }));
   await Promise.all(executors.map(executor => executor.play(events)));
@@ -6028,14 +6031,20 @@ function renderBattleMessagesWindow(battle, player) {
                 ? lang('교체할 포켓몬을 선택하세요.', 'Choose a Pokémon to switch in.')
                 : currentMode === 'target'
                   ? lang('대상을 선택하세요.', 'Choose a target.')
-                  : lang('행동을 선택하세요.', 'Choose an action.');
+                  : currentMode === 'message'
+                    ? lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn...")
+                    : lang('행동을 선택하세요.', 'Choose an action.');
   const messageLines = (battle.log || []).slice(0, 2).map(line => localizeText(line.rawText || line.text || '').trim()).filter(Boolean);
-  const usePromptAsPrimary = currentMode === 'command' || !messageLines.length;
+  // BA-21: waiting for opponent — waiting message takes priority over battle.log lines
+  const waitingForOpponent = !battle.winner && currentMode === 'message' && Boolean(request);
+  const usePromptAsPrimary = currentMode === 'command' || waitingForOpponent || !messageLines.length;
   const primaryText = usePromptAsPrimary ? promptText : messageLines[0];
-  const secondaryText = usePromptAsPrimary
-    ? (messageLines[0] || '')
-    : (messageLines[1] || (promptText !== primaryText ? promptText : ''));
-  const showPromptIcon = !battle.winner && Boolean(request) && !request.wait;
+  const secondaryText = waitingForOpponent
+    ? ''
+    : usePromptAsPrimary
+      ? (messageLines[0] || '')
+      : (messageLines[1] || (promptText !== primaryText ? promptText : ''));
+  const showPromptIcon = !battle.winner && !waitingForOpponent && Boolean(request) && !request.wait;
   els.battleMessageWindow.innerHTML = `
     <div class="pkbattle-message-stack ${currentMode === 'command' ? 'is-command' : ''}">
       <div class="pkbattle-message-primary">${primaryText}</div>
@@ -6618,12 +6627,16 @@ function buildBattleMessageModel(battle, player) {
                 ? lang('교체할 포켓몬을 선택하세요.', 'Choose a Pokémon to switch in.')
                 : currentMode === 'target'
                   ? lang('대상을 선택하세요.', 'Choose a target.')
-                  : lang('행동을 선택하세요.', 'Choose an action.');
+                  : currentMode === 'message'
+                    ? lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn...")
+                    : lang('행동을 선택하세요.', 'Choose an action.');
   const messageLines = (battle.log || []).slice(0, 2).map(line => localizeText(line.rawText || line.text || '').trim()).filter(Boolean);
   const interactiveMode = !battle.winner && !request?.wait && ['command', 'fight', 'party', 'target'].includes(currentMode);
-  const usePromptAsPrimary = interactiveMode || !messageLines.length;
+  // BA-21: player committed and waiting for opponent — waiting message takes priority over battle.log lines
+  const waitingForOpponent = !battle.winner && currentMode === 'message' && Boolean(request);
+  const usePromptAsPrimary = interactiveMode || waitingForOpponent || !messageLines.length;
   const primaryText = usePromptAsPrimary ? promptText : messageLines[0];
-  const secondaryText = interactiveMode
+  const secondaryText = (interactiveMode || waitingForOpponent)
     ? ''
     : usePromptAsPrimary
       ? (messageLines[0] || '')
@@ -6631,7 +6644,7 @@ function buildBattleMessageModel(battle, player) {
   return {
     primary: primaryText,
     secondary: secondaryText,
-    showPrompt: !interactiveMode && !battle.winner && Boolean(messageLines.length || (request?.wait && promptText)),
+    showPrompt: !interactiveMode && !waitingForOpponent && !battle.winner && Boolean(messageLines.length || (request?.wait && promptText)),
   };
 }
 
@@ -6842,10 +6855,11 @@ function buildPhaserMessageWindowModel(battle, player) {
   return {
     mode: 'message',
     title: `${battle.players?.[player]?.name || `P${player + 1}`}`,
+    // BA-21: any non-null request while in message mode means player committed; show waiting text.
     placeholder: battle.winner
       ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
-      : request?.wait
-        ? lang('상대 선택 또는 턴 진행을 기다리는 중입니다.', 'Waiting for the opposing side or turn resolution.')
+      : request
+        ? lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn...")
         : lang('엔진 요청을 기다리는 중입니다.', 'Waiting for an engine request.'),
   };
 }

@@ -19,7 +19,7 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
-## 1. 현재 구현 상태 (2026-04-15 기준)
+## 1. 현재 구현 상태 (2026-04-16 기준)
 
 ### ✅ 완료된 Milestone
 
@@ -220,13 +220,16 @@ Target: `/workspaces/pokemon-battle`
 
 ### Sprint 7. 배틀 완성도
 
-- **다음 세션 착수 순서(고정)**:
+- **완료된 항목**:
   1. `M5` locale 네임스페이스 로더 ✅ 완료 (2026-04-16)
   2. `BA-17` 배틀 연출 타이밍 정확도 개선 ✅ 완료 (2026-04-16)
   3. `BA-14` 사이드 컨디션 연출 ✅ 완료 (2026-04-16)
-  4. `BA-21` 선택 완료 후 대기 메시지 정합
-  5. `BA-22` 한국어/영어 메시지 완전 분리
-  6. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
+  4. `BA-21` 선택 완료 후 대기 메시지 정합 ✅ 완료 (2026-04-16)
+  5. `BA-22` 한국어/영어 메시지 완전 분리 ✅ 완료 (2026-04-16)
+- **다음 세션 착수 순서(고정)**:
+  1. `BA-27` 타임라인 재생 중 선택 입력 블록
+  2. `BA-23` 기술/날씨/필드 연출 완벽화 (이후)
+  3. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (이후)
 
 #### ✅ M5: Locale 네임스페이스 로더 — 완료 (2026-04-16)
 - **원본 참조**:
@@ -277,47 +280,63 @@ Target: `/workspaces/pokemon-battle`
   - 미매핑 효과는 일반 텍스트 fallback 메시지로 안전 처리
   - 후속 안정화: `-damage`의 `[from] Stealth Rock/Spikes` 메타를 서버 이벤트에 포함(`fromEffectId`)하고, trap 피격 메시지(`stealthRockActivateTrap`/`spikesActivateTrap`)를 damage 단계에서 출력하도록 보강
 
-#### BA-21: 선택 완료 후 대기 메시지 정합 (`app.js`, `timeline.js`, `battle-message-ui-handler.js`)
-- **요구사항**: 한 플레이어가 선택을 끝낸 뒤 메시지창에 이상 문구 대신 `상대의 턴을 기다리는 중...` 표시
-- **목표 동작**:
-  - 한국어 UI: `상대의 턴을 기다리는 중...`
-  - 영어 UI: `Waiting for opponent's turn...`
-- **구현 메모**:
-  - `choice committed` 직후의 화면 전환(`command`→`message`) 경로에서 메시지 소스를 고정
-  - 턴 resolve 전까지 불필요한 battle.log 상단 문구가 끼어들지 않도록 우선순위 정리
+#### ✅ BA-21: 선택 완료 후 대기 메시지 정합 — 완료 (2026-04-16)
+- **반영 파일**: `src/app.js`
+- **반영 내용**:
+  - `buildBattleMessageModel()`: `currentMode === 'message'` 분기 추가 → `상대의 턴을 기다리는 중...` / `Waiting for opponent's turn...`
+  - `waitingForOpponent` 플래그 도입: mode='message' + request 존재 시 `battle.log` 라인이 waiting 메시지를 덮어쓰지 않도록 `usePromptAsPrimary=true` 강제
+  - `secondaryText`/`showPrompt`도 waiting 상태에서 비움(불필요한 log 라인/prompt 아이콘 제거)
+  - `renderBattleMessagesWindow()` (DOM 렌더러): 동일 로직 적용
+  - `buildPhaserMessageWindowModel()`: request 존재 시 placeholder도 waiting 문구로 통일
 
-#### BA-22: 한국어/영어 메시지 완전 분리 (`locale-manager.js`, `timeline.js`, `showdown-engine.cjs`)
-- **요구사항**: 한국어 버전에서 영어 문구/영문 병기 제거 (영어 버전은 영어만 표시)
-- **목표 동작**:
-  - KO/폼체인지/날씨/특성 등 모든 배틀 메시지를 locale별 단일 언어로 출력
-  - 서버 로그의 KR/EN 병기 문자열(`... / ...`) 의존 제거
-- **구현 메모**:
-  - M5(locale 네임스페이스 로더)와 함께 메시지 키 중심 렌더링으로 통합
-  - `battle.log`는 구조화된 이벤트 중심으로 재해석하고, UI 출력은 locale layer가 단독 담당
+#### ✅ BA-22: 한국어/영어 메시지 완전 분리 — 완료 (2026-04-16)
+- **반영 파일**: `src/battle-presentation/timeline.js`, `src/app.js`
+- **반영 내용**:
+  - `STATUS_ID_TO_LOCALE_KEY` 맵 추가: Showdown 상태이상 단축키(`brn/par/psn/tox/slp/frz`) → `status-effect` 네임스페이스 키 매핑
+  - `STAT_LABELS_EN` 맵 추가: 영어 스탯 표시명 (`Attack/Defense/Sp. Atk/Sp. Def/Speed/Accuracy/Evasion`)
+  - `status_apply`: `status-effect.{id}.obtain` locale key 사용 + `pokemonNameWithAffix` 변수 적용 (English fallback 포함)
+  - `boost/unboost`: `battle.statRose_one/statSharplyRose_one/statRoseDrastically_one` 등 locale key 사용, `_isEnglishLocale()`로 스탯 표시명 EN/KO 분기
+  - `miss`: `battle.attackMissed` locale key 사용; EN fallback `"${name}'s attack missed!"`
+  - `cant_move`: `_isEnglishLocale()` 분기로 EN/KO 직접 분리
+  - `app.js` locale namespace에 `status-effect` 추가 (preload 시 함께 로드)
+- **후속 픽스 — 포켓몬명/기술명 한국어 표시 (2026-04-16)**:
+  - `app.js` executor 생성 시 `localizeMonName: displaySpeciesName`, `localizeMoveName: displayMoveName` 콜백 추가 → 언어 설정 따라 KO/EN 자동 분기
+  - `timeline.js`: `_slotName()` → `_localizeMonName()` 경유로 배틀 메시지에 한국어명 출력
+  - `timeline.js`: `_slotNameRaw()` 추가 — Showdown 이벤트 매칭·ID 비교용 raw 영어명 보존
+  - `forme_change` 핸들러: `preNameRaw` 분리, raw 영어명 기준 `changed` 비교, infoPatch에는 localized `displayName` 적용
+  - `_buildFormChangeMessage()`: `rawPre` 파라미터 추가, `this._slotNameRaw(null, 0)` 버그 수정 → raw 영어명 비교로 전환
 
-#### BA-23: 기술/날씨/필드 연출 완벽화 (추후) (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
+#### 🔜 BA-27: 타임라인 재생 중 선택 입력 블록 (`app.js`, `timeline.js`)
+- **요구사항**: 배틀 연출(타임라인)이 재생되는 동안에는 커맨드/기술/파티 선택 입력을 받지 않아야 함
+- **현재 문제**: 타임라인 재생 중에도 선택 UI가 반응하거나, 빠르게 탭하면 다음 행동을 즉시 입력할 수 있음
+- **구현 메모(초안)**:
+  - `playTimelineAcrossActiveViews()` 시작 시 `ui.inputLocked = true` 세팅, `onComplete`에서 해제
+  - `syncBattleUiState()` / `renderBattle()`에서 inputLocked 상태를 커맨드·기술·파티 핸들러에 반영
+  - `handleBattleChoiceCommitted()` 앞에도 inputLocked 가드 추가
+- **우선순위**: BA-22 직후 착수
+
+#### BA-23: 기술/날씨/필드 연출 완벽화 (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
 - **요구사항**: move/weather/terrain 연출을 PokeRogue 원본 체감에 맞게 정밀 보강
 - **범위(초안)**:
   - 기술 이펙트/SE/메시지 타이밍의 원본 정합도 향상
   - 날씨 시작/지속/종료 연출 및 메시지 품질 개선
   - 필드(terrain/side condition 포함) 연출 누락 및 품질 보강
-- **우선순위**: BA-21/BA-22 이후 후순위 착수
 
-#### 🔜 BA-24: 테라스탈 구현 (추후) (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
+#### 🔜 BA-24: 테라스탈 구현 (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - **요구사항**: 전투 중 테라스탈 선언/변환 연출 및 메시지를 이벤트 기반으로 재현
 - **구현 메모(초안)**:
   - Showdown `-terastallize` 라인을 구조화 이벤트로 안정 추출
   - 타입/배틀러 시각 상태 갱신(아이콘/텍스트/연출) 타이밍 정합
   - locale key 기반 메시지(`battle`, 필요 시 `move-trigger`)와 연동
 
-#### 🔜 BA-25: 다이맥스 구현 (추후) (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
+#### 🔜 BA-25: 다이맥스 구현 (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - **요구사항**: 다이맥스/거다이맥스 전환 및 해제 흐름을 배틀 연출에 반영
 - **구현 메모(초안)**:
   - Showdown 다이맥스 관련 이벤트 추출 경로 정리
   - 배틀러 스케일/HP/UI 표시/메시지 타이밍을 원본 체감에 맞게 구성
   - 기존 faint/forme_change/switch_in 연출과 충돌 없이 공존하도록 순서 검증
 
-#### 🔜 BA-26: 배틀 내 폼체인지 표시명 고정 (추후) (`app.js`, `timeline.js`, `showdown-engine.cjs`)
+#### 🔜 BA-26: 배틀 내 폼체인지 표시명 고정 (`app.js`, `timeline.js`, `showdown-engine.cjs`)
 - **요구사항**: 배틀 메시지/정보창에서 폼명을 노출하지 않고 기본 종족명으로 고정 표시
 - **예시 정책**:
   - `메가한카리아스` 대신 `한카리아스`
@@ -325,6 +344,15 @@ Target: `/workspaces/pokemon-battle`
 - **구현 메모(초안)**:
   - 내부 판정/sprite/form 로직은 유지하고, 사용자 노출 display name만 별도 정규화
   - BA-19/BA-20의 즉시 반영/연출 정합 회귀 없이 적용
+
+#### 🔜 BA-28: 영칭 전용 포켓몬/기술 한국어명 탑재 (`src/i18n-ko-data.js` 또는 신규 파일)
+- **요구사항**: `getLocalizedName()`에서 한국어명을 찾지 못해 영어로 노출되는 포켓몬·기술·아이템에 한국어명 추가
+- **현재 문제**: 일부 포켓몬/기술이 KO 모드에서도 영어 이름으로 표시됨 (LOCALIZED_NAME_MAPS·KO_NAME_MAPS에 엔트리 없음)
+- **구현 메모(초안)**:
+  - `getLocalizedName()`이 빈 문자열을 반환하는 케이스를 배틀 로그/브라우저에서 수집
+  - 포켓몬: `assets/pokerogue/locales/ko/pokemon.json` 또는 공식 한국어 데이터 소스에서 조회
+  - 기술: `assets/pokerogue/locales/ko/move.json` 에서 camelCase 키로 조회
+  - 미발견 케이스는 수동 보완 (`src/i18n-ko-data.js` 또는 신규 override 파일)
 
 #### ✅ BA-20: 폼체인지 연출 정합 (FormChangePhase/QuietFormChangePhase 분기 이식) — 완료 (2026-04-16)
 - **원본 분기 확인**:

@@ -22,6 +22,7 @@ function speciesToDexNum(species) {
   return Pokedex[toId(species)]?.num ?? 0;
 }
 
+// BA-22: Korean-only fallback labels (used when locale key not found)
 const STATUS_LABELS = {
   brn: '화상에 걸렸다!',
   par: '마비됐다!',
@@ -29,6 +30,16 @@ const STATUS_LABELS = {
   tox: '맹독에 걸렸다!',
   slp: '잠들었다!',
   frz: '얼어붙었다!',
+};
+
+// BA-22: Showdown status short-id → status-effect namespace key (locale key prefix)
+const STATUS_ID_TO_LOCALE_KEY = {
+  brn: 'burn',
+  par: 'paralysis',
+  psn: 'poison',
+  tox: 'toxic',
+  slp: 'sleep',
+  frz: 'freeze',
 };
 
 const STAT_LABELS = {
@@ -39,6 +50,17 @@ const STAT_LABELS = {
   spe: '스피드',
   acc: '명중',
   eva: '회피',
+};
+
+// BA-22: English stat display names for locale interpolation
+const STAT_LABELS_EN = {
+  atk: 'Attack',
+  def: 'Defense',
+  spa: 'Sp. Atk',
+  spd: 'Sp. Def',
+  spe: 'Speed',
+  acc: 'Accuracy',
+  eva: 'Evasion',
 };
 
 const WEATHER_LABELS = {
@@ -150,6 +172,8 @@ export class BattleTimelineExecutor {
    * @param {object}                   [opts.localeManager]    locale namespace manager
    * @param {string}                   [opts.localeLanguage]   locale language id ('ko'|'en')
    * @param {boolean}                  [opts.audioEnabled]     play timeline audio for this executor
+   * @param {function(string): string} [opts.localizeMonName]  translate English species name → display name
+   * @param {function(string): string} [opts.localizeMoveName] translate English move name → display name
    */
   constructor({
     onInputRequired,
@@ -163,6 +187,8 @@ export class BattleTimelineExecutor {
     localeManager,
     localeLanguage = 'ko',
     audioEnabled = true,
+    localizeMonName,
+    localizeMoveName,
   } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
     this.onComplete = onComplete ?? (() => {});
@@ -173,6 +199,8 @@ export class BattleTimelineExecutor {
     this._resolveVisualState = resolveVisualState ?? (() => null);
     this._localeManager = localeManager ?? null;
     this._localeLanguage = String(localeLanguage || 'ko');
+    this._localizeMonName = typeof localizeMonName === 'function' ? localizeMonName : (n => String(n || ''));
+    this._localizeMoveName = typeof localizeMoveName === 'function' ? localizeMoveName : (n => String(n || ''));
     this.running = false;
     // Tracks species name per slot. Key: "${side}_${slot}" e.g. "p1_0", "p2_0".
     // Pre-seeded from initialNames (previous turn's final roster).
@@ -428,8 +456,14 @@ export class BattleTimelineExecutor {
     return this._t('arena-tag', key, { pokemonNameWithAffix }, fallback);
   }
 
-  /** Get the tracked species name for a side+slot, or '???' if unknown. */
+  /** Get the tracked species name for a side+slot, localized for display. */
   _slotName(side, slot = 0) {
+    const rawName = this._slotNames.get(`${side}_${slot}`) || '???';
+    return this._localizeMonName(rawName) || rawName;
+  }
+
+  /** Get the raw English species name without localization (for internal logic). */
+  _slotNameRaw(side, slot = 0) {
     return this._slotNames.get(`${side}_${slot}`) || '???';
   }
 
@@ -510,11 +544,20 @@ export class BattleTimelineExecutor {
     }
   }
 
-  _buildFormChangeMessage(preName, nextName, mechanism = '') {
+  /**
+   * Build form-change display message.
+   * @param {string} preName        localized display name before change (for message text)
+   * @param {string} nextName       localized display name after change  (for message text)
+   * @param {string} mechanism      Showdown mechanism string (raw, used for type detection)
+   * @param {string} [rawNext]      raw English toSpecies (used for reliable toId type detection)
+   * @param {string} [rawPre]       raw English pre-change species (for form-change detection)
+   */
+  _buildFormChangeMessage(preName, nextName, mechanism = '', rawNext = '', rawPre = '') {
     const pre = String(preName || '').trim();
     const next = String(nextName || '').trim();
     const mechId = toId(mechanism);
-    const nextId = toId(next);
+    // Use rawNext for reliable type detection; fall back to next (for backward compat)
+    const nextId = toId(rawNext || next);
     if (!pre) return '';
 
     if (mechId === 'mega' || nextId.includes('mega')) {
@@ -532,7 +575,11 @@ export class BattleTimelineExecutor {
         ? `${pre}은(는)\n${next}가 되었다!`
         : `${pre}은(는)\n무한다이맥스했다!`;
     }
-    if (next && toId(pre) !== toId(next)) {
+    // Use raw names for the "is it actually a different form?" check when available
+    const isDifferentForm = rawNext && rawPre
+      ? toId(rawNext) !== toId(rawPre)
+      : toId(pre) !== toId(next);
+    if (next && isDifferentForm) {
       return `${pre}은(는)\n${next}(으)로 변화했다!`;
     }
     return `${pre}은(는)\n다른 모습으로 변화했다!`;
@@ -593,13 +640,15 @@ export class BattleTimelineExecutor {
       case 'switch_in': {
         const side = ev.side;
         const slot = ev.slot ?? 0;
-        const species = ev.species || this._slotName(side, slot) || '???';
-        // Track this pokemon for later move/faint messages
+        // _slotNames always stores the raw English name for downstream event matching
+        const species = ev.species || this._slotNameRaw(side, slot) || '???';
         this._slotNames.set(this._slotKey(side, slot), species);
 
         const visual = await this._resolveVisual(ev);
+        // Use localized display name for the info panel
+        const displaySpecies = this._localizeMonName(species) || species;
         const switchPatch = {
-          displayName: species,
+          displayName: displaySpecies,
           ...(visual?.infoPatch || {}),
         };
         if (Number.isFinite(ev.hpAfter) && Number.isFinite(ev.maxHp) && ev.maxHp > 0) {
@@ -616,7 +665,7 @@ export class BattleTimelineExecutor {
         this._applyInfoForSlot(side, slot, switchPatch);
 
         // BA-1: Show switch message
-        const label = this._switchInMessage(side, species);
+        const label = this._switchInMessage(side, displaySpecies);
         await this._showMsg(label);
 
         const scene = this._scene();
@@ -641,11 +690,12 @@ export class BattleTimelineExecutor {
       case 'move_use': {
         const actorName = this._slotName(ev.actor?.side, ev.actor?.slot ?? 0);
         const actorNameWithAffix = this._pokemonNameWithAffix(actorName, ev.actor?.side);
+        const moveName = this._localizeMoveName(ev.move || '') || ev.move || '';
         await this._showMsg(this._t(
           'battle',
           'useMove',
-          { pokemonNameWithAffix: actorNameWithAffix, moveName: ev.move || '' },
-          `${actorName}의 ${ev.move}!`,
+          { pokemonNameWithAffix: actorNameWithAffix, moveName },
+          `${actorName}의 ${moveName}!`,
         ));
         const scene = this._scene();
         if (scene?.playMoveAnim) {
@@ -841,8 +891,15 @@ export class BattleTimelineExecutor {
           statusLabel: ev.status || '',
         });
         const statusName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
-        const statusLabel = STATUS_LABELS[toId(ev.status)] ?? `${ev.status} 상태`;
-        await this._showMsg(`${statusName}은(는) ${statusLabel}`, { minMs: 560 });
+        const statusNameWithAffix = this._pokemonNameWithAffix(statusName, ev.target?.side);
+        const statusShortId = toId(ev.status);
+        const statusLocaleKey = STATUS_ID_TO_LOCALE_KEY[statusShortId];
+        // BA-22: use status-effect locale key if available; Korean fallback otherwise
+        const statusMsg = statusLocaleKey
+          ? this._t('status-effect', `${statusLocaleKey}.obtain`, { pokemonNameWithAffix: statusNameWithAffix },
+              `${statusNameWithAffix}은(는) ${STATUS_LABELS[statusShortId] ?? `${ev.status} 상태`}`)
+          : `${statusNameWithAffix}은(는) ${STATUS_LABELS[statusShortId] ?? `${ev.status} 상태`}`;
+        await this._showMsg(statusMsg, { minMs: 560 });
         break;
       }
 
@@ -857,20 +914,40 @@ export class BattleTimelineExecutor {
       // ── BA-4: Stat boost / unboost ───────────────────────────────────────
       case 'boost': {
         const boostName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
-        const statLabel = STAT_LABELS[toId(ev.stat)] ?? ev.stat;
+        const boostNameWithAffix = this._pokemonNameWithAffix(boostName, ev.target?.side);
+        const boostStatId = toId(ev.stat);
+        // BA-22: locale-based stat name; use English map for EN locale
+        const boostStatLabel = this._isEnglishLocale()
+          ? (STAT_LABELS_EN[boostStatId] ?? ev.stat)
+          : (STAT_LABELS[boostStatId] ?? ev.stat);
         const amount = Number(ev.amount) || 1;
-        const suffix = amount >= 2 ? ' 크게 올랐다!' : ' 올랐다!';
-        await this._showMsg(`${boostName}의 ${statLabel}이${suffix}`, { minMs: 500 });
+        const boostKey = amount >= 3 ? 'statRoseDrastically_one'
+          : amount >= 2 ? 'statSharplyRose_one'
+          : 'statRose_one';
+        const boostFallback = this._isEnglishLocale()
+          ? `${boostNameWithAffix}'s ${boostStatLabel} rose${amount >= 3 ? ' drastically' : amount >= 2 ? ' sharply' : ''}!`
+          : `${boostNameWithAffix}의 ${boostStatLabel}이${amount >= 2 ? ' 크게 올랐다!' : ' 올랐다!'}`;
+        await this._showMsg(this._t('battle', boostKey, { pokemonNameWithAffix: boostNameWithAffix, stats: boostStatLabel }, boostFallback), { minMs: 500 });
         this._playAudio('se/stat_up');
         break;
       }
 
       case 'unboost': {
         const unboostName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
-        const unstatLabel = STAT_LABELS[toId(ev.stat)] ?? ev.stat;
+        const unboostNameWithAffix = this._pokemonNameWithAffix(unboostName, ev.target?.side);
+        const unboostStatId = toId(ev.stat);
+        // BA-22: locale-based stat name; use English map for EN locale
+        const unboostStatLabel = this._isEnglishLocale()
+          ? (STAT_LABELS_EN[unboostStatId] ?? ev.stat)
+          : (STAT_LABELS[unboostStatId] ?? ev.stat);
         const uamount = Number(ev.amount) || 1;
-        const usuffix = uamount >= 2 ? ' 크게 내려갔다!' : ' 내려갔다!';
-        await this._showMsg(`${unboostName}의 ${unstatLabel}이${usuffix}`, { minMs: 500 });
+        const unboostKey = uamount >= 3 ? 'statSeverelyFell_one'
+          : uamount >= 2 ? 'statHarshlyFell_one'
+          : 'statFell_one';
+        const unboostFallback = this._isEnglishLocale()
+          ? `${unboostNameWithAffix}'s ${unboostStatLabel} fell${uamount >= 3 ? ' severely' : uamount >= 2 ? ' harshly' : ''}!`
+          : `${unboostNameWithAffix}의 ${unboostStatLabel}이${uamount >= 2 ? ' 크게 내려갔다!' : ' 내려갔다!'}`;
+        await this._showMsg(this._t('battle', unboostKey, { pokemonNameWithAffix: unboostNameWithAffix, stats: unboostStatLabel }, unboostFallback), { minMs: 500 });
         this._playAudio('se/stat_down');
         break;
       }
@@ -878,16 +955,25 @@ export class BattleTimelineExecutor {
       // ── BA-4: Miss ───────────────────────────────────────────────────────
       case 'miss': {
         // In Showdown protocol, miss/−miss stores the ATTACKER as ev.target (field is misnamed).
-        // The attacker's move missed, so message: "X의 공격이 빗나갔다!"
         const missName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
-        await this._showMsg(`${missName}의 공격이 빗나갔다!`, { minMs: 460 });
+        const missNameWithAffix = this._pokemonNameWithAffix(missName, ev.target?.side);
+        // BA-22: locale-key for EN; Korean fallback
+        const missFallback = this._isEnglishLocale()
+          ? `${missNameWithAffix}'s attack missed!`
+          : `${missNameWithAffix}의 공격이 빗나갔다!`;
+        await this._showMsg(this._t('battle', 'attackMissed', { pokemonNameWithAffix: missNameWithAffix }, missFallback), { minMs: 460 });
         break;
       }
 
       // ── BA-4: Can't move ─────────────────────────────────────────────────
       case 'cant_move': {
         const cantName = this._slotName(ev.actor?.side, ev.actor?.slot ?? 0);
-        await this._showMsg(`${cantName}은(는) 움직일 수 없다.`, { minMs: 500 });
+        const cantNameWithAffix = this._pokemonNameWithAffix(cantName, ev.actor?.side);
+        // BA-22: simple EN/KO branch (no single generic locale key covers all cant_move causes)
+        const cantMsg = this._isEnglishLocale()
+          ? `${cantNameWithAffix} can't move!`
+          : `${cantNameWithAffix}은(는) 움직일 수 없다.`;
+        await this._showMsg(cantMsg, { minMs: 500 });
         break;
       }
 
@@ -917,8 +1003,12 @@ export class BattleTimelineExecutor {
         const isMegaPairMarker = ev.mechanism === '-mega' && !String(ev.toSpecies || '').trim();
         if (isMegaPairMarker) break;
         const slotInfoBefore = this._slotInfoFor(side, slot);
-        const preName = this._slotName(side, slot);
-        const toSpecies = String(ev.toSpecies || ev.to || '').trim();
+        // Keep raw English for ID comparisons; localize for display messages
+        const preNameRaw = this._slotNameRaw(side, slot);
+        const preName = this._localizeMonName(preNameRaw) || preNameRaw;
+        const toSpecies = String(ev.toSpecies || ev.to || '').trim();  // raw English
+        // Localized display name for the after-change form
+        const displayNextName = toSpecies ? (this._localizeMonName(toSpecies) || toSpecies) : '';
         const visual = await this._resolveVisual(ev);
         const formPresentation = this._resolveFormChangePresentation(
           visual?.formChangePresentation || null,
@@ -929,29 +1019,29 @@ export class BattleTimelineExecutor {
           const shouldShowSprite = formPresentation.isVisible !== false;
           await this._setBattlerSprite(side, visual.spriteUrl, { visible: shouldShowSprite });
         }
-        let nextName = toSpecies;
-        if (!nextName && visual?.infoPatch?.displayName) {
-          nextName = String(visual.infoPatch.displayName || '').trim();
-        }
-        if (nextName) this._slotNames.set(this._slotKey(side, slot), nextName);
+        // Always store raw English in _slotNames for downstream event matching
+        const rawNextName = toSpecies || String(visual?.infoPatch?.rawName || '').trim();
+        const displayNameForPatch = displayNextName || String(visual?.infoPatch?.displayName || '').trim();
+        if (rawNextName) this._slotNames.set(this._slotKey(side, slot), rawNextName);
         if (toSpecies || visual?.infoPatch) {
           const formPatch = {
             ...(visual?.infoPatch || {}),
           };
-          if (toSpecies) formPatch.displayName = toSpecies;
-          else if (nextName && !formPatch.displayName) formPatch.displayName = nextName;
+          // Show localized name in the info panel
+          if (displayNameForPatch) formPatch.displayName = displayNameForPatch;
           this._applyInfoForSlot(side, slot, {
             ...formPatch,
           });
         }
         await this._playFormChangePresentation(side, formPresentation);
-        const changed = nextName && toId(nextName) !== toId(preName);
-        const shouldShowFallback = ev.mechanism === '-formechange' && !nextName;
+        // Compare raw English names to reliably detect form changes
+        const changed = toSpecies && toId(toSpecies) !== toId(preNameRaw);
+        const shouldShowFallback = ev.mechanism === '-formechange' && !toSpecies;
         const hpBefore = Number(slotInfoBefore?.hp);
         const suppressMessageByFaint = Boolean(slotInfoBefore?.fainted)
           || (Number.isFinite(hpBefore) && hpBefore <= 0);
         if (!suppressMessageByFaint && !ev.silent && (changed || shouldShowFallback)) {
-          const msg = this._buildFormChangeMessage(preName, nextName, ev.mechanism);
+          const msg = this._buildFormChangeMessage(preName, displayNextName, ev.mechanism, toSpecies, preNameRaw);
           if (msg) {
             await this._showMsg(msg, { minMs: 620 });
           }
