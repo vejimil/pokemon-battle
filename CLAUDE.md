@@ -152,6 +152,18 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 완성
 - 현재는 후순위 항목이며 BA-21/BA-22 이후 착수
 
+### 🔜 BA-24. 테라스탈 구현 (추후)
+- 배틀 중 테라스탈 선언/변환 이벤트를 구조화해 연출/메시지/UI까지 연결
+- Showdown `-terastallize` 이벤트 추출과 타임라인 순서 정합 우선
+
+### 🔜 BA-25. 다이맥스 구현 (추후)
+- 다이맥스/거다이맥스 전환 및 해제 흐름을 연출 레이어에 반영
+- 스케일/HP/UI 타이밍을 기존 faint/forme_change/switch_in과 충돌 없이 구성
+
+### 🔜 BA-26. 배틀 내 폼체인지 표시명 고정 (추후)
+- 사용자 노출 이름은 폼명 대신 기본 종족명으로 고정
+- 예: `메가한카리아스` → `한카리아스`, `나시(알로라의 모습)` → `나시`
+
 ### ✅ BA-1. 배틀 메시지 순차 표시 — 완료 (2026-04-13)
 ### ✅ BA-2. 울음소리(Cry) 연결 — 완료 (2026-04-13)
 ### ✅ BA-3. 어빌리티 바 + 날씨/지형 연출 — 완료 (2026-04-13)
@@ -361,6 +373,19 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 **BA-23: 기술/날씨/필드 연출 완벽화 (추후)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 보강
 - 착수 우선순위는 BA-21/BA-22 이후
+
+**BA-24: 테라스탈 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
+- Showdown `-terastallize` 이벤트 기반으로 변환 연출/메시지/UI 반영
+- 착수 우선순위는 BA-21/BA-22/BA-23 이후
+
+**BA-25: 다이맥스 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
+- 다이맥스/거다이맥스 전환·해제 흐름과 배틀 연출 정합 구현
+- 착수 우선순위는 BA-21/BA-22/BA-23 이후
+
+**BA-26: 배틀 내 폼체인지 표시명 고정 (추후)** (`app.js`, `timeline.js`, `showdown-engine.cjs`)
+- 배틀 메시지/정보창 표시명은 기본 종족명으로 고정(폼명 비노출)
+- 예: 메가한카리아스→한카리아스, 나시(알로라의 모습)→나시
+- 착수 우선순위는 BA-21/BA-22/BA-23 이후
 
 **✅ BA-20: 폼체인지 연출 정합 — 완료 (2026-04-16)** (`showdown-engine.cjs`, `form-change-presentation.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - 원본 분기 이식: `FormChangePhase`(진화씬 스타일) vs `QuietFormChangePhase`(전투 중 경량 transform) 컨텍스트별 재현

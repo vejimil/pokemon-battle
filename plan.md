@@ -303,6 +303,29 @@ Target: `/workspaces/pokemon-battle`
   - 필드(terrain/side condition 포함) 연출 누락 및 품질 보강
 - **우선순위**: BA-21/BA-22 이후 후순위 착수
 
+#### 🔜 BA-24: 테라스탈 구현 (추후) (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
+- **요구사항**: 전투 중 테라스탈 선언/변환 연출 및 메시지를 이벤트 기반으로 재현
+- **구현 메모(초안)**:
+  - Showdown `-terastallize` 라인을 구조화 이벤트로 안정 추출
+  - 타입/배틀러 시각 상태 갱신(아이콘/텍스트/연출) 타이밍 정합
+  - locale key 기반 메시지(`battle`, 필요 시 `move-trigger`)와 연동
+
+#### 🔜 BA-25: 다이맥스 구현 (추후) (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
+- **요구사항**: 다이맥스/거다이맥스 전환 및 해제 흐름을 배틀 연출에 반영
+- **구현 메모(초안)**:
+  - Showdown 다이맥스 관련 이벤트 추출 경로 정리
+  - 배틀러 스케일/HP/UI 표시/메시지 타이밍을 원본 체감에 맞게 구성
+  - 기존 faint/forme_change/switch_in 연출과 충돌 없이 공존하도록 순서 검증
+
+#### 🔜 BA-26: 배틀 내 폼체인지 표시명 고정 (추후) (`app.js`, `timeline.js`, `showdown-engine.cjs`)
+- **요구사항**: 배틀 메시지/정보창에서 폼명을 노출하지 않고 기본 종족명으로 고정 표시
+- **예시 정책**:
+  - `메가한카리아스` 대신 `한카리아스`
+  - `나시(알로라의 모습)` 대신 `나시`
+- **구현 메모(초안)**:
+  - 내부 판정/sprite/form 로직은 유지하고, 사용자 노출 display name만 별도 정규화
+  - BA-19/BA-20의 즉시 반영/연출 정합 회귀 없이 적용
+
 #### ✅ BA-20: 폼체인지 연출 정합 (FormChangePhase/QuietFormChangePhase 분기 이식) — 완료 (2026-04-16)
 - **원본 분기 확인**:
   - `pokerogue_codes/src/battle-scene.ts` lines 3339-3383 (`triggerPokemonFormChange`)
