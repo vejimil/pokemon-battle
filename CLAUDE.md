@@ -136,6 +136,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `_showMsg()`를 Promise 완료 대기로 교체(길이 기반 hold + safety timeout)
   - 고정 `await delay(N)` 중심 흐름을 메시지/애니메이션 완료 await 중심으로 재구성
   - switch/move/damage/heal/faint/ability/weather/terrain/forme_change/callback/battle_end 전 구간 진행 타이밍 정합 개선
+  - 후속 템포 튜닝: 이벤트 간 완충 간격 추가 (`short=140ms`, `major=200ms`)
 
 ### 🔜 BA-21. 선택 완료 후 대기 메시지 정합
 - 한 플레이어가 행동 선택을 끝낸 뒤 이상 문구 대신 `상대의 턴을 기다리는 중...` 고정 표시
@@ -332,6 +333,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `_showMsg()`를 callbackDelay 기반 Promise 대기로 전환(길이 기반 hold + safety timeout)
   - 이벤트 처리의 고정 delay 의존도를 제거하고 메시지/애니메이션/tween 완료 await 순서로 재정렬
   - 결과: 타임라인이 연출 완료를 기준으로 안정적으로 다음 이벤트로 진행
+  - 후속 템포 튜닝: 이벤트 간 완충 간격 추가 (`short=140ms`, `major=200ms`)
 
 ### ✅ BA-14. 사이드 컨디션 연출 — 완료 (2026-04-16)
 - 원본 참조: `pokerogue_codes/src/data/arena-tag.ts`, `assets/pokerogue/locales/*/arena-tag.json`

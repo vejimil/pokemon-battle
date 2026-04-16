@@ -261,6 +261,7 @@ Target: `/workspaces/pokemon-battle`
     - damage/heal/faint/forme_change: 메시지/HP tween/scene tween 완료 기준 진행
     - ability/weather/terrain/status/boost/miss/cant/immune/move_fail/battle_end/callback_event도 `_showMsg` 완료 기준으로 진행
   - 결과적으로 타임라인 진행 기준을 “연출 완료”로 통일(단순 `await delay(N)` 의존도 제거)
+  - 후속 템포 튜닝(동일 세션): 이벤트 간 완충 간격 추가 (`short=140ms`, `major=200ms`)로 체감 속도를 소폭 완화
 
 #### ✅ BA-14: 사이드 컨디션 연출 — 완료 (2026-04-16)
 - **원본 참조**:

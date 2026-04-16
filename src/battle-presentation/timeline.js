@@ -133,6 +133,9 @@ const DAMAGE_SOURCE_MESSAGE_KEY = {
   spikes: 'spikesActivateTrap',
 };
 
+const EVENT_GAP_SHORT_MS = 140;
+const EVENT_GAP_MEDIUM_MS = 200;
+
 export class BattleTimelineExecutor {
   /**
    * @param {object} opts
@@ -212,6 +215,31 @@ export class BattleTimelineExecutor {
   _playAudio(key) {
     if (!this._audioEnabled || !key) return;
     this._audio?.play?.(key);
+  }
+
+  _eventGapMs(eventType = '') {
+    switch (eventType) {
+      case 'turn_start':
+      case 'turn_end':
+      case 'weather_tick':
+      case 'raw_event':
+      case 'engine_error':
+      case 'effect_activate':
+      case 'single_turn_effect':
+      case 'status_cure':
+      case 'callback_event':
+        return 0;
+      case 'switch_in':
+      case 'move_use':
+      case 'damage':
+      case 'heal':
+      case 'faint':
+      case 'forme_change':
+      case 'battle_end':
+        return EVENT_GAP_MEDIUM_MS;
+      default:
+        return EVENT_GAP_SHORT_MS;
+    }
   }
 
   _playHitByResult(result) {
@@ -527,6 +555,11 @@ export class BattleTimelineExecutor {
       for (const ev of events) {
         if (!this.running) break;  // fastForward was called
         await this._applyEvent(ev, context);
+        if (!this.running) break;
+        const gapMs = this._eventGapMs(ev?.type);
+        if (gapMs > 0) {
+          await this._delay(gapMs);
+        }
       }
     } catch (err) {
       console.warn('[BattleTimeline] event error, fast-forwarding to snapshot:', err);
