@@ -9,6 +9,7 @@ import {createPhaserBattleController} from './phaser-battle-controller.js';
 import {loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationDelayMs} from './pokerogue-transplant-runtime/runtime/pokemon-metrics.js';
 import {BattleTimelineExecutor} from './battle-presentation/timeline.js';
 import {resolveFormChangePresentation} from './battle-presentation/form-change-presentation.js';
+import {createBattleLocaleManager} from './battle-i18n/locale-manager.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
 
@@ -18,7 +19,7 @@ const FLAGS = window.FLAGS = {
   battlePresentationV2: true,  // timeline executor (Sprint 2b: on by default)
   battleDualViewV1: true,      // split UI: top=P1, bottom=P2 (no pass-device perspective switching)
   battleAudioV1: false,        // audio manager SE routing
-  battleLocaleV1: false,       // namespace-based battle messages
+  battleLocaleV1: true,        // namespace-based battle messages
   battleMsgActionTagsV1: false, // @d/@s message tag parser
 };
 const SHOWDOWN_TARGET_HINTS = {
@@ -1543,6 +1544,10 @@ const state = {
 const els = {};
 let pickerReturnFocusEl = null;
 const phaserBattleRenderers = { 0: null, 1: null };
+const battleLocaleManager = createBattleLocaleManager({
+  language: 'ko',
+  namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag'],
+});
 
 function getPhaserBattleRenderer(player = 0) {
   return phaserBattleRenderers[player] || null;
@@ -1782,6 +1787,12 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
     onComplete();
     return;
   }
+  const localeEnabled = FLAGS.battleLocaleV1 === true;
+  const localeLanguage = state.language || 'ko';
+  if (localeEnabled) {
+    battleLocaleManager.setLanguage(localeLanguage);
+    await battleLocaleManager.loadLocale(localeLanguage);
+  }
   primeTimelineSpriteOverrides(events, state.battle);
   const configs = getTimelineExecutorConfigs().filter(cfg => cfg.scene());
   if (!configs.length) {
@@ -1838,6 +1849,8 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
     onInputRequired: handleInputRequired,
     initialNames,
     initialSlotInfo,
+    localeManager: localeEnabled ? battleLocaleManager : null,
+    localeLanguage,
     resolveVisualState: ev => resolveTimelineEventVisualState(ev, { playerSide: cfg.playerSide, battle: state.battle }),
     ...cfg,
   }));

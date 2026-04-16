@@ -111,12 +111,31 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
     - 서버 로그 파서에서 `[silent]` + 기절 후 후속 form/detailschange 라인 무시 (`showdown-engine.cjs`)
 
 ### 다음 세션 착수 순서 (고정)
-1. `M5` locale 네임스페이스 로더
-2. `BA-17` 배틀 연출 타이밍 정확도 개선
-3. `BA-14` 사이드 컨디션 연출
+1. `M5` locale 네임스페이스 로더 ✅ 완료 (2026-04-16)
+2. `BA-17` 배틀 연출 타이밍 정확도 개선 ✅ 완료 (2026-04-16)
+3. `BA-14` 사이드 컨디션 연출 ✅ 완료 (2026-04-16)
 4. `BA-21` 선택 완료 후 대기 메시지 정합
 5. `BA-22` 한국어/영어 메시지 완전 분리
 6. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
+
+### ✅ M5. locale 네임스페이스 로더 — 완료 (2026-04-16)
+- 원본 참조: `pokerogue_codes/src/plugins/utils-plugins.ts`, `pokerogue_codes/src/plugins/i18n.ts`
+- 반영 파일:
+  - `src/battle-i18n/locale-manager.js` (신규)
+  - `src/app.js` (타임라인 전 locale 로드 + executor 주입)
+  - `src/battle-presentation/timeline.js` (battle/weather/terrain key 조회)
+- 반영 내용:
+  - namespace 로더 + `t(ns, key, vars)` API 추가
+  - 1차 namespace(`battle`, `ability-trigger`, `move-trigger`, `weather`, `terrain`) 로드
+  - switch/move/faint/immune/move_fail/weather/terrain 메시지를 locale 키 우선으로 변경(기존 문자열 fallback 유지)
+
+### ✅ BA-17. 배틀 연출 타이밍 정확도 개선 — 완료 (2026-04-16)
+- 원본 참조: `pokerogue_codes/src/ui/handlers/message-ui-handler.ts`, `pokerogue_codes/src/ui/ui.ts`
+- 반영 파일: `src/battle-presentation/timeline.js`
+- 반영 내용:
+  - `_showMsg()`를 Promise 완료 대기로 교체(길이 기반 hold + safety timeout)
+  - 고정 `await delay(N)` 중심 흐름을 메시지/애니메이션 완료 await 중심으로 재구성
+  - switch/move/damage/heal/faint/ability/weather/terrain/forme_change/callback/battle_end 전 구간 진행 타이밍 정합 개선
 
 ### 🔜 BA-21. 선택 완료 후 대기 메시지 정합
 - 한 플레이어가 행동 선택을 끝낸 뒤 이상 문구 대신 `상대의 턴을 기다리는 중...` 고정 표시
@@ -130,7 +149,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 ### 🔜 BA-23. 기술/날씨/필드 연출 완벽화 (추후)
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 완성
-- 현재는 후순위 항목이며 M5/BA-17/BA-14/BA-21/BA-22 이후 착수
+- 현재는 후순위 항목이며 BA-21/BA-22 이후 착수
 
 ### ✅ BA-1. 배틀 메시지 순차 표시 — 완료 (2026-04-13)
 ### ✅ BA-2. 울음소리(Cry) 연결 — 완료 (2026-04-13)
@@ -297,26 +316,37 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 ### Sprint 7. 배틀 완성도
 
 **다음 세션 착수 순서(고정)**
-1. `M5` locale 네임스페이스 로더
-2. `BA-17` 배틀 연출 타이밍 정확도 개선
-3. `BA-14` 사이드 컨디션 연출
+1. `M5` locale 네임스페이스 로더 ✅ 완료 (2026-04-16)
+2. `BA-17` 배틀 연출 타이밍 정확도 개선 ✅ 완료 (2026-04-16)
+3. `BA-14` 사이드 컨디션 연출 ✅ 완료 (2026-04-16)
 4. `BA-21` 선택 완료 후 대기 메시지 정합
 5. `BA-22` 한국어/영어 메시지 완전 분리
 6. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
 
-**M5: locale 네임스페이스 로더** (`src/battle-i18n/locale-manager.js` 신규)
-- `assets/pokerogue/locales/ko/*.json` 로드 → 배틀 메시지 키 우선 사용
-- `timeline.js` 하드코딩 한글 → locale 키 기반으로 교체
-- 1차 네임스페이스: `battle`, `ability-trigger`, `move-trigger`, `weather`, `terrain`
-- 현재 `timeline.js` 한글 하드코딩과 locale 파일 내용이 중복 — locale이 정답 소스
+**✅ M5: locale 네임스페이스 로더 — 완료 (2026-04-16)** (`src/battle-i18n/locale-manager.js`, `src/app.js`, `src/battle-presentation/timeline.js`)
+- namespace 로더 도입: `loadLocale(lang)` / `loadNamespace(lang, ns)` / `t(ns,key,vars)` API
+- 1차 namespace(`battle`, `ability-trigger`, `move-trigger`, `weather`, `terrain`) 선로딩
+- 타임라인 메시지를 locale key 조회로 전환(switch/move/faint/immune/move_fail/weather/terrain), 미매핑/미로딩 시 기존 문자열 fallback 유지
 
-**BA-17: 배틀 연출 타이밍 정확도 개선** (`timeline.js`)
-- **현황**: 각 이벤트 핸들러가 고정 ms 딜레이로 다음 이벤트 진행. 메시지/애니메이션 완료를 기다리지 않음.
-- **목표**: 실제 포켓몬처럼 연출 완료 후 다음 이벤트 진행 (메시지 표시 완료 대기, tween 완료 대기 등)
-- **참고**: PokeRogue `awaitMoveEnd()`, `awaitMessageComplete()` 패턴 참조
+**✅ BA-17: 배틀 연출 타이밍 정확도 개선 — 완료 (2026-04-16)** (`timeline.js`)
+  - `_showMsg()`를 callbackDelay 기반 Promise 대기로 전환(길이 기반 hold + safety timeout)
+  - 이벤트 처리의 고정 delay 의존도를 제거하고 메시지/애니메이션/tween 완료 await 순서로 재정렬
+  - 결과: 타임라인이 연출 완료를 기준으로 안정적으로 다음 이벤트로 진행
 
-**BA-14: 사이드 컨디션 연출** (`timeline.js`)
-- `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 메시지
+### ✅ BA-14. 사이드 컨디션 연출 — 완료 (2026-04-16)
+- 원본 참조: `pokerogue_codes/src/data/arena-tag.ts`, `assets/pokerogue/locales/*/arena-tag.json`
+- 반영 파일: `src/battle-presentation/timeline.js`, `src/app.js`
+- 반영 내용:
+  - `side_start/end` 이벤트 메시지 처리 추가(no-op 제거)
+  - Reflect/Light Screen/Aurora Veil/Spikes/Stealth Rock/Toxic Spikes/Sticky Web/Tailwind/Safeguard 등 `arena-tag` 키 매핑
+  - side별 `Player/Enemy` 키 우선 조회 + 미매핑 효과는 일반 fallback 메시지 처리
+  - 후속 안정화: `server/showdown-engine.cjs`의 `damage/heal` 이벤트에 `fromEffectId`를 포함하고, `timeline.js`에서 Stealth Rock/Spikes 피격 메시지를 출력
+
+**✅ BA-14: 사이드 컨디션 연출 — 완료 (2026-04-16)** (`timeline.js`, `app.js`)
+- `side_start/end` 메시지 처리 추가(no-op 제거)
+- `arena-tag` namespace 기반 key 매핑 + side(Player/Enemy) suffix 처리
+- 미매핑 side effect는 일반 fallback 메시지로 안전 처리
+- 후속 안정화: `server/showdown-engine.cjs`에서 `damage/heal.fromEffectId`를 전달하고, Stealth Rock/Spikes 피격 메시지를 damage 타임라인에서 표시
 
 **BA-21: 선택 완료 후 대기 메시지 정합** (`app.js`, `timeline.js`, `battle-message-ui-handler.js`)
 - 선택 완료 직후 메시지창 기본값을 `상대의 턴을 기다리는 중...`(EN: `Waiting for opponent's turn...`)로 고정
@@ -328,7 +358,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 **BA-23: 기술/날씨/필드 연출 완벽화 (추후)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 보강
-- 착수 우선순위는 M5/BA-17/BA-14/BA-21/BA-22 이후
+- 착수 우선순위는 BA-21/BA-22 이후
 
 **✅ BA-20: 폼체인지 연출 정합 — 완료 (2026-04-16)** (`showdown-engine.cjs`, `form-change-presentation.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - 원본 분기 이식: `FormChangePhase`(진화씬 스타일) vs `QuietFormChangePhase`(전투 중 경량 transform) 컨텍스트별 재현

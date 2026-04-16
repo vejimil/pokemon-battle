@@ -358,6 +358,26 @@ function parseDetailsSpeciesForEvent(token) {
   return String(token || '').split(',')[0].trim();
 }
 
+function parseFromTagForEvent(parts = [], startIndex = 4) {
+  const fromTag = parts
+    .slice(startIndex)
+    .find(part => /^\[from\]\s*/i.test(String(part || '').trim()));
+  const fromSource = fromTag
+    ? String(fromTag || '').trim().replace(/^\[from\]\s*/i, '').trim()
+    : '';
+  let fromKind = '';
+  if (/^ability\s*:/i.test(fromSource)) fromKind = 'ability';
+  else if (/^item\s*:/i.test(fromSource)) fromKind = 'item';
+  else if (/^move\s*:/i.test(fromSource)) fromKind = 'move';
+  else if (/^weather\b/i.test(fromSource)) fromKind = 'weather';
+  const fromEffect = fromSource.replace(/^(?:ability|item|move)\s*:\s*/i, '').trim();
+  return {
+    fromSource,
+    fromKind,
+    fromEffectId: toId(fromEffect),
+  };
+}
+
 /**
  * Convert structured events from Showdown protocol lines.
  * Returns an array of zero or more event objects.
@@ -438,6 +458,7 @@ function normalizeEventsFromLine(line, ctx) {
       const id = parseIdentForEvent(parts[2]);
       const identKey = parts[2];
       const cond = parseConditionForEvent(parts[3]);
+      const fromMeta = parseFromTagForEvent(parts, 4);
       const prev = ctx.hpCache.get(identKey);
       const prevHp = prev ? prev.hp : cond.hp;
       const maxHp = prev ? prev.maxHp : cond.maxHp;
@@ -459,6 +480,9 @@ function normalizeEventsFromLine(line, ctx) {
           status: cond.status,
           hitResult,
           critical,
+          fromSource: fromMeta.fromSource,
+          fromKind: fromMeta.fromKind,
+          fromEffectId: fromMeta.fromEffectId,
         }];
       } else {
         return [{
@@ -470,6 +494,9 @@ function normalizeEventsFromLine(line, ctx) {
           maxHp,
           amount,
           status: cond.status,
+          fromSource: fromMeta.fromSource,
+          fromKind: fromMeta.fromKind,
+          fromEffectId: fromMeta.fromEffectId,
         }];
       }
     }
@@ -634,17 +661,13 @@ function normalizeEventsFromLine(line, ctx) {
       const identSpecies = displayNameForPokemonProtocol(parts[2] || '');
       const identLooksLikeForm = /-(mega|mega-x|mega-y|primal|ultra)\b/i.test(identSpecies);
       const silent = parts.slice(4).some(part => /^\[silent\]$/i.test(String(part || '').trim()));
-      const fromTag = parts
-        .slice(4)
-        .find(part => /^\[from\]\s*/i.test(String(part || '').trim()));
-      const fromSource = fromTag
-        ? String(fromTag || '').trim().replace(/^\[from\]\s*/i, '').trim()
-        : '';
+      const fromMeta = parseFromTagForEvent(parts, 4);
+      const fromSource = fromMeta.fromSource;
       let trigger = '';
-      if (/^ability\s*:/i.test(fromSource)) trigger = 'ability';
-      else if (/^item\s*:/i.test(fromSource)) trigger = 'item';
-      else if (/^move\s*:/i.test(fromSource)) trigger = 'move';
-      else if (/^weather\b/i.test(fromSource)) trigger = 'weather';
+      if (fromMeta.fromKind === 'ability') trigger = 'ability';
+      else if (fromMeta.fromKind === 'item') trigger = 'item';
+      else if (fromMeta.fromKind === 'move') trigger = 'move';
+      else if (fromMeta.fromKind === 'weather') trigger = 'weather';
       const toSpecies = tag === 'detailschange'
         ? (detailsSpecies || identSpecies || '')
         : tag === '-formechange'

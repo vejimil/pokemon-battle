@@ -221,34 +221,60 @@ Target: `/workspaces/pokemon-battle`
 ### Sprint 7. 배틀 완성도
 
 - **다음 세션 착수 순서(고정)**:
-  1. `M5` locale 네임스페이스 로더
-  2. `BA-17` 배틀 연출 타이밍 정확도 개선
-  3. `BA-14` 사이드 컨디션 연출
+  1. `M5` locale 네임스페이스 로더 ✅ 완료 (2026-04-16)
+  2. `BA-17` 배틀 연출 타이밍 정확도 개선 ✅ 완료 (2026-04-16)
+  3. `BA-14` 사이드 컨디션 연출 ✅ 완료 (2026-04-16)
   4. `BA-21` 선택 완료 후 대기 메시지 정합
   5. `BA-22` 한국어/영어 메시지 완전 분리
   6. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
 
-#### M5: Locale 네임스페이스 로더 (`src/battle-i18n/locale-manager.js` 신규)
-- **현황**: `assets/pokerogue/locales/ko/*.json` 완전 미사용. `timeline.js`가 한글 하드코딩.
-- **목표**: locale 파일 로드 → 배틀 메시지를 키 기반으로 조회
-- **1차 네임스페이스**: `battle`, `ability-trigger`, `move-trigger`, `weather`, `terrain`
-- **구현 순서**:
-  1. `locale-manager.js` 신규: `loadLocale(lang)` → namespace별 JSON 로드 → `t(ns, key, vars)` API
-  2. `timeline.js` 한글 하드코딩 → `t('battle', 'switchIn', {name})` 형태로 교체
-  3. 키 매핑 확인: `pokerogue_codes/src/plugins/utils-plugins.ts` 참조
+#### ✅ M5: Locale 네임스페이스 로더 — 완료 (2026-04-16)
+- **원본 참조**:
+  - `pokerogue_codes/src/plugins/utils-plugins.ts` (`namespaceMap`)
+  - `pokerogue_codes/src/plugins/i18n.ts` (namespace별 JSON 로드/`i18next.t` 사용 구조)
+- **반영 내용**:
+  - `src/battle-i18n/locale-manager.js` 신규:
+    - `loadLocale(lang)` / `loadNamespace(lang, ns)` 구현
+    - `t(ns, key, vars, {language,fallback})` 구현
+    - upstream `namespaceMap` alias 반영 + ko 조사(`[[가]]` 등) 후처리
+  - `src/app.js`:
+    - `battleLocaleV1` 기본 ON
+    - 타임라인 실행 전 locale namespace(`battle`, `ability-trigger`, `move-trigger`, `weather`, `terrain`) 선로딩
+    - executor 생성 시 locale manager/language 전달
+  - `src/battle-presentation/timeline.js`:
+    - switch/move/faint/immune/move_fail 메시지와 weather/terrain 시작·종료 메시지를 locale key 조회로 치환
+    - locale 미로딩/키 미존재 시 기존 문자열 fallback 유지
 
-#### BA-17: 배틀 연출 타이밍 정확도 개선 (`timeline.js`, `battle-message-ui-handler.js`)
-- **현황**: 각 이벤트 핸들러가 고정 ms 딜레이(`await delay(N)`)로 다음 이벤트로 넘어감. 메시지 표시 완료나 애니메이션 완료를 정확히 기다리지 않음.
-- **목표**: 실제 포켓몬 게임처럼 — 메시지 표시 완료 + A버튼(또는 자동 진행) 후 다음 이벤트 진행. 각 연출이 완전히 끝난 뒤에야 다음 연출 시작.
-- **구현 방향**:
-  1. **메시지 대기**: `_showMsg()`가 메시지를 표시하고 일정 시간 또는 사용자 입력(A버튼)을 기다린 후 resolve하는 Promise 반환
-  2. **연출 완료 대기**: SE 재생, tween 완료, 어빌리티 바 표시 등 모든 비동기 연출이 정확히 끝날 때 await
-  3. **자동 진행 모드**: 현재처럼 자동 진행이지만 타이밍은 연출 완료 기준 (고정 ms 제거)
-- **참고**: PokeRogue는 `awaitMoveEnd()`, `awaitMessageComplete()` 패턴으로 이 문제를 해결함
+#### ✅ BA-17: 배틀 연출 타이밍 정확도 개선 — 완료 (2026-04-16)
+- **원본 참조**:
+  - `pokerogue_codes/src/ui/handlers/message-ui-handler.ts` (`showText` callback/prompt 완료 후 진행)
+  - `pokerogue_codes/src/ui/ui.ts` (`showTextPromise`)
+- **반영 파일**: `src/battle-presentation/timeline.js`
+- **반영 내용**:
+  - `_showMsg()`를 Promise 기반 완료 대기로 교체:
+    - 메시지 길이/줄 수 기반 hold time 산정
+    - `showText(..., callbackDelay)` 완료 시 resolve
+    - UI 콜백 누락 시 safety timeout으로 hang 방지
+  - 이벤트별 고정 지연을 축소/제거하고, 연출 완료 await 중심으로 정렬:
+    - switch_in: 메시지 → switch_in tween 완료 → cry 완료
+    - move_use: 메시지 → move anim Promise 완료(또는 timeout)
+    - damage/heal/faint/forme_change: 메시지/HP tween/scene tween 완료 기준 진행
+    - ability/weather/terrain/status/boost/miss/cant/immune/move_fail/battle_end/callback_event도 `_showMsg` 완료 기준으로 진행
+  - 결과적으로 타임라인 진행 기준을 “연출 완료”로 통일(단순 `await delay(N)` 의존도 제거)
 
-#### BA-14: 사이드 컨디션 연출 (`timeline.js`)
-- `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 설치/해제 메시지
-- 영향: `showdown-engine.cjs`에서 이미 `side_start/end` 이벤트 생성하는지 확인 필요
+#### ✅ BA-14: 사이드 컨디션 연출 — 완료 (2026-04-16)
+- **원본 참조**:
+  - `pokerogue_codes/src/data/arena-tag.ts` (`onAdd/onRemove` key 구조)
+  - `assets/pokerogue/locales/*/arena-tag.json` (`reflectOnAddPlayer`, `spikesOnRemoveEnemy` 등)
+- **반영 파일**:
+  - `src/battle-presentation/timeline.js`
+  - `src/app.js` (locale preload namespace 확장)
+- **반영 내용**:
+  - `side_start/end` 이벤트를 no-op에서 메시지 처리로 승격
+  - Showdown effect(`move: Reflect`, `Spikes`, `Stealth Rock`, `Toxic Spikes`, `Sticky Web`, `Tailwind`, `Safeguard` 등) → `arena-tag` 키(prefix) 매핑 추가
+  - side(`p1/p2`) 기준 `Player/Enemy` suffix 키를 우선 조회하고, 미존재 시 base 키 fallback
+  - 미매핑 효과는 일반 텍스트 fallback 메시지로 안전 처리
+  - 후속 안정화: `-damage`의 `[from] Stealth Rock/Spikes` 메타를 서버 이벤트에 포함(`fromEffectId`)하고, trap 피격 메시지(`stealthRockActivateTrap`/`spikesActivateTrap`)를 damage 단계에서 출력하도록 보강
 
 #### BA-21: 선택 완료 후 대기 메시지 정합 (`app.js`, `timeline.js`, `battle-message-ui-handler.js`)
 - **요구사항**: 한 플레이어가 선택을 끝낸 뒤 메시지창에 이상 문구 대신 `상대의 턴을 기다리는 중...` 표시
@@ -274,7 +300,7 @@ Target: `/workspaces/pokemon-battle`
   - 기술 이펙트/SE/메시지 타이밍의 원본 정합도 향상
   - 날씨 시작/지속/종료 연출 및 메시지 품질 개선
   - 필드(terrain/side condition 포함) 연출 누락 및 품질 보강
-- **우선순위**: M5/BA-17/BA-14/BA-21/BA-22 이후 후순위 착수
+- **우선순위**: BA-21/BA-22 이후 후순위 착수
 
 #### ✅ BA-20: 폼체인지 연출 정합 (FormChangePhase/QuietFormChangePhase 분기 이식) — 완료 (2026-04-16)
 - **원본 분기 확인**:

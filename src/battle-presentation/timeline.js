@@ -63,6 +63,76 @@ const TERRAIN_LABELS = {
   psychicterrain:  '사이코 필드가 펼쳐졌다!',
 };
 
+const WEATHER_START_KEYS = {
+  raindance: 'rainStartMessage',
+  rain: 'rainStartMessage',
+  primordialsea: 'heavyRainStartMessage',
+  sunnyday: 'sunnyStartMessage',
+  sun: 'sunnyStartMessage',
+  desolateland: 'harshSunStartMessage',
+  sandstorm: 'sandstormStartMessage',
+  sand: 'sandstormStartMessage',
+  hail: 'hailStartMessage',
+  snow: 'snowStartMessage',
+  snowscape: 'snowStartMessage',
+  deltastream: 'strongWindsStartMessage',
+};
+
+const WEATHER_CLEAR_KEYS = {
+  raindance: 'rainClearMessage',
+  rain: 'rainClearMessage',
+  primordialsea: 'heavyRainClearMessage',
+  sunnyday: 'sunnyClearMessage',
+  sun: 'sunnyClearMessage',
+  desolateland: 'harshSunClearMessage',
+  sandstorm: 'sandstormClearMessage',
+  sand: 'sandstormClearMessage',
+  hail: 'hailClearMessage',
+  snow: 'snowClearMessage',
+  snowscape: 'snowClearMessage',
+  deltastream: 'strongWindsClearMessage',
+};
+
+const TERRAIN_START_KEYS = {
+  electricterrain: 'electricStartMessage',
+  grassyterrain: 'grassyStartMessage',
+  mistyterrain: 'mistyStartMessage',
+  psychicterrain: 'psychicStartMessage',
+};
+
+const TERRAIN_CLEAR_KEYS = {
+  electricterrain: 'electricClearMessage',
+  grassyterrain: 'grassyClearMessage',
+  mistyterrain: 'mistyClearMessage',
+  psychicterrain: 'psychicClearMessage',
+};
+
+const SIDE_EFFECT_KEY_PREFIX = {
+  mist: 'mist',
+  reflect: 'reflect',
+  lightscreen: 'lightScreen',
+  auroraveil: 'auroraVeil',
+  luckychant: 'noCrit',
+  spikes: 'spikes',
+  stealthrock: 'stealthRock',
+  toxicspikes: 'toxicSpikes',
+  stickyweb: 'stickyWeb',
+  tailwind: 'tailwind',
+  safeguard: 'safeguard',
+  firepledge: 'fireGrassPledge',
+  grasspledge: 'grassWaterPledge',
+  waterpledge: 'waterFirePledge',
+  gmaxwildfire: 'fireGrassPledge',
+  gmaxvinelash: 'grassWaterPledge',
+  gmaxcannonade: 'waterFirePledge',
+  gmaxsteelsurge: 'stealthRock',
+};
+
+const DAMAGE_SOURCE_MESSAGE_KEY = {
+  stealthrock: 'stealthRockActivateTrap',
+  spikes: 'spikesActivateTrap',
+};
+
 export class BattleTimelineExecutor {
   /**
    * @param {object} opts
@@ -74,6 +144,8 @@ export class BattleTimelineExecutor {
    * @param {Record<string, string>}   [opts.initialNames]     pre-seeded slot→species map (key: "p1_0", "p2_0")
    * @param {Record<string, object>}   [opts.initialSlotInfo]  pre-seeded slot→battle-info map
    * @param {function(object): object} [opts.resolveVisualState] resolve sprite/info patch for an event
+   * @param {object}                   [opts.localeManager]    locale namespace manager
+   * @param {string}                   [opts.localeLanguage]   locale language id ('ko'|'en')
    * @param {boolean}                  [opts.audioEnabled]     play timeline audio for this executor
    */
   constructor({
@@ -85,6 +157,8 @@ export class BattleTimelineExecutor {
     initialNames,
     initialSlotInfo,
     resolveVisualState,
+    localeManager,
+    localeLanguage = 'ko',
     audioEnabled = true,
   } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
@@ -94,12 +168,16 @@ export class BattleTimelineExecutor {
     this._playerSide = playerSide ?? 'p1';
     this._audioEnabled = audioEnabled !== false;
     this._resolveVisualState = resolveVisualState ?? (() => null);
+    this._localeManager = localeManager ?? null;
+    this._localeLanguage = String(localeLanguage || 'ko');
     this.running = false;
     // Tracks species name per slot. Key: "${side}_${slot}" e.g. "p1_0", "p2_0".
     // Pre-seeded from initialNames (previous turn's final roster).
     this._slotNames = new Map(Object.entries(initialNames ?? {}));
     // Tracks live battle-info state (name/hp/status/etc) per side+slot during timeline playback.
     this._slotInfo = new Map(Object.entries(initialSlotInfo ?? {}));
+    this._activeWeatherId = '';
+    this._activeTerrainId = '';
   }
 
   // ── accessors ─────────────────────────────────────────────────────────────
@@ -118,6 +196,17 @@ export class BattleTimelineExecutor {
 
   _delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  _estimateMessageHoldMs(text, { minMs = 0 } = {}) {
+    const source = String(text || '');
+    const compact = source.replace(/\s+/g, ' ').trim();
+    const charCount = compact.length;
+    const lineCount = Math.max(1, source.split(/\n|\$/g).filter(Boolean).length);
+    const punctuationWeight = (compact.match(/[!?…。]/g) || []).length * 70;
+    const raw = (charCount * 28) + (lineCount * 140) + punctuationWeight;
+    const bounded = Math.max(360, Math.min(2000, raw || 0));
+    return Math.max(minMs, bounded);
   }
 
   _playAudio(key) {
@@ -140,9 +229,175 @@ export class BattleTimelineExecutor {
     await this._audio?.playMoveSe?.(moveName);
   }
 
-  /** Set battle message box text immediately (reading time provided by surrounding _delay calls). */
-  _showMsg(text) {
-    this._msg?.showText?.(String(text || ''));
+  /**
+   * Display a battle message and wait until its presentation window is complete.
+   * In auto mode we wait by callbackDelay; if UI callback is skipped, safety timeout resolves.
+   */
+  _showMsg(text, { minMs = 0 } = {}) {
+    const normalized = String(text || '');
+    const message = this._msg;
+    if (!message?.showText) {
+      return this._delay(this._estimateMessageHoldMs(normalized, { minMs }));
+    }
+    const holdMs = this._estimateMessageHoldMs(normalized, { minMs });
+    return new Promise(resolve => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(safetyTimer);
+        resolve();
+      };
+      const safetyTimer = setTimeout(done, holdMs + 800);
+      try {
+        message.showText(normalized, null, done, holdMs, false);
+      } catch (_error) {
+        done();
+      }
+    });
+  }
+
+  _t(namespace, key, vars = {}, fallback = '') {
+    const manager = this._localeManager;
+    if (manager?.t) {
+      const localized = manager.t(namespace, key, vars, {
+        language: this._localeLanguage,
+        fallback,
+      });
+      if (localized != null && String(localized).length) return String(localized);
+    }
+    return String(fallback || key || '');
+  }
+
+  _hasLocaleKey(namespace, key) {
+    const manager = this._localeManager;
+    if (!manager?.has) return false;
+    try {
+      return manager.has(namespace, key, { language: this._localeLanguage });
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  _isEnglishLocale() {
+    return toId(this._localeLanguage).startsWith('en');
+  }
+
+  _pokemonNameWithAffix(name, side) {
+    const pokemonName = String(name || '???');
+    if (side === this._playerSide) return pokemonName;
+    const fallback = this._isEnglishLocale() ? `Foe ${pokemonName}` : `상대 ${pokemonName}`;
+    return this._t('battle', 'foePokemonWithAffix', { pokemonName }, fallback);
+  }
+
+  _switchInMessage(side, species) {
+    const pokemonName = String(species || '???');
+    if (side === this._playerSide) {
+      return this._t('battle', 'playerGo', { pokemonName }, `가라! ${pokemonName}!`);
+    }
+    const trainerName = this._isEnglishLocale() ? 'Opponent' : '상대';
+    return this._t('battle', 'trainerGo', { trainerName, pokemonName }, `상대의 ${pokemonName} 등장!`);
+  }
+
+  _weatherStartMessage(weatherId, rawWeather) {
+    const key = WEATHER_START_KEYS[weatherId];
+    if (key) return this._t('weather', key, {}, WEATHER_LABELS[weatherId] || '');
+    return this._isEnglishLocale()
+      ? `Weather changed: ${rawWeather || weatherId}`
+      : `날씨 변화: ${rawWeather || weatherId}`;
+  }
+
+  _weatherClearMessage(weatherId) {
+    const key = WEATHER_CLEAR_KEYS[weatherId];
+    if (key) {
+      return this._t(
+        'weather',
+        key,
+        {},
+        this._isEnglishLocale() ? 'The weather returned to normal.' : '날씨가 원래대로 돌아왔다.',
+      );
+    }
+    return this._isEnglishLocale() ? 'The weather returned to normal.' : '날씨가 원래대로 돌아왔다.';
+  }
+
+  _terrainStartMessage(terrainId, effectLabel = '') {
+    const key = TERRAIN_START_KEYS[terrainId];
+    if (key) return this._t('terrain', key, {}, TERRAIN_LABELS[terrainId] || '');
+    return this._isEnglishLocale()
+      ? `Field effect started: ${effectLabel || terrainId}`
+      : `필드 효과 시작: ${effectLabel || terrainId}`;
+  }
+
+  _terrainClearMessage(terrainId) {
+    const key = TERRAIN_CLEAR_KEYS[terrainId];
+    if (key) {
+      return this._t(
+        'terrain',
+        key,
+        {},
+        this._isEnglishLocale() ? 'The terrain disappeared.' : '필드 효과가 사라졌다.',
+      );
+    }
+    return this._isEnglishLocale() ? 'The terrain disappeared.' : '필드 효과가 사라졌다.';
+  }
+
+  _normalizeSideEffectId(effect) {
+    const raw = String(effect || '').trim();
+    if (!raw) return '';
+    const trimmed = raw.replace(/^move:\s*/i, '');
+    return toId(trimmed);
+  }
+
+  _sideLabel(side) {
+    if (side === this._playerSide) {
+      return this._isEnglishLocale() ? 'Your' : '우리 편';
+    }
+    return this._isEnglishLocale() ? 'Foe' : '상대';
+  }
+
+  _sideConditionMessage(ev, kind = 'start') {
+    const effectRaw = String(ev?.effect || '').trim();
+    const side = ev?.side;
+    const effectId = this._normalizeSideEffectId(effectRaw);
+    const prefix = SIDE_EFFECT_KEY_PREFIX[effectId];
+    if (prefix) {
+      const opKey = kind === 'start' ? 'OnAdd' : 'OnRemove';
+      const sideSuffix = side === this._playerSide ? 'Player' : 'Enemy';
+      const candidates = [`${prefix}${opKey}${sideSuffix}`, `${prefix}${opKey}`];
+      for (const key of candidates) {
+        if (!this._hasLocaleKey('arena-tag', key)) continue;
+        return this._t('arena-tag', key, {}, '');
+      }
+    }
+    if (!effectRaw) return '';
+    const sideLabel = this._sideLabel(side);
+    if (this._isEnglishLocale()) {
+      return kind === 'start'
+        ? `${sideLabel} side effect started: ${effectRaw}`
+        : `${sideLabel} side effect ended: ${effectRaw}`;
+    }
+    return kind === 'start'
+      ? `${sideLabel} 진영 효과 시작: ${effectRaw}`
+      : `${sideLabel} 진영 효과 종료: ${effectRaw}`;
+  }
+
+  _damageSourceMessage(ev = {}) {
+    const sourceId = toId(ev?.fromEffectId || '');
+    const key = DAMAGE_SOURCE_MESSAGE_KEY[sourceId];
+    if (!key) return '';
+    const targetSide = ev?.target?.side;
+    const targetName = this._slotName(targetSide, ev?.target?.slot ?? 0);
+    const pokemonNameWithAffix = this._pokemonNameWithAffix(targetName, targetSide);
+    const fallback = sourceId === 'stealthrock'
+      ? this._isEnglishLocale()
+        ? `Pointed stones dug into\n${pokemonNameWithAffix}!`
+        : `${pokemonNameWithAffix}에게\n뾰족한 바위가 박혔다!`
+      : sourceId === 'spikes'
+        ? this._isEnglishLocale()
+          ? `${pokemonNameWithAffix} was hurt\nby the spikes!`
+          : `${pokemonNameWithAffix}은(는)\n압정뿌리기의 데미지를 입었다!`
+        : '';
+    return this._t('arena-tag', key, { pokemonNameWithAffix }, fallback);
   }
 
   /** Get the tracked species name for a side+slot, or '???' if unknown. */
@@ -328,10 +583,8 @@ export class BattleTimelineExecutor {
         this._applyInfoForSlot(side, slot, switchPatch);
 
         // BA-1: Show switch message
-        const label = side === this._playerSide
-          ? `가라! ${species}!`
-          : `상대의 ${species} 등장!`;
-        this._showMsg(label);
+        const label = this._switchInMessage(side, species);
+        await this._showMsg(label);
 
         const scene = this._scene();
         if (!ev.fromBall && visual?.spriteUrl) {
@@ -341,21 +594,26 @@ export class BattleTimelineExecutor {
           await scene.switchInBattler(side, !!ev.fromBall, { audioEnabled: this._audioEnabled });
         } else if (ev.fromBall) {
           this._playAudio('se/pb_rel');
+          await this._delay(260);
         }
-        await this._delay(ev.fromBall ? 300 : 100);
 
         // BA-2: play Pokémon cry via dex number → cry/<num>.m4a
         // Await the load so the cry plays even on first load (avoids 500ms timeout miss).
         const dexNum = speciesToDexNum(species);
         if (dexNum) await this._playCryByNum(dexNum);
-        await this._delay(ev.fromBall ? 300 : 100);
         break;
       }
 
       // ── BA-1 + BA-10: Move use (message + visual animation) ─────────────
       case 'move_use': {
         const actorName = this._slotName(ev.actor?.side, ev.actor?.slot ?? 0);
-        this._showMsg(`${actorName}의 ${ev.move}!`);
+        const actorNameWithAffix = this._pokemonNameWithAffix(actorName, ev.actor?.side);
+        await this._showMsg(this._t(
+          'battle',
+          'useMove',
+          { pokemonNameWithAffix: actorNameWithAffix, moveName: ev.move || '' },
+          `${actorName}의 ${ev.move}!`,
+        ));
         const scene = this._scene();
         if (scene?.playMoveAnim) {
           // BA-10: play visual animation (includes timed sound events internally).
@@ -370,15 +628,18 @@ export class BattleTimelineExecutor {
         } else {
           // Fallback: SE-only when scene not available.
           await this._playMoveSe(ev.move);
-          await this._delay(500);
+          await this._delay(280);
         }
         break;
       }
 
       // ── BA-1: Damage ─────────────────────────────────────────────────────
       case 'damage': {
+        const sourceMessage = this._damageSourceMessage(ev);
+        if (sourceMessage) {
+          await this._showMsg(sourceMessage, { minMs: 560 });
+        }
         this._playHitByResult(ev.hitResult ?? 'effective');
-        await this._delay(100);
         const hpPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
         this._updateSlotInfo(ev.target?.side, ev.target?.slot ?? 0, {
           hp: ev.hpAfter,
@@ -403,12 +664,11 @@ export class BattleTimelineExecutor {
         }
         // Show hit result message after HP tween
         let hitMsg = null;
-        if (ev.critical)                        hitMsg = '급소에 맞았다!';
-        else if (ev.hitResult === 'super')       hitMsg = '효과는 굉장했다!';
-        else if (ev.hitResult === 'not_very')    hitMsg = '효과는 별로인 것 같다...';
+        if (ev.critical)                        hitMsg = this._t('battle', 'hitResultCriticalHit', {}, '급소에 맞았다!');
+        else if (ev.hitResult === 'super')       hitMsg = this._t('battle', 'hitResultSuperEffective', {}, '효과는 굉장했다!');
+        else if (ev.hitResult === 'not_very')    hitMsg = this._t('battle', 'hitResultNotVeryEffective', {}, '효과는 별로인 것 같다...');
         if (hitMsg) {
-          this._showMsg(hitMsg);
-          await this._delay(600);
+          await this._showMsg(hitMsg, { minMs: 520 });
         }
         break;
       }
@@ -454,7 +714,12 @@ export class BattleTimelineExecutor {
           statusEffect: '',
           statusLabel: '',
         });
-        this._showMsg(`${faintName} 기절!`);
+        await this._showMsg(this._t(
+          'battle',
+          'fainted',
+          { pokemonNameWithAffix: this._pokemonNameWithAffix(faintName, ev.side) },
+          `${faintName} 기절!`,
+        ));
         this._playAudio('se/faint');
         const scene = this._scene();
         if (scene?.faintBattler) {
@@ -462,14 +727,15 @@ export class BattleTimelineExecutor {
         } else {
           await this._delay(500);
         }
-        await this._delay(300);
         break;
       }
 
       // ── BA-3: Ability bar ────────────────────────────────────────────────
       case 'ability_show': {
         const abilityOwner = this._slotName(ev.side, ev.slot ?? 0);
-        this._showMsg(`${abilityOwner}의 특성: ${ev.ability}!`);
+        const abilityMsg = this._isEnglishLocale()
+          ? `${abilityOwner}'s Ability: ${ev.ability}!`
+          : `${abilityOwner}의 특성: ${ev.ability}!`;
         const ui = this._ui;
         if (ui?.abilityBar) {
           ui.abilityBar.update({
@@ -478,7 +744,7 @@ export class BattleTimelineExecutor {
             side: ev.side === this._playerSide ? 'player' : 'enemy',
           });
         }
-        await this._delay(1200);
+        await this._showMsg(abilityMsg, { minMs: 1200 });
         // Hide bar; renderBattle() will restore final state on onComplete.
         if (ui?.abilityBar) {
           ui.abilityBar.update({ visible: false, text: '' });
@@ -488,15 +754,16 @@ export class BattleTimelineExecutor {
 
       // ── BA-3: Weather ────────────────────────────────────────────────────
       case 'weather_start': {
-        const wLabel = WEATHER_LABELS[toId(ev.weather)] ?? `날씨 변화: ${ev.weather}`;
-        this._showMsg(wLabel);
-        await this._delay(800);
+        const weatherId = toId(ev.weather);
+        this._activeWeatherId = weatherId || this._activeWeatherId;
+        const wLabel = this._weatherStartMessage(weatherId, ev.weather);
+        await this._showMsg(wLabel, { minMs: 700 });
         break;
       }
 
       case 'weather_end': {
-        this._showMsg('날씨가 원래대로 돌아왔다.');
-        await this._delay(600);
+        await this._showMsg(this._weatherClearMessage(this._activeWeatherId), { minMs: 560 });
+        this._activeWeatherId = '';
         break;
       }
 
@@ -505,15 +772,32 @@ export class BattleTimelineExecutor {
       // ── BA-3: Terrain ────────────────────────────────────────────────────
       case 'terrain_start': {
         const effectId = toId(ev.effect || ev.raw || '');
-        const tLabel = TERRAIN_LABELS[effectId] ?? `필드 효과 시작: ${ev.effect}`;
-        this._showMsg(tLabel);
-        await this._delay(700);
+        this._activeTerrainId = effectId || this._activeTerrainId;
+        const tLabel = this._terrainStartMessage(effectId, ev.effect || ev.raw || '');
+        await this._showMsg(tLabel, { minMs: 620 });
         break;
       }
 
       case 'terrain_end': {
-        this._showMsg('필드 효과가 사라졌다.');
-        await this._delay(600);
+        await this._showMsg(this._terrainClearMessage(this._activeTerrainId), { minMs: 520 });
+        this._activeTerrainId = '';
+        break;
+      }
+
+      // ── BA-14: Side condition ────────────────────────────────────────────
+      case 'side_start': {
+        const startMessage = this._sideConditionMessage(ev, 'start');
+        if (startMessage) {
+          await this._showMsg(startMessage, { minMs: 560 });
+        }
+        break;
+      }
+
+      case 'side_end': {
+        const endMessage = this._sideConditionMessage(ev, 'end');
+        if (endMessage) {
+          await this._showMsg(endMessage, { minMs: 520 });
+        }
         break;
       }
 
@@ -525,8 +809,7 @@ export class BattleTimelineExecutor {
         });
         const statusName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
         const statusLabel = STATUS_LABELS[toId(ev.status)] ?? `${ev.status} 상태`;
-        this._showMsg(`${statusName}은(는) ${statusLabel}`);
-        await this._delay(700);
+        await this._showMsg(`${statusName}은(는) ${statusLabel}`, { minMs: 560 });
         break;
       }
 
@@ -544,9 +827,8 @@ export class BattleTimelineExecutor {
         const statLabel = STAT_LABELS[toId(ev.stat)] ?? ev.stat;
         const amount = Number(ev.amount) || 1;
         const suffix = amount >= 2 ? ' 크게 올랐다!' : ' 올랐다!';
-        this._showMsg(`${boostName}의 ${statLabel}이${suffix}`);
+        await this._showMsg(`${boostName}의 ${statLabel}이${suffix}`, { minMs: 500 });
         this._playAudio('se/stat_up');
-        await this._delay(600);
         break;
       }
 
@@ -555,9 +837,8 @@ export class BattleTimelineExecutor {
         const unstatLabel = STAT_LABELS[toId(ev.stat)] ?? ev.stat;
         const uamount = Number(ev.amount) || 1;
         const usuffix = uamount >= 2 ? ' 크게 내려갔다!' : ' 내려갔다!';
-        this._showMsg(`${unboostName}의 ${unstatLabel}이${usuffix}`);
+        await this._showMsg(`${unboostName}의 ${unstatLabel}이${usuffix}`, { minMs: 500 });
         this._playAudio('se/stat_down');
-        await this._delay(600);
         break;
       }
 
@@ -566,16 +847,14 @@ export class BattleTimelineExecutor {
         // In Showdown protocol, miss/−miss stores the ATTACKER as ev.target (field is misnamed).
         // The attacker's move missed, so message: "X의 공격이 빗나갔다!"
         const missName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
-        this._showMsg(`${missName}의 공격이 빗나갔다!`);
-        await this._delay(500);
+        await this._showMsg(`${missName}의 공격이 빗나갔다!`, { minMs: 460 });
         break;
       }
 
       // ── BA-4: Can't move ─────────────────────────────────────────────────
       case 'cant_move': {
         const cantName = this._slotName(ev.actor?.side, ev.actor?.slot ?? 0);
-        this._showMsg(`${cantName}은(는) 움직일 수 없다.`);
-        await this._delay(600);
+        await this._showMsg(`${cantName}은(는) 움직일 수 없다.`, { minMs: 500 });
         break;
       }
 
@@ -583,15 +862,18 @@ export class BattleTimelineExecutor {
       case 'immune': {
         // "X에게는 효과가 없는 것 같다…"
         const immuneName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
-        this._showMsg(`${immuneName}에게는\n효과가 없는 것 같다…`);
-        await this._delay(700);
+        await this._showMsg(this._t(
+          'battle',
+          'hitResultNoEffect',
+          { pokemonName: immuneName },
+          `${immuneName}에게는\n효과가 없는 것 같다…`,
+        ), { minMs: 560 });
         break;
       }
 
       case 'move_fail': {
         // "그러나 실패하고 말았다!!"
-        this._showMsg('그러나 실패하고 말았다!!');
-        await this._delay(600);
+        await this._showMsg(this._t('battle', 'attackFailed', {}, '그러나 실패하고 말았다!!'), { minMs: 520 });
         break;
       }
 
@@ -638,8 +920,7 @@ export class BattleTimelineExecutor {
         if (!suppressMessageByFaint && !ev.silent && (changed || shouldShowFallback)) {
           const msg = this._buildFormChangeMessage(preName, nextName, ev.mechanism);
           if (msg) {
-            this._showMsg(msg);
-            await this._delay(700);
+            await this._showMsg(msg, { minMs: 620 });
           }
         }
         break;
@@ -649,9 +930,8 @@ export class BattleTimelineExecutor {
       case 'battle_end': {
         // ev.winner is the Showdown player name of the winner.
         if (ev.winner) {
-          this._showMsg(`${ev.winner} 승리!`);
+          await this._showMsg(`${ev.winner} 승리!`, { minMs: 1300 });
           this._playAudio('se/level_up');
-          await this._delay(1500);
         }
         break;
       }
@@ -659,8 +939,6 @@ export class BattleTimelineExecutor {
       // ── no-op events ──────────────────────────────────────────────────────
       case 'weather_tick':
       case 'turn_end':
-      case 'side_start':
-      case 'side_end':
       case 'effect_activate':
       case 'single_turn_effect':
       case 'engine_error':
@@ -669,8 +947,7 @@ export class BattleTimelineExecutor {
       // ── 5-C: Forced switch gate ──────────────────────────────────────────
       case 'callback_event': {
         // Show "교체할 포켓몬을 선택해 주세요!" then pause for player input.
-        this._showMsg('교체할 포켓몬을 선택해 주세요!');
-        await this._delay(600);
+        await this._showMsg('교체할 포켓몬을 선택해 주세요!', { minMs: 620 });
         // Pause the timeline and notify caller to show the party/switch UI.
         // The UI system (app.js) will pick up request.forceSwitch and surface party mode.
         this.running = false;
