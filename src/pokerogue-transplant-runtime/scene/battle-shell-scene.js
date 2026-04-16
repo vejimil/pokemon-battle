@@ -509,6 +509,20 @@ export function createBattleShellSceneClass(Phaser, env) {
       return isPlayerViewSide ? this.playerSprite : this.enemySprite;
     }
 
+    _runTween(config = {}) {
+      return new Promise(resolve => {
+        if (!config?.targets) {
+          resolve();
+          return;
+        }
+        this.tweens.add({
+          ...config,
+          onComplete: () => resolve(),
+          onStop: () => resolve(),
+        });
+      });
+    }
+
     concealBattler(side) {
       const mount = this._mountForBattleSide(side);
       const spr = mount?.phaserSprite;
@@ -537,7 +551,7 @@ export function createBattleShellSceneClass(Phaser, env) {
      * Replace the current battler sprite for a battle side immediately.
      * Used by timeline forme_change handling so the sprite swaps before turn end.
      */
-    async setBattlerSprite(side, spriteUrl = '') {
+    async setBattlerSprite(side, spriteUrl = '', options = {}) {
       const mount = this._mountForBattleSide(side);
       if (!mount) return;
       if (spriteUrl) {
@@ -545,10 +559,200 @@ export function createBattleShellSceneClass(Phaser, env) {
       }
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active) return;
+      const shouldShow = options?.visible !== false;
       spr.setAlpha(1);
-      spr.setVisible(true);
+      spr.setVisible(shouldShow);
       if (mount?.shadow) {
-        mount.shadow.setVisible(Boolean(mount.shadowVisibleByMetrics));
+        mount.shadow.setVisible(Boolean(shouldShow && mount.shadowVisibleByMetrics));
+      }
+    }
+
+    async playQuietFormChange(side, options = {}) {
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active || !spr.visible) return;
+
+      const baseScaleX = spr.scaleX;
+      const baseScaleY = spr.scaleY;
+      const baseAlpha = spr.alpha;
+      const depth = Number.isFinite(spr.depth) ? spr.depth : 7;
+      const flare = this.add.rectangle(
+        spr.x,
+        spr.y - (spr.displayHeight * 0.5),
+        Math.max(28, Math.round(spr.displayWidth * 0.9)),
+        Math.max(28, Math.round(spr.displayHeight * 1.1)),
+        0xffffff,
+        0,
+      ).setOrigin(0.5, 0.5).setDepth(depth + 1);
+
+      try {
+        this.tweens.killTweensOf(spr);
+        if (options?.audioEnabled !== false) this.audio?.play?.('se/hit_weak', 0.35);
+        spr.setTintFill(0xffffff);
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            alpha: 1,
+            scaleX: baseScaleX * 0.9,
+            scaleY: baseScaleY * 0.9,
+            duration: 180,
+            ease: 'Cubic.easeIn',
+          }),
+          this._runTween({
+            targets: flare,
+            alpha: 0.45,
+            duration: 180,
+            ease: 'Sine.easeOut',
+          }),
+        ]);
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX * 1.06,
+            scaleY: baseScaleY * 1.06,
+            duration: 170,
+            ease: 'Cubic.easeOut',
+          }),
+          this._runTween({
+            targets: flare,
+            alpha: 0.15,
+            duration: 170,
+            ease: 'Sine.easeOut',
+          }),
+        ]);
+        spr.clearTint();
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX,
+            scaleY: baseScaleY,
+            alpha: baseAlpha,
+            duration: 160,
+            ease: 'Sine.easeInOut',
+          }),
+          this._runTween({
+            targets: flare,
+            alpha: 0,
+            duration: 220,
+            ease: 'Sine.easeIn',
+          }),
+        ]);
+      } finally {
+        if (spr.active) {
+          spr.clearTint();
+          spr.setScale(baseScaleX, baseScaleY);
+          spr.setAlpha(baseAlpha);
+        }
+        flare?.destroy?.();
+      }
+    }
+
+    async playFormChange(side, options = {}) {
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active || !spr.visible) return;
+
+      const baseScaleX = spr.scaleX;
+      const baseScaleY = spr.scaleY;
+      const baseAlpha = spr.alpha;
+      const depth = Number.isFinite(spr.depth) ? spr.depth : 7;
+      const camera = this.cameras?.main;
+      const width = Math.max(320, Number(camera?.width) || 320);
+      const height = Math.max(180, Number(camera?.height) || 180);
+      const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0xffffff, 0)
+        .setOrigin(0.5, 0.5)
+        .setScrollFactor(0)
+        .setDepth(80);
+      const pulse = this.add.ellipse(
+        spr.x,
+        spr.y - (spr.displayHeight * 0.45),
+        Math.max(36, Math.round(spr.displayWidth * 0.85)),
+        Math.max(24, Math.round(spr.displayHeight * 0.55)),
+        0xffffff,
+        0,
+      ).setDepth(depth + 2);
+
+      try {
+        this.tweens.killTweensOf(spr);
+        if (options?.audioEnabled !== false) this.audio?.play?.('se/hit', options?.modal ? 0.55 : 0.45);
+        spr.setTintFill(0xffffff);
+        await Promise.all([
+          this._runTween({
+            targets: overlay,
+            alpha: options?.modal ? 0.38 : 0.28,
+            duration: 260,
+            ease: 'Sine.easeOut',
+          }),
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX * 0.84,
+            scaleY: baseScaleY * 0.84,
+            duration: 260,
+            ease: 'Cubic.easeIn',
+          }),
+          this._runTween({
+            targets: pulse,
+            alpha: 0.65,
+            scaleX: 1.35,
+            scaleY: 1.35,
+            duration: 260,
+            ease: 'Sine.easeOut',
+          }),
+        ]);
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX * 1.16,
+            scaleY: baseScaleY * 1.16,
+            duration: 260,
+            ease: 'Cubic.easeOut',
+          }),
+          this._runTween({
+            targets: overlay,
+            alpha: 0.1,
+            duration: 260,
+            ease: 'Sine.easeInOut',
+          }),
+          this._runTween({
+            targets: pulse,
+            alpha: 0.2,
+            scaleX: 1.75,
+            scaleY: 1.75,
+            duration: 260,
+            ease: 'Sine.easeOut',
+          }),
+        ]);
+        spr.clearTint();
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX,
+            scaleY: baseScaleY,
+            alpha: baseAlpha,
+            duration: 220,
+            ease: 'Sine.easeInOut',
+          }),
+          this._runTween({
+            targets: overlay,
+            alpha: 0,
+            duration: 320,
+            ease: 'Sine.easeIn',
+          }),
+          this._runTween({
+            targets: pulse,
+            alpha: 0,
+            duration: 320,
+            ease: 'Sine.easeIn',
+          }),
+        ]);
+      } finally {
+        if (spr.active) {
+          spr.clearTint();
+          spr.setScale(baseScaleX, baseScaleY);
+          spr.setAlpha(baseAlpha);
+        }
+        overlay?.destroy?.();
+        pulse?.destroy?.();
       }
     }
 

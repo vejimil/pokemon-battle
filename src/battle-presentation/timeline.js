@@ -176,11 +176,28 @@ export class BattleTimelineExecutor {
     return nextInfo;
   }
 
-  async _setBattlerSprite(side, spriteUrl = '') {
+  async _setBattlerSprite(side, spriteUrl = '', options = {}) {
     if (!side || !spriteUrl) return;
     const scene = this._scene();
     if (!scene?.setBattlerSprite) return;
-    await scene.setBattlerSprite(side, spriteUrl);
+    await scene.setBattlerSprite(side, spriteUrl, options);
+  }
+
+  async _playFormChangePresentation(side, presentation = null) {
+    if (!side || !presentation || presentation.shouldAnimate === false) return;
+    const scene = this._scene();
+    if (!scene) return;
+    const opts = {
+      audioEnabled: this._audioEnabled,
+      modal: Boolean(presentation.modal),
+    };
+    if (presentation.kind === 'form' && scene.playFormChange) {
+      await scene.playFormChange(side, opts);
+      return;
+    }
+    if (scene.playQuietFormChange) {
+      await scene.playQuietFormChange(side, opts);
+    }
   }
 
   async _resolveVisual(ev) {
@@ -569,7 +586,8 @@ export class BattleTimelineExecutor {
         const toSpecies = String(ev.toSpecies || ev.to || '').trim();
         const visual = await this._resolveVisual(ev);
         if (visual?.spriteUrl) {
-          await this._setBattlerSprite(side, visual.spriteUrl);
+          const shouldShowSprite = visual?.formChangePresentation?.isVisible !== false;
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: shouldShowSprite });
         }
         let nextName = toSpecies;
         if (!nextName && visual?.infoPatch?.displayName) {
@@ -586,6 +604,7 @@ export class BattleTimelineExecutor {
             ...formPatch,
           });
         }
+        await this._playFormChangePresentation(side, visual?.formChangePresentation || null);
         const changed = nextName && toId(nextName) !== toId(preName);
         const shouldShowFallback = ev.mechanism === '-formechange' && !nextName;
         if (!ev.silent && (changed || shouldShowFallback)) {

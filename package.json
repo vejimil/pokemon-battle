@@ -8,6 +8,7 @@
     "audit:items": "node ./scripts/audit-item-support.mjs",
     "audit:item-truth": "node ./scripts/audit-battle-form-and-item-truth.mjs",
     "verify:passb": "node ./scripts/verify-passb-form-truth.mjs",
+    "verify:ba20": "node ./scripts/verify-ba20-form-change-branches.mjs",
     "verify:stage22": "node ./scripts/verify-stage22-battle-regressions.cjs",
     "verify:metrics-parity": "node ./scripts/verify-metrics-parity.mjs",
     "audit:metrics-drift": "node ./scripts/audit-metrics-drift.mjs"

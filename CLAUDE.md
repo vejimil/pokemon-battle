@@ -88,10 +88,20 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 > **작업 원칙3: 나를 위한 설명은 한글로 하되, 작업 및 사고 자체는 영어로 진행할 것 - 토큰 절약을 위함**
 > **작업 원칙4: UI 폴리시 작업(UI-P1~P5)은 배틀 연출이 완성된 후에 한다. 배틀이 먼저.**
 
-### 🔜 BA-20. 폼체인지 연출 정합 (다음 세션 우선)
-- 원본 분기 기준: `battle-scene.ts` `triggerPokemonFormChange()`에서 `player && !quiet`면 `FormChangePhase`, 그 외는 `QuietFormChangePhase`
-- `modal`은 파티 UI 오버레이(`EVOLUTION_SCENE`) 제어값이며, "배틀 종료 후 진화 전용" 플래그가 아님
-- 목표: 현재 즉시 반영(BA-19) 위에 원본 연출 레이어(경량/진화씬 스타일)를 컨텍스트별로 추가 이식
+### ✅ BA-20. 폼체인지 연출 정합 — 완료 (2026-04-16)
+- 원본 분기 이식: `player && !quiet`면 `FormChangePhase`, 그 외 `QuietFormChangePhase`
+- `modal`은 파티 UI 오버레이 제어로 처리 (`party + item-trigger`에서만 `modal=true`)
+- BA-19 즉시 반영(sprite/info)은 유지하고, 그 뒤 연출 레이어만 분기 추가
+- 구현 파일:
+  - `server/showdown-engine.cjs` (`forme_change`에 `trigger`/`fromSource` 추가)
+  - `src/battle-presentation/form-change-presentation.js` (신규 분기 해석)
+  - `src/app.js` (`resolveTimelineEventVisualState`에 `formChangePresentation` 계산)
+  - `src/battle-presentation/timeline.js` (Form vs Quiet 연출 호출)
+  - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` (`playFormChange`, `playQuietFormChange`, `setBattlerSprite(...,{visible})`)
+- 검증:
+  - `node --check` 전부 통과
+  - `npm run verify:ba20` PASS (동시 메가+즉시 KO / party modal / 비가시·비활성)
+  - `npm run verify:stage22`, `npm run verify:passb` PASS
 
 ### ✅ BA-1. 배틀 메시지 순차 표시 — 완료 (2026-04-13)
 ### ✅ BA-2. 울음소리(Cry) 연결 — 완료 (2026-04-13)
@@ -271,10 +281,10 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 **BA-14: 사이드 컨디션 연출** (`timeline.js`)
 - `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 메시지
 
-**BA-20: 폼체인지 연출 정합 (FormChangePhase/QuietFormChangePhase)** (`timeline.js`, `battle-shell-scene.js`, `app.js`)
+**✅ BA-20: 폼체인지 연출 정합 — 완료 (2026-04-16)** (`showdown-engine.cjs`, `form-change-presentation.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - 원본 분기 이식: `FormChangePhase`(진화씬 스타일) vs `QuietFormChangePhase`(전투 중 경량 transform) 컨텍스트별 재현
-- `modal`은 파티 UI 오버레이 제어로 해석하고, 전투 중 메가/원시/울트라 연출 경로와 분리해 구현
-- 검증 케이스: 동시 메가+즉시 KO, 파티 화면 item-trigger 폼체인지, 비가시(active 아님) 폼체인지
+- BA-19 즉시 반영 경로는 유지하고, form/quiet/modal/visible 분기만 연출 레이어로 추가
+- 검증 완료: 동시 메가+즉시 KO, 파티 화면 item-trigger(modal), 비가시(active 아님) 케이스 (`npm run verify:ba20`)
 
 **✅ BA-15: 폼 체인지 연출 — 완료 (2026-04-15)** (`timeline.js`)
 - `forme_change`에서 원본 `pokemon-form-battle` 메시지 톤(메가진화/일반 폼변화)을 반영한 메시지 출력 추가

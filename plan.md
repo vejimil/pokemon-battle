@@ -242,17 +242,34 @@ Target: `/workspaces/pokemon-battle`
 - `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 설치/해제 메시지
 - 영향: `showdown-engine.cjs`에서 이미 `side_start/end` 이벤트 생성하는지 확인 필요
 
-#### BA-20: 폼체인지 연출 정합 (FormChangePhase/QuietFormChangePhase 분기 이식)
+#### ✅ BA-20: 폼체인지 연출 정합 (FormChangePhase/QuietFormChangePhase 분기 이식) — 완료 (2026-04-16)
 - **원본 분기 확인**:
   - `pokerogue_codes/src/battle-scene.ts` lines 3339-3383 (`triggerPokemonFormChange`)
   - `pokerogue_codes/src/phases/form-change-phase.ts` (`FormChangePhase`: 진화씬 스타일 연출)
   - `pokerogue_codes/src/phases/quiet-form-change-phase.ts` (`QuietFormChangePhase`: 전투 중 경량 연출)
-- **확인 결론**:
-  - `modal`은 "게임 종료 후 진화" 의미가 아니라, 파티 UI에서 `EVOLUTION_SCENE` 오버레이를 강제로 띄우는 제어값
-  - 전투 중 메가/원시/울트라도 조건에 따라 `FormChangePhase` 또는 `QuietFormChangePhase`를 탄다
-- **다음 구현 목표**:
-  - 현재 즉시 교체(sprite/info)는 유지하고, 원본처럼 폼체인지 시각 연출(경량/진화씬 스타일)을 이벤트 컨텍스트별로 분기
-  - QA 재현 케이스: 양측 동시 메가 + 한쪽 즉시 KO, 파티 모달 폼체인지, 비활성/비가시 폼체인지
+- **반영 내용**:
+  - `server/showdown-engine.cjs`:
+    - `forme_change` 이벤트에 `trigger`/`fromSource` 추가 (`[from] ability/item/move` 파싱)
+  - `src/battle-presentation/form-change-presentation.js` (신규):
+    - 원본 분기(`player && !quiet`)를 이벤트 컨텍스트 기반으로 해석하는 `resolveFormChangePresentation()` 추가
+    - `modal`(party+item trigger), `shouldAnimate`(active/visible/silent) 계산
+  - `src/app.js`:
+    - `resolveTimelineEventVisualState()`에서 `formChangePresentation` 계산/전달
+    - side+slot 기준 `isActive`/`isVisible` 평가 추가
+  - `src/battle-presentation/timeline.js`:
+    - BA-19 즉시 반영(sprite/info) 경로 유지
+    - 이후 연출 레이어 분기 추가: `kind==='form'` → `scene.playFormChange()`, 그 외 `scene.playQuietFormChange()`
+    - 비가시/비활성 컨텍스트에서는 `setBattlerSprite(..., {visible:false})`로 텍스처만 교체
+  - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`:
+    - `playFormChange()` / `playQuietFormChange()` 신규
+    - `setBattlerSprite()`에 `options.visible` 추가
+- **검증**:
+  - `node --check` (수정 파일 전부) 통과
+  - `npm run verify:ba20` 통과
+    - 양측 동시 메가 + 한쪽 즉시 KO
+    - 파티 화면 item-trigger 폼체인지(modal) 분기
+    - 비가시/비활성 폼체인지 분기
+  - 회귀 점검: `npm run verify:stage22`, `npm run verify:passb` 모두 통과
 
 #### ✅ BA-15: 폼 체인지 연출 — 완료 (2026-04-15)
 - **원본 참조**:

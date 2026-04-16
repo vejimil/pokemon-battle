@@ -8,6 +8,7 @@ import {resolveItemIconUrl, applyPokerogueAtlasFrameToElement, POKEROGUE_ASSET_P
 import {createPhaserBattleController} from './phaser-battle-controller.js';
 import {loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationDelayMs} from './pokerogue-transplant-runtime/runtime/pokemon-metrics.js';
 import {BattleTimelineExecutor} from './battle-presentation/timeline.js';
+import {resolveFormChangePresentation} from './battle-presentation/form-change-presentation.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
 
@@ -1673,8 +1674,17 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
   const side = sideSlot?.side;
   if (side !== 'p1' && side !== 'p2') return null;
   const sideIndex = side === 'p2' ? 1 : 0;
+  const sideState = battle.players?.[sideIndex] || null;
   const perspective = playerSide === 'p2' ? 1 : 0;
   const mon = resolveTimelineEventMon(ev, battle);
+  const activeTeamIndex = Number.isInteger(sideState?.active?.[sideSlot.slot])
+    ? sideState.active[sideSlot.slot]
+    : -1;
+  const teamIndex = mon && Array.isArray(sideState?.team)
+    ? sideState.team.indexOf(mon)
+    : -1;
+  const isActive = Number.isInteger(activeTeamIndex) && activeTeamIndex >= 0 && teamIndex === activeTeamIndex;
+  const isVisible = Boolean(isActive && mon && Number(mon.hp || 0) > 0 && !mon.fainted);
   const infoPatch = buildTimelineStaticInfoPatch(mon) || {};
   if (ev.type === 'forme_change') {
     // Forme change name comes from event stream (detailschange) and can differ from
@@ -1706,11 +1716,24 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
   }
   const facing = sideIndex === perspective ? 'back' : 'front';
   const spriteUrl = spriteId ? spritePath(spriteId, facing, shiny) : '';
+  const localPlayerIndex = playerSide === 'p2' ? 1 : 0;
+  const localUi = getBattleUiState(battle);
+  const localUiMode = localUi?.modeByPlayer?.[localPlayerIndex] || '';
+  const formChangePresentation = ev.type === 'forme_change'
+    ? resolveFormChangePresentation(ev, {
+      playerSide,
+      side,
+      isActive,
+      isVisible,
+      uiMode: localUiMode,
+    })
+    : null;
   return {
     side,
     slot: sideSlot.slot,
     spriteUrl,
     infoPatch: Object.keys(infoPatch).length ? infoPatch : null,
+    formChangePresentation,
   };
 }
 

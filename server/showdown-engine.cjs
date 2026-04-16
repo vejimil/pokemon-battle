@@ -619,6 +619,17 @@ function normalizeEventsFromLine(line, ctx) {
       const identSpecies = displayNameForPokemonProtocol(parts[2] || '');
       const identLooksLikeForm = /-(mega|mega-x|mega-y|primal|ultra)\b/i.test(identSpecies);
       const silent = parts.slice(4).some(part => /^\[silent\]$/i.test(String(part || '').trim()));
+      const fromTag = parts
+        .slice(4)
+        .find(part => /^\[from\]\s*/i.test(String(part || '').trim()));
+      const fromSource = fromTag
+        ? String(fromTag || '').trim().replace(/^\[from\]\s*/i, '').trim()
+        : '';
+      let trigger = '';
+      if (/^ability\s*:/i.test(fromSource)) trigger = 'ability';
+      else if (/^item\s*:/i.test(fromSource)) trigger = 'item';
+      else if (/^move\s*:/i.test(fromSource)) trigger = 'move';
+      else if (/^weather\b/i.test(fromSource)) trigger = 'weather';
       const toSpecies = tag === 'detailschange'
         ? (detailsSpecies || identSpecies || '')
         : tag === '-formechange'
@@ -635,6 +646,8 @@ function normalizeEventsFromLine(line, ctx) {
         toSpecies,
         mechanism: tag,
         silent,
+        trigger,
+        fromSource,
       }];
     }
 
