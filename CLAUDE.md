@@ -102,6 +102,35 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `node --check` 전부 통과
   - `npm run verify:ba20` PASS (동시 메가+즉시 KO / party modal / 비가시·비활성)
   - `npm run verify:stage22`, `npm run verify:passb` PASS
+- 후속 안정화(동일 날짜, 브라우저 시연 피드백 반영):
+  - 폼체인지 직전 스프라이트가 잠깐 사라지는 깜빡임 제거 (`battle-shell-scene.js` `renderBattlerSprite()`)
+  - 같은 턴 KO 예정인 경우에도 변신 시점 연출이 사라지지 않도록 timeline visibility 재평가 (`timeline.js`)
+  - `switch_in` sprite 해석을 이벤트 `species` 우선으로 바꿔, 원시가이오가/원시그란돈이 "일반 등장 → 폼체인지" 흐름으로 보이게 조정 (`app.js`)
+  - faint 직후 원복 detailschange 문구 억제:
+    - 타임라인 메시지 억제 (`timeline.js`)
+    - 서버 로그 파서에서 `[silent]` + 기절 후 후속 form/detailschange 라인 무시 (`showdown-engine.cjs`)
+
+### 다음 세션 착수 순서 (고정)
+1. `M5` locale 네임스페이스 로더
+2. `BA-17` 배틀 연출 타이밍 정확도 개선
+3. `BA-14` 사이드 컨디션 연출
+4. `BA-21` 선택 완료 후 대기 메시지 정합
+5. `BA-22` 한국어/영어 메시지 완전 분리
+6. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
+
+### 🔜 BA-21. 선택 완료 후 대기 메시지 정합
+- 한 플레이어가 행동 선택을 끝낸 뒤 이상 문구 대신 `상대의 턴을 기다리는 중...` 고정 표시
+- 영어 UI는 `Waiting for opponent's turn...`로 분리 표시
+- 대상 경로: `app.js` 선택 커밋 흐름, `timeline.js`/`battle-message-ui-handler.js` 메시지 우선순위
+
+### 🔜 BA-22. 한국어/영어 메시지 완전 분리
+- 한국어 버전에서 영어 병기(예: `... / ...`) 완전 제거
+- 영어 버전은 영어만 표시
+- M5 locale 작업과 결합해 배틀 메시지를 locale key 기반으로 통합
+
+### 🔜 BA-23. 기술/날씨/필드 연출 완벽화 (추후)
+- 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 완성
+- 현재는 후순위 항목이며 M5/BA-17/BA-14/BA-21/BA-22 이후 착수
 
 ### ✅ BA-1. 배틀 메시지 순차 표시 — 완료 (2026-04-13)
 ### ✅ BA-2. 울음소리(Cry) 연결 — 완료 (2026-04-13)
@@ -267,6 +296,14 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 ### Sprint 7. 배틀 완성도
 
+**다음 세션 착수 순서(고정)**
+1. `M5` locale 네임스페이스 로더
+2. `BA-17` 배틀 연출 타이밍 정확도 개선
+3. `BA-14` 사이드 컨디션 연출
+4. `BA-21` 선택 완료 후 대기 메시지 정합
+5. `BA-22` 한국어/영어 메시지 완전 분리
+6. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
+
 **M5: locale 네임스페이스 로더** (`src/battle-i18n/locale-manager.js` 신규)
 - `assets/pokerogue/locales/ko/*.json` 로드 → 배틀 메시지 키 우선 사용
 - `timeline.js` 하드코딩 한글 → locale 키 기반으로 교체
@@ -281,10 +318,23 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 **BA-14: 사이드 컨디션 연출** (`timeline.js`)
 - `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 메시지
 
+**BA-21: 선택 완료 후 대기 메시지 정합** (`app.js`, `timeline.js`, `battle-message-ui-handler.js`)
+- 선택 완료 직후 메시지창 기본값을 `상대의 턴을 기다리는 중...`(EN: `Waiting for opponent's turn...`)로 고정
+- 턴 resolve 전 battle.log 상단 문구가 메시지창을 덮어쓰지 않도록 메시지 우선순위 정리
+
+**BA-22: 한국어/영어 메시지 완전 분리** (`locale-manager.js`, `timeline.js`, `showdown-engine.cjs`)
+- 한국어 버전에서 영어 병기 완전 제거, 영어 버전은 영어만 표시
+- 서버 병기 문자열 의존을 줄이고 locale key 기반 렌더링으로 통합
+
+**BA-23: 기술/날씨/필드 연출 완벽화 (추후)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
+- 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 보강
+- 착수 우선순위는 M5/BA-17/BA-14/BA-21/BA-22 이후
+
 **✅ BA-20: 폼체인지 연출 정합 — 완료 (2026-04-16)** (`showdown-engine.cjs`, `form-change-presentation.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - 원본 분기 이식: `FormChangePhase`(진화씬 스타일) vs `QuietFormChangePhase`(전투 중 경량 transform) 컨텍스트별 재현
 - BA-19 즉시 반영 경로는 유지하고, form/quiet/modal/visible 분기만 연출 레이어로 추가
 - 검증 완료: 동시 메가+즉시 KO, 파티 화면 item-trigger(modal), 비가시(active 아님) 케이스 (`npm run verify:ba20`)
+- 후속 안정화: 깜빡임 제거 + switch_in species 우선 sprite 해석 + faint 후 폼변화 메시지 억제
 
 **✅ BA-15: 폼 체인지 연출 — 완료 (2026-04-15)** (`timeline.js`)
 - `forme_change`에서 원본 `pokemon-form-battle` 메시지 톤(메가진화/일반 폼변화)을 반영한 메시지 출력 추가

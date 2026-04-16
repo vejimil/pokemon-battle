@@ -122,6 +122,11 @@ function displayNameForPokemonProtocol(raw = '') {
   return parts.length > 1 ? parts.slice(1).join(': ') : raw;
 }
 
+function logIdentKeyFromProtocol(raw = '') {
+  const m = /^(p[12][a-z]?):/i.exec(String(raw || '').trim());
+  return m ? String(m[1] || '').toLowerCase() : '';
+}
+
 function displayCondition(cond = '') {
   return String(cond || '').replace(/\btox\b/g, 'tox').trim();
 }
@@ -214,7 +219,7 @@ function resolveSnapshotBaseSpeciesName(pokemon, ui = {}) {
 }
 
 
-function normalizeLogTextFromLine(line) {
+function normalizeLogTextFromLine(line, logCtx = null) {
   const parts = String(line || '').split('|');
   const tag = parts[1] || '';
   const a = parts[2] || '';
@@ -223,6 +228,7 @@ function normalizeLogTextFromLine(line) {
 
   switch (tag) {
     case 'turn':
+      if (logCtx?.faintedIdents?.clear) logCtx.faintedIdents.clear();
       return {text: `턴 ${a} / Turn ${a}`, tone: 'accent'};
     case 'switch':
     case 'drag':
@@ -234,6 +240,10 @@ function normalizeLogTextFromLine(line) {
       return {text: target ? `${source}의 ${move}! → ${target} / ${source} used ${move} on ${target}.` : `${source}의 ${move}! / ${source} used ${move}.`, tone: ''};
     }
     case 'faint':
+      if (logCtx?.faintedIdents?.add) {
+        const key = logIdentKeyFromProtocol(a);
+        if (key) logCtx.faintedIdents.add(key);
+      }
       return {text: `${displayNameForPokemonProtocol(a)} 기절! / ${displayNameForPokemonProtocol(a)} fainted.`, tone: 'accent'};
     case '-damage':
       return {text: `${displayNameForPokemonProtocol(a)} HP → ${displayCondition(b)}`, tone: ''};
@@ -282,8 +292,13 @@ function normalizeLogTextFromLine(line) {
     case '-terastallize':
       return {text: `${displayNameForPokemonProtocol(a)} 테라스탈! / ${displayNameForPokemonProtocol(a)} Terastallized!`, tone: 'accent'};
     case '-formechange':
-    case 'detailschange':
+    case 'detailschange': {
+      const key = logIdentKeyFromProtocol(a);
+      const faintedBeforeFormChange = key && logCtx?.faintedIdents?.has?.(key);
+      const silent = parts.slice(4).some(part => /^\[silent\]$/i.test(String(part || '').trim()));
+      if (silent || faintedBeforeFormChange) return null;
       return {text: `${displayNameForPokemonProtocol(a)} 폼 변화 → ${b} / forme change → ${b}`, tone: 'accent'};
+    }
     case '-supereffective':
       return {text: `${displayNameForPokemonProtocol(a)}에게 효과 굉장함! / It's super effective on ${displayNameForPokemonProtocol(a)}!`, tone: 'accent'};
     case '-resisted':
@@ -841,6 +856,7 @@ class ShowdownLocalSinglesSession {
 
   processOutputs(outputs) {
     for (const output of outputs) {
+      const logCtx = {faintedIdents: new Set()};
       this.rawOutputs.push(output);
       const [header, ...rest] = output.split('\n');
       const body = rest.join('\n');
@@ -858,7 +874,7 @@ class ShowdownLocalSinglesSession {
             }
             continue;
           }
-          const entry = normalizeLogTextFromLine(line);
+          const entry = normalizeLogTextFromLine(line, logCtx);
           if (entry) this.logEntries.unshift(entry);
           this.protocol.push(line);
           for (const ev of normalizeEventsFromLine(line, this._evtCtx)) this.eventsBuffer.push(ev);
@@ -870,7 +886,7 @@ class ShowdownLocalSinglesSession {
           if (line === previous) continue;
           previous = line;
           if (line.startsWith('|request|')) continue;
-          const entry = normalizeLogTextFromLine(line);
+          const entry = normalizeLogTextFromLine(line, logCtx);
           if (entry) this.logEntries.unshift(entry);
           this.protocol.push(line);
           for (const ev of normalizeEventsFromLine(line, this._evtCtx)) this.eventsBuffer.push(ev);

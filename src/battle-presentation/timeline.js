@@ -200,6 +200,25 @@ export class BattleTimelineExecutor {
     }
   }
 
+  _resolveFormChangePresentation(presentation, ev, slotInfoBefore = null) {
+    const next = {
+      kind: presentation?.kind || 'quiet',
+      modal: Boolean(presentation?.modal),
+      isActive: presentation?.isActive !== false,
+      isVisible: presentation?.isVisible !== false,
+    };
+    if (slotInfoBefore) {
+      const hp = Number(slotInfoBefore?.hp);
+      const fainted = Boolean(slotInfoBefore?.fainted) || (Number.isFinite(hp) && hp <= 0);
+      if (fainted) {
+        next.isVisible = false;
+        next.isActive = false;
+      }
+    }
+    next.shouldAnimate = !ev?.silent && (next.modal || (next.isActive && next.isVisible));
+    return next;
+  }
+
   async _resolveVisual(ev) {
     try {
       return await this._resolveVisualState?.(ev);
@@ -582,11 +601,17 @@ export class BattleTimelineExecutor {
         const slot = ev.target?.slot ?? 0;
         const isMegaPairMarker = ev.mechanism === '-mega' && !String(ev.toSpecies || '').trim();
         if (isMegaPairMarker) break;
+        const slotInfoBefore = this._slotInfoFor(side, slot);
         const preName = this._slotName(side, slot);
         const toSpecies = String(ev.toSpecies || ev.to || '').trim();
         const visual = await this._resolveVisual(ev);
+        const formPresentation = this._resolveFormChangePresentation(
+          visual?.formChangePresentation || null,
+          ev,
+          slotInfoBefore,
+        );
         if (visual?.spriteUrl) {
-          const shouldShowSprite = visual?.formChangePresentation?.isVisible !== false;
+          const shouldShowSprite = formPresentation.isVisible !== false;
           await this._setBattlerSprite(side, visual.spriteUrl, { visible: shouldShowSprite });
         }
         let nextName = toSpecies;
@@ -604,10 +629,13 @@ export class BattleTimelineExecutor {
             ...formPatch,
           });
         }
-        await this._playFormChangePresentation(side, visual?.formChangePresentation || null);
+        await this._playFormChangePresentation(side, formPresentation);
         const changed = nextName && toId(nextName) !== toId(preName);
         const shouldShowFallback = ev.mechanism === '-formechange' && !nextName;
-        if (!ev.silent && (changed || shouldShowFallback)) {
+        const hpBefore = Number(slotInfoBefore?.hp);
+        const suppressMessageByFaint = Boolean(slotInfoBefore?.fainted)
+          || (Number.isFinite(hpBefore) && hpBefore <= 0);
+        if (!suppressMessageByFaint && !ev.silent && (changed || shouldShowFallback)) {
           const msg = this._buildFormChangeMessage(preName, nextName, ev.mechanism);
           if (msg) {
             this._showMsg(msg);

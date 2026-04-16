@@ -1,6 +1,6 @@
 # PKB Battle Presentation 구현 계획
 
-Last updated: 2026-04-15  
+Last updated: 2026-04-16  
 Target: `/workspaces/pokemon-battle`
 
 ---
@@ -220,6 +220,14 @@ Target: `/workspaces/pokemon-battle`
 
 ### Sprint 7. 배틀 완성도
 
+- **다음 세션 착수 순서(고정)**:
+  1. `M5` locale 네임스페이스 로더
+  2. `BA-17` 배틀 연출 타이밍 정확도 개선
+  3. `BA-14` 사이드 컨디션 연출
+  4. `BA-21` 선택 완료 후 대기 메시지 정합
+  5. `BA-22` 한국어/영어 메시지 완전 분리
+  6. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
+
 #### M5: Locale 네임스페이스 로더 (`src/battle-i18n/locale-manager.js` 신규)
 - **현황**: `assets/pokerogue/locales/ko/*.json` 완전 미사용. `timeline.js`가 한글 하드코딩.
 - **목표**: locale 파일 로드 → 배틀 메시지를 키 기반으로 조회
@@ -241,6 +249,32 @@ Target: `/workspaces/pokemon-battle`
 #### BA-14: 사이드 컨디션 연출 (`timeline.js`)
 - `side_start/end`: Stealth Rock, Spikes, Reflect, Light Screen 등 설치/해제 메시지
 - 영향: `showdown-engine.cjs`에서 이미 `side_start/end` 이벤트 생성하는지 확인 필요
+
+#### BA-21: 선택 완료 후 대기 메시지 정합 (`app.js`, `timeline.js`, `battle-message-ui-handler.js`)
+- **요구사항**: 한 플레이어가 선택을 끝낸 뒤 메시지창에 이상 문구 대신 `상대의 턴을 기다리는 중...` 표시
+- **목표 동작**:
+  - 한국어 UI: `상대의 턴을 기다리는 중...`
+  - 영어 UI: `Waiting for opponent's turn...`
+- **구현 메모**:
+  - `choice committed` 직후의 화면 전환(`command`→`message`) 경로에서 메시지 소스를 고정
+  - 턴 resolve 전까지 불필요한 battle.log 상단 문구가 끼어들지 않도록 우선순위 정리
+
+#### BA-22: 한국어/영어 메시지 완전 분리 (`locale-manager.js`, `timeline.js`, `showdown-engine.cjs`)
+- **요구사항**: 한국어 버전에서 영어 문구/영문 병기 제거 (영어 버전은 영어만 표시)
+- **목표 동작**:
+  - KO/폼체인지/날씨/특성 등 모든 배틀 메시지를 locale별 단일 언어로 출력
+  - 서버 로그의 KR/EN 병기 문자열(`... / ...`) 의존 제거
+- **구현 메모**:
+  - M5(locale 네임스페이스 로더)와 함께 메시지 키 중심 렌더링으로 통합
+  - `battle.log`는 구조화된 이벤트 중심으로 재해석하고, UI 출력은 locale layer가 단독 담당
+
+#### BA-23: 기술/날씨/필드 연출 완벽화 (추후) (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
+- **요구사항**: move/weather/terrain 연출을 PokeRogue 원본 체감에 맞게 정밀 보강
+- **범위(초안)**:
+  - 기술 이펙트/SE/메시지 타이밍의 원본 정합도 향상
+  - 날씨 시작/지속/종료 연출 및 메시지 품질 개선
+  - 필드(terrain/side condition 포함) 연출 누락 및 품질 보강
+- **우선순위**: M5/BA-17/BA-14/BA-21/BA-22 이후 후순위 착수
 
 #### ✅ BA-20: 폼체인지 연출 정합 (FormChangePhase/QuietFormChangePhase 분기 이식) — 완료 (2026-04-16)
 - **원본 분기 확인**:
@@ -270,6 +304,19 @@ Target: `/workspaces/pokemon-battle`
     - 파티 화면 item-trigger 폼체인지(modal) 분기
     - 비가시/비활성 폼체인지 분기
   - 회귀 점검: `npm run verify:stage22`, `npm run verify:passb` 모두 통과
+- **후속 안정화 (2026-04-16, 사용자 시연 피드백 반영)**:
+  - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`:
+    - `renderBattlerSprite()` 텍스처 교체 시 placeholder 강제 숨김 경로 제거(폼체인지 직전 깜빡임 제거)
+    - 새 텍스처 로드 성공 후 이전 프레임 텍스처 정리로 교체 안정화
+  - `src/app.js`:
+    - `resolveTimelineSwitchSpriteOverride()`를 `switch_in` 이벤트의 `ev.species` 우선으로 변경
+    - 원시가이오가/원시그란돈 시작 시 "일반 등장 → forme_change" 순서 체감 복원
+  - `src/battle-presentation/timeline.js`:
+    - `forme_change`에서 `_slotInfo` 기반 visibility/animate 재평가(같은 턴 KO 예정이어도 변신 시점 연출 유지)
+    - faint 이후 detailschange(복귀) 문구는 타임라인 메시지 억제(불필요한 "폼변화!" 제거)
+  - `server/showdown-engine.cjs`:
+    - `normalizeLogTextFromLine()`에서 `-formechange/detailschange`의 `[silent]` 로그를 완전 무시
+    - 동일 출력 배치에서 이미 `faint`된 ident의 후속 form/detailschange 로그도 무시해 정보창 오염 방지
 
 #### ✅ BA-15: 폼 체인지 연출 — 완료 (2026-04-15)
 - **원본 참조**:

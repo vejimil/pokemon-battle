@@ -129,6 +129,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         shadow,
         shadowVisibleByMetrics: false,
         currentUrl: '',
+        currentTextureKey: '',
         animTimer: null,
         frameTextureKeys: [],
         animMode: 'sheet',
@@ -174,6 +175,12 @@ export function createBattleShellSceneClass(Phaser, env) {
       }
       mount.frameTextureKeys = [];
       mount.animMode = 'sheet';
+    }
+
+    _clearFrameTexturesByKeys(keys = []) {
+      for (const texKey of keys) {
+        if (this.textures.exists(texKey)) this.textures.remove(texKey);
+      }
     }
 
     _buildFrameTexturesFromStrip(mount, keyPrefix, img, frameSize, frameCount) {
@@ -258,7 +265,11 @@ export function createBattleShellSceneClass(Phaser, env) {
         this._clearBattlerAnim(mount);
         mount.phaserSprite.setTexture('pkb-battler-placeholder').setVisible(false);
         this._clearBattlerFrameTextures(mount);
+        if (mount?.currentTextureKey && this.textures.exists(mount.currentTextureKey)) {
+          this.textures.remove(mount.currentTextureKey);
+        }
         mount.currentUrl = '';
+        mount.currentTextureKey = '';
         mount.metricsSnapshot = null;
         mount.shadowVisibleByMetrics = false;
         mount.shadow.setVisible(false);
@@ -269,20 +280,12 @@ export function createBattleShellSceneClass(Phaser, env) {
         this._logSpriteAnim(mount, 'skip reload (same url)', { url, mode: mount.animMode });
         return;
       }
+      const prevUrl = mount.currentUrl;
       mount.currentUrl = url;
       this._clearBattlerAnim(mount);
-
-      const key = `pkb-battler-${mount.name}`;
+      const prevFrameTextureKeys = [...(mount?.frameTextureKeys || [])];
+      const prevTextureKey = String(mount?.currentTextureKey || '');
       try {
-        // Switch to placeholder BEFORE removing the old texture.
-        // If Phaser renders between remove() and addImage(), it would try to access
-        // a null glTexture and throw. The placeholder is always a valid 1×1 texture.
-        mount.phaserSprite.setTexture('pkb-battler-placeholder').setVisible(false);
-        mount.shadowVisibleByMetrics = false;
-        mount.shadow.setVisible(false);
-        this._clearBattlerFrameTextures(mount);
-        if (this.textures.exists(key)) this.textures.remove(key);
-
         const img = await new Promise((resolve, reject) => {
           const i = new Image();
           i.onload = () => resolve(i);
@@ -299,7 +302,10 @@ export function createBattleShellSceneClass(Phaser, env) {
         // Force per-frame texture mode to avoid platform-specific sheet frame sticking
         // (observed as "first frame only" despite timer ticks).
         const maxTextureSize = this.renderer?.getMaxTextureSize?.() ?? Number.MAX_SAFE_INTEGER;
-        mount.frameTextureKeys = this._buildFrameTexturesFromStrip(mount, key, img, frameH, frameCount);
+        this._battlerTextureNonce = (this._battlerTextureNonce || 0) + 1;
+        const keyPrefix = `pkb-battler-${mount.name}-${this._battlerTextureNonce}`;
+        mount.frameTextureKeys = this._buildFrameTexturesFromStrip(mount, keyPrefix, img, frameH, frameCount);
+        mount.currentTextureKey = keyPrefix;
         mount.animMode = 'frames';
         this._logSpriteAnim(mount, 'loaded per-frame strip', {
           url,
@@ -332,7 +338,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           const firstFrameKey = mount.frameTextureKeys[0] || 'pkb-battler-placeholder';
           mount.phaserSprite.setTexture(firstFrameKey);
         } else {
-          mount.phaserSprite.setTexture(key, 0);
+          mount.phaserSprite.setTexture(mount.currentTextureKey, 0);
         }
         mount.phaserSprite
           .setOrigin(0.5, 1)
@@ -442,13 +448,25 @@ export function createBattleShellSceneClass(Phaser, env) {
         } else {
           this._logSpriteAnim(mount, 'animation disabled', { frameCount, delay, url });
         }
+
+        this._clearFrameTexturesByKeys(prevFrameTextureKeys);
+        if (prevTextureKey && prevTextureKey !== mount.currentTextureKey && this.textures.exists(prevTextureKey)) {
+          this.textures.remove(prevTextureKey);
+        }
       } catch (_err) {
         if (mount.currentUrl === url) {
-          this._clearBattlerFrameTextures(mount);
-          mount.metricsSnapshot = null;
-          mount.phaserSprite.setVisible(false);
-          mount.shadowVisibleByMetrics = false;
-          mount.shadow.setVisible(false);
+          if (prevFrameTextureKeys.length) {
+            mount.currentUrl = prevUrl;
+            mount.frameTextureKeys = prevFrameTextureKeys;
+            mount.currentTextureKey = prevTextureKey;
+          } else {
+            mount.currentUrl = '';
+            mount.currentTextureKey = '';
+            mount.metricsSnapshot = null;
+            mount.phaserSprite.setVisible(false);
+            mount.shadowVisibleByMetrics = false;
+            mount.shadow.setVisible(false);
+          }
         }
         this._logSpriteAnim(mount, 'load error', { url, error: _err?.message || String(_err) });
       }

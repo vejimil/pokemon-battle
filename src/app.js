@@ -1648,10 +1648,20 @@ function resolveTimelineEventMon(ev, battle = state.battle) {
 function resolveTimelineSwitchSpriteOverride(ev, battle = state.battle) {
   if (!ev || ev.type !== 'switch_in') return null;
   const mon = resolveTimelineEventMon(ev, battle);
-  if (!mon) return null;
-  const spriteId = resolveBattleRenderSpriteId(mon);
+  const switchSpecies = String(ev.species || '').trim();
+  let spriteId = '';
+  let shiny = false;
+  if (switchSpecies) {
+    const baseSpecies = mon?.baseSpecies || mon?.originalData?.baseSpecies || switchSpecies;
+    spriteId = getAutoSpriteIdForSpecies(switchSpecies, mon?.gender || '', baseSpecies);
+    shiny = Boolean(mon?.shiny);
+  }
+  if (!spriteId && mon) {
+    spriteId = resolveBattleRenderSpriteId(mon);
+    shiny = Boolean(mon.shiny);
+  }
   if (!spriteId) return null;
-  return { spriteId, shiny: Boolean(mon.shiny) };
+  return { spriteId, shiny };
 }
 
 function buildTimelineStaticInfoPatch(mon) {
@@ -1684,7 +1694,11 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
     ? sideState.team.indexOf(mon)
     : -1;
   const isActive = Number.isInteger(activeTeamIndex) && activeTeamIndex >= 0 && teamIndex === activeTeamIndex;
-  const isVisible = Boolean(isActive && mon && Number(mon.hp || 0) > 0 && !mon.fainted);
+  // The timeline plays against the adopted post-turn snapshot, so hp/fainted can
+  // already reflect future events (e.g. KO later in the same turn). For presentation
+  // branching we only gate visibility by "currently active" here, then refine using
+  // timeline slot state at playback time.
+  const isVisible = Boolean(isActive);
   const infoPatch = buildTimelineStaticInfoPatch(mon) || {};
   if (ev.type === 'forme_change') {
     // Forme change name comes from event stream (detailschange) and can differ from
