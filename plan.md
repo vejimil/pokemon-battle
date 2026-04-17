@@ -227,9 +227,12 @@ Target: `/workspaces/pokemon-battle`
   4. `BA-21` 선택 완료 후 대기 메시지 정합 ✅ 완료 (2026-04-16)
   5. `BA-22` 한국어/영어 메시지 완전 분리 ✅ 완료 (2026-04-16)
 - **다음 세션 착수 순서(고정)**:
-  1. `BA-27` 타임라인 재생 중 선택 입력 블록
-  2. `BA-23` 기술/날씨/필드 연출 완벽화 (이후)
-  3. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (이후)
+  1. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
+  2. `BA-26` 배틀 내 폼체인지 표시명 고정 (이후)
+  3. `BA-24` 테라스탈 구현 (이후)
+  4. `BA-25` 다이맥스 구현 (이후)
+  5. `BA-23` 기술/날씨/필드 연출 완벽화 (이후)
+  6. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (이후)
 
 #### ✅ M5: Locale 네임스페이스 로더 — 완료 (2026-04-16)
 - **원본 참조**:
@@ -306,14 +309,20 @@ Target: `/workspaces/pokemon-battle`
   - `forme_change` 핸들러: `preNameRaw` 분리, raw 영어명 기준 `changed` 비교, infoPatch에는 localized `displayName` 적용
   - `_buildFormChangeMessage()`: `rawPre` 파라미터 추가, `this._slotNameRaw(null, 0)` 버그 수정 → raw 영어명 비교로 전환
 
-#### 🔜 BA-27: 타임라인 재생 중 선택 입력 블록 (`app.js`, `timeline.js`)
+#### ✅ BA-27: 타임라인 재생 중 선택 입력 블록 (`app.js`) — 완료 (2026-04-17)
 - **요구사항**: 배틀 연출(타임라인)이 재생되는 동안에는 커맨드/기술/파티 선택 입력을 받지 않아야 함
 - **현재 문제**: 타임라인 재생 중에도 선택 UI가 반응하거나, 빠르게 탭하면 다음 행동을 즉시 입력할 수 있음
-- **구현 메모(초안)**:
-  - `playTimelineAcrossActiveViews()` 시작 시 `ui.inputLocked = true` 세팅, `onComplete`에서 해제
-  - `syncBattleUiState()` / `renderBattle()`에서 inputLocked 상태를 커맨드·기술·파티 핸들러에 반영
-  - `handleBattleChoiceCommitted()` 앞에도 inputLocked 가드 추가
-- **우선순위**: BA-22 직후 착수
+- **반영 내용**:
+  - `playTimelineAcrossActiveViews()` 시작 즉시 `ui.inputLocked=true`, 완료(onComplete 직전) 및 예외/finally 경로에서 `false` 해제
+  - `syncBattleUiState()`에서 input lock 시 인터랙티브 모드(command/fight/party/target) 유지
+  - `getBattleDisplayMode()` 추가: input lock 동안 렌더 모드를 강제 `message`로 바꿔 선택창(command/fight/party/target) 자체를 숨김
+  - `renderBattleMessagesWindow`/`buildBattleMessageModel`에서 input lock 중 waiting 문구 대신 battle.log 메시지 우선 출력
+  - `handleBattleChoiceCommitted()` 진입 가드 및 커밋 호출 경로 선가드 추가
+  - `renderBattle()` auto-resolve 조건에 `!ui.inputLocked` 가드 추가(타임라인 재생 중 중첩 턴 해석 방지)
+- **검증**:
+  - `node --check src/app.js` PASS
+  - `npm run verify:stage22` PASS
+  - `npm run verify:passb` PASS
 
 #### BA-23: 기술/날씨/필드 연출 완벽화 (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
 - **요구사항**: move/weather/terrain 연출을 PokeRogue 원본 체감에 맞게 정밀 보강

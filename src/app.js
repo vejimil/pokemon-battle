@@ -1532,6 +1532,7 @@ const state = {
     perspective: 0,
     modeByPlayer: {0: 'command', 1: 'command'},
     moveDetailByPlayer: {0: {}, 1: {}},
+    inputLocked: false,
     timelineSpriteOverrides: {},
     passPrompt: '',
     lastFlyoutKey: '',
@@ -1782,83 +1783,97 @@ function primeTimelineSpriteOverrides(events = [], battle = state.battle) {
 }
 
 async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, initialSlotInfo = {}, onComplete = () => {}, onInputRequired = () => {}, preHideSwitchInSides = false } = {}) {
+  setBattleInputLocked(true, state.battle, { rerender: true });
+  let completed = false;
   clearTimelineSpriteOverrides();
   if (!Array.isArray(events) || !events.length) {
+    setBattleInputLocked(false, state.battle, { rerender: false });
+    completed = true;
     onComplete();
     return;
   }
-  const localeEnabled = FLAGS.battleLocaleV1 === true;
-  const localeLanguage = state.language || 'ko';
-  if (localeEnabled) {
-    battleLocaleManager.setLanguage(localeLanguage);
-    await battleLocaleManager.loadLocale(localeLanguage);
-  }
-  primeTimelineSpriteOverrides(events, state.battle);
-  const configs = getTimelineExecutorConfigs().filter(cfg => cfg.scene());
-  if (!configs.length) {
-    onComplete();
-    return;
-  }
-  let inputHandled = false;
-  const handleInputRequired = requestType => {
-    if (inputHandled) return;
-    inputHandled = true;
-    onInputRequired(requestType);
-  };
-  const switchInSides = [...new Set(
-    events
-      .filter(ev => ev?.type === 'switch_in')
-      .map(ev => ev.side)
-      .filter(side => side === 'p1' || side === 'p2')
-  )];
-  if (switchInSides.length) {
-    await Promise.all(configs.flatMap(cfg => {
-      const scene = cfg.scene?.();
-      if (!scene?.prepareSwitchInBattler) return [];
-      const perspective = cfg.playerSide === 'p2' ? 1 : 0;
-      return switchInSides.map(async side => {
-        const override = getTimelineSpriteOverride(side);
-        if (!override?.spriteId) return;
-        const sideIndex = side === 'p2' ? 1 : 0;
-        const facing = sideIndex === perspective ? 'back' : 'front';
-        const spriteUrl = spritePath(override.spriteId, facing, Boolean(override.shiny));
-        try {
-          await scene.prepareSwitchInBattler(side, spriteUrl);
-        } catch (_error) {}
-      });
-    }));
-  }
-  if (preHideSwitchInSides) {
-    const switchSides = [...new Set(
+  try {
+    const localeEnabled = FLAGS.battleLocaleV1 === true;
+    const localeLanguage = state.language || 'ko';
+    if (localeEnabled) {
+      battleLocaleManager.setLanguage(localeLanguage);
+      await battleLocaleManager.loadLocale(localeLanguage);
+    }
+    primeTimelineSpriteOverrides(events, state.battle);
+    const configs = getTimelineExecutorConfigs().filter(cfg => cfg.scene());
+    if (!configs.length) {
+      setBattleInputLocked(false, state.battle, { rerender: false });
+      completed = true;
+      onComplete();
+      return;
+    }
+    let inputHandled = false;
+    const handleInputRequired = requestType => {
+      if (inputHandled) return;
+      inputHandled = true;
+      onInputRequired(requestType);
+    };
+    const switchInSides = [...new Set(
       events
-        .filter(ev => ev?.type === 'switch_in' && ev?.fromBall)
+        .filter(ev => ev?.type === 'switch_in')
         .map(ev => ev.side)
         .filter(side => side === 'p1' || side === 'p2')
     )];
-    for (const cfg of configs) {
-      const scene = cfg.scene?.();
-      if (!scene?.concealBattler) continue;
-      switchSides.forEach(side => {
-        try { scene.concealBattler(side); } catch (_error) {}
-      });
+    if (switchInSides.length) {
+      await Promise.all(configs.flatMap(cfg => {
+        const scene = cfg.scene?.();
+        if (!scene?.prepareSwitchInBattler) return [];
+        const perspective = cfg.playerSide === 'p2' ? 1 : 0;
+        return switchInSides.map(async side => {
+          const override = getTimelineSpriteOverride(side);
+          if (!override?.spriteId) return;
+          const sideIndex = side === 'p2' ? 1 : 0;
+          const facing = sideIndex === perspective ? 'back' : 'front';
+          const spriteUrl = spritePath(override.spriteId, facing, Boolean(override.shiny));
+          try {
+            await scene.prepareSwitchInBattler(side, spriteUrl);
+          } catch (_error) {}
+        });
+      }));
+    }
+    if (preHideSwitchInSides) {
+      const switchSides = [...new Set(
+        events
+          .filter(ev => ev?.type === 'switch_in' && ev?.fromBall)
+          .map(ev => ev.side)
+          .filter(side => side === 'p1' || side === 'p2')
+      )];
+      for (const cfg of configs) {
+        const scene = cfg.scene?.();
+        if (!scene?.concealBattler) continue;
+        switchSides.forEach(side => {
+          try { scene.concealBattler(side); } catch (_error) {}
+        });
+      }
+    }
+    const executors = configs.map(cfg => new BattleTimelineExecutor({
+      onComplete: () => {},
+      applySnapshot: () => {},
+      onInputRequired: handleInputRequired,
+      initialNames,
+      initialSlotInfo,
+      localeManager: localeEnabled ? battleLocaleManager : null,
+      localeLanguage,
+      resolveVisualState: ev => resolveTimelineEventVisualState(ev, { playerSide: cfg.playerSide, battle: state.battle }),
+      // BA-22: localize raw English names from Showdown events into the UI language
+      localizeMonName: name => displaySpeciesName(name) || name,
+      localizeMoveName: name => displayMoveName(name) || name,
+      ...cfg,
+    }));
+    await Promise.all(executors.map(executor => executor.play(events)));
+    setBattleInputLocked(false, state.battle, { rerender: false });
+    completed = true;
+    onComplete();
+  } finally {
+    if (!completed && isBattleInputLocked(state.battle)) {
+      setBattleInputLocked(false, state.battle, { rerender: true });
     }
   }
-  const executors = configs.map(cfg => new BattleTimelineExecutor({
-    onComplete: () => {},
-    applySnapshot: () => {},
-    onInputRequired: handleInputRequired,
-    initialNames,
-    initialSlotInfo,
-    localeManager: localeEnabled ? battleLocaleManager : null,
-    localeLanguage,
-    resolveVisualState: ev => resolveTimelineEventVisualState(ev, { playerSide: cfg.playerSide, battle: state.battle }),
-    // BA-22: localize raw English names from Showdown events into the UI language
-    localizeMonName: name => displaySpeciesName(name) || name,
-    localizeMoveName: name => displayMoveName(name) || name,
-    ...cfg,
-  }));
-  await Promise.all(executors.map(executor => executor.play(events)));
-  onComplete();
 }
 
 function hidePhaserBattleRenderers() {
@@ -5872,11 +5887,24 @@ function getBattleUiState(battle = state.battle) {
   if (!Number.isInteger(ui.perspective)) ui.perspective = 0;
   ui.modeByPlayer = ui.modeByPlayer || {0: 'command', 1: 'command'};
   ui.moveDetailByPlayer = ui.moveDetailByPlayer || {0: {}, 1: {}};
+  if (typeof ui.inputLocked !== 'boolean') ui.inputLocked = false;
   ui.timelineSpriteOverrides = ui.timelineSpriteOverrides || {};
   if (typeof ui.passPrompt !== 'string') ui.passPrompt = '';
   if (typeof ui.lastFlyoutKey !== 'string') ui.lastFlyoutKey = '';
   if (!('flyoutTimer' in ui)) ui.flyoutTimer = null;
   return ui;
+}
+
+function isBattleInputLocked(battle = state.battle) {
+  const ui = getBattleUiState(battle);
+  return Boolean(ui?.inputLocked);
+}
+
+function setBattleInputLocked(locked, battle = state.battle, { rerender = false } = {}) {
+  const ui = getBattleUiState(battle);
+  if (!ui) return;
+  ui.inputLocked = Boolean(locked);
+  if (rerender) renderBattle();
 }
 
 function getDefaultBattleUiModeForPlayer(player, battle = state.battle) {
@@ -5885,6 +5913,13 @@ function getDefaultBattleUiModeForPlayer(player, battle = state.battle) {
   if (!request || request.wait || request.teamPreview) return 'message';
   if (isEngineForceSwitchRequest(request)) return 'party';
   return 'command';
+}
+
+function getBattleDisplayMode(player, battle = state.battle) {
+  const ui = getBattleUiState(battle);
+  const mode = ui?.modeByPlayer?.[player] || getDefaultBattleUiModeForPlayer(player, battle);
+  if (ui?.inputLocked && ['command', 'fight', 'party', 'target'].includes(mode)) return 'message';
+  return mode;
 }
 
 function syncBattleUiState(battle = state.battle) {
@@ -5908,6 +5943,10 @@ function syncBattleUiState(battle = state.battle) {
     const current = ui.modeByPlayer[player] || defaultMode;
     if (battle.winner || !request || request.wait || request.teamPreview) {
       ui.modeByPlayer[player] = 'message';
+      return;
+    }
+    if (ui.inputLocked && ['command', 'fight', 'party', 'target'].includes(current)) {
+      ui.modeByPlayer[player] = current;
       return;
     }
     if (isEngineForceSwitchRequest(request)) {
@@ -5948,6 +5987,7 @@ function resetBattlePresentationState({perspective = 0, passPrompt = ''} = {}) {
   ui.perspective = clamp(Number(perspective || 0), 0, 1);
   ui.modeByPlayer = {0: 'command', 1: 'command'};
   ui.moveDetailByPlayer = {0: {}, 1: {}};
+  ui.inputLocked = false;
   ui.timelineSpriteOverrides = {};
   ui.passPrompt = passPrompt || '';
   ui.lastFlyoutKey = '';
@@ -5960,6 +6000,7 @@ function resetBattlePresentationState({perspective = 0, passPrompt = ''} = {}) {
 function handleBattleChoiceCommitted(player, battle = state.battle) {
   const ui = getBattleUiState(battle);
   if (!ui || !battle) return;
+  if (ui.inputLocked) return;
   ui.modeByPlayer[player] = 'message';
 
   // Dual-view mode: both player screens stay visible simultaneously.
@@ -6010,8 +6051,9 @@ function renderBattlePerspectiveTabs(battle) {
 
 function renderBattleMessagesWindow(battle, player) {
   if (!els.battleMessageWindow) return;
+  const inputLocked = isBattleInputLocked(battle);
   const request = getEngineRequestForPlayer(player, battle);
-  const currentMode = state.battleUi?.modeByPlayer?.[player] || 'message';
+  const currentMode = getBattleDisplayMode(player, battle);
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
   const pokemonName = displaySpeciesName(getBattleRenderSpeciesName(activeMon) || activeMon?.species || 'Pokémon');
@@ -6029,22 +6071,22 @@ function renderBattleMessagesWindow(battle, player) {
               ? lang('기술을 선택하세요.', 'Choose a move.')
               : currentMode === 'party'
                 ? lang('교체할 포켓몬을 선택하세요.', 'Choose a Pokémon to switch in.')
-                : currentMode === 'target'
-                  ? lang('대상을 선택하세요.', 'Choose a target.')
-                  : currentMode === 'message'
-                    ? lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn...")
+                  : currentMode === 'target'
+                    ? lang('대상을 선택하세요.', 'Choose a target.')
+                    : currentMode === 'message'
+                    ? (inputLocked ? '' : lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn..."))
                     : lang('행동을 선택하세요.', 'Choose an action.');
   const messageLines = (battle.log || []).slice(0, 2).map(line => localizeText(line.rawText || line.text || '').trim()).filter(Boolean);
   // BA-21: waiting for opponent — waiting message takes priority over battle.log lines
-  const waitingForOpponent = !battle.winner && currentMode === 'message' && Boolean(request);
+  const waitingForOpponent = !inputLocked && !battle.winner && currentMode === 'message' && Boolean(request);
   const usePromptAsPrimary = currentMode === 'command' || waitingForOpponent || !messageLines.length;
   const primaryText = usePromptAsPrimary ? promptText : messageLines[0];
   const secondaryText = waitingForOpponent
     ? ''
     : usePromptAsPrimary
       ? (messageLines[0] || '')
-      : (messageLines[1] || (promptText !== primaryText ? promptText : ''));
-  const showPromptIcon = !battle.winner && !waitingForOpponent && Boolean(request) && !request.wait;
+      : (messageLines[1] || (inputLocked ? '' : (promptText !== primaryText ? promptText : '')));
+  const showPromptIcon = !inputLocked && !battle.winner && !waitingForOpponent && Boolean(request) && !request.wait;
   els.battleMessageWindow.innerHTML = `
     <div class="pkbattle-message-stack ${currentMode === 'command' ? 'is-command' : ''}">
       <div class="pkbattle-message-primary">${primaryText}</div>
@@ -6254,6 +6296,7 @@ function renderBattleFightWindow(battle, player) {
   const choice = getEngineDraftChoice(player, activeIndex, battle);
   const availableZMoves = getAvailableEngineZMoveOptions(moveRequest);
   const forcedContinuation = isEngineForcedContinuationRequest(moveRequest);
+  const inputLocked = isBattleInputLocked(battle);
   const ui = getBattleUiState(battle);
   if (!Number.isInteger(ui.moveDetailByPlayer[player]?.[activeIndex])) ui.moveDetailByPlayer[player][activeIndex] = 0;
   const detailIndex = clamp(Number(ui.moveDetailByPlayer[player][activeIndex] || 0), 0, Math.max(((moveRequest?.moves || []).length || 1) - 1, 0));
@@ -6278,15 +6321,16 @@ function renderBattleFightWindow(battle, player) {
     backBtn.type = 'button';
     backBtn.className = 'pkbattle-inline-action';
     backBtn.textContent = lang('뒤로', 'Back');
-    backBtn.addEventListener('click', () => setBattleUiMode(player, 'command'));
+    backBtn.disabled = inputLocked;
+    if (!inputLocked) backBtn.addEventListener('click', () => setBattleUiMode(player, 'command'));
     actions.appendChild(backBtn);
 
     const switchBtn = document.createElement('button');
     switchBtn.type = 'button';
     switchBtn.className = `pkbattle-inline-action ${choice.kind === 'switch' ? 'active' : ''}`;
-    switchBtn.disabled = !canSwitch;
+    switchBtn.disabled = inputLocked || !canSwitch;
     switchBtn.textContent = lang('포켓몬', 'Pokémon');
-    switchBtn.addEventListener('click', () => setBattleUiMode(player, 'party'));
+    if (!switchBtn.disabled) switchBtn.addEventListener('click', () => setBattleUiMode(player, 'party'));
     actions.appendChild(switchBtn);
 
     if (!forcedContinuation && moveRequest?.canTerastallize) {
@@ -6294,11 +6338,14 @@ function renderBattleFightWindow(battle, player) {
       teraBtn.type = 'button';
       teraBtn.className = `pkbattle-inline-action pkbattle-inline-action-gimmick ${choice.tera ? 'active' : ''}`;
       teraBtn.innerHTML = `<span class="pkbattle-tera-icon"></span><span>${lang('테라', 'Tera')}</span>`;
+      teraBtn.disabled = inputLocked;
       renderTeraButtonIcon(teraBtn.querySelector('.pkbattle-tera-icon'), moveRequest.canTerastallize);
-      teraBtn.addEventListener('click', () => {
-        if (!toggleEngineDraftFlag(player, activeIndex, 'tera', battle)) return;
-        renderBattle();
-      });
+      if (!teraBtn.disabled) {
+        teraBtn.addEventListener('click', () => {
+          if (!toggleEngineDraftFlag(player, activeIndex, 'tera', battle)) return;
+          renderBattle();
+        });
+      }
       actions.appendChild(teraBtn);
     }
 
@@ -6314,10 +6361,13 @@ function renderBattleFightWindow(battle, player) {
       btn.type = 'button';
       btn.className = `pkbattle-inline-action pkbattle-inline-action-gimmick ${choice[flag] ? 'active' : ''}`;
       btn.textContent = label;
-      btn.addEventListener('click', () => {
-        if (!toggleEngineDraftFlag(player, activeIndex, flag, battle)) return;
-        renderBattle();
-      });
+      btn.disabled = inputLocked;
+      if (!btn.disabled) {
+        btn.addEventListener('click', () => {
+          if (!toggleEngineDraftFlag(player, activeIndex, flag, battle)) return;
+          renderBattle();
+        });
+      }
       actions.appendChild(btn);
     });
   }
@@ -6362,7 +6412,7 @@ function renderBattleFightWindow(battle, player) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `pkbattle-move-card pkbattle-move-textline ${choice.kind === 'move' && choice.moveIndex === moveIndex ? 'active' : ''}`;
-    button.disabled = !selectable || forcedContinuation;
+    button.disabled = inputLocked || !selectable || forcedContinuation;
     button.innerHTML = `<strong>${displayMoveName((choice.z && moveRequest?.canZMove?.[moveIndex]?.move) ? moveRequest.canZMove[moveIndex].move : moveName)}</strong>`;
     Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
       if (!button.isConnected) return;
@@ -6375,6 +6425,7 @@ function renderBattleFightWindow(battle, player) {
     button.addEventListener('focus', () => updateMoveDetail(moveIndex));
     if (!button.disabled) {
       button.addEventListener('click', () => {
+        if (isBattleInputLocked(battle)) return;
         const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle);
         if (!nextChoice) return;
         setEnginePendingChoice(player, activeIndex, nextChoice, battle);
@@ -6396,6 +6447,7 @@ function renderBattleCommandWindow(battle, player) {
   const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
+  const inputLocked = isBattleInputLocked(battle);
   const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
   container.innerHTML = `
     <div class="pkbattle-command-body pkbattle-command-shell" data-species="${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}">
@@ -6411,18 +6463,21 @@ function renderBattleCommandWindow(battle, player) {
     teraChip.title = `${lang('테라스탈', 'Terastallize')} · ${displayType(moveRequest.canTerastallize)}`;
     teraChip.setAttribute('aria-label', teraChip.title);
     teraChip.innerHTML = `<span class="pkbattle-tera-icon"></span>`;
+    teraChip.disabled = inputLocked;
     renderTeraButtonIcon(teraChip.querySelector('.pkbattle-tera-icon'), moveRequest.canTerastallize);
-    teraChip.addEventListener('click', () => {
-      if (!toggleEngineDraftFlag(player, activeIndex, 'tera', battle)) return;
-      renderBattle();
-    });
+    if (!teraChip.disabled) {
+      teraChip.addEventListener('click', () => {
+        if (!toggleEngineDraftFlag(player, activeIndex, 'tera', battle)) return;
+        renderBattle();
+      });
+    }
     shell.appendChild(teraChip);
   }
 
   const commands = [
-    {key: 'fight', title: lang('싸운다', 'Fight'), disabled: false, onClick: () => setBattleUiMode(player, 'fight')},
+    {key: 'fight', title: lang('싸운다', 'Fight'), disabled: inputLocked, onClick: () => setBattleUiMode(player, 'fight')},
     {key: 'ball', title: lang('볼', 'Ball'), disabled: true, onClick: null},
-    {key: 'pokemon', title: lang('포켓몬', 'Pokémon'), disabled: !canSwitch, onClick: () => setBattleUiMode(player, 'party')},
+    {key: 'pokemon', title: lang('포켓몬', 'Pokémon'), disabled: inputLocked || !canSwitch, onClick: () => setBattleUiMode(player, 'party')},
     {key: 'run', title: lang('도망', 'Run'), disabled: true, onClick: null},
   ];
 
@@ -6432,7 +6487,7 @@ function renderBattleCommandWindow(battle, player) {
     button.className = `pkbattle-command-btn pkbattle-command-${command.key} ${index === 0 ? 'active' : ''}`;
     button.disabled = command.disabled;
     button.innerHTML = `<strong>${command.title}</strong>`;
-    if (command.onClick) button.addEventListener('click', command.onClick);
+    if (!command.disabled && command.onClick) button.addEventListener('click', command.onClick);
     grid.appendChild(button);
   });
 }
@@ -6446,6 +6501,7 @@ function renderBattlePartyWindow(battle, player) {
   const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
   const forced = isEngineForceSwitchRequest(request);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
+  const inputLocked = isBattleInputLocked(battle);
   container.innerHTML = `
     <div class="pkbattle-party-body pkbattle-party-layout pkbattle-party-layout-rogue">
       <div class="pkbattle-party-heading">
@@ -6464,7 +6520,8 @@ function renderBattlePartyWindow(battle, player) {
     backBtn.type = 'button';
     backBtn.className = 'pkbattle-inline-action';
     backBtn.textContent = lang('취소', 'Cancel');
-    backBtn.addEventListener('click', () => setBattleUiMode(player, 'command'));
+    backBtn.disabled = inputLocked;
+    if (!inputLocked) backBtn.addEventListener('click', () => setBattleUiMode(player, 'command'));
     footer.appendChild(backBtn);
   } else {
     const forcedNote = document.createElement('div');
@@ -6481,6 +6538,7 @@ function renderBattlePartyWindow(battle, player) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `pkbattle-party-card ${currentChoice.kind === 'switch' && currentChoice.switchTo === index ? 'active' : ''}`;
+    button.disabled = inputLocked;
     const sprite = document.createElement('div');
     button.appendChild(sprite);
     renderAnimatedSprite(sprite, {spriteId: resolveBattleRenderSpriteId(mon), facing: 'front', shiny: mon.shiny, size: 'small'});
@@ -6491,11 +6549,14 @@ function renderBattlePartyWindow(battle, player) {
       <div class="pkbattle-party-card-meta">${badgeText ? `<span class="pkbattle-mini-badge">${badgeText}</span>` : `<span class="pkbattle-mini-badge">${lang('교체 가능', 'Ready to switch')}</span>`}</div>
       <div class="pkbattle-party-card-hp-row"><span class="pkbattle-party-card-hptext">HP ${mon.hp}/${mon.maxHp}</span><div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div></div>`;
     button.appendChild(content);
-    button.addEventListener('click', () => {
-      setEnginePendingChoice(player, activeIndex, {...createEmptyBattleChoice(), kind: 'switch', switchTo: index}, battle);
-      handleBattleChoiceCommitted(player, battle);
-      renderBattle();
-    });
+    if (!button.disabled) {
+      button.addEventListener('click', () => {
+        if (isBattleInputLocked(battle)) return;
+        setEnginePendingChoice(player, activeIndex, {...createEmptyBattleChoice(), kind: 'switch', switchTo: index}, battle);
+        handleBattleChoiceCommitted(player, battle);
+        renderBattle();
+      });
+    }
     grid.appendChild(button);
   });
 }
@@ -6528,7 +6589,7 @@ function renderBattleBottomWindows(battle, player) {
   const bottom = els.battleBottom;
   const container = els.battleStateWindow;
   if (!ui || !bottom || !container) return;
-  const mode = ui.modeByPlayer[player] || getDefaultBattleUiModeForPlayer(player, battle);
+  const mode = getBattleDisplayMode(player, battle);
   bottom.classList.remove('mode-message', 'mode-command', 'mode-fight', 'mode-party', 'mode-target');
   bottom.classList.add(`mode-${mode}`);
   container.className = 'pkbattle-window pkbattle-state-window';
@@ -6606,8 +6667,9 @@ function updateBattleAbilityBarState(battle) {
 }
 
 function buildBattleMessageModel(battle, player) {
+  const inputLocked = isBattleInputLocked(battle);
   const request = getEngineRequestForPlayer(player, battle);
-  const currentMode = state.battleUi?.modeByPlayer?.[player] || 'message';
+  const currentMode = getBattleDisplayMode(player, battle);
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
   const pokemonName = displaySpeciesName(getBattleRenderSpeciesName(activeMon) || activeMon?.species || 'Pokémon');
@@ -6628,23 +6690,23 @@ function buildBattleMessageModel(battle, player) {
                 : currentMode === 'target'
                   ? lang('대상을 선택하세요.', 'Choose a target.')
                   : currentMode === 'message'
-                    ? lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn...")
+                    ? (inputLocked ? '' : lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn..."))
                     : lang('행동을 선택하세요.', 'Choose an action.');
   const messageLines = (battle.log || []).slice(0, 2).map(line => localizeText(line.rawText || line.text || '').trim()).filter(Boolean);
-  const interactiveMode = !battle.winner && !request?.wait && ['command', 'fight', 'party', 'target'].includes(currentMode);
+  const interactiveMode = !inputLocked && !battle.winner && !request?.wait && ['command', 'fight', 'party', 'target'].includes(currentMode);
   // BA-21: player committed and waiting for opponent — waiting message takes priority over battle.log lines
-  const waitingForOpponent = !battle.winner && currentMode === 'message' && Boolean(request);
+  const waitingForOpponent = !inputLocked && !battle.winner && currentMode === 'message' && Boolean(request);
   const usePromptAsPrimary = interactiveMode || waitingForOpponent || !messageLines.length;
   const primaryText = usePromptAsPrimary ? promptText : messageLines[0];
   const secondaryText = (interactiveMode || waitingForOpponent)
     ? ''
     : usePromptAsPrimary
       ? (messageLines[0] || '')
-      : (messageLines[1] || (promptText !== primaryText ? promptText : ''));
+      : (messageLines[1] || (inputLocked ? '' : (promptText !== primaryText ? promptText : '')));
   return {
     primary: primaryText,
     secondary: secondaryText,
-    showPrompt: !interactiveMode && !waitingForOpponent && !battle.winner && Boolean(messageLines.length || (request?.wait && promptText)),
+    showPrompt: !inputLocked && !interactiveMode && !waitingForOpponent && !battle.winner && Boolean(messageLines.length || (request?.wait && promptText)),
   };
 }
 
@@ -6707,6 +6769,7 @@ function buildPhaserCommandWindowModel(battle, player) {
   const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
+  const inputLocked = isBattleInputLocked(battle);
   const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
   const pokemonName = displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon');
   return {
@@ -6715,16 +6778,16 @@ function buildPhaserCommandWindowModel(battle, player) {
     title: `${side?.name || `P${player + 1}`} · ${pokemonName}`,
     prompt: lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`),
     commands: [
-      {label: lang('싸운다', 'Fight'), sublabel: lang('기술 선택', 'Choose a move'), disabled: false, active: selectedChoice.kind !== 'switch', action: {type: 'command', key: 'fight'}},
+      {label: lang('싸운다', 'Fight'), sublabel: lang('기술 선택', 'Choose a move'), disabled: inputLocked, active: selectedChoice.kind !== 'switch', action: {type: 'command', key: 'fight'}},
       {label: lang('볼', 'Ball'), sublabel: lang('사용 안 함', 'Unused'), disabled: true, action: null},
-      {label: lang('포켓몬', 'Pokémon'), sublabel: canSwitch ? lang('교체', 'Switch') : lang('불가', 'Unavailable'), disabled: !canSwitch, active: selectedChoice.kind === 'switch', action: {type: 'command', key: 'party'}},
+      {label: lang('포켓몬', 'Pokémon'), sublabel: canSwitch ? lang('교체', 'Switch') : lang('불가', 'Unavailable'), disabled: inputLocked || !canSwitch, active: selectedChoice.kind === 'switch', action: {type: 'command', key: 'party'}},
       {label: lang('도망', 'Run'), sublabel: lang('사용 안 함', 'Unused'), disabled: true, action: null},
     ],
     teraToggle: moveRequest?.canTerastallize ? {
       label: 'Tera',
       type: toId(moveRequest.canTerastallize) || 'unknown',
       active: Boolean(selectedChoice.tera),
-      disabled: false,
+      disabled: inputLocked,
       action: {type: 'toggle', flag: 'tera'},
     } : null,
   };
@@ -6739,6 +6802,7 @@ function buildPhaserFightWindowModel(battle, player) {
   const choice = getEngineDraftChoice(player, activeIndex, battle);
   const availableZMoves = getAvailableEngineZMoveOptions(moveRequest);
   const forcedContinuation = isEngineForcedContinuationRequest(moveRequest);
+  const inputLocked = isBattleInputLocked(battle);
   const canSwitch = !forcedContinuation && canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   const ui = getBattleUiState(battle);
   ui.moveDetailByPlayer = ui.moveDetailByPlayer || {0: {}, 1: {}};
@@ -6752,7 +6816,7 @@ function buildPhaserFightWindowModel(battle, player) {
     return {
       label: displayMoveName(useZLabel ? moveRequest.canZMove[moveIndex].move : moveName),
       sublabel: `${displayType(moveInfo?.type || slotInfo?.type || '') || '—'} · PP ${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}`,
-      disabled: !isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex),
+      disabled: inputLocked || !isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex),
       active: choice.kind === 'move' && choice.moveIndex === moveIndex,
       focused: detailIndex === moveIndex,
       action: {type: 'move', moveIndex},
@@ -6760,11 +6824,11 @@ function buildPhaserFightWindowModel(battle, player) {
     };
   });
   const toggles = [];
-  if (!forcedContinuation && moveRequest?.canTerastallize) toggles.push({label: 'Tera', active: Boolean(choice.tera), disabled: false, action: {type: 'toggle', flag: 'tera'}, kind: 'tera', type: toId(moveRequest.canTerastallize) || 'unknown'});
-  if (!forcedContinuation && availableZMoves.length) toggles.push({label: 'Z', active: Boolean(choice.z), disabled: false, action: {type: 'toggle', flag: 'z'}, kind: 'text'});
-  if (!forcedContinuation && moveRequest?.canMegaEvo) toggles.push({label: lang('메가', 'Mega'), active: Boolean(choice.mega), disabled: false, action: {type: 'toggle', flag: 'mega'}, kind: 'text'});
-  if (!forcedContinuation && moveRequest?.canUltraBurst) toggles.push({label: lang('울트라', 'Ultra'), active: Boolean(choice.ultra), disabled: false, action: {type: 'toggle', flag: 'ultra'}, kind: 'text'});
-  if (!forcedContinuation && moveRequest?.canDynamax && runtimeSupportsDynamax()) toggles.push({label: 'Dmax', active: Boolean(choice.dynamax), disabled: false, action: {type: 'toggle', flag: 'dynamax'}, kind: 'text'});
+  if (!forcedContinuation && moveRequest?.canTerastallize) toggles.push({label: 'Tera', active: Boolean(choice.tera), disabled: inputLocked, action: {type: 'toggle', flag: 'tera'}, kind: 'tera', type: toId(moveRequest.canTerastallize) || 'unknown'});
+  if (!forcedContinuation && availableZMoves.length) toggles.push({label: 'Z', active: Boolean(choice.z), disabled: inputLocked, action: {type: 'toggle', flag: 'z'}, kind: 'text'});
+  if (!forcedContinuation && moveRequest?.canMegaEvo) toggles.push({label: lang('메가', 'Mega'), active: Boolean(choice.mega), disabled: inputLocked, action: {type: 'toggle', flag: 'mega'}, kind: 'text'});
+  if (!forcedContinuation && moveRequest?.canUltraBurst) toggles.push({label: lang('울트라', 'Ultra'), active: Boolean(choice.ultra), disabled: inputLocked, action: {type: 'toggle', flag: 'ultra'}, kind: 'text'});
+  if (!forcedContinuation && moveRequest?.canDynamax && runtimeSupportsDynamax()) toggles.push({label: 'Dmax', active: Boolean(choice.dynamax), disabled: inputLocked, action: {type: 'toggle', flag: 'dynamax'}, kind: 'text'});
   const detailMoveInfo = moveEntries[detailIndex] || null;
   const detailSlotInfo = mon?.moveSlots?.[detailIndex] || null;
   const detail = buildPhaserMoveDetailModel(mon, detailMoveInfo, detailSlotInfo, moveRequest, choice, detailIndex);
@@ -6776,8 +6840,8 @@ function buildPhaserFightWindowModel(battle, player) {
     toggles,
     detail,
     footerActions: [
-      {label: lang('뒤로', 'Back'), disabled: false, action: {type: 'command', key: 'command'}},
-      {label: lang('교체', 'Switch'), disabled: !canSwitch, action: {type: 'command', key: 'party'}},
+      {label: lang('뒤로', 'Back'), disabled: inputLocked, action: {type: 'command', key: 'command'}},
+      {label: lang('교체', 'Switch'), disabled: inputLocked || !canSwitch, action: {type: 'command', key: 'party'}},
     ],
   };
 }
@@ -6788,6 +6852,7 @@ function buildPhaserPartyWindowModel(battle, player) {
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
   const forced = isEngineForceSwitchRequest(request);
+  const inputLocked = isBattleInputLocked(battle);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
   const optionMap = new Map(options.map(({mon, index}) => [index, mon]));
   const activeSet = new Set(getBattleActiveIndices(player, battle));
@@ -6828,12 +6893,12 @@ function buildPhaserPartyWindowModel(battle, player) {
         statusEffect: mon.status || '',
         fainted: Boolean(fainted),
         iconUrl: iconPath(resolveBattleRenderSpriteId(mon), Boolean(mon.shiny)),
-        disabled: !canSwitchTo,
+        disabled: inputLocked || !canSwitchTo,
         active: currentChoice.kind === 'switch' && currentChoice.switchTo === index,
-        action: canSwitchTo ? {type: 'switch', switchTo: index} : null,
+        action: !inputLocked && canSwitchTo ? {type: 'switch', switchTo: index} : null,
       };
     }),
-    footerActions: forced ? [] : [{label: lang('뒤로', 'Back'), disabled: false, action: {type: 'command', key: 'command'}}],
+    footerActions: forced ? [] : [{label: lang('뒤로', 'Back'), disabled: inputLocked, action: {type: 'command', key: 'command'}}],
   };
 }
 
@@ -6851,13 +6916,17 @@ function buildPhaserTargetWindowModel() {
 }
 
 function buildPhaserMessageWindowModel(battle, player) {
+  const inputLocked = isBattleInputLocked(battle);
   const request = getEngineRequestForPlayer(player, battle);
+  const latestLine = localizeText(battle?.log?.[0]?.rawText || battle?.log?.[0]?.text || '').trim();
   return {
     mode: 'message',
     title: `${battle.players?.[player]?.name || `P${player + 1}`}`,
     // BA-21: any non-null request while in message mode means player committed; show waiting text.
     placeholder: battle.winner
       ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
+      : inputLocked
+        ? (latestLine || lang('배틀 메시지 재생 중...', 'Playing battle messages...'))
       : request
         ? lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn...")
         : lang('엔진 요청을 기다리는 중입니다.', 'Waiting for an engine request.'),
@@ -6884,7 +6953,7 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
     : (ui?.perspective ?? 0);
   const allyPlayer = perspective;
   const enemyPlayer = perspective === 0 ? 1 : 0;
-  const mode = ui?.modeByPlayer?.[perspective] || getDefaultBattleUiModeForPlayer(perspective, battle);
+  const mode = getBattleDisplayMode(perspective, battle);
   const bannerChip = isShowdownLocalBattle(battle) ? getEngineTurnChipState(perspective, battle) : {text: ''};
   let stateWindow = buildPhaserMessageWindowModel(battle, perspective);
   if (mode === 'command') stateWindow = buildPhaserCommandWindowModel(battle, perspective);
@@ -6940,6 +7009,7 @@ function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
   if (!battle || !action) return;
   const ui = getBattleUiState(battle);
   const player = Number.isInteger(playerOverride) ? clamp(Number(playerOverride), 0, 1) : (ui?.perspective ?? 0);
+  if (isBattleInputLocked(battle) && action.type !== 'perspective') return;
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   if (action.type === 'perspective') {
     if (FLAGS.battleDualViewV1 && Number.isInteger(playerOverride)) return;
@@ -6963,6 +7033,7 @@ function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
     return;
   }
   if (action.type === 'move') {
+    if (isBattleInputLocked(battle)) return;
     const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, action.moveIndex, battle);
     if (!nextChoice) return;
     setEnginePendingChoice(player, activeIndex, nextChoice, battle);
@@ -6971,6 +7042,7 @@ function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
     return;
   }
   if (action.type === 'switch') {
+    if (isBattleInputLocked(battle)) return;
     setEnginePendingChoice(player, activeIndex, {...createEmptyBattleChoice(), kind: 'switch', switchTo: action.switchTo}, battle);
     handleBattleChoiceCommitted(player, battle);
     renderBattle();
@@ -7087,7 +7159,7 @@ function renderBattle() {
   const allSet = isShowdownLocalBattle(battle)
     ? canAutoResolveEngineTurn(battle)
     : [0, 1].every(player => isPlayerReady(player));
-  if (allSet && !battle.winner && !battle.resolvingTurn) resolveTurn();
+  if (allSet && !battle.winner && !battle.resolvingTurn && !isBattleInputLocked(battle)) resolveTurn();
 }
 
 function renderSideSprites(player, container, facing) {

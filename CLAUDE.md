@@ -116,9 +116,12 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 3. `BA-14` 사이드 컨디션 연출 ✅ 완료 (2026-04-16)
 4. `BA-21` 선택 완료 후 대기 메시지 정합 ✅ 완료 (2026-04-16)
 5. `BA-22` 한국어/영어 메시지 완전 분리 ✅ 완료 (2026-04-16)
-6. `BA-27` 타임라인 재생 중 선택 입력 블록
-7. `BA-23` 기술/날씨/필드 연출 완벽화
-8. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
+6. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
+7. `BA-26` 배틀 내 폼체인지 표시명 고정
+8. `BA-24` 테라스탈 구현
+9. `BA-25` 다이맥스 구현
+10. `BA-23` 기술/날씨/필드 연출 완벽화
+11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
 
 ### ✅ M5. locale 네임스페이스 로더 — 완료 (2026-04-16)
 - 원본 참조: `pokerogue_codes/src/plugins/utils-plugins.ts`, `pokerogue_codes/src/plugins/i18n.ts`
@@ -160,9 +163,19 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `_buildFormChangeMessage()`: `rawPre` 파라미터 추가, 폼체인지 판별을 raw 영어명 비교로 전환
 - 구현 파일: `src/battle-presentation/timeline.js`, `src/app.js`
 
-### 🔜 BA-27. 타임라인 재생 중 선택 입력 블록 (추후)
+### ✅ BA-27. 타임라인 재생 중 선택 입력 블록 — 완료 (2026-04-17)
 - 배틀 연출(타임라인) 재생 중에는 command/fight/party 입력을 잠금 처리
 - `playTimelineAcrossActiveViews()` 시작/종료 시점에 `ui.inputLocked`를 관리하고, 선택 커밋 경로(`handleBattleChoiceCommitted`)에 가드 추가
+- 반영 내용 (2026-04-17):
+  - `playTimelineAcrossActiveViews` 시작 시 `ui.inputLocked=true`, 완료(onComplete 직전) 및 예외 경로(finally)에서 `false` 해제
+  - `getBattleDisplayMode` 도입: input lock 동안 렌더 모드를 강제 `message`로 전환해 선택창(command/fight/party/target) 자체를 숨김
+  - `renderBattleMessagesWindow`/`buildBattleMessageModel`에서 input lock 중 waiting 문구 우선 규칙을 끄고 battle.log 메시지 우선 표시
+  - `handleBattleChoiceCommitted` 진입 가드 및 move/switch 커밋 호출 경로 선가드 추가
+  - `renderBattle` auto-resolve 조건에 `!ui.inputLocked` 가드 추가(타임라인 재생 중 중첩 턴 해석 방지)
+- 검증:
+  - `node --check src/app.js` PASS
+  - `npm run verify:stage22` PASS
+  - `npm run verify:passb` PASS
 
 ### 🔜 BA-23. 기술/날씨/필드 연출 완벽화 (추후)
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 완성
@@ -204,9 +217,12 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 3. `BA-14` 사이드 컨디션 연출 ✅ 완료 (2026-04-16)
 4. `BA-21` 선택 완료 후 대기 메시지 정합 ✅ 완료 (2026-04-16)
 5. `BA-22` 한국어/영어 메시지 완전 분리 ✅ 완료 (2026-04-16)
-6. `BA-27` 타임라인 재생 중 선택 입력 블록
-7. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
-8. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (추후)
+6. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
+7. `BA-26` 배틀 내 폼체인지 표시명 고정 (추후)
+8. `BA-24` 테라스탈 구현 (추후)
+9. `BA-25` 다이맥스 구현 (추후)
+10. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
+11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (추후)
 
 **✅ BA-21: 선택 완료 후 대기 메시지 정합 — 완료 (2026-04-16)** (`app.js`)
 - `buildBattleMessageModel()` / `renderBattleMessagesWindow()` / `buildPhaserMessageWindowModel()`에 waiting 분기 추가
@@ -218,9 +234,13 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - **후속**: `localizeMonName`/`localizeMoveName` 콜백 추가로 배틀 메시지 내 포켓몬명·기술명 한국어화 완성
 - `_slotNames`는 raw 영어명 유지, `_slotName()` 출력만 한국어화(언어 설정에 따라 자동 분기)
 
-**BA-27: 타임라인 재생 중 선택 입력 블록 (추후)** (`app.js`, `timeline.js`)
-- 타임라인 재생 중 command/fight/party 입력 잠금(`ui.inputLocked`) 적용
-- 선택 커밋 진입점에서 input lock 가드 추가, 타임라인 완료 후 해제
+**✅ BA-27: 타임라인 재생 중 선택 입력 블록 — 완료 (2026-04-17)** (`app.js`)
+- `playTimelineAcrossActiveViews()` 시작 잠금(`ui.inputLocked=true`) + 완료 직전 해제(`false`) + 예외 경로 해제
+- input lock 동안 `getBattleDisplayMode()`로 렌더 모드를 `message`로 강제해 선택창을 숨기고 메시지창만 표시 (DOM + Phaser)
+- `renderBattleMessagesWindow`/`buildBattleMessageModel`에서 input lock 중에는 battle.log 메시지를 우선 표시
+- `handleBattleChoiceCommitted()` 진입/호출 경로에 input lock 가드 추가
+- `renderBattle()` auto-resolve를 input lock 중에는 차단해 타임라인 중 중첩 해석 방지
+- 회귀 검증: `node --check src/app.js`, `npm run verify:stage22`, `npm run verify:passb` 모두 PASS
 
 **BA-23: 기술/날씨/필드 연출 완벽화 (추후)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 보강
@@ -228,16 +248,16 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 **BA-24: 테라스탈 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - Showdown `-terastallize` 이벤트 기반으로 변환 연출/메시지/UI 반영
-- 착수 우선순위는 BA-27/BA-23 이후
+- 착수 우선순위는 BA-27/BA-26 이후
 
 **BA-25: 다이맥스 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - 다이맥스/거다이맥스 전환·해제 흐름과 배틀 연출 정합 구현
-- 착수 우선순위는 BA-27/BA-23 이후
+- 착수 우선순위는 BA-27/BA-26/BA-24 이후
 
 **BA-26: 배틀 내 폼체인지 표시명 고정 (추후)** (`app.js`, `timeline.js`, `showdown-engine.cjs`)
 - 배틀 메시지/정보창 표시명은 기본 종족명으로 고정(폼명 비노출)
 - 예: 메가한카리아스→한카리아스, 나시(알로라의 모습)→나시
-- 착수 우선순위는 BA-27/BA-23 이후
+- 착수 우선순위는 BA-27 직후
 
 **BA-28: 영칭 전용 포켓몬/기술 한국어명 탑재 (추후)** (`src/i18n-ko-data.js` 또는 신규 파일)
 - KO 모드에서 영어로 노출되는 포켓몬/기술명을 수집해 한국어명 맵 보강
