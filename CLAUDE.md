@@ -117,7 +117,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 4. `BA-21` 선택 완료 후 대기 메시지 정합 ✅ 완료 (2026-04-16)
 5. `BA-22` 한국어/영어 메시지 완전 분리 ✅ 완료 (2026-04-16)
 6. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
-7. `BA-26` 배틀 내 폼체인지 표시명 고정
+7. `BA-26` 배틀 내 폼체인지 표시명 고정 ✅ 완료 (2026-04-17)
 8. `BA-24` 테라스탈 구현
 9. `BA-25` 다이맥스 구현
 10. `BA-23` 기술/날씨/필드 연출 완벽화
@@ -189,9 +189,25 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - 다이맥스/거다이맥스 전환 및 해제 흐름을 연출 레이어에 반영
 - 스케일/HP/UI 타이밍을 기존 faint/forme_change/switch_in과 충돌 없이 구성
 
-### 🔜 BA-26. 배틀 내 폼체인지 표시명 고정 (추후)
-- 사용자 노출 이름은 폼명 대신 기본 종족명으로 고정
+### ✅ BA-26. 배틀 내 폼체인지 표시명 고정 — 완료 (2026-04-17)
+- 사용자 노출 이름을 폼명 대신 기본 종족명으로 고정
 - 예: `메가한카리아스` → `한카리아스`, `나시(알로라의 모습)` → `나시`
+- 반영 파일:
+  - `src/app.js`
+  - `src/battle-presentation/timeline.js`
+- 반영 내용:
+  - `resolveBattleDisplayBaseSpecies()` / `getBattleDisplaySpeciesName()` / `displayBattleSpeciesName()` 추가
+  - battle UI(메시지창/정보창/커맨드·기술·파티·디버그·대기 목록)의 포켓몬명 표시를 base species 기준으로 통일
+  - 타임라인 executor `localizeMonName` 콜백을 base species 기준으로 교체
+  - 폼체인지 메시지에서 pre/post 표시명이 동일할 때 `다른 모습으로 변화했다!`로 안전 문구 처리
+- 검증:
+  - `node --check src/app.js` PASS
+  - `node --check src/battle-presentation/timeline.js` PASS
+  - `npm run verify:stage22` PASS
+  - `npm run verify:passb` PASS
+- 후속 조정 (2026-04-17, 사용자 피드백):
+  - 폼명 고정은 UI/정보창/선택창에만 유지
+  - 폼체인지 연출 메시지는 form-aware 표시(`localizeMonNameWithForm`)로 복원해 원래 메시지 톤 유지
 
 ### 🔜 BA-28. 영칭 전용 포켓몬/기술 한국어명 탑재 (추후)
 - KO 모드에서 영어로 노출되는 포켓몬/기술명을 수집해 한국어명 맵 보강
@@ -218,7 +234,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 4. `BA-21` 선택 완료 후 대기 메시지 정합 ✅ 완료 (2026-04-16)
 5. `BA-22` 한국어/영어 메시지 완전 분리 ✅ 완료 (2026-04-16)
 6. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
-7. `BA-26` 배틀 내 폼체인지 표시명 고정 (추후)
+7. `BA-26` 배틀 내 폼체인지 표시명 고정 ✅ 완료 (2026-04-17)
 8. `BA-24` 테라스탈 구현 (추후)
 9. `BA-25` 다이맥스 구현 (추후)
 10. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
@@ -248,16 +264,16 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 
 **BA-24: 테라스탈 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - Showdown `-terastallize` 이벤트 기반으로 변환 연출/메시지/UI 반영
-- 착수 우선순위는 BA-27/BA-26 이후
+- 착수 우선순위는 BA-26 이후
 
 **BA-25: 다이맥스 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - 다이맥스/거다이맥스 전환·해제 흐름과 배틀 연출 정합 구현
-- 착수 우선순위는 BA-27/BA-26/BA-24 이후
+- 착수 우선순위는 BA-24 이후
 
-**BA-26: 배틀 내 폼체인지 표시명 고정 (추후)** (`app.js`, `timeline.js`, `showdown-engine.cjs`)
-- 배틀 메시지/정보창 표시명은 기본 종족명으로 고정(폼명 비노출)
-- 예: 메가한카리아스→한카리아스, 나시(알로라의 모습)→나시
-- 착수 우선순위는 BA-27 직후
+**✅ BA-26: 배틀 내 폼체인지 표시명 고정 — 완료 (2026-04-17)** (`app.js`, `timeline.js`)
+- 배틀 메시지/정보창/선택창 표시명을 기본 종족명으로 고정(폼명 비노출)
+- 타임라인 표시명(localizeMonName)도 기본 종족명 기준으로 통일
+- 검증: `node --check src/app.js`, `node --check src/battle-presentation/timeline.js`, `npm run verify:stage22`, `npm run verify:passb` PASS
 
 **BA-28: 영칭 전용 포켓몬/기술 한국어명 탑재 (추후)** (`src/i18n-ko-data.js` 또는 신규 파일)
 - KO 모드에서 영어로 노출되는 포켓몬/기술명을 수집해 한국어명 맵 보강

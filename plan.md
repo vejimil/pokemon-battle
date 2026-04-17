@@ -228,8 +228,8 @@ Target: `/workspaces/pokemon-battle`
   5. `BA-22` 한국어/영어 메시지 완전 분리 ✅ 완료 (2026-04-16)
 - **다음 세션 착수 순서(고정)**:
   1. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
-  2. `BA-26` 배틀 내 폼체인지 표시명 고정 (이후)
-  3. `BA-24` 테라스탈 구현 (이후)
+  2. `BA-26` 배틀 내 폼체인지 표시명 고정 ✅ 완료 (2026-04-17)
+  3. `BA-24` 테라스탈 구현 (다음)
   4. `BA-25` 다이맥스 구현 (이후)
   5. `BA-23` 기술/날씨/필드 연출 완벽화 (이후)
   6. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (이후)
@@ -324,6 +324,24 @@ Target: `/workspaces/pokemon-battle`
   - `npm run verify:stage22` PASS
   - `npm run verify:passb` PASS
 
+#### ✅ BA-26: 배틀 내 폼체인지 표시명 고정 (`app.js`, `timeline.js`) — 완료 (2026-04-17)
+- **요구사항**: 배틀 메시지/정보창/선택창에서 폼명 대신 기본 종족명만 노출
+- **반영 내용**:
+  - `src/app.js`:
+    - `resolveBattleDisplayBaseSpecies()` / `getBattleDisplaySpeciesName()` / `displayBattleSpeciesName()` 추가
+    - battle UI 이름 출력 경로(command/fight/party/message/info/debug/pending)를 base species 기준으로 통일
+    - 타임라인 executor `localizeMonName` 콜백을 base species 기준으로 변경
+  - `src/battle-presentation/timeline.js`:
+    - `_buildFormChangeMessage()`에서 pre/post 표시명이 동일할 때 안전 문구(`다른 모습으로 변화했다!`)로 처리
+- **검증**:
+  - `node --check src/app.js` PASS
+  - `node --check src/battle-presentation/timeline.js` PASS
+  - `npm run verify:stage22` PASS
+  - `npm run verify:passb` PASS
+- **후속 조정 (2026-04-17, 사용자 피드백)**:
+  - 폼명 고정은 UI/정보창/선택창에만 유지
+  - 폼체인지 연출 메시지(`_buildFormChangeMessage`)는 form-aware 이름(localizeMonNameWithForm)으로 복원해 원래 톤 유지
+
 #### BA-23: 기술/날씨/필드 연출 완벽화 (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
 - **요구사항**: move/weather/terrain 연출을 PokeRogue 원본 체감에 맞게 정밀 보강
 - **범위(초안)**:
@@ -345,14 +363,8 @@ Target: `/workspaces/pokemon-battle`
   - 배틀러 스케일/HP/UI 표시/메시지 타이밍을 원본 체감에 맞게 구성
   - 기존 faint/forme_change/switch_in 연출과 충돌 없이 공존하도록 순서 검증
 
-#### 🔜 BA-26: 배틀 내 폼체인지 표시명 고정 (`app.js`, `timeline.js`, `showdown-engine.cjs`)
-- **요구사항**: 배틀 메시지/정보창에서 폼명을 노출하지 않고 기본 종족명으로 고정 표시
-- **예시 정책**:
-  - `메가한카리아스` 대신 `한카리아스`
-  - `나시(알로라의 모습)` 대신 `나시`
-- **구현 메모(초안)**:
-  - 내부 판정/sprite/form 로직은 유지하고, 사용자 노출 display name만 별도 정규화
-  - BA-19/BA-20의 즉시 반영/연출 정합 회귀 없이 적용
+#### BA-26: 배틀 내 폼체인지 표시명 고정
+- 완료됨. 상세 구현/검증은 위 `✅ BA-26` 섹션 참조.
 
 #### 🔜 BA-28: 영칭 전용 포켓몬/기술 한국어명 탑재 (`src/i18n-ko-data.js` 또는 신규 파일)
 - **요구사항**: `getLocalizedName()`에서 한국어명을 찾지 못해 영어로 노출되는 포켓몬·기술·아이템에 한국어명 추가

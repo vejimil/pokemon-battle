@@ -1305,7 +1305,8 @@ function applyCrashDamage(mon, move) {
   if (!mon || mon.fainted || !move?.hasCrashDamage) return;
   const crash = Math.max(1, Math.floor((mon.baseMaxHp || mon.maxHp) / 2));
   mon.hp = Math.max(0, mon.hp - crash);
-  addLog(`${displaySpeciesName(mon.species)}은(는) 기술 실패 반동으로 크게 부딪혔다! / ${mon.species} kept going and crashed!`);
+  const displayName = displayBattleSpeciesName(mon);
+  addLog(`${displayName}은(는) 기술 실패 반동으로 크게 부딪혔다! / ${displayName} kept going and crashed!`);
 }
 function moveHasHealingEffect(move) {
   const moveId = toId(move?.baseMoveName || move?.name || move?.id);
@@ -1860,8 +1861,10 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
       localeManager: localeEnabled ? battleLocaleManager : null,
       localeLanguage,
       resolveVisualState: ev => resolveTimelineEventVisualState(ev, { playerSide: cfg.playerSide, battle: state.battle }),
-      // BA-22: localize raw English names from Showdown events into the UI language
-      localizeMonName: name => displaySpeciesName(name) || name,
+      // BA-26: battle-facing species display uses base species (form prefix/suffix hidden)
+      localizeMonName: name => localizeBattleSpeciesName(name) || name,
+      // BA-26 exception: forme_change presentation message should keep form labels.
+      localizeMonNameWithForm: name => displaySpeciesName(name) || name,
       localizeMoveName: name => displayMoveName(name) || name,
       ...cfg,
     }));
@@ -3691,6 +3694,35 @@ function iconPath(spriteId, shiny = false) {
   const folder = shiny ? 'Icons shiny' : 'Icons';
   // Linux 파일시스템은 대소문자 구분 — Icons 폴더 파일명은 모두 대문자 (예: KLEFKI.png)
   return `${state.assetBase.pokemon}/${folder}/${(spriteId || '').toUpperCase()}.png`;
+}
+function resolveBattleDisplayBaseSpecies(speciesName = '') {
+  const raw = String(speciesName || '').trim();
+  if (!raw) return '';
+  const normalized = normalizeLocalizedInput('species', raw, state.allSpeciesChoices || state.speciesChoices || []);
+  const speciesData = state.dex?.species?.get?.(normalized);
+  if (speciesData?.exists) return speciesData.baseSpecies || speciesData.name || normalized;
+  return normalized || raw;
+}
+function getBattleDisplaySpeciesName(mon, fallback = 'Pokémon') {
+  if (!mon) return fallback;
+  const raw = String(
+    mon.baseSpecies
+    || mon.originalData?.baseSpecies
+    || mon.data?.baseSpecies
+    || mon.species
+    || mon.formSpecies
+    || mon.displaySpecies
+    || mon.originalData?.name
+    || fallback
+  ).trim();
+  return resolveBattleDisplayBaseSpecies(raw) || fallback;
+}
+function localizeBattleSpeciesName(speciesName = '') {
+  const baseSpecies = resolveBattleDisplayBaseSpecies(speciesName);
+  return displaySpeciesName(baseSpecies || speciesName);
+}
+function displayBattleSpeciesName(mon, fallback = 'Pokémon') {
+  return displaySpeciesName(getBattleDisplaySpeciesName(mon, fallback));
 }
 function getBattleRenderSpeciesName(mon) {
   if (!mon) return '';
@@ -5567,7 +5599,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
     const choice = getEngineDraftChoice(player, activeIndex, battle);
     const section = document.createElement('div');
     section.className = 'choice-section';
-    section.innerHTML = `<h4>${displaySpeciesName(getBattleRenderSpeciesName(mon) || 'Pokémon')}</h4>${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}`;
+    section.innerHTML = `<h4>${displayBattleSpeciesName(mon)}</h4>${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}`;
 
     const statusHints = [];
     if (mon?.volatile?.substituteHp > 0) statusHints.push(`대타출동 / Substitute ${mon.volatile.substituteHp} HP`);
@@ -5592,7 +5624,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = `choice-btn ${choice.kind === 'switch' && choice.switchTo === index ? 'selected' : ''}`;
-        btn.innerHTML = `<strong>${displaySpeciesName(getBattleRenderSpeciesName(option) || option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
+        btn.innerHTML = `<strong>${displayBattleSpeciesName(option)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
         btn.addEventListener('click', () => {
           setEnginePendingChoice(player, activeIndex, {
             ...createEmptyBattleChoice(),
@@ -5819,7 +5851,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = `choice-btn ${choice.switchTo === index ? 'selected' : ''}`;
-        btn.innerHTML = `<strong>${displaySpeciesName(getBattleRenderSpeciesName(option) || option.species)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
+        btn.innerHTML = `<strong>${displayBattleSpeciesName(option)}</strong><small>HP ${option.hp}/${option.maxHp}</small>`;
         btn.addEventListener('click', () => {
           setEnginePendingChoice(player, activeIndex, {
             ...createEmptyBattleChoice(),
@@ -6056,7 +6088,7 @@ function renderBattleMessagesWindow(battle, player) {
   const currentMode = getBattleDisplayMode(player, battle);
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
-  const pokemonName = displaySpeciesName(getBattleRenderSpeciesName(activeMon) || activeMon?.species || 'Pokémon');
+  const pokemonName = displayBattleSpeciesName(activeMon);
   const promptText = battle.winner
     ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
     : !request
@@ -6114,8 +6146,8 @@ function maybeShowBattleAbilityFlyout(battle) {
   const lower = text.toLowerCase();
   const playerName = (battle.players?.[0]?.name || '').toLowerCase();
   const enemyName = (battle.players?.[1]?.name || '').toLowerCase();
-  const playerMonNames = getActiveMons(0, battle).map(mon => String(displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || '')).toLowerCase());
-  const enemyMonNames = getActiveMons(1, battle).map(mon => String(displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || '')).toLowerCase());
+  const playerMonNames = getActiveMons(0, battle).map(mon => String(displayBattleSpeciesName(mon, '')).toLowerCase());
+  const enemyMonNames = getActiveMons(1, battle).map(mon => String(displayBattleSpeciesName(mon, '')).toLowerCase());
   const playerSide = [playerName, ...playerMonNames].some(token => token && lower.includes(token));
   const enemySide = [enemyName, ...enemyMonNames].some(token => token && lower.includes(token));
   flyout.className = `pkbattle-ability-flyout ${enemySide && !playerSide ? 'enemy' : 'player'} show`;
@@ -6168,7 +6200,7 @@ function renderBattleInfoBox(player, container, mon) {
     container.innerHTML = `<div class="pkbattle-info-inner"><div class="pkbattle-name-row"><strong>${lang('빈 자리', 'No battler')}</strong></div></div>`;
     return;
   }
-  const displayName = displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species || 'Pokémon');
+  const displayName = displayBattleSpeciesName(mon);
   const badgeText = getBattleBadgeText(mon);
   const statusHtml = mon.status
     ? `<span class="pkbattle-status-pill">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>`
@@ -6450,7 +6482,7 @@ function renderBattleCommandWindow(battle, player) {
   const inputLocked = isBattleInputLocked(battle);
   const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
   container.innerHTML = `
-    <div class="pkbattle-command-body pkbattle-command-shell" data-species="${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')}">
+    <div class="pkbattle-command-body pkbattle-command-shell" data-species="${displayBattleSpeciesName(mon)}">
       <div class="pkbattle-command-grid" id="pkbattle-command-grid"></div>
     </div>`;
   const grid = container.querySelector('#pkbattle-command-grid');
@@ -6545,7 +6577,7 @@ function renderBattlePartyWindow(battle, player) {
     const content = document.createElement('div');
     content.className = 'pkbattle-party-card-body';
     const badgeText = getBattleBadgeText(mon);
-    content.innerHTML = `<div class="pkbattle-party-card-topline"><strong>${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species)}</strong>${mon.status ? `<span class="pkbattle-status-pill">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
+    content.innerHTML = `<div class="pkbattle-party-card-topline"><strong>${displayBattleSpeciesName(mon)}</strong>${mon.status ? `<span class="pkbattle-status-pill">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
       <div class="pkbattle-party-card-meta">${badgeText ? `<span class="pkbattle-mini-badge">${badgeText}</span>` : `<span class="pkbattle-mini-badge">${lang('교체 가능', 'Ready to switch')}</span>`}</div>
       <div class="pkbattle-party-card-hp-row"><span class="pkbattle-party-card-hptext">HP ${mon.hp}/${mon.maxHp}</span><div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div></div>`;
     button.appendChild(content);
@@ -6650,8 +6682,8 @@ function updateBattleAbilityBarState(battle) {
       const lower = text.toLowerCase();
       const playerName = (battle.players?.[0]?.name || '').toLowerCase();
       const enemyName = (battle.players?.[1]?.name || '').toLowerCase();
-      const playerMonNames = getActiveMons(0, battle).map(mon => String(displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || '')).toLowerCase());
-      const enemyMonNames = getActiveMons(1, battle).map(mon => String(displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || '')).toLowerCase());
+      const playerMonNames = getActiveMons(0, battle).map(mon => String(displayBattleSpeciesName(mon, '')).toLowerCase());
+      const enemyMonNames = getActiveMons(1, battle).map(mon => String(displayBattleSpeciesName(mon, '')).toLowerCase());
       const playerSide = [playerName, ...playerMonNames].some(token => token && lower.includes(token));
       const enemySide = [enemyName, ...enemyMonNames].some(token => token && lower.includes(token));
       ui.currentFlyout = {
@@ -6672,7 +6704,7 @@ function buildBattleMessageModel(battle, player) {
   const currentMode = getBattleDisplayMode(player, battle);
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
-  const pokemonName = displaySpeciesName(getBattleRenderSpeciesName(activeMon) || activeMon?.species || 'Pokémon');
+  const pokemonName = displayBattleSpeciesName(activeMon);
   const promptText = battle.winner
     ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
     : !request
@@ -6728,7 +6760,7 @@ function buildBattleInfoModelFromMon(mon, player = Number(mon?.player ?? 0)) {
     ? clamp((mon.levelExp / mon.levelTotalExp) * 100, 0, 100)
     : 0;
   return {
-    displayName: displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species || 'Pokémon'),
+    displayName: displayBattleSpeciesName(mon),
     levelLabel: Number.isFinite(mon.level) ? String(mon.level) : '',
     types: (mon.types || []).map(type => toId(type)),
     statusLabel: mon.status ? displayStatus(mon.status) : '',
@@ -6771,7 +6803,7 @@ function buildPhaserCommandWindowModel(battle, player) {
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   const inputLocked = isBattleInputLocked(battle);
   const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
-  const pokemonName = displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon');
+  const pokemonName = displayBattleSpeciesName(mon);
   return {
     mode: 'command',
     fieldIndex: requestSlot,
@@ -6835,7 +6867,7 @@ function buildPhaserFightWindowModel(battle, player) {
   return {
     mode: 'fight',
     fieldIndex: requestSlot,
-    title: `${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon?.species || 'Pokémon')} · ${lang('기술', 'Moves')}`,
+    title: `${displayBattleSpeciesName(mon)} · ${lang('기술', 'Moves')}`,
     moves,
     toggles,
     detail,
@@ -6884,7 +6916,7 @@ function buildPhaserPartyWindowModel(battle, player) {
       else if (fainted) sublabel += ` · ${lang('기절', 'Fainted')}`;
       else if (mon.status) sublabel += ` · ${displayStatus(mon.status)}`;
       return {
-        label: displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species),
+        label: displayBattleSpeciesName(mon),
         sublabel,
         hpPercent,
         hpLabel: `${mon.hp}/${mon.maxHp}`,
@@ -7193,7 +7225,7 @@ function renderBattleTeam(player, container) {
     renderAnimatedSprite(sprite, {spriteId: resolveBattleRenderSpriteId(mon), facing:'front', shiny: mon.shiny, size:'small'});
     const summary = document.createElement('div');
     summary.className = 'mon-summary';
-    summary.innerHTML = `<div class="mon-name-line"><strong>${displaySpeciesName(getBattleRenderSpeciesName(mon) || mon.species)}</strong>${mon.status ? `<span class="status-badge">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
+    summary.innerHTML = `<div class="mon-name-line"><strong>${displayBattleSpeciesName(mon)}</strong>${mon.status ? `<span class="status-badge">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>` : ''}</div>
       ${getBattleBadgeText(mon) ? `<div class="battle-inline-flags">${getBattleBadgeText(mon)}</div>` : ''}
       <div class="hp-bar"><div class="hp-fill ${hpFillClass(mon)}" style="width:${hpPercent(mon)}%"></div></div>
       <div class="mon-sub">HP ${mon.hp}/${mon.maxHp}${activeIndices.has(index) ? ' · 전투 중 / Active' : ''}${mon.fainted ? ' · 기절 / Fainted' : ''}${mon.dynamaxed ? ` · ${mon.dynamaxTurns}턴 / ${mon.dynamaxTurns} turns` : ''}${mon.volatile?.substituteHp ? ` · 대타 ${mon.volatile.substituteHp} / Sub ${mon.volatile.substituteHp}` : ''}</div>`;
@@ -7271,7 +7303,7 @@ function renderPendingChoices() {
       }
       actionSlots.forEach(activeIndex => {
         const mon = side.team[activeIndex];
-        rows.push(`<div class="pending-card"><strong>${mon ? displaySpeciesName(mon.species) : side.name}</strong>${getEngineChoiceSummary(player, activeIndex, battle)}</div>`);
+        rows.push(`<div class="pending-card"><strong>${mon ? displayBattleSpeciesName(mon) : side.name}</strong>${getEngineChoiceSummary(player, activeIndex, battle)}</div>`);
       });
     });
     els.pendingChoices.innerHTML = rows.join('');

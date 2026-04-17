@@ -173,6 +173,7 @@ export class BattleTimelineExecutor {
    * @param {string}                   [opts.localeLanguage]   locale language id ('ko'|'en')
    * @param {boolean}                  [opts.audioEnabled]     play timeline audio for this executor
    * @param {function(string): string} [opts.localizeMonName]  translate English species name → display name
+   * @param {function(string): string} [opts.localizeMonNameWithForm] translate English species name → form-aware display name
    * @param {function(string): string} [opts.localizeMoveName] translate English move name → display name
    */
   constructor({
@@ -188,6 +189,7 @@ export class BattleTimelineExecutor {
     localeLanguage = 'ko',
     audioEnabled = true,
     localizeMonName,
+    localizeMonNameWithForm,
     localizeMoveName,
   } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
@@ -200,6 +202,9 @@ export class BattleTimelineExecutor {
     this._localeManager = localeManager ?? null;
     this._localeLanguage = String(localeLanguage || 'ko');
     this._localizeMonName = typeof localizeMonName === 'function' ? localizeMonName : (n => String(n || ''));
+    this._localizeMonNameWithForm = typeof localizeMonNameWithForm === 'function'
+      ? localizeMonNameWithForm
+      : this._localizeMonName;
     this._localizeMoveName = typeof localizeMoveName === 'function' ? localizeMoveName : (n => String(n || ''));
     this.running = false;
     // Tracks species name per slot. Key: "${side}_${slot}" e.g. "p1_0", "p2_0".
@@ -1006,9 +1011,15 @@ export class BattleTimelineExecutor {
         // Keep raw English for ID comparisons; localize for display messages
         const preNameRaw = this._slotNameRaw(side, slot);
         const preName = this._localizeMonName(preNameRaw) || preNameRaw;
+        const preNameForMessage = this._localizeMonNameWithForm(preNameRaw) || preNameRaw;
         const toSpecies = String(ev.toSpecies || ev.to || '').trim();  // raw English
-        // Localized display name for the after-change form
+        // Localized display names:
+        // - displayNextName: info/UI patch path (base-species-fixed in BA-26)
+        // - displayNextNameForMessage: form-aware message path (restore original vibe)
         const displayNextName = toSpecies ? (this._localizeMonName(toSpecies) || toSpecies) : '';
+        const displayNextNameForMessage = toSpecies
+          ? (this._localizeMonNameWithForm(toSpecies) || toSpecies)
+          : '';
         const visual = await this._resolveVisual(ev);
         const formPresentation = this._resolveFormChangePresentation(
           visual?.formChangePresentation || null,
@@ -1041,7 +1052,13 @@ export class BattleTimelineExecutor {
         const suppressMessageByFaint = Boolean(slotInfoBefore?.fainted)
           || (Number.isFinite(hpBefore) && hpBefore <= 0);
         if (!suppressMessageByFaint && !ev.silent && (changed || shouldShowFallback)) {
-          const msg = this._buildFormChangeMessage(preName, displayNextName, ev.mechanism, toSpecies, preNameRaw);
+          const msg = this._buildFormChangeMessage(
+            preNameForMessage,
+            displayNextNameForMessage,
+            ev.mechanism,
+            toSpecies,
+            preNameRaw,
+          );
           if (msg) {
             await this._showMsg(msg, { minMs: 620 });
           }
