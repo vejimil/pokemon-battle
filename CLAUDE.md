@@ -123,6 +123,23 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 10. `BA-23` 기술/날씨/필드 연출 완벽화
 11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
 
+### ✅ 2026-04-17 오늘 작업 요약
+- `BA-27`/`BA-26` 구현 및 후속 회귀 안정화 완료.
+- 타임라인 순서 회귀 수정:
+  - 중간 턴 `switch_in`의 조기 선준비(`prepareSwitchInBattler`)를 제한해, 기술/데미지/기절 전에 sprite가 바뀌는 문제 해결.
+  - `switch_in` 이벤트 경계에서 sprite를 교체하도록 정렬해, KO/교체 연출 순서 복원.
+- 입력 잠금 UX 보강:
+  - `forceBattleMessageOnlyUiDuringLock()` 추가로 잠금 직후 선택창을 즉시 숨기고 message-only 화면 유지.
+- 폼체인지 표시 정책 확정:
+  - UI/정보창/선택창은 base species 고정.
+  - 폼체인지 연출 메시지는 form-aware 표기 복원.
+- 문서 구조 정리:
+  - `plan.md`는 활성 작업만 남기고 슬림화.
+  - 완료 이력은 `planprevious.md`로 분리.
+- 활성 플랜 유지:
+  - `plan.md`에 `BA-24` 상세 + `BA-25/BA-23/BA-28` 후속 개요를 유지.
+- 현재 남은 우선순위: `BA-24 -> BA-25 -> BA-23 -> BA-28`
+
 ### ✅ M5. locale 네임스페이스 로더 — 완료 (2026-04-16)
 - 원본 참조: `pokerogue_codes/src/plugins/utils-plugins.ts`, `pokerogue_codes/src/plugins/i18n.ts`
 - 반영 파일:
@@ -176,10 +193,25 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `node --check src/app.js` PASS
   - `npm run verify:stage22` PASS
   - `npm run verify:passb` PASS
+- 후속 회귀 수정 (2026-04-17, 사용자 피드백):
+  - 증상: 타임라인 시작 전/초기에 HP·스프라이트가 최종 스냅샷으로 먼저 바뀌어 기술/기절/교체 연출 순서가 붕괴
+  - 원인:
+    - 중간 턴 `switch_in`에서도 `prepareSwitchInBattler()`를 선호출해 대상 진영 sprite를 조기에 숨김/교체
+    - `switch_in`의 `fromBall=true` 경로에서 이벤트 시점 sprite 교체가 빠져 있음
+  - 수정:
+    - `src/app.js` `playTimelineAcrossActiveViews()`에서 `prepareSwitchInBattler()`는 초기 소환 경로(`preHideSwitchInSides=true`)에서만 실행
+    - `src/app.js` `forceBattleMessageOnlyUiDuringLock()` 추가: full render 없이 DOM/Phaser를 즉시 message 모드로 전환해 선택창 잔류 제거
+    - `src/battle-presentation/timeline.js` `switch_in` 핸들러에서 `setBattlerSprite(...,{visible:!fromBall})`를 이벤트 경계에서 실행
+    - 결과적으로 교체 sprite 반영 시점을 switch 이벤트 타이밍으로 고정
+  - 검증:
+    - `node --check src/app.js` PASS
+    - `node --check src/battle-presentation/timeline.js` PASS
+    - `npm run verify:stage22` PASS
+    - `npm run verify:passb` PASS
 
 ### 🔜 BA-23. 기술/날씨/필드 연출 완벽화 (추후)
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 완성
-- BA-27 이후 착수
+- BA-25 이후 착수
 
 ### 🔜 BA-24. 테라스탈 구현 (추후)
 - 배틀 중 테라스탈 선언/변환 이벤트를 구조화해 연출/메시지/UI까지 연결
@@ -257,10 +289,15 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - `handleBattleChoiceCommitted()` 진입/호출 경로에 input lock 가드 추가
 - `renderBattle()` auto-resolve를 input lock 중에는 차단해 타임라인 중 중첩 해석 방지
 - 회귀 검증: `node --check src/app.js`, `npm run verify:stage22`, `npm run verify:passb` 모두 PASS
+- 후속 회귀 수정(2026-04-17):
+  - 중간 턴 `switch_in` 선준비(`prepareSwitchInBattler`)를 초기 소환 경로 전용으로 제한
+  - `forceBattleMessageOnlyUiDuringLock()`로 타임라인 시작 직후 선택창을 즉시 숨김(입력 잠금은 유지)
+  - `timeline.js` `switch_in`에서 `setBattlerSprite(...,{visible:!fromBall})`를 이벤트 시점에 실행해 조기 스냅샷 노출 방지
+  - 검증: `node --check src/app.js`, `node --check src/battle-presentation/timeline.js`, `npm run verify:stage22`, `npm run verify:passb` PASS
 
 **BA-23: 기술/날씨/필드 연출 완벽화 (추후)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 보강
-- 착수 우선순위는 BA-27 이후
+- 착수 우선순위는 BA-25 이후
 
 **BA-24: 테라스탈 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - Showdown `-terastallize` 이벤트 기반으로 변환 연출/메시지/UI 반영

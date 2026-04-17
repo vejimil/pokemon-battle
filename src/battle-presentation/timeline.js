@@ -674,8 +674,10 @@ export class BattleTimelineExecutor {
         await this._showMsg(label);
 
         const scene = this._scene();
-        if (!ev.fromBall && visual?.spriteUrl) {
-          await this._setBattlerSprite(side, visual.spriteUrl);
+        if (visual?.spriteUrl) {
+          // Apply sprite swap at the switch event boundary. Doing this earlier
+          // (timeline start) can reveal post-turn state before move/faint events.
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: !ev.fromBall });
         }
         if (scene?.switchInBattler) {
           await scene.switchInBattler(side, !!ev.fromBall, { audioEnabled: this._audioEnabled });

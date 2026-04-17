@@ -1784,7 +1784,12 @@ function primeTimelineSpriteOverrides(events = [], battle = state.battle) {
 }
 
 async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, initialSlotInfo = {}, onComplete = () => {}, onInputRequired = () => {}, preHideSwitchInSides = false } = {}) {
-  setBattleInputLocked(true, state.battle, { rerender: true });
+  // Do not trigger an immediate render here: at turn-resolution time state.battle
+  // already points to the adopted post-turn snapshot, and forcing a render would
+  // pre-apply HP/sprite end-state before timeline animations play.
+  setBattleInputLocked(true, state.battle, { rerender: false });
+  // Keep selection windows hidden immediately even when full battle re-render is skipped.
+  forceBattleMessageOnlyUiDuringLock(state.battle);
   let completed = false;
   clearTimelineSpriteOverrides();
   if (!Array.isArray(events) || !events.length) {
@@ -1816,7 +1821,10 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
     };
     const switchInSides = [...new Set(
       events
-        .filter(ev => ev?.type === 'switch_in')
+        // Mid-turn switch_in preloading can pre-hide/pre-swap battlers too early.
+        // Only pre-prepare sides when caller explicitly asks for pre-hide flow
+        // (initial battle summon sequence).
+        .filter(ev => preHideSwitchInSides && ev?.type === 'switch_in' && ev?.fromBall)
         .map(ev => ev.side)
         .filter(side => side === 'p1' || side === 'p2')
     )];
@@ -5937,6 +5945,20 @@ function setBattleInputLocked(locked, battle = state.battle, { rerender = false 
   if (!ui) return;
   ui.inputLocked = Boolean(locked);
   if (rerender) renderBattle();
+}
+
+function forceBattleMessageOnlyUiDuringLock(battle = state.battle) {
+  const ui = getBattleUiState(battle);
+  if (!ui || !battle) return;
+  const perspective = clamp(Number(ui.perspective || 0), 0, 1);
+  renderBattleMessagesWindow(battle, perspective);
+  renderBattleBottomWindows(battle, perspective);
+  // Phaser transplant UI mode constants: MESSAGE = 0 (ui-mode.js)
+  getTimelineExecutorConfigs().forEach(cfg => {
+    const scene = cfg.scene?.();
+    if (!scene?.ui?.setMode) return;
+    try { scene.ui.setMode(0); } catch (_error) {}
+  });
 }
 
 function getDefaultBattleUiModeForPlayer(player, battle = state.battle) {
