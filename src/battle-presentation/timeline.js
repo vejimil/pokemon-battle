@@ -212,6 +212,10 @@ export class BattleTimelineExecutor {
     this._slotNames = new Map(Object.entries(initialNames ?? {}));
     // Tracks live battle-info state (name/hp/status/etc) per side+slot during timeline playback.
     this._slotInfo = new Map(Object.entries(initialSlotInfo ?? {}));
+    // Tracks latest terastallize sequence by side+slot.
+    this._recentTerastallizeBySlot = new Map();
+    // Forme-change seq values already absorbed by preceding terastallize handling.
+    this._consumedTerastallizeFormSeqs = new Set();
     this._activeWeatherId = '';
     this._activeTerrainId = '';
   }
@@ -266,6 +270,7 @@ export class BattleTimelineExecutor {
       case 'move_use':
       case 'damage':
       case 'heal':
+      case 'terastallize':
       case 'faint':
       case 'forme_change':
       case 'battle_end':
@@ -476,6 +481,46 @@ export class BattleTimelineExecutor {
     return `${side}_${slot}`;
   }
 
+  _markRecentTerastallize(side, slot = 0, ev = {}) {
+    if (!side) return;
+    this._recentTerastallizeBySlot.set(this._slotKey(side, slot), {
+      turn: Number.isInteger(ev?.turn) ? ev.turn : null,
+      seq: Number.isFinite(Number(ev?.seq)) ? Number(ev.seq) : null,
+    });
+  }
+
+  _isLinkedTerastallizeFormPair(teraEv = {}, formEv = {}) {
+    if (teraEv?.type !== 'terastallize' || formEv?.type !== 'forme_change') return false;
+    const teraSide = teraEv?.target?.side;
+    const teraSlot = teraEv?.target?.slot ?? 0;
+    const formSide = formEv?.target?.side;
+    const formSlot = formEv?.target?.slot ?? 0;
+    if (!teraSide || teraSide !== formSide || Number(teraSlot) !== Number(formSlot)) return false;
+    const teraTurn = Number.isInteger(teraEv?.turn) ? teraEv.turn : null;
+    const formTurn = Number.isInteger(formEv?.turn) ? formEv.turn : null;
+    if (teraTurn != null && formTurn != null && teraTurn !== formTurn) return false;
+    const teraSeq = Number.isFinite(Number(teraEv?.seq)) ? Number(teraEv.seq) : null;
+    const formSeq = Number.isFinite(Number(formEv?.seq)) ? Number(formEv.seq) : null;
+    if (teraSeq != null && formSeq != null) {
+      if (formSeq <= teraSeq) return false;
+      if (formSeq - teraSeq > 6) return false;
+    }
+    return true;
+  }
+
+  _isTerastallizeLinkedFormChange(ev = {}) {
+    if (ev?.type !== 'forme_change') return false;
+    const side = ev?.target?.side;
+    const slot = ev?.target?.slot ?? 0;
+    const teraMeta = this._recentTerastallizeBySlot.get(this._slotKey(side, slot));
+    if (!teraMeta) return false;
+    const evTurn = Number.isInteger(ev?.turn) ? ev.turn : null;
+    if (teraMeta.turn != null && evTurn != null && teraMeta.turn !== evTurn) return false;
+    const evSeq = Number.isFinite(Number(ev?.seq)) ? Number(ev.seq) : null;
+    if (teraMeta.seq != null && evSeq != null && evSeq - teraMeta.seq > 4) return false;
+    return true;
+  }
+
   _slotInfoFor(side, slot = 0) {
     return this._slotInfo.get(this._slotKey(side, slot)) || null;
   }
@@ -495,6 +540,15 @@ export class BattleTimelineExecutor {
     const nextInfo = this._updateSlotInfo(side, slot, patch);
     const info = this._infoForSide(side);
     info?.update?.(nextInfo);
+    const hasTeraField = patch && Object.prototype.hasOwnProperty.call(patch, 'teraType');
+    if (hasTeraField && Number(slot) === 0) {
+      const scene = this._scene();
+      const teraType = toId(String(patch?.teraType || ''));
+      scene?.setBattlerTerastallized?.(side, {
+        terastallized: Boolean(teraType),
+        teraType,
+      });
+    }
     return nextInfo;
   }
 
@@ -590,6 +644,52 @@ export class BattleTimelineExecutor {
     return `${pre}은(는)\n다른 모습으로 변화했다!`;
   }
 
+  _teraTypeLabel(rawType = '') {
+    const source = String(rawType || '').trim();
+    if (!source) {
+      return this._isEnglishLocale() ? 'Tera' : '테라';
+    }
+    const teraTypeId = toId(source);
+    if (!teraTypeId) return source;
+    return this._t('pokemon-info', `type.${teraTypeId}`, {}, source);
+  }
+
+  _inferTerastallizeFormSpecies(rawName = '') {
+    const speciesId = toId(rawName);
+    if (!speciesId) return '';
+    if (speciesId === 'ogerpon' || speciesId === 'ogerponteal' || speciesId === 'ogerpontealmask' || speciesId === 'ogerpontealtera') {
+      return 'Ogerpon-Teal-Tera';
+    }
+    if (speciesId === 'ogerponwellspring' || speciesId === 'ogerponwellspringmask' || speciesId === 'ogerponwellspringtera') {
+      return 'Ogerpon-Wellspring-Tera';
+    }
+    if (speciesId === 'ogerponhearthflame' || speciesId === 'ogerponhearthflamemask' || speciesId === 'ogerponhearthflametera') {
+      return 'Ogerpon-Hearthflame-Tera';
+    }
+    if (speciesId === 'ogerponcornerstone' || speciesId === 'ogerponcornerstonemask' || speciesId === 'ogerponcornerstonetera') {
+      return 'Ogerpon-Cornerstone-Tera';
+    }
+    if (speciesId === 'terapagos' || speciesId === 'terapagosterastal' || speciesId === 'terapagosstellar') {
+      return 'Terapagos-Stellar';
+    }
+    return '';
+  }
+
+  _buildTerastallizeMessage(pokemonNameWithAffix, teraTypeLabel) {
+    const fallback = this._isEnglishLocale()
+      ? `${pokemonNameWithAffix} Terastallized into the ${teraTypeLabel} type!`
+      : `${pokemonNameWithAffix}[[는]] \n${teraTypeLabel}타입으로 테라스탈했다!`;
+    return this._t(
+      'battle',
+      'pokemonTerastallized',
+      {
+        pokemonNameWithAffix,
+        type: teraTypeLabel,
+      },
+      fallback,
+    );
+  }
+
   // ── public API ─────────────────────────────────────────────────────────────
 
   /**
@@ -604,9 +704,16 @@ export class BattleTimelineExecutor {
     }
     this.running = true;
     try {
-      for (const ev of events) {
+      for (let index = 0; index < events.length; index += 1) {
+        const ev = events[index];
         if (!this.running) break;  // fastForward was called
-        await this._applyEvent(ev, context);
+        await this._applyEvent(ev, {
+          ...context,
+          events,
+          index,
+          prevEvent: index > 0 ? events[index - 1] : null,
+          nextEvent: index + 1 < events.length ? events[index + 1] : null,
+        });
         if (!this.running) break;
         const gapMs = this._eventGapMs(ev?.type);
         if (gapMs > 0) {
@@ -638,6 +745,7 @@ export class BattleTimelineExecutor {
       // ── BA-1: Turn boundary ──────────────────────────────────────────────
       case 'turn_start': {
         // Intentionally no message — turn numbers are visible in the battle log.
+        this._consumedTerastallizeFormSeqs.clear();
         break;
       }
 
@@ -1003,12 +1111,75 @@ export class BattleTimelineExecutor {
         break;
       }
 
+      // ── BA-24: Terastallize (message -> effect -> info patch) ───────────
+      case 'terastallize': {
+        const side = ev.target?.side;
+        const slot = ev.target?.slot ?? 0;
+        const preTerastallizeRaw = this._slotNameRaw(side, slot);
+        const teraName = this._slotName(side, slot);
+        const teraNameWithAffix = this._pokemonNameWithAffix(teraName, side);
+        const teraTypeLabel = this._teraTypeLabel(ev.teraTypeName || ev.teraType || '');
+        const linkedFormEvent = this._isLinkedTerastallizeFormPair(ev, context?.nextEvent)
+          ? context.nextEvent
+          : null;
+        const linkedToSpecies = String(linkedFormEvent?.toSpecies || '').trim()
+          || this._inferTerastallizeFormSpecies(preTerastallizeRaw);
+        const syntheticFormEvent = !linkedFormEvent && linkedToSpecies
+          ? { type: 'forme_change', target: { side, slot }, toSpecies: linkedToSpecies, to: linkedToSpecies }
+          : null;
+        const formVisualEvent = linkedFormEvent || syntheticFormEvent;
+        const visual = formVisualEvent
+          ? (await this._resolveVisual(formVisualEvent) || await this._resolveVisual(ev))
+          : await this._resolveVisual(ev);
+
+        await this._showMsg(this._buildTerastallizeMessage(teraNameWithAffix, teraTypeLabel), { minMs: 620 });
+        if (visual?.spriteUrl) {
+          // Load/swap the special tera-linked form before the animation so the
+          // frame at animation end is already the final form (no base-form pause).
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: true });
+        }
+
+        const scene = this._scene();
+        if (scene?.playTerastallize) {
+          await scene.playTerastallize(side, { audioEnabled: this._audioEnabled });
+        } else {
+          await this._delay(520);
+        }
+
+        const linkedDisplayName = linkedToSpecies
+          ? (this._localizeMonName(linkedToSpecies) || linkedToSpecies)
+          : '';
+        const teraPatch = {
+          ...(visual?.infoPatch || {}),
+        };
+        if (linkedDisplayName) teraPatch.displayName = linkedDisplayName;
+        if (!Object.prototype.hasOwnProperty.call(teraPatch, 'teraType')) {
+          const teraTypeId = toId(ev.teraType || ev.teraTypeName || '');
+          if (teraTypeId) teraPatch.teraType = teraTypeId;
+        }
+        if (Object.keys(teraPatch).length) {
+          this._applyInfoForSlot(side, slot, teraPatch);
+        }
+        if (linkedToSpecies) this._slotNames.set(this._slotKey(side, slot), linkedToSpecies);
+        if (linkedFormEvent && Number.isFinite(Number(linkedFormEvent?.seq))) {
+          this._consumedTerastallizeFormSeqs.add(Number(linkedFormEvent.seq));
+        }
+        this._markRecentTerastallize(side, slot, ev);
+        break;
+      }
+
       // ── BA-19: Form change immediate update ──────────────────────────────
       case 'forme_change': {
+        const seqNum = Number.isFinite(Number(ev?.seq)) ? Number(ev.seq) : null;
+        if (seqNum != null && this._consumedTerastallizeFormSeqs.has(seqNum)) {
+          this._consumedTerastallizeFormSeqs.delete(seqNum);
+          break;
+        }
         const side = ev.target?.side;
         const slot = ev.target?.slot ?? 0;
         const isMegaPairMarker = ev.mechanism === '-mega' && !String(ev.toSpecies || '').trim();
         if (isMegaPairMarker) break;
+        const teraLinkedForm = this._isTerastallizeLinkedFormChange(ev);
         const slotInfoBefore = this._slotInfoFor(side, slot);
         // Keep raw English for ID comparisons; localize for display messages
         const preNameRaw = this._slotNameRaw(side, slot);
@@ -1029,7 +1200,7 @@ export class BattleTimelineExecutor {
           slotInfoBefore,
         );
         if (visual?.spriteUrl) {
-          const shouldShowSprite = formPresentation.isVisible !== false;
+          const shouldShowSprite = teraLinkedForm ? true : (formPresentation.isVisible !== false);
           await this._setBattlerSprite(side, visual.spriteUrl, { visible: shouldShowSprite });
         }
         // Always store raw English in _slotNames for downstream event matching
@@ -1046,14 +1217,16 @@ export class BattleTimelineExecutor {
             ...formPatch,
           });
         }
-        await this._playFormChangePresentation(side, formPresentation);
+        if (!teraLinkedForm) {
+          await this._playFormChangePresentation(side, formPresentation);
+        }
         // Compare raw English names to reliably detect form changes
         const changed = toSpecies && toId(toSpecies) !== toId(preNameRaw);
         const shouldShowFallback = ev.mechanism === '-formechange' && !toSpecies;
         const hpBefore = Number(slotInfoBefore?.hp);
         const suppressMessageByFaint = Boolean(slotInfoBefore?.fainted)
           || (Number.isFinite(hpBefore) && hpBefore <= 0);
-        if (!suppressMessageByFaint && !ev.silent && (changed || shouldShowFallback)) {
+        if (!teraLinkedForm && !suppressMessageByFaint && !ev.silent && (changed || shouldShowFallback)) {
           const msg = this._buildFormChangeMessage(
             preNameForMessage,
             displayNextNameForMessage,

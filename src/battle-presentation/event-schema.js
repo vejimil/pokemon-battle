@@ -69,6 +69,7 @@ export const EVENT_TYPES = /** @type {const} */ ({
   SINGLE_TURN_EFFECT:  'single_turn_effect',
 
   // Forme
+  TERASTALLIZE:        'terastallize',
   FORME_CHANGE:        'forme_change',
 
   // Input gates (synthesized / currently unhandled in server — added per plan §11.1)
@@ -91,6 +92,7 @@ export function isCoreEvent(type) {
     EVENT_TYPES.TERRAIN_START, EVENT_TYPES.TERRAIN_END,
     EVENT_TYPES.MOVE_USE,
     EVENT_TYPES.DAMAGE,
+    EVENT_TYPES.TERASTALLIZE,
     EVENT_TYPES.FAINT,
     EVENT_TYPES.CALLBACK_EVENT,
     EVENT_TYPES.BATTLE_END,

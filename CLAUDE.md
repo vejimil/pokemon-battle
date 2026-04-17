@@ -118,7 +118,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 5. `BA-22` 한국어/영어 메시지 완전 분리 ✅ 완료 (2026-04-16)
 6. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
 7. `BA-26` 배틀 내 폼체인지 표시명 고정 ✅ 완료 (2026-04-17)
-8. `BA-24` 테라스탈 구현
+8. `BA-24` 테라스탈 구현 ✅ 1차 완료 (2026-04-17)
 9. `BA-25` 다이맥스 구현
 10. `BA-23` 기술/날씨/필드 연출 완벽화
 11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
@@ -138,7 +138,12 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - 완료 이력은 `planprevious.md`로 분리.
 - 활성 플랜 유지:
   - `plan.md`에 `BA-24` 상세 + `BA-25/BA-23/BA-28` 후속 개요를 유지.
-- 현재 남은 우선순위: `BA-24 -> BA-25 -> BA-23 -> BA-28`
+- `BA-24` 1차 구현:
+  - `showdown-engine.cjs`에서 `-terastallize`를 독립 `terastallize` 이벤트로 분리 추출
+  - `timeline.js`에 `terastallize` 핸들러 추가(메시지 → 테라 연출 → info patch 순서)
+  - `battle-shell-scene.js`에 `playTerastallize()` 추가
+  - `app.js` locale namespace에 `pokemon-info` 추가(테라 타입 로컬라이즈)
+- 현재 남은 우선순위: `BA-24(브라우저 확인) -> BA-25 -> BA-23 -> BA-28`
 
 ### ✅ M5. locale 네임스페이스 로더 — 완료 (2026-04-16)
 - 원본 참조: `pokerogue_codes/src/plugins/utils-plugins.ts`, `pokerogue_codes/src/plugins/i18n.ts`
@@ -213,9 +218,39 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 완성
 - BA-25 이후 착수
 
-### 🔜 BA-24. 테라스탈 구현 (추후)
-- 배틀 중 테라스탈 선언/변환 이벤트를 구조화해 연출/메시지/UI까지 연결
-- Showdown `-terastallize` 이벤트 추출과 타임라인 순서 정합 우선
+### ✅ BA-24. 테라스탈 구현 — 1차 완료 (2026-04-17)
+- 원본 참조:
+  - `pokerogue_codes/src/phases/tera-phase.ts`
+  - `pokerogue_codes/src/phases/turn-start-phase.ts`
+  - `pokerogue_codes/src/data/pokemon-forms/form-change-triggers.ts`
+- 반영 파일:
+  - `server/showdown-engine.cjs`
+  - `src/battle-presentation/event-schema.js`
+  - `src/battle-presentation/timeline.js`
+  - `src/pokerogue-transplant-runtime/runtime/constants.js`
+  - `src/pokerogue-transplant-runtime/runtime/assets.js`
+  - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+  - `src/app.js`
+- 반영 내용:
+  - `-terastallize`를 `forme_change` 분기에서 분리해 독립 `terastallize` 이벤트 추출 (`target`, `teraType`, `teraTypeName`, `trigger`, `fromSource`)
+  - event-schema에 `terastallize` 타입 및 core 분류 추가
+  - timeline에 `terastallize` 단계 추가: 메시지(`battle.pokemonTerastallized`) → 연출(`playTerastallize`) → info patch(UI 타입/테라 아이콘) 순서
+  - `effects/tera`, `effects/tera_sparkle`를 로드해 테라 전용 시각 연출 적용
+  - `terastallize` 시점에 최종 스프라이트를 즉시 반영하고, 직후 연계 `forme_change`는 연출/메시지를 생략해 오거폰/테라파고스 계열 중복 변신을 방지
+  - locale namespace에 `pokemon-info`를 추가해 테라 타입명을 locale key(`type.*`)로 표시
+- 검증:
+  - `node --check server/showdown-engine.cjs`
+  - `node --check src/battle-presentation/event-schema.js`
+  - `node --check src/battle-presentation/timeline.js`
+  - `node --check src/pokerogue-transplant-runtime/runtime/constants.js`
+  - `node --check src/pokerogue-transplant-runtime/runtime/assets.js`
+  - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+  - `node --check src/app.js`
+  - `npm run verify:ba20`
+  - `npm run verify:stage22`
+  - `npm run verify:passb`
+  - 인라인 검증: `move 1 terastallize` 실행 시 `events.type==='terastallize'` 확인, `forme_change(mechanism='-terastallize')` 미발생 확인
+  - 인라인 검증: Ogerpon 테라 턴에서 `terastallize -> forme_change(detailschange)` 연속 이벤트 확인(타임라인 중복 연출 생략 대상)
 
 ### 🔜 BA-25. 다이맥스 구현 (추후)
 - 다이맥스/거다이맥스 전환 및 해제 흐름을 연출 레이어에 반영
@@ -267,7 +302,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 5. `BA-22` 한국어/영어 메시지 완전 분리 ✅ 완료 (2026-04-16)
 6. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
 7. `BA-26` 배틀 내 폼체인지 표시명 고정 ✅ 완료 (2026-04-17)
-8. `BA-24` 테라스탈 구현 (추후)
+8. `BA-24` 테라스탈 구현 ✅ 1차 완료 (2026-04-17)
 9. `BA-25` 다이맥스 구현 (추후)
 10. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
 11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (추후)
@@ -299,9 +334,36 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 보강
 - 착수 우선순위는 BA-25 이후
 
-**BA-24: 테라스탈 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
-- Showdown `-terastallize` 이벤트 기반으로 변환 연출/메시지/UI 반영
-- 착수 우선순위는 BA-26 이후
+**✅ BA-24: 테라스탈 구현 — 1차 완료 (2026-04-17)** (`showdown-engine.cjs`, `event-schema.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
+- `-terastallize`를 독립 `terastallize` 이벤트로 파싱하고 `target/teraType/teraTypeName/trigger/fromSource`를 구조화
+- timeline에 `terastallize` 단계 추가: 선언 메시지(`battle.pokemonTerastallized`) → 테라 연출(`playTerastallize`) → info patch 반영
+- `effects/tera`, `effects/tera_sparkle` 기반 테라 전용 연출 적용
+- `terastallize` 직후 연계 `forme_change`(오거폰/테라파고스 계열)는 연출/메시지를 생략해 즉시 특수 폼 반영
+- locale namespace(`pokemon-info`)를 추가해 테라 타입 라벨을 `type.*` 키로 로컬라이즈
+- 검증: `node --check`(수정 파일), `npm run verify:ba20`, `npm run verify:stage22`, `npm run verify:passb` PASS
+
+**✅ BA-24: 테라스탈 구현 — 2차 보강 (2026-04-17, 사용자 피드백 반영)** (`timeline.js`, `battle-shell-scene.js`, `app.js`)
+- 원본 렌더 기제 재확인:
+  - `pokerogue_codes/src/pipelines/sprite.ts`, `pokerogue_codes/src/pipelines/glsl/sprite-frag-shader.frag`, `pokerogue_codes/src/field/pokemon-sprite-sparkle-handler.ts`
+  - 원본은 테라를 일회성 연출이 아니라 지속 상태(`isTerastallized + teraColor + tera texture`)로 처리
+- `timeline.js`
+  - `terastallize`에서 next-event lookahead로 linked `forme_change`를 즉시 흡수
+  - linked form seq는 `_consumedTerastallizeFormSeqs`로 마킹해 뒤 `forme_change` 중복 실행 스킵
+  - `teraType` info patch가 들어오면 scene `setBattlerTerastallized()` 동기 호출
+- `battle-shell-scene.js`
+  - mount별 `terastallized/teraType` 상태 추가
+  - `tera.png` 기반 지속 오버레이(tileSprite, 타입 tint, 패턴 이동) 추가
+  - 테라 상태 유지 중 `tera_sparkle` 주기 생성 타이머 추가
+  - `setBattlerTerastallized(side, {terastallized, teraType})` API 추가 및 switch/faint/layout/update 동기화
+- `app.js`
+  - Phaser sprite model에 `terastallized`, `teraType` 전달해 턴 사이 일반 렌더에서도 테라 지속 상태 유지
+- 검증:
+  - `node --check src/battle-presentation/timeline.js` PASS
+  - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` PASS
+  - `node --check src/app.js` PASS
+  - `npm run verify:ba20` PASS
+  - `npm run verify:stage22` PASS (Feraligatr 케이스 플래키성 1회 관찰)
+  - `npm run verify:passb` PASS
 
 **BA-25: 다이맥스 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - 다이맥스/거다이맥스 전환·해제 흐름과 배틀 연출 정합 구현

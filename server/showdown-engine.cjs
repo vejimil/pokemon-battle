@@ -289,8 +289,16 @@ function normalizeLogTextFromLine(line, logCtx = null) {
       return {text: `${displayNameForPokemonProtocol(a)} 메가진화! / ${displayNameForPokemonProtocol(a)} Mega Evolved!`, tone: 'accent'};
     case '-zpower':
       return {text: `${displayNameForPokemonProtocol(a)} Z파워 발동! / ${displayNameForPokemonProtocol(a)} unleashed Z-Power!`, tone: 'accent'};
-    case '-terastallize':
+    case '-terastallize': {
+      const teraType = String(b || '').trim();
+      if (teraType) {
+        return {
+          text: `${displayNameForPokemonProtocol(a)} ${teraType}타입으로 테라스탈! / ${displayNameForPokemonProtocol(a)} Terastallized into ${teraType}-type!`,
+          tone: 'accent',
+        };
+      }
       return {text: `${displayNameForPokemonProtocol(a)} 테라스탈! / ${displayNameForPokemonProtocol(a)} Terastallized!`, tone: 'accent'};
+    }
     case '-formechange':
     case 'detailschange': {
       const key = logIdentKeyFromProtocol(a);
@@ -651,9 +659,30 @@ function normalizeEventsFromLine(line, ctx) {
       return out;
     }
 
+    case '-terastallize': {
+      const id = parseIdentForEvent(parts[2]);
+      const teraTypeName = String(parts[3] || '').trim();
+      const fromMeta = parseFromTagForEvent(parts, 4);
+      const fromSource = fromMeta.fromSource;
+      let trigger = '';
+      if (fromMeta.fromKind === 'ability') trigger = 'ability';
+      else if (fromMeta.fromKind === 'item') trigger = 'item';
+      else if (fromMeta.fromKind === 'move') trigger = 'move';
+      else if (fromMeta.fromKind === 'weather') trigger = 'weather';
+      return [{
+        type: 'terastallize',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        target: {side: id.side, slot: id.slot},
+        teraType: toId(teraTypeName),
+        teraTypeName,
+        trigger,
+        fromSource,
+        fromEffectId: fromMeta.fromEffectId,
+      }];
+    }
     case '-mega':
     case '-zpower':
-    case '-terastallize':
     case '-formechange':
     case 'detailschange': {
       const id = parseIdentForEvent(parts[2]);

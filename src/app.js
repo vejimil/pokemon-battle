@@ -1548,7 +1548,7 @@ let pickerReturnFocusEl = null;
 const phaserBattleRenderers = { 0: null, 1: null };
 const battleLocaleManager = createBattleLocaleManager({
   language: 'ko',
-  namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag', 'status-effect'],
+  namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag', 'status-effect', 'pokemon-info'],
 });
 
 function getPhaserBattleRenderer(player = 0) {
@@ -7046,10 +7046,14 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
     enemySprite: {
       url: resolveSpriteUrlForBattleSide(enemyPlayer, perspective, enemyMon, enemyRenderable),
       mount: 'enemy',
+      terastallized: Boolean(enemyInfo?.teraType),
+      teraType: enemyInfo?.teraType || '',
     },
     playerSprite: {
       url: resolveSpriteUrlForBattleSide(allyPlayer, perspective, playerMon, playerRenderable),
       mount: 'player',
+      terastallized: Boolean(playerInfo?.teraType),
+      teraType: playerInfo?.teraType || '',
     },
     enemyTray: buildBattleTrayModel(enemyPlayer, battle),
     playerTray: buildBattleTrayModel(allyPlayer, battle),

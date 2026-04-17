@@ -51,6 +51,8 @@ export function preloadUiAssets(scene) {
   if (!textures.exists(UI_ASSETS.iconOwned.key)) load.image(UI_ASSETS.iconOwned.key, UI_ASSETS.iconOwned.url);
   if (!textures.exists(UI_ASSETS.abilityBarLeft.key)) load.image(UI_ASSETS.abilityBarLeft.key, UI_ASSETS.abilityBarLeft.url);
   if (!textures.exists(UI_ASSETS.abilityBarRight.key)) load.image(UI_ASSETS.abilityBarRight.key, UI_ASSETS.abilityBarRight.url);
+  if (!textures.exists(UI_ASSETS.effectTera.key)) load.image(UI_ASSETS.effectTera.key, UI_ASSETS.effectTera.url);
+  if (!textures.exists(UI_ASSETS.effectTeraSparkle.key)) load.multiatlas(UI_ASSETS.effectTeraSparkle.key, UI_ASSETS.effectTeraSparkle.json, UI_ASSETS.effectTeraSparkle.path);
   if (!textures.exists(UI_ASSETS.arenaBg.key)) load.image(UI_ASSETS.arenaBg.key, UI_ASSETS.arenaBg.url);
   if (!textures.exists(UI_ASSETS.arenaEnemy.key)) load.image(UI_ASSETS.arenaEnemy.key, UI_ASSETS.arenaEnemy.url);
   if (!textures.exists(UI_ASSETS.arenaPlayer.key)) load.image(UI_ASSETS.arenaPlayer.key, UI_ASSETS.arenaPlayer.url);

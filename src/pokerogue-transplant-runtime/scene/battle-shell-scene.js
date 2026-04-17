@@ -11,6 +11,27 @@ import { BattleAnimPlayer } from '../../battle-presentation/battle-anim-player.j
 // Negative x = left, negative y = up.
 const SHADOW_GLOBAL_OFFSET = Object.freeze({ x: 0, y: 0 });
 const ENABLE_BATTLER_SHADOWS = false;
+const TERA_TYPE_TINTS = Object.freeze({
+  normal:   0xa8a878,
+  fighting: 0xc03028,
+  flying:   0xa890f0,
+  poison:   0xa040a0,
+  ground:   0xe0c068,
+  rock:     0xb8a038,
+  bug:      0xa8b820,
+  ghost:    0x705898,
+  steel:    0xb8b8d0,
+  fire:     0xf08030,
+  water:    0x6890f0,
+  grass:    0x78c850,
+  electric: 0xf8d030,
+  psychic:  0xf85888,
+  ice:      0x98d8d8,
+  dragon:   0x7038f8,
+  dark:     0x705848,
+  fairy:    0xe888c8,
+  stellar:  0xffffff,
+});
 
 export function createBattleShellSceneClass(Phaser, env) {
   return class TransplantBattleShellScene extends Phaser.Scene {
@@ -32,6 +53,9 @@ export function createBattleShellSceneClass(Phaser, env) {
         // Cancel any in-flight move animation so its Promise resolves and the
         // timeline executor doesn't hang if the scene shuts down mid-animation.
         try { this.animPlayer?._activeCancel?.(); } catch (_error) {}
+        try { this._teraSparkleTimer?.remove?.(); this._teraSparkleTimer = null; } catch (_error) {}
+        try { this._destroyMountTeraFx(this.enemySprite); } catch (_error) {}
+        try { this._destroyMountTeraFx(this.playerSprite); } catch (_error) {}
       };
       this.runtimeEnv = {
         ...env,
@@ -89,6 +113,29 @@ export function createBattleShellSceneClass(Phaser, env) {
             repeat: -1,
           });
         }
+        if (textureExists(this, env.UI_ASSETS.effectTeraSparkle?.key, '0') && !this.anims.exists('pkb-effect-tera-sparkle')) {
+          const sparkleFrames = [];
+          for (let i = 0; i <= 12; i += 1) {
+            const frame = String(i);
+            if (!textureExists(this, env.UI_ASSETS.effectTeraSparkle.key, frame)) continue;
+            sparkleFrames.push({ key: env.UI_ASSETS.effectTeraSparkle.key, frame });
+          }
+          if (sparkleFrames.length) {
+            this.anims.create({
+              key: 'pkb-effect-tera-sparkle',
+              frames: sparkleFrames,
+              frameRate: 18,
+              repeat: 0,
+              showOnStart: true,
+              hideOnComplete: true,
+            });
+          }
+        }
+        this._teraSparkleTimer = this.time.addEvent({
+          delay: 210,
+          loop: true,
+          callback: () => this._emitTeraSparkles(),
+        });
         this.scale?.on?.('resize', this.handleResize, this);
         window.addEventListener('keydown', this.handleWindowKeyDown, true);
         window.addEventListener('keyup', this.handleWindowKeyUp, true);
@@ -128,6 +175,11 @@ export function createBattleShellSceneClass(Phaser, env) {
         phaserSprite: img,
         shadow,
         shadowVisibleByMetrics: false,
+        terastallized: false,
+        teraType: '',
+        teraOverlay: null,
+        teraMask: null,
+        teraSparkles: [],
         currentUrl: '',
         currentTextureKey: '',
         animTimer: null,
@@ -140,6 +192,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           setVisible: visible => {
             img.setVisible(visible);
             shadow.setVisible(ENABLE_BATTLER_SHADOWS && visible && !!mount.currentUrl && !!mount.shadowVisibleByMetrics);
+            this._syncMountTeraFx(mount, 0);
           },
         },
       };
@@ -214,10 +267,14 @@ export function createBattleShellSceneClass(Phaser, env) {
         .setScale(snap.sprScale)
         .setPosition(spriteX, spriteY);
 
-      if (!mount.shadow) return;
+      if (!mount.shadow) {
+        this._syncMountTeraFx(mount, 0);
+        return;
+      }
       if (!ENABLE_BATTLER_SHADOWS) {
         mount.shadowVisibleByMetrics = false;
         mount.shadow.setVisible(false);
+        this._syncMountTeraFx(mount, 0);
         return;
       }
       if (snap.showShadow) {
@@ -245,6 +302,116 @@ export function createBattleShellSceneClass(Phaser, env) {
         mount.shadowVisibleByMetrics = false;
         mount.shadow.setVisible(false);
       }
+      this._syncMountTeraFx(mount, 0);
+    }
+
+    _teraTintForType(type = '') {
+      return TERA_TYPE_TINTS[String(type || '').toLowerCase()] || 0xffffff;
+    }
+
+    _ensureMountTeraOverlay(mount) {
+      if (!mount?.phaserSprite || mount?.teraOverlay) return mount?.teraOverlay || null;
+      if (!textureExists(this, env.UI_ASSETS.effectTera?.key)) return null;
+      const blendMode = this.Phaser?.BlendModes?.SCREEN ?? this.Phaser?.BlendModes?.ADD ?? 1;
+      const overlay = this.add.tileSprite(0, 0, 32, 32, env.UI_ASSETS.effectTera.key)
+        .setOrigin(0.5, 1)
+        .setDepth((mount.phaserSprite.depth || 7) + 0.4)
+        .setAlpha(0.4)
+        .setBlendMode(blendMode)
+        .setVisible(false);
+      try {
+        if (!mount.teraMask && mount.phaserSprite?.createBitmapMask) {
+          mount.teraMask = mount.phaserSprite.createBitmapMask();
+        }
+        if (mount.teraMask) overlay.setMask(mount.teraMask);
+      } catch (_error) {}
+      mount.teraOverlay = overlay;
+      return overlay;
+    }
+
+    _destroyMountTeraFx(mount) {
+      if (!mount) return;
+      if (Array.isArray(mount.teraSparkles)) {
+        mount.teraSparkles.forEach(sparkle => sparkle?.destroy?.());
+      }
+      mount.teraSparkles = [];
+      mount.teraOverlay?.destroy?.();
+      mount.teraOverlay = null;
+      mount.teraMask?.destroy?.();
+      mount.teraMask = null;
+    }
+
+    _setMountTerastallized(mount, active = false, teraType = '') {
+      if (!mount) return;
+      mount.terastallized = Boolean(active);
+      mount.teraType = String(teraType || '').toLowerCase();
+      if (!mount.terastallized) {
+        this._destroyMountTeraFx(mount);
+        return;
+      }
+      this._ensureMountTeraOverlay(mount);
+      this._syncMountTeraFx(mount, 0);
+    }
+
+    setBattlerTerastallized(side, options = {}) {
+      const mount = this._mountForBattleSide(side);
+      if (!mount) return;
+      const teraType = String(options?.teraType || '').toLowerCase();
+      const active = options?.terastallized === true || !!teraType;
+      this._setMountTerastallized(mount, active, teraType);
+    }
+
+    _syncMountTeraFx(mount, deltaMs = 0) {
+      if (!mount?.phaserSprite) return;
+      const spr = mount.phaserSprite;
+      if (!mount.terastallized) {
+        if (mount.teraOverlay) mount.teraOverlay.setVisible(false);
+        return;
+      }
+      const overlay = this._ensureMountTeraOverlay(mount);
+      if (!overlay || !spr.active) return;
+      const shouldShow = Boolean(spr.visible && spr.alpha > 0 && mount.currentUrl);
+      overlay.setVisible(shouldShow);
+      if (!shouldShow) return;
+      overlay
+        .setPosition(spr.x, spr.y)
+        .setDepth((spr.depth || 7) + 0.4)
+        .setTint(this._teraTintForType(mount.teraType));
+      const overlayW = Math.max(24, Math.round(spr.displayWidth * 0.95));
+      const overlayH = Math.max(24, Math.round(spr.displayHeight * 0.98));
+      overlay.setSize(overlayW, overlayH);
+      overlay.setDisplaySize(overlayW, overlayH);
+      overlay.tilePositionX += Math.max(0, Number(deltaMs) || 0) * 0.05;
+      overlay.tilePositionY += Math.max(0, Number(deltaMs) || 0) * 0.04;
+    }
+
+    _emitTeraSparkles() {
+      if (!this.isBootstrapped) return;
+      if (!this.anims.exists('pkb-effect-tera-sparkle')) return;
+      const mounts = [this.enemySprite, this.playerSprite];
+      for (const mount of mounts) {
+        if (!mount?.terastallized) continue;
+        const spr = mount?.phaserSprite;
+        if (!spr?.active || !spr.visible || spr.alpha <= 0) continue;
+        mount.teraSparkles = (mount.teraSparkles || []).filter(sparkle => sparkle?.active);
+        if (mount.teraSparkles.length >= 6) continue;
+        if (Math.random() < 0.45) continue;
+        const dx = (Math.random() - 0.5) * spr.displayWidth * 0.8;
+        const dy = -Math.random() * spr.displayHeight * 0.88;
+        const sparkle = this.add.sprite(
+          spr.x + dx,
+          spr.y + dy,
+          env.UI_ASSETS.effectTeraSparkle.key,
+          '0'
+        )
+          .setOrigin(0.5, 0.5)
+          .setDepth((spr.depth || 7) + 1.6)
+          .setScale(0.78 + Math.random() * 0.36)
+          .setAlpha(0.95);
+        sparkle.play('pkb-effect-tera-sparkle');
+        mount.teraSparkles.push(sparkle);
+        this.time.delayedCall(980, () => sparkle.destroy());
+      }
     }
 
     _refreshBattlerSpritesForMetrics() {
@@ -261,6 +428,16 @@ export function createBattleShellSceneClass(Phaser, env) {
     // Async: returns immediately; sprite appears once the image loads.
     async renderBattlerSprite(mount, spriteModel) {
       const url = spriteModel?.url || '';
+      const hasTeraState = Boolean(
+        spriteModel
+        && (Object.prototype.hasOwnProperty.call(spriteModel, 'teraType')
+          || Object.prototype.hasOwnProperty.call(spriteModel, 'terastallized'))
+      );
+      if (hasTeraState) {
+        const teraType = String(spriteModel?.teraType || '').toLowerCase();
+        const active = spriteModel?.terastallized === true || !!teraType;
+        this._setMountTerastallized(mount, active, teraType);
+      }
       if (!url) {
         this._clearBattlerAnim(mount);
         mount.phaserSprite.setTexture('pkb-battler-placeholder').setVisible(false);
@@ -273,6 +450,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         mount.metricsSnapshot = null;
         mount.shadowVisibleByMetrics = false;
         mount.shadow.setVisible(false);
+        this._syncMountTeraFx(mount, 0);
         return;
       }
       // Skip reload if same URL is already showing.
@@ -345,6 +523,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           .setScale(sprScale)
           .setPosition(spriteTargetX, spriteTargetY);
         mount.phaserSprite.setVisible(true);
+        this._syncMountTeraFx(mount, 0);
 
         // Shadow: composite sprite offset + shadow offset (follows DBK apply_metrics_to_sprite
         // which applies front/back sprite offset AND shadow_sprite offset to the shadow position).
@@ -466,6 +645,7 @@ export function createBattleShellSceneClass(Phaser, env) {
             mount.phaserSprite.setVisible(false);
             mount.shadowVisibleByMetrics = false;
             mount.shadow.setVisible(false);
+            this._syncMountTeraFx(mount, 0);
           }
         }
         this._logSpriteAnim(mount, 'load error', { url, error: _err?.message || String(_err) });
@@ -518,6 +698,11 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.ui?.renderModel?.(model || {});
     }
 
+    update(_time, delta = 0) {
+      this._syncMountTeraFx(this.enemySprite, delta);
+      this._syncMountTeraFx(this.playerSprite, delta);
+    }
+
     _mountForBattleSide(side) {
       const perspective = Number.isInteger(this.currentModel?.perspective)
         ? clamp(Number(this.currentModel.perspective), 0, 1)
@@ -549,6 +734,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       spr.setAlpha(1);
       spr.setVisible(false);
       if (mount?.shadow) mount.shadow.setVisible(false);
+      this._syncMountTeraFx(mount, 0);
     }
 
     async prepareSwitchInBattler(side, spriteUrl = '') {
@@ -563,6 +749,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       spr.setAlpha(1);
       spr.setVisible(false);
       if (mount?.shadow) mount.shadow.setVisible(false);
+      this._syncMountTeraFx(mount, 0);
     }
 
     /**
@@ -583,6 +770,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (mount?.shadow) {
         mount.shadow.setVisible(Boolean(shouldShow && mount.shadowVisibleByMetrics));
       }
+      this._syncMountTeraFx(mount, 0);
     }
 
     async playQuietFormChange(side, options = {}) {
@@ -662,6 +850,147 @@ export function createBattleShellSceneClass(Phaser, env) {
           spr.setAlpha(baseAlpha);
         }
         flare?.destroy?.();
+      }
+    }
+
+    async playTerastallize(side, options = {}) {
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active || !spr.visible) return;
+
+      const baseScaleX = spr.scaleX;
+      const baseScaleY = spr.scaleY;
+      const baseAlpha = spr.alpha;
+      const depth = Number.isFinite(spr.depth) ? spr.depth : 7;
+      const aura = this.add.ellipse(
+        spr.x,
+        spr.y - (spr.displayHeight * 0.46),
+        Math.max(34, Math.round(spr.displayWidth * 0.9)),
+        Math.max(22, Math.round(spr.displayHeight * 0.52)),
+        0xb6f2ff,
+        0,
+      ).setDepth(depth + 2);
+      const teraSigil = textureExists(this, env.UI_ASSETS.effectTera?.key)
+        ? this.add.image(spr.x, spr.y - (spr.displayHeight * 0.54), env.UI_ASSETS.effectTera.key)
+            .setOrigin(0.5, 0.5)
+            .setDepth(depth + 1)
+            .setAlpha(0)
+        : null;
+      if (teraSigil) {
+        const sigilScale = Math.max(0.24, (spr.displayWidth || 72) / 120);
+        teraSigil.setScale(sigilScale);
+      }
+      const sparkles = [];
+      const sparkleAnimReady = this.anims.exists('pkb-effect-tera-sparkle')
+        && textureExists(this, env.UI_ASSETS.effectTeraSparkle?.key, '0');
+      const spawnSparkle = (dx, dy, delay = 0, scale = 1) => {
+        if (!sparkleAnimReady) return;
+        this.time.delayedCall(delay, () => {
+          if (!spr.active) return;
+          const sparkle = this.add.sprite(spr.x + dx, spr.y + dy, env.UI_ASSETS.effectTeraSparkle.key, '0')
+            .setOrigin(0.5, 0.5)
+            .setDepth(depth + 3)
+            .setAlpha(0.95)
+            .setScale(scale);
+          sparkle.play('pkb-effect-tera-sparkle');
+          sparkles.push(sparkle);
+          this.time.delayedCall(900, () => sparkle.destroy());
+        });
+      };
+      const sparkleSet = [
+        {dx: -14, dy: -42, delay: 20, scale: 0.85},
+        {dx: 18, dy: -48, delay: 80, scale: 1.05},
+        {dx: -24, dy: -24, delay: 120, scale: 0.9},
+        {dx: 26, dy: -18, delay: 180, scale: 0.95},
+        {dx: -10, dy: -56, delay: 240, scale: 1.1},
+        {dx: 6, dy: -34, delay: 300, scale: 0.88},
+        {dx: -20, dy: -10, delay: 360, scale: 0.92},
+        {dx: 22, dy: -36, delay: 430, scale: 1.0},
+      ];
+
+      try {
+        this.tweens.killTweensOf(spr);
+        if (options?.audioEnabled !== false) this.audio?.play?.('se/hit', 0.42);
+        sparkleSet.forEach(cfg => spawnSparkle(cfg.dx, cfg.dy, cfg.delay, cfg.scale));
+        spr.setTintFill(0xffffff);
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX * 0.92,
+            scaleY: baseScaleY * 0.92,
+            duration: 220,
+            ease: 'Cubic.easeIn',
+          }),
+          this._runTween({
+            targets: teraSigil,
+            alpha: 0.84,
+            duration: 220,
+            ease: 'Sine.easeOut',
+          }),
+          this._runTween({
+            targets: aura,
+            alpha: 0.7,
+            scaleX: 1.45,
+            scaleY: 1.45,
+            duration: 220,
+            ease: 'Sine.easeOut',
+          }),
+        ]);
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX * 1.1,
+            scaleY: baseScaleY * 1.1,
+            duration: 220,
+            ease: 'Cubic.easeOut',
+          }),
+          this._runTween({
+            targets: teraSigil,
+            alpha: 0.26,
+            duration: 220,
+            ease: 'Sine.easeInOut',
+          }),
+          this._runTween({
+            targets: aura,
+            alpha: 0.22,
+            scaleX: 1.9,
+            scaleY: 1.9,
+            duration: 220,
+            ease: 'Sine.easeOut',
+          }),
+        ]);
+        spr.clearTint();
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX,
+            scaleY: baseScaleY,
+            alpha: baseAlpha,
+            duration: 200,
+            ease: 'Sine.easeInOut',
+          }),
+          this._runTween({
+            targets: teraSigil,
+            alpha: 0,
+            duration: 260,
+            ease: 'Sine.easeIn',
+          }),
+          this._runTween({
+            targets: aura,
+            alpha: 0,
+            duration: 260,
+            ease: 'Sine.easeIn',
+          }),
+        ]);
+      } finally {
+        if (spr.active) {
+          spr.clearTint();
+          spr.setScale(baseScaleX, baseScaleY);
+          spr.setAlpha(baseAlpha);
+        }
+        teraSigil?.destroy?.();
+        aura?.destroy?.();
+        sparkles.forEach(sparkle => sparkle?.destroy?.());
       }
     }
 
@@ -804,6 +1133,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       spr.setAlpha(1);
       spr.setY(startY);
       if (mount?.shadow) mount.shadow.setVisible(false);
+      this._syncMountTeraFx(mount, 0);
     }
 
     /**
@@ -822,6 +1152,7 @@ export function createBattleShellSceneClass(Phaser, env) {
 
       if (!fromBall) {
         spr.setVisible(true);
+        this._syncMountTeraFx(mount, 0);
         return;
       }
 
@@ -901,6 +1232,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           onStop: resolve,
         });
       });
+      this._syncMountTeraFx(mount, 0);
     }
 
     /**
