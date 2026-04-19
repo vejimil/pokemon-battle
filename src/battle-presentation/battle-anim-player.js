@@ -52,6 +52,13 @@ const USER_FOCUS_Y   = 116;   // 148 - 32
 const TARGET_FOCUS_X = 234;
 const TARGET_FOCUS_Y = 52;    // 84 - 32
 
+// Optional baseline offsets for USER/TARGET copy frames.
+// `NO_GRAPHIC` helps purely USER/TARGET animations (graphic='') keep a natural position.
+const BATTLER_COPY_BASE_OFFSET_X = 0;
+const BATTLER_COPY_BASE_OFFSET_Y = 0;
+const BATTLER_COPY_NO_GRAPHIC_OFFSET_X = 0;
+const BATTLER_COPY_NO_GRAPHIC_OFFSET_Y = 0;
+
 export class BattleAnimPlayer {
   /**
    * @param {Phaser.Scene} scene — the Phaser battle scene
@@ -261,6 +268,9 @@ export class BattleAnimPlayer {
     const hasBattlerFrames = ENABLE_BATTLER_COPY_PHASE2 && frames.some(spriteFrames =>
       Array.isArray(spriteFrames) && spriteFrames.some(frame => frame?.target === FT_USER || frame?.target === FT_TARGET)
     );
+    const hasGraphicFrames = frames.some(spriteFrames =>
+      Array.isArray(spriteFrames) && spriteFrames.some(frame => frame?.target === FT_GRAPHIC)
+    );
     const bgLayerRef = { value: null };
     let extraFrames = 0;
     let destroyed = false;
@@ -325,7 +335,7 @@ export class BattleAnimPlayer {
           this._setBlendMode(spr, frame.blendType ?? AB_NORMAL);
           this._applyToneAndColor(spr, frame, globalTint);
           if (Number.isFinite(frame.priority)) {
-            spr.setDepth(2 + (Number(frame.priority) * 2));
+            spr.setDepth(this._resolvePriorityDepth(frame.priority, frame, bgLayerRef));
           }
           continue;
         }
@@ -343,7 +353,7 @@ export class BattleAnimPlayer {
         const spriteIndex = isUser ? u++ : t++;
         if (spriteIndex >= pool.length) {
           const copy = this.scene.add.image(0, 0, srcSprite.texture.key, srcSprite.frame?.name);
-          copy.setOrigin(srcSprite.originX ?? 0.5, srcSprite.originY ?? 1);
+          copy.setOrigin(0.5, 0.5);
           copy.setDepth(srcSprite.depth ?? 7);
           pool.push(copy);
         }
@@ -351,21 +361,30 @@ export class BattleAnimPlayer {
 
         this._syncBattlerCopyTexture(copySprite, srcSprite);
         const sourceScaleX = Number.isFinite(srcSprite.scaleX) ? srcSprite.scaleX : 1;
-        const sourceScaleY = Number.isFinite(srcSprite.scaleY) ? srcSprite.scaleY : sourceScaleX;
+        const sourceScaleY = Number.isFinite(srcSprite.scaleY) ? srcSprite.scaleY : 1;
+        const parentScaleY = Number.isFinite(srcSprite.parentContainer?.scaleY)
+          ? Number(srcSprite.parentContainer.scaleY)
+          : null;
+        const sourceScale = Number.isFinite(parentScaleY) && parentScaleY !== 0
+          ? Math.abs(parentScaleY)
+          : Math.abs(sourceScaleY);
         const absSourceScaleY = Math.abs(sourceScaleY) || 1;
         const sourceHeight = Number.isFinite(srcSprite.height) && srcSprite.height > 0
           ? srcSprite.height
           : (srcSprite.displayHeight ?? 64) / absSourceScaleY;
+        const baseOffsetX = hasGraphicFrames ? BATTLER_COPY_BASE_OFFSET_X : BATTLER_COPY_NO_GRAPHIC_OFFSET_X;
+        const baseOffsetY = hasGraphicFrames ? BATTLER_COPY_BASE_OFFSET_Y : BATTLER_COPY_NO_GRAPHIC_OFFSET_Y;
 
         // Keep source-scale correction from PokeRogue's BattleAnim.play (line 992).
         copySprite.setPosition(
-          frameData.x,
-          frameData.y - (sourceHeight / 2) * (absSourceScaleY - 1)
+          frameData.x + baseOffsetX,
+          frameData.y - (sourceHeight / 2) * (sourceScale - 1) + baseOffsetY
         );
         copySprite.setAngle(frameData.angle);
+        const orientedScaleX = Math.sign(sourceScaleX) * sourceScale;
         copySprite.setScale(
-          frameData.scaleX * sourceScaleX * scaleMultiplier,
-          frameData.scaleY * sourceScaleY * scaleMultiplier
+          frameData.scaleX * orientedScaleX * scaleMultiplier,
+          frameData.scaleY * sourceScale * scaleMultiplier
         );
         copySprite.setAlpha((frame.opacity ?? 255) / 255);
         // Source battlers are intentionally hidden during USER/TARGET overlay frames.
@@ -374,7 +393,7 @@ export class BattleAnimPlayer {
         this._setBlendMode(copySprite, frame.blendType ?? AB_NORMAL);
         this._applyToneAndColor(copySprite, frame, globalTint);
         if (Number.isFinite(frame.priority)) {
-          copySprite.setDepth(2 + (Number(frame.priority) * 2));
+          copySprite.setDepth(this._resolvePriorityDepth(frame.priority, frame, bgLayerRef));
         }
       }
 
@@ -488,7 +507,8 @@ export class BattleAnimPlayer {
         copy.setTexture(key);
       }
     } catch {}
-    copy.setOrigin(source.originX ?? 0.5, source.originY ?? 1);
+    // Original BattleAnim copy sprites use default sprite origin (center).
+    copy.setOrigin(0.5, 0.5);
     copy.setDepth(source.depth ?? copy.depth);
   }
 
@@ -533,6 +553,24 @@ export class BattleAnimPlayer {
       blend === 2      ? 11 :   // Phaser.BlendModes.DIFFERENCE = 11
       0                         // Phaser.BlendModes.NORMAL = 0
     );
+  }
+
+  _resolvePriorityDepth(priority, frame = {}, bgLayerRef = null) {
+    const n = Number(priority);
+    const battlerTopDepth = 7;
+    if (!Number.isFinite(n)) return battlerTopDepth + 2;
+    if (n <= 1) return battlerTopDepth + 2;
+    if (n === 2) {
+      const bgDepth = Number(bgLayerRef?.value?.depth);
+      if (Number.isFinite(bgDepth)) return bgDepth + 0.2;
+      if (frame.focus === AF_USER || frame.focus === AF_TARGET) return battlerTopDepth - 1;
+      return 1;
+    }
+    if (n === 3) {
+      if (frame.focus === AF_USER || frame.focus === AF_TARGET) return battlerTopDepth - 0.2;
+      return battlerTopDepth + 2;
+    }
+    return battlerTopDepth + 2;
   }
 
   // ─────────────────────────────────────────────────── timed sound events ─

@@ -27,6 +27,8 @@ Target: `/workspaces/pokemon-battle`
   - `AnimTimedAddBg/AnimTimedUpdateBg` 배경 이벤트 지원(가뭄/모래바람 등 필드 배경 연출 복원)
   - `USER/TARGET` 프레임 재활성화 + `graphic=''` 애니 허용(버티기/바디프레스/사이코키네시스 계열 복원)
   - Z 물리/특수도 확대 적용(`scale 1.4`) + 타입 기반 tint 추가
+  - terrain 파싱/정규화 보강(`move: Electric Terrain` 계열 id 인식)
+  - USER/TARGET copy origin/scale 보정 + no-graphic 전용 base Y(+8) 오프셋 분리
 
 ### 고정 순서 반영
 - 요청 고정 순서: `25 -> 23 -> 28`
@@ -68,11 +70,16 @@ Target: `/workspaces/pokemon-battle`
 - `timeline.js`
   - 모래바람/싸라기눈 피해 메시지를 weather locale key로 출력
   - 날씨 피해 데미지 시점에 대응 필드 애니 재생
+  - `terrain_start` effect를 `move:` 접두 포함 문자열에서도 정상 인식하도록 정규화
+- `showdown-engine.cjs`
+  - `-fieldstart/-fieldend` effect를 `parts[2]` 기준으로 파싱해 `[from] ability` 태그 오염 제거
 - `app.js`
   - Z 메타에 `zMoveType` 전달
 - 결과:
   - 가뭄/모래바람/전기필드 등 common 연출 표시 복원
   - `protect`, `body-press`, `psychic`, `endure` 등 기존 비어 보이던 기술 연출 복원
+  - terrain(`electric/grassy/misty/psychic`) 시작 연출 키 정합 복원
+  - USER/TARGET 프레임 과상단 배치 완화(일반/무그래픽 애니 분리 오프셋)
 
 4. 타임라인 회귀 가드 유지
 - 기존 순서(`move -> hp -> faint/switch`) 유지
@@ -145,7 +152,7 @@ Target: `/workspaces/pokemon-battle`
 
 ### 기존 회귀 스위트
 - `npm run verify:ba20` PASS
-- `npm run verify:stage22` PASS (금회 1회 실행, FAIL 미발생)
+- `npm run verify:stage22` FAIL/PASS/FAIL (Mega Feraligatr 케이스 플래키, 재현성 있음)
 - `npm run verify:passb` PASS
 
 ### 인라인 다이맥스 검증

@@ -749,13 +749,13 @@ function normalizeEventsFromLine(line, ctx) {
         const id = ident ? parseIdentForEvent(ident) : {side: 'p1', slot: 0};
         terrainEvents.push({type: 'ability_show', turn: ctx.turn, seq: ctx.seq++, side: id.side, slot: id.slot, ability: abilityName, passive: false});
       }
-      const effectId = parts[3] || parts[2];
-      terrainEvents.push({type: 'terrain_start', turn: ctx.turn, seq: ctx.seq++, effect: effectId, raw: parts[2]});
+      const effectRaw = parts[2] || '';
+      terrainEvents.push({type: 'terrain_start', turn: ctx.turn, seq: ctx.seq++, effect: effectRaw, raw: effectRaw});
       return terrainEvents;
     }
     case '-fieldend': {
-      const effectId = parts[3] || parts[2];
-      return [{type: 'terrain_end', turn: ctx.turn, seq: ctx.seq++, effect: effectId, raw: parts[2]}];
+      const effectRaw = parts[2] || '';
+      return [{type: 'terrain_end', turn: ctx.turn, seq: ctx.seq++, effect: effectRaw, raw: effectRaw}];
     }
 
     case '-status': {

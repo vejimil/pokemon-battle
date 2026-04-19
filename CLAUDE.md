@@ -210,20 +210,28 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `battle-anim-player`에서 `USER/TARGET` 프레임이 비활성화된 상태
   - `graphic=''`(무그래픽) anim-data를 로더가 거부
   - `AnimTimedAddBgEvent/AnimTimedUpdateBgEvent` 미구현
+  - terrain id 정규화 누락(`move: Electric Terrain` → `electricterrain`)으로 terrain common anim key 매핑 실패
+  - `USER/TARGET` copy sprite origin/보정식 차이로 프레임이 과상단 배치
 - 수정:
   - `battle-anim-player.js`
     - `USER/TARGET` 프레임 재활성화
     - `graphic=''` anim-data 허용
     - timed BG 이벤트(`AnimTimedAddBgEvent`/`AnimTimedUpdateBgEvent`) 실행 경로 추가
+    - copy sprite origin을 원본과 동일한 중심(0.5,0.5)으로 조정
+    - 일반/무그래픽 애니 분리 base offset(`NO_GRAPHIC y`) 추가
   - `timeline.js`
     - 모래바람/싸라기눈 weather damage 메시지 locale key 연결
     - weather damage 시점 필드 애니 재생 연결
+    - terrain id 정규화(`move:` prefix 제거) 추가
+  - `showdown-engine.cjs`
+    - `-fieldstart/-fieldend`의 `terrain_start/end.effect`를 `parts[2]` 기준으로 보정
   - `app.js`
     - Z 메타에 타입(`zMoveType`) 전달
     - Z 물리/특수도 스케일 확대(공통 `1.4`) + 타입 tint 적용
 - 검증:
   - `node --check src/battle-presentation/battle-anim-player.js` PASS
   - `node --check src/battle-presentation/timeline.js` PASS
+  - `node --check server/showdown-engine.cjs` PASS
   - `node --check src/app.js` PASS
   - `npm run verify:ba20` PASS
   - `npm run verify:passb` PASS
@@ -420,7 +428,12 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 **✅ BA-23: 기술/날씨/필드 연출 완벽화 — 완료 (2026-04-19)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`, `app.js`)
 - 원본 `battle-anims.ts`/`common-anim-phase.ts`/`arena.ts` 정합 이식
 - weather/terrain common anim 연결 + Z 기술 연출 규칙(물리/특수/변화) 반영
-- 검증: `node --check`(수정 파일), `npm run verify:ba20`, `npm run verify:passb`, `npm run verify:stage22` PASS
+- 후속 보강(사용자 피드백):
+  - `showdown-engine.cjs` `-fieldstart/-fieldend` effect 파싱을 `parts[2]` 기준으로 고정
+  - `timeline.js` terrain effect `move:` 접두 정규화(`move: Electric Terrain` -> `electricterrain`)
+  - `battle-anim-player.js` USER/TARGET copy origin/scale 정합 + no-graphic 전용 base Y(+8) 분리
+- 검증: `node --check`(수정 파일), `npm run verify:ba20`, `npm run verify:passb`, `npm run verify:stage22`
+  - `verify:stage22`는 3회 실행 결과 FAIL/PASS/FAIL(mega feraligatr)로 플래키 재현성 있음
 
 **✅ BA-24: 테라스탈 구현 — 1차 완료 (2026-04-17)** (`showdown-engine.cjs`, `event-schema.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - `-terastallize`를 독립 `terastallize` 이벤트로 파싱하고 `target/teraType/teraTypeName/trigger/fromSource`를 구조화

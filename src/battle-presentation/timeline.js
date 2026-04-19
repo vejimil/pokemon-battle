@@ -470,6 +470,12 @@ export class BattleTimelineExecutor {
     return TERRAIN_COMMON_ANIMS[toId(terrainId)] || '';
   }
 
+  _normalizeTerrainId(rawTerrain = '') {
+    const raw = String(rawTerrain || '').trim();
+    if (!raw) return '';
+    return toId(raw.replace(/^move:\s*/i, ''));
+  }
+
   async _playFieldAnim(animName, options = {}) {
     const scene = this._scene();
     if (!scene?.playFieldAnim || !animName) return;
@@ -1207,7 +1213,7 @@ export class BattleTimelineExecutor {
 
       // ── BA-3: Terrain ────────────────────────────────────────────────────
       case 'terrain_start': {
-        const effectId = toId(ev.effect || ev.raw || '');
+        const effectId = this._normalizeTerrainId(ev.effect || ev.raw || '');
         this._activeTerrainId = effectId || this._activeTerrainId;
         const tLabel = this._terrainStartMessage(effectId, ev.effect || ev.raw || '');
         await this._showMsg(tLabel, { minMs: 620 });
