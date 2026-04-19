@@ -152,13 +152,29 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - 핵심 구현:
   - `showdown-engine.cjs`: `-start|-end ... Dynamax`를 `dynamax_start/end`로 구조화, 동반 `-heal [silent]`를 다이맥스 이벤트에 흡수
   - `timeline.js`: `dynamax_start/end`를 메시지 -> 연출 -> info patch 순서로 처리
-  - `battle-shell-scene.js`: `setBattlerDynamaxState`, `playDynamaxStart/End`, max 1.5x 스케일 적용
+  - `battle-shell-scene.js`: `setBattlerDynamaxState`, `playDynamaxStart/End`, max 2.0x 스케일 적용(최종 조정)
   - `app.js`: `dynamaxed/gigantamaxed` 상태 전파, gmax sprite 분기, payload `gigantamax` 전달
 - 회귀 가드 확인:
   - 기술 전 HP/스프라이트 선반영 금지 유지
   - timeline lock 중 message-only 유지
   - `move -> hp -> faint/switch` 순서 유지
   - 테라스탈 경로 독립 유지
+
+### ✅ 2026-04-19 BA-25 후속 안정화 (사용자 검수 반영)
+- 테라스탈 즉시 KO 케이스 보정:
+  - 변신 턴 즉시 기절 상황에서도 테라스탈 스프라이트/정보창 타입 표시가 턴 내에서 유지되도록 타임라인 대상 포켓몬 해석을 보강
+  - `app.js`의 `resolveTimelineEventMon`/`resolveTimelineEventVisualState`에 fallback species + 상태 우선 매칭(테라/다이맥스)을 추가
+- 다이맥스 조작/표시 보정:
+  - Gen9 Custom Game 경로에서 다이맥스 버튼 비활성 이슈를 `Side.prototype.canDynamaxNow` 패치로 해소 (`showdown-engine.cjs`)
+  - 다이맥스/거다이맥스 기술명은 `request.maxMoves`를 우선 사용하도록 UI 표시 경로 정리 (`app.js`)
+  - Max/G-Max 사용 시 기술 연출이 비어 보이지 않도록 원기술 애니메이션 fallback(`animationMove`) 연결 (`app.js`, `timeline.js`)
+- 거다이맥스 강제 정책 반영:
+  - 거다이맥스 가능 종은 일반 다이맥스 대신 자동 거다이맥스로 처리되도록 payload/서버 시작 경로 모두에서 `gigantamax=true` 강제
+  - 결과적으로 `maxMoves`가 거다이기술(`gmax*`) 우선으로 노출되고, 이벤트 `gigantamaxed=true`와 동기화
+- 최종 스케일/기준점 조정:
+  - 다이맥스 배율 2.0x와 metrics/shadow 재적용 배율을 완전히 동기화
+  - 확대 기준은 중앙-하단(`origin(0.5, 1)`) 유지
+  - 일반 다이맥스만 base Y를 소폭 하향(+12) 적용, 거다이맥스는 추가 하향 없음 (`battle-shell-scene.js`)
 
 ### ✅ M5. locale 네임스페이스 로더 — 완료 (2026-04-16)
 - 원본 참조: `pokerogue_codes/src/plugins/utils-plugins.ts`, `pokerogue_codes/src/plugins/i18n.ts`

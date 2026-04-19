@@ -13,6 +13,11 @@ Target: `/workspaces/pokemon-battle`
 ### 완료
 - `BA-24` 테라스탈 구현 (2차 보강 포함) 완료
 - `BA-25` 다이맥스 구현 완료
+- `BA-25` 후속 안정화 완료
+  - 다이맥스 버튼/토글 경로 보정
+  - Max/G-Max 기술명·기술 모션 fallback 보정
+  - 거다이맥스 가능 종 자동 거다이맥스 강제
+  - 다이맥스 2.0x + metrics 동기화 + 일반 다이맥스 base Y 하향 조정
 
 ### 고정 순서 반영
 - 요청 고정 순서: `25 -> 23 -> 28`
@@ -22,7 +27,7 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
-## 1) BA-25 완료 보고
+## 1) BA-25 완료 보고 (최종 안정화 포함)
 
 ### 원본 조사(수정 전 선행)
 - `pokerogue_codes/src/field/pokemon.ts`
@@ -56,7 +61,9 @@ Target: `/workspaces/pokemon-battle`
 
 3. Phaser 씬
 - battler mount에 `dynamaxed/gigantamaxed` 상태 추가
-- `isMax` 기준 1.5x 스케일 적용 경로 추가
+- `isMax` 기준 2.0x 스케일 적용 경로 추가(최종)
+- 확대 기준점은 중앙-하단(`origin(0.5,1)`) 유지
+- 일반 다이맥스만 base Y 하향(+12), 거다이맥스는 하향 없음
 - `setBattlerDynamaxState`, `playDynamaxStart`, `playDynamaxEnd` API 추가
 - 테라 오버레이와 공존하도록 동기화
 
@@ -64,8 +71,13 @@ Target: `/workspaces/pokemon-battle`
 - battle info/model에 `dynamaxed`, `gigantamaxed` 전달
 - Phaser sprite model(`enemySprite/playerSprite`)에 다이맥스 상태 전달
 - 시각 해석(`resolveTimelineEventVisualState`)에 다이맥스 시작/해제 sprite 분기 추가
-- 거다이맥스 의도 전달: payload에 `gigantamax` 전달(선택 종족명 `-gmax` 기반)
+- 거다이맥스 가능 종 자동 처리: payload/서버 양쪽에서 `gigantamax` 강제
 - `runtimeSupportsDynamax()`는 포맷/요청(`canDynamax`) 기반으로 계산
+- Max/G-Max 기술 표시명은 request `maxMoves` 우선 사용, 연출은 원기술 `animationMove` fallback 사용
+
+5. 테라스탈 즉시 KO 보정
+- 변신 턴 즉시 기절 시에도 스프라이트/정보창 타입 반영이 유지되도록
+  `resolveTimelineEventMon` 매칭을 보강(fallback species + 상태 우선 매칭)
 
 ---
 
@@ -80,7 +92,7 @@ Target: `/workspaces/pokemon-battle`
 
 ### 기존 회귀 스위트
 - `npm run verify:ba20` PASS
-- `npm run verify:stage22` PASS
+- `npm run verify:stage22` 최근 재실행에서 메가 케이스 간헐 FAIL 관찰(플래키)
 - `npm run verify:passb` PASS
 
 ### 인라인 다이맥스 검증
