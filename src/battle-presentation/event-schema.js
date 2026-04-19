@@ -69,6 +69,8 @@ export const EVENT_TYPES = /** @type {const} */ ({
   SINGLE_TURN_EFFECT:  'single_turn_effect',
 
   // Forme
+  DYNAMAX_START:       'dynamax_start',
+  DYNAMAX_END:         'dynamax_end',
   TERASTALLIZE:        'terastallize',
   FORME_CHANGE:        'forme_change',
 
@@ -90,6 +92,7 @@ export function isCoreEvent(type) {
     EVENT_TYPES.ABILITY_SHOW,
     EVENT_TYPES.WEATHER_START, EVENT_TYPES.WEATHER_TICK, EVENT_TYPES.WEATHER_END,
     EVENT_TYPES.TERRAIN_START, EVENT_TYPES.TERRAIN_END,
+    EVENT_TYPES.DYNAMAX_START, EVENT_TYPES.DYNAMAX_END,
     EVENT_TYPES.MOVE_USE,
     EVENT_TYPES.DAMAGE,
     EVENT_TYPES.TERASTALLIZE,

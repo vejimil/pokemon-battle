@@ -1,197 +1,128 @@
 # PKB Battle Presentation 활성 계획
 
-Last updated: 2026-04-17  
+Last updated: 2026-04-19  
 Target: `/workspaces/pokemon-battle`
 
-완료된 상세 이력은 `planprevious.md`로 분리했다.  
-이 문서는 "지금부터 할 일" 중심으로 유지한다.
+완료 이력 아카이브는 `planprevious.md` 기준으로 관리한다.  
+이 문서는 현재 활성 작업과 다음 순서만 유지한다.
 
 ---
 
-## 0) 오늘 상태 요약 (2026-04-17)
+## 0) 오늘 상태 요약 (2026-04-19)
 
 ### 완료
-- `BA-27` 타임라인 재생 중 입력 블록 완료
-- `BA-26` 폼명 고정(UI) + 폼체인지 메시지 톤 복원 완료
-- `BA-24` 테라스탈 1차 구현 완료 (파서/스키마/타임라인/씬/UI 동기화)
+- `BA-24` 테라스탈 구현 (2차 보강 포함) 완료
+- `BA-25` 다이맥스 구현 완료
 
-### 오늘 후속 회귀 수정 완료
-- 증상 1: 기술 연출 전에 HP/스프라이트가 최종 상태로 선반영
-- 증상 2: 기절 전에 sprite가 먼저 사라짐
-- 증상 3: input 잠금은 걸리는데 선택창이 남아 있음
+### 고정 순서 반영
+- 요청 고정 순서: `25 -> 23 -> 28`
+- 현재 남은 순서:
+1. `BA-23` 기술/날씨/필드 연출 완벽화
+2. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
 
-### 적용한 핵심 수정
-1. `src/app.js`
-- `playTimelineAcrossActiveViews()`
-  - `setBattleInputLocked(..., { rerender:false })` 유지
-  - 중간 턴 `prepareSwitchInBattler()` 선호출 금지 (초기 소환 경로만 허용)
-  - `forceBattleMessageOnlyUiDuringLock()` 추가: 잠금 직후 DOM/Phaser를 message 모드로 즉시 전환
-- locale namespace에 `pokemon-info` 추가 (테라 타입 로컬라이즈 메시지용)
+---
 
-2. `server/showdown-engine.cjs`
-- `-terastallize`를 `forme_change` 분기에서 분리
-- `terastallize` 이벤트를 안정 추출: `target`, `teraType`, `teraTypeName`, `trigger`, `fromSource`
+## 1) BA-25 완료 보고
 
-3. `src/battle-presentation/event-schema.js`, `src/battle-presentation/timeline.js`
-- `terastallize` 이벤트 타입 추가 및 core 분류 반영
-- 타임라인에 `terastallize` 핸들러 추가: 메시지 → 테라 연출 → info patch(UI) 순서로 실행
-- `terastallize` 시점에 최종 스프라이트를 즉시 반영
-- 테라 직후 연계 `forme_change`는 연출/메시지를 생략해 중복 변신 방지
-- `switch_in` 이벤트에서 `fromBall` 여부와 무관하게 이벤트 시점 sprite 교체
-- `fromBall=true`이면 `visible:false`로 세팅 후 `switchInBattler()` 연출 진행
+### 원본 조사(수정 전 선행)
+- `pokerogue_codes/src/field/pokemon.ts`
+  - `isMax()` 판별 및 `getSpriteScale()`에서 Max 계열 1.5x 스케일 확인
+- `pokerogue_codes/src/data/pokemon-forms/form-change-triggers.ts`
+  - `gigantamaxChange` 메시지 분기 확인
+- 확인된 제한사항:
+  - 원본에 `DynamaxPhase` 명시 클래스는 없고, `isMax()` 기반 스케일/폼 메시지 경로 중심 구조
 
-4. `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
-- `playTerastallize(side, options)`를 `effects/tera`, `effects/tera_sparkle` 기반 연출로 교체
+### 반영 파일
+- `server/showdown-engine.cjs`
+- `src/battle-presentation/event-schema.js`
+- `src/battle-presentation/timeline.js`
+- `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+- `src/app.js`
 
-5. `src/pokerogue-transplant-runtime/runtime/constants.js`, `src/pokerogue-transplant-runtime/runtime/assets.js`
-- 테라 이펙트 에셋 로더 추가:
-  - `pkb-effect-tera` (`assets/pokerogue/effects/tera.png`)
-  - `pkb-effect-tera-sparkle` (`assets/pokerogue/effects/tera_sparkle.json/png`)
+### 핵심 반영
+1. 서버 이벤트 파싱
+- `-start|-end ... Dynamax`를 `dynamax_start`/`dynamax_end`로 구조화
+- 다이맥스 동반 `-heal [silent]`를 일반 `heal`로 재생하지 않고 다이맥스 이벤트에 흡수
+- 이벤트 필드: `target`, `species`, `gigantamaxed`, `hpAfter`, `maxHp`
 
-### 오늘 검증 결과
+2. 타임라인
+- `dynamax_start`: 메시지 → 다이맥스 시작 연출 → info patch(HP/UI/dynamax 상태)
+- `dynamax_end`: 메시지 → 다이맥스 해제 연출 → info patch(HP/UI 상태 복귀)
+- 회귀 가드 유지:
+  - 기술 전 HP/스프라이트 선반영 금지
+  - `move -> hp -> faint/switch` 순서 보존
+  - 타임라인 중 message-only 유지
+  - 테라스탈 경로 독립 유지
+
+3. Phaser 씬
+- battler mount에 `dynamaxed/gigantamaxed` 상태 추가
+- `isMax` 기준 1.5x 스케일 적용 경로 추가
+- `setBattlerDynamaxState`, `playDynamaxStart`, `playDynamaxEnd` API 추가
+- 테라 오버레이와 공존하도록 동기화
+
+4. 앱 상태/렌더 모델
+- battle info/model에 `dynamaxed`, `gigantamaxed` 전달
+- Phaser sprite model(`enemySprite/playerSprite`)에 다이맥스 상태 전달
+- 시각 해석(`resolveTimelineEventVisualState`)에 다이맥스 시작/해제 sprite 분기 추가
+- 거다이맥스 의도 전달: payload에 `gigantamax` 전달(선택 종족명 `-gmax` 기반)
+- `runtimeSupportsDynamax()`는 포맷/요청(`canDynamax`) 기반으로 계산
+
+---
+
+## 2) 검증 결과
+
+### 정적 검사
 - `node --check server/showdown-engine.cjs` PASS
-- `node --check src/app.js` PASS
 - `node --check src/battle-presentation/event-schema.js` PASS
 - `node --check src/battle-presentation/timeline.js` PASS
-- `node --check src/pokerogue-transplant-runtime/runtime/constants.js` PASS
-- `node --check src/pokerogue-transplant-runtime/runtime/assets.js` PASS
 - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` PASS
+- `node --check src/app.js` PASS
+
+### 기존 회귀 스위트
 - `npm run verify:ba20` PASS
 - `npm run verify:stage22` PASS
 - `npm run verify:passb` PASS
-- 인라인 검증: `move 1 terastallize` 턴에서 `events.type==='terastallize'` 추출 확인, `forme_change(mechanism=-terastallize)` 미발생 확인 PASS
-- 추가 인라인 검증: Ogerpon 테라 턴에서 `terastallize -> forme_change(detailschange: Ogerpon-Teal-Tera)` 연속 발생 확인(타임라인 중복 연출 생략 대상)
 
-### BA-24 2차 보강 (2026-04-17, 사용자 피드백 반영)
-- 원본 작동 기제 재분석 완료:
-  - `pokerogue_codes/src/phases/tera-phase.ts`
-  - `pokerogue_codes/src/pipelines/sprite.ts`
-  - `pokerogue_codes/src/pipelines/glsl/sprite-frag-shader.frag`
-  - `pokerogue_codes/src/field/pokemon-sprite-sparkle-handler.ts`
-  - 결론: 원본은 테라가 일회성 이펙트가 아니라 `isTerastallized + teraColor + tera texture` 기반의 **지속 렌더 상태** + 주기적 sparkle 생성
-- 추가 반영 파일:
-  - `src/battle-presentation/timeline.js`
-  - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
-  - `src/app.js`
-- 추가 반영 내용:
-  1. `timeline.js`
-  - `terastallize` 직후 `forme_change`가 같은 슬롯/턴으로 연결된 경우(next-event lookahead), `terastallize` 단계에서 linked form visual을 우선 적용
-  - linked form seq는 `_consumedTerastallizeFormSeqs`로 표시해 직후 `forme_change` 중복 처리 스킵 (베이스폼 잠깐 노출 제거)
-  - `_applyInfoForSlot()`에서 `teraType` patch를 감지하면 scene의 `setBattlerTerastallized()` 호출
-  2. `battle-shell-scene.js`
-  - 배틀러 mount별 `terastallized/teraType` 상태 추가
-  - `effects/tera.png` 기반 지속 오버레이(`tileSprite`) + 타입별 tint + 시간 흐름 tile 이동
-  - `pkb-effect-tera-sparkle` 주기 생성 타이머 추가(테라 상태 유지 중 랜덤 sparkle spawn)
-  - `setBattlerTerastallized(side, {terastallized, teraType})` 공개 API 추가
-  - switch/faint/layout/update 경로에서 tera overlay 동기화
-  3. `app.js`
-  - Phaser sprite model(`enemySprite`/`playerSprite`)에 `terastallized`, `teraType` 필드 전달
-  - 턴 사이 일반 렌더에서도 테라 지속 상태 유지 가능하도록 연결
-- 2차 검증:
-  - `node --check src/battle-presentation/timeline.js` PASS
-  - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` PASS
-  - `node --check src/app.js` PASS
-  - `npm run verify:ba20` PASS
-  - `npm run verify:stage22` PASS (단, Feraligatr case가 간헐적으로 FAIL/ PASS 변동하는 플래키성 1회 관찰)
-  - `npm run verify:passb` PASS
-  - 인라인 검증: Ogerpon/Terapagos에서 `terastallize -> forme_change(detailschange)` 연속 이벤트 확인, post-turn species가 각각 `Ogerpon-Teal-Tera`, `Terapagos-Stellar`로 갱신됨 확인
+### 인라인 다이맥스 검증
+- `gen8customgame`에서 `move 1 dynamax` 실행 시
+  - `dynamax_start` 이벤트 추출 + `hpAfter/maxHp` 포함 확인
+  - 기존 `heal` 이벤트 오염 없이 `move_use/damage` 순서 유지 확인
+- 3턴 종료 시점
+  - `dynamax_end` 이벤트 추출 + 해제 HP(`153/153` 케이스) 반영 확인
+- `gigantamax: true` 팀 payload 케이스
+  - `dynamax_start.gigantamaxed === true` 확인
 
 ---
 
-## 1) 고정 작업 순서
+## 3) 다음 작업 (고정)
 
-요청된 고정 순서: `27 -> 26 -> 24 -> 25 -> 23 -> 28`  
-현재 남은 순서:
-1. `BA-24` 테라스탈 구현 (브라우저 검증 + 미세 조정)
-2. `BA-25` 다이맥스 구현
-3. `BA-23` 기술/날씨/필드 연출 완벽화
-4. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
-
----
-
-## 2) 현재 작업: BA-24 (테라스탈)
-
-### 목표
-- Showdown `-terastallize`를 이벤트로 구조화하고,
-- 타임라인 순서에 맞는 메시지/시각/UI 반영을 구현한다.
-
-### 사전 원칙
-- 반드시 `pokerogue_codes` 원본 코드 먼저 읽고 이식
-- 기존 BA-27/BA-26/연출 순서 회귀 금지
-- 단계 완료마다 `plan.md`, `CLAUDE.md` 즉시 업데이트
-
-### 구현 체크리스트
-1. 원본 조사 ✅
-- `pokerogue_codes`에서 테라스탈 phase/메시지/연출 흐름 확인
-- 이벤트 발생 시점(메시지 vs 비주얼 vs 타입 갱신) 파악
-
-2. 서버 이벤트 파싱 ✅
-- `server/showdown-engine.cjs`
-- `-terastallize`를 안정적으로 timeline event로 추출
-- 필요한 필드(대상 side/slot, tera type, 표시 텍스트 재료) 정의
-
-3. 이벤트 스키마 ✅
-- `src/battle-presentation/event-schema.js`
-- terastallize 이벤트 타입/필드 스키마 반영
-
-4. 타임라인 실행 ✅
-- `src/battle-presentation/timeline.js`
-- 메시지/연출/정보패치 순서 구현
-- 기존 `move_use/damage/faint/switch_in` 순서와 충돌 없는지 확인
-
-5. 뷰/씬/UI 반영 ✅
-- `src/app.js`
-- `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
-- 필요 시 tera 아이콘/타입 표시/배틀러 시각 반영
-
-6. 회귀 검증 ✅
-- 정적: `node --check` (수정 파일)
-- 회귀: `npm run verify:ba20`, `npm run verify:stage22`, `npm run verify:passb`
-- 이벤트 추출 확인: terastallize 전용 이벤트 + forme_change 오염 방지 확인
-
-### 브라우저 확인 포인트 (BA-24 마감 전 남은 확인)
-1. 테라 선언 메시지/연출/타입 반영 순서가 자연스러운지
-2. 테라 직후 기술/데미지/기절 순서가 깨지지 않는지
-3. 타임라인 재생 중 선택창 숨김(message-only)이 유지되는지
-4. 타임라인 종료 후 입력 해제 + 선택창 복귀가 정상인지
-
----
-
-## 3) 후속 작업 개요 (BA-25 / BA-23 / BA-28)
-
-### BA-25 (다이맥스)
-1. 원본(`pokerogue_codes`)에서 다이맥스/거다이맥스 phase 흐름 먼저 확인
-2. `showdown-engine.cjs`에서 다이맥스 관련 이벤트 추출 안정화
-3. `timeline.js`에 변환/해제 메시지 및 시각 순서 반영
-4. 기존 switch_in/faint/forme_change와 충돌 없는지 회귀 검증
-
-### BA-23 (기술/날씨/필드 연출 완벽화)
+### BA-23 (다음 착수)
 1. move/weather/terrain 템포를 원본 체감으로 미세 조정
 2. 누락된 메시지 키/사운드/완충 간격 보강
-3. 연출 순서 회귀(move -> hp -> faint/switch) 유지 검증
+3. `move -> hp -> faint/switch` 회귀 재검증
 
-### BA-28 (한국어명 보강)
-1. KO 모드에서 영어 노출되는 포켓몬/기술 수집
+### BA-28
+1. KO 모드 영어 노출 포켓몬/기술 수집
 2. `assets/pokerogue/locales/ko/*.json` 우선 보강
-3. 미존재 항목만 수동 override로 최소 추가
+3. 미존재 항목만 최소 override 추가
 
 ---
 
-## 4) 공통 작업 원칙
+## 4) 공통 작업 원칙 (유지)
 
-- 수정 전 원본 우선 이식
+- 수정 전 원본 코드 선독/정합 이식
 - 배틀 연출 완성 전 UI 폴리시(UI-P1~P5) 착수 금지
-- 문서 동기화 필수:
-  - 단계 완료 직후 `plan.md`, `CLAUDE.md` 반영
-  - 완료 이력은 `planprevious.md`에 누적
+- 단계 완료 직후 `plan.md`, `CLAUDE.md` 동기화
+- 완료 이력은 `planprevious.md` 누적
 
 ---
 
-## 5) 빠른 시작 메모 (새 세션용)
+## 5) 빠른 시작 메모
 
 - 먼저 읽기: `CLAUDE.md` -> `plan.md` -> `planprevious.md`
-- 다음 착수 항목: `BA-24` 브라우저 검증/미세조정
+- 다음 착수 항목: `BA-23`
 - 회귀 핵심 가드:
-  - 연출 시작 전 스냅샷 선반영 금지
-  - 타임라인 중 선택창 비노출(message-only)
-  - 이벤트 순서(move -> hp -> faint/switch) 보존
+  - 기술 전 HP/스프라이트 선반영 금지
+  - 타임라인 중 message-only 유지
+  - `move -> hp -> faint/switch` 순서 보존
+  - 테라스탈/다이맥스 상호 훼손 금지

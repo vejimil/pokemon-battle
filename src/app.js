@@ -1690,6 +1690,8 @@ function buildTimelineStaticInfoPatch(mon) {
     gender: info.gender,
     shiny: info.shiny,
     teraType: info.teraType,
+    dynamaxed: Boolean(info.dynamaxed),
+    gigantamaxed: Boolean(info.gigantamaxed),
     badges: info.badges,
   };
 }
@@ -1728,6 +1730,20 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
     const override = getTimelineSpriteOverride(side);
     spriteId = String(override?.spriteId || '');
     shiny = Boolean(override?.shiny);
+  }
+  if (!spriteId && ev.type === 'dynamax_start' && mon && ev.gigantamaxed) {
+    const gmaxSpriteId = getGigantamaxAssetId(mon);
+    if (gmaxSpriteId) {
+      spriteId = gmaxSpriteId;
+      shiny = Boolean(mon.shiny);
+    }
+  }
+  if (!spriteId && ev.type === 'dynamax_end' && mon) {
+    const preDynamaxSpriteId = String(mon.preDynamaxSpriteId || '');
+    if (preDynamaxSpriteId) {
+      spriteId = preDynamaxSpriteId;
+      shiny = Boolean(mon.shiny);
+    }
   }
   if (!spriteId && ev.type === 'forme_change') {
     const formSpecies = String(ev.toSpecies || '').trim();
@@ -1961,7 +1977,7 @@ function getEngineAuthoritativeSinglesRuntimeDescriptor() {
     badge: lang('엔진 싱글', 'Engine singles'),
     badgeTone: 'ready',
     heroLabel: lang('로컬 Showdown 싱글 엔진 필수', 'Local Showdown singles required'),
-    detail: `${buildShowdownStatusNote()}<br>${lang('싱글 배틀 판정의 실제 기준은 브라우저 커스텀 로직이 아니라 번들된 로컬 Node 엔진입니다.', 'Singles battle resolution is driven by the bundled local Node engine rather than browser custom logic.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}`,
+    detail: `${buildShowdownStatusNote()}<br>${lang('싱글 배틀 판정의 실제 기준은 브라우저 커스텀 로직이 아니라 번들된 로컬 Node 엔진입니다.', 'Singles battle resolution is driven by the bundled local Node engine rather than browser custom logic.')}<br>${lang('다이맥스 토글은 엔진 요청에 canDynamax가 제공되는 포맷에서만 노출됩니다.', 'The Dynamax toggle appears only in formats where engine requests provide canDynamax.')}`,
     startAllowed: true,
     startBlockedReason: '',
     startMessage: lang('로컬 Showdown 엔진 필수 싱글 배틀을 시작합니다.', 'Starting an engine-required singles battle through the local Showdown engine.'),
@@ -1976,7 +1992,7 @@ function getBlockedSinglesRuntimeDescriptor(extraReason = '') {
     badge: lang('엔진 필요', 'Engine required'),
     badgeTone: 'warning',
     heroLabel: lang('로컬 엔진이 필요한 싱글', 'Singles require the local engine'),
-    detail: `${buildShowdownStatusNote()}<br>${lang('지원되는 싱글 배틀은 번들된 로컬 엔진이 준비된 경우에만 열립니다.', 'Supported singles battles only open when the bundled local engine is available.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}${reasonLine}`,
+    detail: `${buildShowdownStatusNote()}<br>${lang('지원되는 싱글 배틀은 번들된 로컬 엔진이 준비된 경우에만 열립니다.', 'Supported singles battles only open when the bundled local engine is available.')}<br>${lang('다이맥스 토글은 엔진 요청에 canDynamax가 제공되는 포맷에서만 노출됩니다.', 'The Dynamax toggle appears only in formats where engine requests provide canDynamax.')}${reasonLine}`,
     startAllowed: false,
     startBlockedReason: lang('싱글 배틀은 번들된 로컬 Showdown 엔진이 준비된 경우에만 시작할 수 있습니다.', 'Singles battles can start only when the bundled local Showdown engine is available.'),
     startMessage: '',
@@ -1990,7 +2006,7 @@ function getBlockedDoublesRuntimeDescriptor() {
     badge: lang('더블 보류', 'Doubles blocked'),
     badgeTone: 'warning',
     heroLabel: lang('엔진 마이그레이션 전 더블', 'Doubles awaiting engine migration'),
-    detail: `${lang('더블은 아직 로컬 엔진으로 마이그레이션되지 않았습니다.', 'Doubles have not been migrated to the local engine yet.')}<br>${lang('팀 빌더와 선택 UI는 계속 사용할 수 있지만, 실제 더블 배틀 시작은 엔진 경로가 준비될 때까지 차단됩니다.', 'The team builder and selection UI remain available, but actual doubles battle start stays blocked until an engine-backed path is ready.')}<br>${lang('지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드로 노출하지 않습니다.', 'Unsupported browser battle execution paths are not exposed as user-facing normal modes.')}<br>${lang('다이맥스는 현재 검증된 지원 경로가 아니므로 UI에서 의도적으로 비활성화했습니다.', 'Dynamax is intentionally disabled in the UI because there is no verified supported path for it yet.')}`,
+    detail: `${lang('더블은 아직 로컬 엔진으로 마이그레이션되지 않았습니다.', 'Doubles have not been migrated to the local engine yet.')}<br>${lang('팀 빌더와 선택 UI는 계속 사용할 수 있지만, 실제 더블 배틀 시작은 엔진 경로가 준비될 때까지 차단됩니다.', 'The team builder and selection UI remain available, but actual doubles battle start stays blocked until an engine-backed path is ready.')}<br>${lang('지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드로 노출하지 않습니다.', 'Unsupported browser battle execution paths are not exposed as user-facing normal modes.')}<br>${lang('다이맥스 토글은 엔진 요청에 canDynamax가 제공되는 포맷에서만 노출됩니다.', 'The Dynamax toggle appears only in formats where engine requests provide canDynamax.')}`,
     startAllowed: false,
     startBlockedReason: lang('더블 배틀은 아직 엔진 기반 경로가 없으므로 현재 빌드에서는 시작할 수 없습니다.', 'Doubles battles cannot start in the current build because there is no engine-backed path yet.'),
     startMessage: '',
@@ -2055,7 +2071,16 @@ function syncRuntimeModeUi() {
 }
 
 function runtimeSupportsDynamax() {
-  return false;
+  const battle = state.battle;
+  if (!battle?.players) return false;
+  const hasRequestToggle = battle.players.some((_, player) => {
+    const request = getEngineRequestForPlayer(player, battle);
+    if (!request?.active || !Array.isArray(request.active)) return false;
+    return request.active.some(entry => Boolean(entry?.canDynamax));
+  });
+  if (hasRequestToggle) return true;
+  const formatId = String(battle?.engineMeta?.formatid || '').toLowerCase();
+  return formatId.startsWith('gen8');
 }
 
 const UI_STRINGS = Object.freeze({
@@ -3762,12 +3787,14 @@ function resolveBattleRenderSpriteId(mon) {
   const speciesName = getBattleRenderSpeciesName(mon);
   const baseSpeciesName = mon.baseSpecies || mon.originalData?.baseSpecies || speciesName;
   const isTransformedSpecies = Boolean(toId(speciesName) && toId(baseSpeciesName) && toId(speciesName) !== toId(baseSpeciesName));
+  const gigantamaxSprite = mon.dynamaxed && mon.gigantamaxed ? getGigantamaxAssetId(mon) : '';
   const snapshotFormSprite = [
     mon.megaUsed && mon.megaSpriteId && (!mon.megaSpecies || toId(mon.megaSpecies) === toId(speciesName)) ? mon.megaSpriteId : '',
     mon.primalSpriteId && (!mon.primalSpecies || toId(mon.primalSpecies) === toId(speciesName)) ? mon.primalSpriteId : '',
     mon.ultraSpriteId && (!mon.ultraSpecies || toId(mon.ultraSpecies) === toId(speciesName)) ? mon.ultraSpriteId : '',
   ].find(Boolean) || '';
   const exactAutoSpriteId = getAutoSpriteIdForSpecies(speciesName, mon.gender || '', baseSpeciesName);
+  if (gigantamaxSprite) return gigantamaxSprite;
   if (isTransformedSpecies && exactAutoSpriteId && doesSpriteIdMatchSpeciesFamily(exactAutoSpriteId, speciesName, baseSpeciesName)) return exactAutoSpriteId;
   if (snapshotFormSprite && doesSpriteIdMatchSpeciesFamily(snapshotFormSprite, speciesName, baseSpeciesName)) return snapshotFormSprite;
   const candidate = mon.spriteId || mon.spriteAutoId || '';
@@ -4920,6 +4947,7 @@ function enforceMonRequiredTeraType(mon, speciesData = mon?.data) {
 async function buildShowdownPayloadMon(mon, player, slot) {
   const startSpecies = normalizeShowdownStartSpecies(mon);
   const startSpeciesData = startSpecies ? await getSpeciesData(startSpecies).catch(() => null) : null;
+  const intendsGigantamax = /-gmax/i.test(String(mon.displaySpecies || mon.formSpecies || mon.species || ''));
   const startAbility = resolveShowdownStartAbility(mon, startSpeciesData);
   const requiredTeraType = resolveRequiredTeraTypeFromSpeciesData(startSpeciesData);
   const resolvedTeraType = requiredTeraType || toId(mon.teraType || startSpeciesData?.types?.[0] || '') || '';
@@ -4947,6 +4975,7 @@ async function buildShowdownPayloadMon(mon, player, slot) {
     gender: mon.gender || '',
     level: Number(mon.level || 100),
     shiny: Boolean(mon.shiny),
+    gigantamax: intendsGigantamax,
     happiness: 255,
     evs: deepClone(mon.evs || {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0}),
     ivs: deepClone(mon.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31}),
@@ -6832,6 +6861,8 @@ function buildBattleInfoModelFromMon(mon, player = Number(mon?.player ?? 0)) {
     gender: mon.gender || '',
     shiny: Boolean(mon.shiny),
     teraType: mon.terastallized ? toId(mon.teraType || '') : '',
+    dynamaxed: Boolean(mon.dynamaxed),
+    gigantamaxed: Boolean(mon.gigantamaxed),
     badges: getBattleBadgeText(mon) ? getBattleBadgeText(mon).split(' · ') : [],
     fainted: Boolean(mon.fainted),
     spriteUrl: spritePath(resolveBattleRenderSpriteId(mon), player === 0 ? 'back' : 'front', mon.shiny),
@@ -7085,12 +7116,16 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
       mount: 'enemy',
       terastallized: Boolean(enemyInfo?.teraType),
       teraType: enemyInfo?.teraType || '',
+      dynamaxed: Boolean(enemyMon?.dynamaxed),
+      gigantamaxed: Boolean(enemyMon?.gigantamaxed),
     },
     playerSprite: {
       url: resolveSpriteUrlForBattleSide(allyPlayer, perspective, playerMon, playerRenderable),
       mount: 'player',
       terastallized: Boolean(playerInfo?.teraType),
       teraType: playerInfo?.teraType || '',
+      dynamaxed: Boolean(playerMon?.dynamaxed),
+      gigantamaxed: Boolean(playerMon?.gigantamaxed),
     },
     enemyTray: buildBattleTrayModel(enemyPlayer, battle),
     playerTray: buildBattleTrayModel(allyPlayer, battle),

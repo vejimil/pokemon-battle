@@ -289,10 +289,29 @@ function normalizeLogTextFromLine(line, logCtx = null) {
       return {text: `${a} 측 효과 시작: ${b} / ${a} side effect started: ${b}`, tone: 'accent'};
     case '-sideend':
       return {text: `${a} 측 효과 종료: ${b} / ${a} side effect ended: ${b}`, tone: 'accent'};
-    case '-start':
+    case '-start': {
+      const effectId = toId(b);
+      if (effectId === 'dynamax') {
+        const gmax = toId(c) === 'gmax';
+        return {
+          text: gmax
+            ? `${displayNameForPokemonProtocol(a)} 거다이맥스! / ${displayNameForPokemonProtocol(a)} Gigantamaxed!`
+            : `${displayNameForPokemonProtocol(a)} 다이맥스! / ${displayNameForPokemonProtocol(a)} Dynamaxed!`,
+          tone: 'accent',
+        };
+      }
       return {text: `${displayNameForPokemonProtocol(a)} 효과 시작: ${b} / effect started: ${b}`, tone: ''};
-    case '-end':
+    }
+    case '-end': {
+      const effectId = toId(b);
+      if (effectId === 'dynamax') {
+        return {
+          text: `${displayNameForPokemonProtocol(a)} 다이맥스가 해제되었다. / ${displayNameForPokemonProtocol(a)} returned to normal size.`,
+          tone: 'accent',
+        };
+      }
       return {text: `${displayNameForPokemonProtocol(a)} 효과 종료: ${b} / effect ended: ${b}`, tone: ''};
+    }
     case '-mega':
       return {text: `${displayNameForPokemonProtocol(a)} 메가진화! / ${displayNameForPokemonProtocol(a)} Mega Evolved!`, tone: 'accent'};
     case '-zpower':
@@ -404,6 +423,7 @@ function parseFromTagForEvent(parts = [], startIndex = 4) {
  *   ctx.hpCache       {Map<string, {hp,maxHp}>}
  *   ctx.pendingCrit   {Map<string, boolean>}
  *   ctx.pendingHitResult {Map<string, string>}
+ *   ctx.pendingDynamax {Map<string, {kind:string,event:object}>}
  */
 function normalizeEventsFromLine(line, ctx) {
   const parts = String(line || '').split('|');
@@ -418,6 +438,7 @@ function normalizeEventsFromLine(line, ctx) {
         out.push({type: 'turn_end', turn: ctx.turn, seq: ctx.seq++});
       }
       ctx.turn = newTurn;
+      ctx.pendingDynamax?.clear?.();
       out.push({type: 'turn_start', turn: ctx.turn, seq: ctx.seq++});
       return out;
     }
@@ -469,6 +490,27 @@ function normalizeEventsFromLine(line, ctx) {
       }];
     }
 
+    case '-start':
+    case '-end': {
+      const effectId = toId(parts[3]);
+      if (effectId !== 'dynamax') {
+        return [{type: 'raw_event', turn: ctx.turn, seq: ctx.seq++, tag, raw: line}];
+      }
+      const id = parseIdentForEvent(parts[2]);
+      const identKey = parts[2];
+      const isStart = tag === '-start';
+      const event = {
+        type: isStart ? 'dynamax_start' : 'dynamax_end',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        target: {side: id.side, slot: id.slot},
+        species: displayNameForPokemonProtocol(parts[2] || ''),
+        gigantamaxed: isStart ? toId(parts[4]) === 'gmax' : false,
+      };
+      ctx.pendingDynamax.set(identKey, {kind: isStart ? 'start' : 'end', event});
+      return [event];
+    }
+
     case '-damage':
     case '-heal': {
       const id = parseIdentForEvent(parts[2]);
@@ -479,7 +521,18 @@ function normalizeEventsFromLine(line, ctx) {
       const prevHp = prev ? prev.hp : cond.hp;
       const maxHp = prev ? prev.maxHp : cond.maxHp;
       const amount = Math.abs(prevHp - cond.hp);
-      ctx.hpCache.set(identKey, {hp: cond.hp, maxHp});
+      const isSilent = parts.slice(4).some(part => /^\[silent\]$/i.test(String(part || '').trim()));
+      ctx.hpCache.set(identKey, {hp: cond.hp, maxHp: cond.maxHp});
+      if (tag === '-heal' && isSilent) {
+        const pendingDynamax = ctx.pendingDynamax.get(identKey);
+        if (pendingDynamax?.event) {
+          pendingDynamax.event.hpAfter = cond.hp;
+          pendingDynamax.event.maxHp = cond.maxHp;
+          pendingDynamax.event.status = cond.status;
+          ctx.pendingDynamax.delete(identKey);
+          return [];
+        }
+      }
       if (tag === '-damage') {
         const critical = ctx.pendingCrit.get(identKey) ?? false;
         const hitResult = ctx.pendingHitResult.get(identKey) ?? 'effective';
@@ -491,7 +544,7 @@ function normalizeEventsFromLine(line, ctx) {
           seq: ctx.seq++,
           target: {side: id.side, slot: id.slot},
           hpAfter: cond.hp,
-          maxHp,
+          maxHp: cond.maxHp || maxHp,
           amount,
           status: cond.status,
           hitResult,
@@ -507,7 +560,7 @@ function normalizeEventsFromLine(line, ctx) {
           seq: ctx.seq++,
           target: {side: id.side, slot: id.slot},
           hpAfter: cond.hp,
-          maxHp,
+          maxHp: cond.maxHp || maxHp,
           amount,
           status: cond.status,
           fromSource: fromMeta.fromSource,
@@ -896,7 +949,7 @@ class ShowdownLocalSinglesSession {
     this.rawOutputs = [];
     // Event stream state (M1)
     this.eventsBuffer = [];
-    this._evtCtx = {turn: null, seq: 0, hpCache: new Map(), pendingCrit: new Map(), pendingHitResult: new Map()};
+    this._evtCtx = {turn: null, seq: 0, hpCache: new Map(), pendingCrit: new Map(), pendingHitResult: new Map(), pendingDynamax: new Map()};
   }
 
   write(line) {
@@ -987,6 +1040,7 @@ class ShowdownLocalSinglesSession {
           ivs: mon.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31},
           level: Number(mon.level || 100),
           shiny: Boolean(mon.shiny),
+          gigantamax: Boolean(mon.gigantamax),
           teraType,
         };
       });
@@ -1013,6 +1067,7 @@ class ShowdownLocalSinglesSession {
     this.eventsBuffer = [];
     this._evtCtx.pendingCrit = new Map();
     this._evtCtx.pendingHitResult = new Map();
+    this._evtCtx.pendingDynamax = new Map();
     if (p1) this.write(`>p1 ${p1}`);
     if (p2) this.write(`>p2 ${p2}`);
     await this.drainOutputs(5);
@@ -1149,7 +1204,7 @@ class ShowdownLocalSinglesSession {
         megaUsed: team.some(mon => mon.megaUsed),
         teraUsed: team.some(mon => mon.terastallized),
         zUsed: Boolean(side.zMoveUsed),
-        dynamaxUsed: false,
+        dynamaxUsed: Boolean(side.dynamaxUsed),
         hazards: mapHazards(side.sideConditions),
         sideConditions: mapSideConditionTurns(side.sideConditions),
         request,
@@ -1175,7 +1230,7 @@ class ShowdownLocalSinglesSession {
         formatid: this.formatid,
         supportsSingles: true,
         supportsDoubles: false,
-        notes: 'Stage 1 migration path: singles only. Current engine path supports Gen 9 Custom Game battle flow with Showdown-family resolution. Mega Evolution, Z-Moves, and Terastallization are available in this format; Dynamax is not supported in Gen 9 formats and remains a later custom-extension task.',
+        notes: 'Stage 1 migration path: singles only. Current engine path supports Gen 9 Custom Game battle flow with Showdown-family resolution. Mega Evolution, Z-Moves, and Terastallization are available in this default format. Dynamax handling is implemented in the presentation/parser path and becomes available only in formats/requests that expose canDynamax.',
       },
     };
   }

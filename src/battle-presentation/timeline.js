@@ -267,6 +267,8 @@ export class BattleTimelineExecutor {
       case 'callback_event':
         return 0;
       case 'switch_in':
+      case 'dynamax_start':
+      case 'dynamax_end':
       case 'move_use':
       case 'damage':
       case 'heal':
@@ -549,6 +551,17 @@ export class BattleTimelineExecutor {
         teraType,
       });
     }
+    const hasDynamaxField = patch && (
+      Object.prototype.hasOwnProperty.call(patch, 'dynamaxed')
+      || Object.prototype.hasOwnProperty.call(patch, 'gigantamaxed')
+    );
+    if (hasDynamaxField && Number(slot) === 0) {
+      const scene = this._scene();
+      scene?.setBattlerDynamaxState?.(side, {
+        dynamaxed: patch?.dynamaxed === true,
+        gigantamaxed: patch?.gigantamaxed === true,
+      });
+    }
     return nextInfo;
   }
 
@@ -690,6 +703,23 @@ export class BattleTimelineExecutor {
     );
   }
 
+  _buildDynamaxStartMessage(pokemonNameWithAffix, gigantamaxed = false) {
+    const fallback = this._isEnglishLocale()
+      ? (gigantamaxed
+        ? `${pokemonNameWithAffix} Gigantamaxed!`
+        : `${pokemonNameWithAffix} Dynamaxed!`)
+      : (gigantamaxed
+        ? `${pokemonNameWithAffix}[[는]]\n거다이맥스했다!`
+        : `${pokemonNameWithAffix}[[는]]\n다이맥스했다!`);
+    return fallback;
+  }
+
+  _buildDynamaxEndMessage(pokemonNameWithAffix) {
+    return this._isEnglishLocale()
+      ? `${pokemonNameWithAffix} returned to normal size.`
+      : `${pokemonNameWithAffix}[[는]]\n원래 크기로 돌아왔다.`;
+  }
+
   // ── public API ─────────────────────────────────────────────────────────────
 
   /**
@@ -798,6 +828,104 @@ export class BattleTimelineExecutor {
         // Await the load so the cry plays even on first load (avoids 500ms timeout miss).
         const dexNum = speciesToDexNum(species);
         if (dexNum) await this._playCryByNum(dexNum);
+        break;
+      }
+
+      // ── BA-25: Dynamax start/end (message -> effect -> info patch) ──────
+      case 'dynamax_start': {
+        const side = ev.target?.side;
+        const slot = ev.target?.slot ?? 0;
+        if (!side) break;
+        const visual = await this._resolveVisual(ev);
+        const scene = this._scene();
+        const dmaxName = this._slotName(side, slot);
+        const dmaxNameWithAffix = this._pokemonNameWithAffix(dmaxName, side);
+
+        await this._showMsg(
+          this._buildDynamaxStartMessage(dmaxNameWithAffix, Boolean(ev.gigantamaxed)),
+          { minMs: 620 },
+        );
+        if (visual?.spriteUrl) {
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: true });
+        }
+        if (scene?.playDynamaxStart) {
+          await scene.playDynamaxStart(side, {
+            audioEnabled: this._audioEnabled,
+            gigantamaxed: Boolean(ev.gigantamaxed),
+          });
+        } else {
+          await this._delay(420);
+        }
+
+        const startPatch = {
+          ...(visual?.infoPatch || {}),
+          dynamaxed: true,
+          gigantamaxed: Boolean(ev.gigantamaxed),
+        };
+        if (Number.isFinite(ev?.hpAfter) && Number.isFinite(ev?.maxHp) && Number(ev.maxHp) > 0) {
+          const hpPercent = (Number(ev.hpAfter) / Number(ev.maxHp)) * 100;
+          startPatch.hp = Number(ev.hpAfter);
+          startPatch.maxHp = Number(ev.maxHp);
+          startPatch.hpPercent = hpPercent;
+          startPatch.hpLabel = `${Number(ev.hpAfter)}/${Number(ev.maxHp)}`;
+          startPatch.fainted = Number(ev.hpAfter) <= 0 || ev.status === 'fnt';
+          if (ev.status && ev.status !== 'fnt') {
+            startPatch.statusEffect = ev.status;
+            startPatch.statusLabel = ev.status;
+          }
+          if (ev.status === 'fnt') {
+            startPatch.statusEffect = '';
+            startPatch.statusLabel = '';
+          }
+        }
+        this._applyInfoForSlot(side, slot, startPatch);
+        break;
+      }
+
+      case 'dynamax_end': {
+        const side = ev.target?.side;
+        const slot = ev.target?.slot ?? 0;
+        if (!side) break;
+        const visual = await this._resolveVisual(ev);
+        const scene = this._scene();
+        const normalName = this._slotName(side, slot);
+        const normalNameWithAffix = this._pokemonNameWithAffix(normalName, side);
+
+        await this._showMsg(this._buildDynamaxEndMessage(normalNameWithAffix), { minMs: 560 });
+        if (scene?.playDynamaxEnd) {
+          await scene.playDynamaxEnd(side, {
+            audioEnabled: this._audioEnabled,
+            gigantamaxed: Boolean(ev.gigantamaxed),
+          });
+        } else {
+          await this._delay(360);
+        }
+        if (visual?.spriteUrl) {
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: true });
+        }
+
+        const endPatch = {
+          ...(visual?.infoPatch || {}),
+          dynamaxed: false,
+          gigantamaxed: false,
+        };
+        if (Number.isFinite(ev?.hpAfter) && Number.isFinite(ev?.maxHp) && Number(ev.maxHp) > 0) {
+          const hpPercent = (Number(ev.hpAfter) / Number(ev.maxHp)) * 100;
+          endPatch.hp = Number(ev.hpAfter);
+          endPatch.maxHp = Number(ev.maxHp);
+          endPatch.hpPercent = hpPercent;
+          endPatch.hpLabel = `${Number(ev.hpAfter)}/${Number(ev.maxHp)}`;
+          endPatch.fainted = Number(ev.hpAfter) <= 0 || ev.status === 'fnt';
+          if (ev.status && ev.status !== 'fnt') {
+            endPatch.statusEffect = ev.status;
+            endPatch.statusLabel = ev.status;
+          }
+          if (ev.status === 'fnt') {
+            endPatch.statusEffect = '';
+            endPatch.statusLabel = '';
+          }
+        }
+        this._applyInfoForSlot(side, slot, endPatch);
         break;
       }
 

@@ -81,7 +81,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 | abilityBar (enemy) | (202, 64) | x=screenRight-118, y=-116 in fieldUI |
 | abilityBar (player) | (0, 64) | x=0, y=-116 in fieldUI |
 
-## 다음 세션 우선순위 (Sprint 7 시작 — 2026-04-16 기준)
+## 다음 세션 우선순위 (Sprint 7 갱신 — 2026-04-19 기준)
 
 > **작업 원칙1: 각 항목을 수정하기 전에 반드시 PokeRogue 원본 코드를 자세하게 읽고 정확히 일치시킬 것.**
 > **작업 원칙2: 작업 시에는 항상 각주를 달고, 작업 마무리 때는 항상 CLAUDE.md도 업데이트 할것.**
@@ -119,9 +119,9 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 6. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
 7. `BA-26` 배틀 내 폼체인지 표시명 고정 ✅ 완료 (2026-04-17)
 8. `BA-24` 테라스탈 구현 ✅ 1차 완료 (2026-04-17)
-9. `BA-25` 다이맥스 구현
-10. `BA-23` 기술/날씨/필드 연출 완벽화
-11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
+9. `BA-25` 다이맥스 구현 ✅ 완료 (2026-04-19)
+10. `BA-23` 기술/날씨/필드 연출 완벽화 (다음)
+11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (고정 후순위)
 
 ### ✅ 2026-04-17 오늘 작업 요약
 - `BA-27`/`BA-26` 구현 및 후속 회귀 안정화 완료.
@@ -143,7 +143,22 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `timeline.js`에 `terastallize` 핸들러 추가(메시지 → 테라 연출 → info patch 순서)
   - `battle-shell-scene.js`에 `playTerastallize()` 추가
   - `app.js` locale namespace에 `pokemon-info` 추가(테라 타입 로컬라이즈)
-- 현재 남은 우선순위: `BA-24(브라우저 확인) -> BA-25 -> BA-23 -> BA-28`
+- 현재 남은 우선순위(고정): `BA-23 -> BA-28`
+
+### ✅ 2026-04-19 오늘 작업 요약 (BA-25)
+- 원본 선독 후 반영:
+  - `pokerogue_codes/src/field/pokemon.ts` (`isMax()`, max 스케일)
+  - `pokerogue_codes/src/data/pokemon-forms/form-change-triggers.ts` (거다이맥스 메시지 분기)
+- 핵심 구현:
+  - `showdown-engine.cjs`: `-start|-end ... Dynamax`를 `dynamax_start/end`로 구조화, 동반 `-heal [silent]`를 다이맥스 이벤트에 흡수
+  - `timeline.js`: `dynamax_start/end`를 메시지 -> 연출 -> info patch 순서로 처리
+  - `battle-shell-scene.js`: `setBattlerDynamaxState`, `playDynamaxStart/End`, max 1.5x 스케일 적용
+  - `app.js`: `dynamaxed/gigantamaxed` 상태 전파, gmax sprite 분기, payload `gigantamax` 전달
+- 회귀 가드 확인:
+  - 기술 전 HP/스프라이트 선반영 금지 유지
+  - timeline lock 중 message-only 유지
+  - `move -> hp -> faint/switch` 순서 유지
+  - 테라스탈 경로 독립 유지
 
 ### ✅ M5. locale 네임스페이스 로더 — 완료 (2026-04-16)
 - 원본 참조: `pokerogue_codes/src/plugins/utils-plugins.ts`, `pokerogue_codes/src/plugins/i18n.ts`
@@ -214,9 +229,9 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
     - `npm run verify:stage22` PASS
     - `npm run verify:passb` PASS
 
-### 🔜 BA-23. 기술/날씨/필드 연출 완벽화 (추후)
+### 🔜 BA-23. 기술/날씨/필드 연출 완벽화 (다음)
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 완성
-- BA-25 이후 착수
+- 현재 최우선 착수 대상
 
 ### ✅ BA-24. 테라스탈 구현 — 1차 완료 (2026-04-17)
 - 원본 참조:
@@ -252,9 +267,11 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - 인라인 검증: `move 1 terastallize` 실행 시 `events.type==='terastallize'` 확인, `forme_change(mechanism='-terastallize')` 미발생 확인
   - 인라인 검증: Ogerpon 테라 턴에서 `terastallize -> forme_change(detailschange)` 연속 이벤트 확인(타임라인 중복 연출 생략 대상)
 
-### 🔜 BA-25. 다이맥스 구현 (추후)
-- 다이맥스/거다이맥스 전환 및 해제 흐름을 연출 레이어에 반영
-- 스케일/HP/UI 타이밍을 기존 faint/forme_change/switch_in과 충돌 없이 구성
+### ✅ BA-25. 다이맥스 구현 — 완료 (2026-04-19)
+- `dynamax_start`/`dynamax_end` 이벤트 파싱 및 타임라인 반영 완료
+- 다이맥스 동반 silent heal을 이벤트에 흡수해 중복 HP 재생 방지
+- 씬 스케일/상태(`dynamaxed`, `gigantamaxed`) 및 gmax 스프라이트 분기 반영
+- 검증: `node --check`(수정 파일), `npm run verify:ba20`, `npm run verify:stage22`, `npm run verify:passb` PASS
 
 ### ✅ BA-26. 배틀 내 폼체인지 표시명 고정 — 완료 (2026-04-17)
 - 사용자 노출 이름을 폼명 대신 기본 종족명으로 고정
@@ -276,7 +293,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - 폼명 고정은 UI/정보창/선택창에만 유지
   - 폼체인지 연출 메시지는 form-aware 표시(`localizeMonNameWithForm`)로 복원해 원래 메시지 톤 유지
 
-### 🔜 BA-28. 영칭 전용 포켓몬/기술 한국어명 탑재 (추후)
+### 🔜 BA-28. 영칭 전용 포켓몬/기술 한국어명 탑재 (고정 후순위)
 - KO 모드에서 영어로 노출되는 포켓몬/기술명을 수집해 한국어명 맵 보강
 - `assets/pokerogue/locales/ko/*.json` 우선 참조, 미존재 항목은 `src/i18n-ko-data.js`(또는 신규 override)로 보완
 
@@ -303,9 +320,9 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 6. `BA-27` 타임라인 재생 중 선택 입력 블록 ✅ 완료 (2026-04-17)
 7. `BA-26` 배틀 내 폼체인지 표시명 고정 ✅ 완료 (2026-04-17)
 8. `BA-24` 테라스탈 구현 ✅ 1차 완료 (2026-04-17)
-9. `BA-25` 다이맥스 구현 (추후)
-10. `BA-23` 기술/날씨/필드 연출 완벽화 (추후)
-11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (추후)
+9. `BA-25` 다이맥스 구현 ✅ 완료 (2026-04-19)
+10. `BA-23` 기술/날씨/필드 연출 완벽화 (다음)
+11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (고정 후순위)
 
 **✅ BA-21: 선택 완료 후 대기 메시지 정합 — 완료 (2026-04-16)** (`app.js`)
 - `buildBattleMessageModel()` / `renderBattleMessagesWindow()` / `buildPhaserMessageWindowModel()`에 waiting 분기 추가
@@ -330,9 +347,9 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `timeline.js` `switch_in`에서 `setBattlerSprite(...,{visible:!fromBall})`를 이벤트 시점에 실행해 조기 스냅샷 노출 방지
   - 검증: `node --check src/app.js`, `node --check src/battle-presentation/timeline.js`, `npm run verify:stage22`, `npm run verify:passb` PASS
 
-**BA-23: 기술/날씨/필드 연출 완벽화 (추후)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
+**BA-23: 기술/날씨/필드 연출 완벽화 (다음)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
 - 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 보강
-- 착수 우선순위는 BA-25 이후
+- 고정 순서상 다음 착수
 
 **✅ BA-24: 테라스탈 구현 — 1차 완료 (2026-04-17)** (`showdown-engine.cjs`, `event-schema.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - `-terastallize`를 독립 `terastallize` 이벤트로 파싱하고 `target/teraType/teraTypeName/trigger/fromSource`를 구조화
@@ -365,16 +382,17 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `npm run verify:stage22` PASS (Feraligatr 케이스 플래키성 1회 관찰)
   - `npm run verify:passb` PASS
 
-**BA-25: 다이맥스 구현 (추후)** (`showdown-engine.cjs`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
-- 다이맥스/거다이맥스 전환·해제 흐름과 배틀 연출 정합 구현
-- 착수 우선순위는 BA-24 이후
+**✅ BA-25: 다이맥스 구현 — 완료 (2026-04-19)** (`showdown-engine.cjs`, `event-schema.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
+- `dynamax_start/end` 이벤트 파싱 + 타임라인 메시지/연출/상태 동기화 완료
+- 동반 silent heal 흡수로 HP 재생 순서 회귀 방지
+- max 스케일/거다이맥스 분기 및 payload `gigantamax` 경로 반영
 
 **✅ BA-26: 배틀 내 폼체인지 표시명 고정 — 완료 (2026-04-17)** (`app.js`, `timeline.js`)
 - 배틀 메시지/정보창/선택창 표시명을 기본 종족명으로 고정(폼명 비노출)
 - 타임라인 표시명(localizeMonName)도 기본 종족명 기준으로 통일
 - 검증: `node --check src/app.js`, `node --check src/battle-presentation/timeline.js`, `npm run verify:stage22`, `npm run verify:passb` PASS
 
-**BA-28: 영칭 전용 포켓몬/기술 한국어명 탑재 (추후)** (`src/i18n-ko-data.js` 또는 신규 파일)
+**BA-28: 영칭 전용 포켓몬/기술 한국어명 탑재 (고정 후순위)** (`src/i18n-ko-data.js` 또는 신규 파일)
 - KO 모드에서 영어로 노출되는 포켓몬/기술명을 수집해 한국어명 맵 보강
 - `assets/pokerogue/locales/ko/pokemon.json`, `assets/pokerogue/locales/ko/move.json` 우선 참조 후 미존재 항목 수동 보완
 

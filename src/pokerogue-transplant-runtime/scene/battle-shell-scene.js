@@ -175,6 +175,8 @@ export function createBattleShellSceneClass(Phaser, env) {
         phaserSprite: img,
         shadow,
         shadowVisibleByMetrics: false,
+        dynamaxed: false,
+        gigantamaxed: false,
         terastallized: false,
         teraType: '',
         teraOverlay: null,
@@ -255,6 +257,14 @@ export function createBattleShellSceneClass(Phaser, env) {
       return keys;
     }
 
+    _dynamaxScaleMultiplier(mount) {
+      return mount?.dynamaxed ? 1.5 : 1;
+    }
+
+    _resolveMountScale(mount, baseScale = 1) {
+      return Number(baseScale || 1) * this._dynamaxScaleMultiplier(mount);
+    }
+
     _applyMountMetricsSnapshot(mount) {
       const snap = mount?.metricsSnapshot;
       if (!mount?.phaserSprite || !snap) return;
@@ -264,7 +274,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       const spriteY = baseY + snap.offsetY;
       mount.phaserSprite
         .setOrigin(0.5, 1)
-        .setScale(snap.sprScale)
+        .setScale(this._resolveMountScale(mount, snap.sprScale))
         .setPosition(spriteX, spriteY);
 
       if (!mount.shadow) {
@@ -278,11 +288,15 @@ export function createBattleShellSceneClass(Phaser, env) {
         return;
       }
       if (snap.showShadow) {
+        const scaleMultiplier = this._dynamaxScaleMultiplier(mount);
+        const shadowW = snap.shadowW * scaleMultiplier;
+        const shadowH = snap.shadowH * scaleMultiplier;
+        const shadowBaseline = snap.shadowBaseline * scaleMultiplier;
         const shadowX = baseX + snap.offsetX + snap.shX + SHADOW_GLOBAL_OFFSET.x;
         const shadowY = baseY + snap.offsetY + snap.shY + SHADOW_GLOBAL_OFFSET.y;
-        const finalShadowY = shadowY - snap.shadowBaseline;
+        const finalShadowY = shadowY - shadowBaseline;
         mount.shadow.setPosition(shadowX, finalShadowY);
-        mount.shadow.setSize(snap.shadowW, snap.shadowH);
+        mount.shadow.setSize(shadowW, shadowH);
         mount.shadowVisibleByMetrics = true;
         mount.shadow.setVisible(true);
         this._logShadowMetrics(mount, 'reapply', {
@@ -292,9 +306,9 @@ export function createBattleShellSceneClass(Phaser, env) {
           offsetY: snap.offsetY,
           shX: snap.shX,
           shY: snap.shY,
-          shadowBaseline: snap.shadowBaseline,
-          shadowW: snap.shadowW,
-          shadowH: snap.shadowH,
+          shadowBaseline,
+          shadowW,
+          shadowH,
           finalShadowX: shadowX,
           finalShadowY,
         });
@@ -303,6 +317,35 @@ export function createBattleShellSceneClass(Phaser, env) {
         mount.shadow.setVisible(false);
       }
       this._syncMountTeraFx(mount, 0);
+    }
+
+    _setMountDynamaxState(mount, options = {}) {
+      if (!mount?.phaserSprite) return;
+      const prevMultiplier = this._dynamaxScaleMultiplier(mount);
+      mount.dynamaxed = options?.dynamaxed === true;
+      mount.gigantamaxed = mount.dynamaxed && options?.gigantamaxed === true;
+      const nextMultiplier = this._dynamaxScaleMultiplier(mount);
+
+      if (mount.metricsSnapshot) {
+        this._applyMountMetricsSnapshot(mount);
+        return;
+      }
+
+      const spr = mount.phaserSprite;
+      if (!spr.active) return;
+      const safePrev = prevMultiplier > 0 ? prevMultiplier : 1;
+      const baseScaleX = Number(spr.scaleX || 1) / safePrev;
+      const baseScaleY = Number(spr.scaleY || 1) / safePrev;
+      spr.setScale(baseScaleX * nextMultiplier, baseScaleY * nextMultiplier);
+    }
+
+    setBattlerDynamaxState(side, options = {}) {
+      const mount = this._mountForBattleSide(side);
+      if (!mount) return;
+      this._setMountDynamaxState(mount, {
+        dynamaxed: options?.dynamaxed === true,
+        gigantamaxed: options?.gigantamaxed === true,
+      });
     }
 
     _teraTintForType(type = '') {
@@ -433,6 +476,17 @@ export function createBattleShellSceneClass(Phaser, env) {
         && (Object.prototype.hasOwnProperty.call(spriteModel, 'teraType')
           || Object.prototype.hasOwnProperty.call(spriteModel, 'terastallized'))
       );
+      const hasDynamaxState = Boolean(
+        spriteModel
+        && (Object.prototype.hasOwnProperty.call(spriteModel, 'dynamaxed')
+          || Object.prototype.hasOwnProperty.call(spriteModel, 'gigantamaxed'))
+      );
+      if (hasDynamaxState) {
+        this._setMountDynamaxState(mount, {
+          dynamaxed: spriteModel?.dynamaxed === true,
+          gigantamaxed: spriteModel?.gigantamaxed === true,
+        });
+      }
       if (hasTeraState) {
         const teraType = String(spriteModel?.teraType || '').toLowerCase();
         const active = spriteModel?.terastallized === true || !!teraType;
@@ -520,7 +574,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         }
         mount.phaserSprite
           .setOrigin(0.5, 1)
-          .setScale(sprScale)
+          .setScale(this._resolveMountScale(mount, sprScale))
           .setPosition(spriteTargetX, spriteTargetY);
         mount.phaserSprite.setVisible(true);
         this._syncMountTeraFx(mount, 0);
@@ -594,6 +648,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           shadowH,
           shadowBaseline,
         };
+        this._applyMountMetricsSnapshot(mount);
 
         // Animation speed (DBK): delay = ((speed / 2.0) * frameDelayMs). Speed 0 = no animation.
         const animSpeed = isFront ? (metrics?.animFront ?? 2) : (metrics?.animBack ?? 2);
@@ -991,6 +1046,175 @@ export function createBattleShellSceneClass(Phaser, env) {
         teraSigil?.destroy?.();
         aura?.destroy?.();
         sparkles.forEach(sparkle => sparkle?.destroy?.());
+      }
+    }
+
+    async playDynamaxStart(side, options = {}) {
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!mount || !spr || !spr.active || !spr.visible) {
+        this._setMountDynamaxState(mount, {
+          dynamaxed: true,
+          gigantamaxed: options?.gigantamaxed === true,
+        });
+        return;
+      }
+
+      const safePrev = this._dynamaxScaleMultiplier(mount) || 1;
+      const baseScaleX = Number(spr.scaleX || 1) / safePrev;
+      const baseScaleY = Number(spr.scaleY || 1) / safePrev;
+      const targetScaleX = baseScaleX * 1.5;
+      const targetScaleY = baseScaleY * 1.5;
+      const depth = Number.isFinite(spr.depth) ? spr.depth : 7;
+      const baseAlpha = spr.alpha;
+      const ring = this.add.ellipse(
+        spr.x,
+        spr.y - (spr.displayHeight * 0.44),
+        Math.max(42, Math.round(spr.displayWidth * 0.95)),
+        Math.max(22, Math.round(spr.displayHeight * 0.52)),
+        options?.gigantamaxed === true ? 0xff9ad7 : 0xff6969,
+        0,
+      ).setDepth(depth + 1.7);
+      const pulse = this.add.rectangle(
+        spr.x,
+        spr.y - (spr.displayHeight * 0.5),
+        Math.max(36, Math.round(spr.displayWidth * 0.82)),
+        Math.max(36, Math.round(spr.displayHeight * 0.88)),
+        0xffffff,
+        0,
+      ).setOrigin(0.5, 0.5).setDepth(depth + 1.5);
+
+      try {
+        this.tweens.killTweensOf(spr);
+        if (options?.audioEnabled !== false) this.audio?.play?.('se/hit', options?.gigantamaxed ? 0.56 : 0.48);
+        spr.setTintFill(0xffffff);
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX * 0.94,
+            scaleY: baseScaleY * 0.94,
+            duration: 180,
+            ease: 'Cubic.easeIn',
+          }),
+          this._runTween({
+            targets: ring,
+            alpha: 0.58,
+            scaleX: 1.38,
+            scaleY: 1.38,
+            duration: 180,
+            ease: 'Sine.easeOut',
+          }),
+          this._runTween({
+            targets: pulse,
+            alpha: 0.42,
+            duration: 180,
+            ease: 'Sine.easeOut',
+          }),
+        ]);
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: targetScaleX,
+            scaleY: targetScaleY,
+            duration: 260,
+            ease: 'Cubic.easeOut',
+          }),
+          this._runTween({
+            targets: ring,
+            alpha: 0.15,
+            scaleX: 1.88,
+            scaleY: 1.88,
+            duration: 260,
+            ease: 'Sine.easeOut',
+          }),
+          this._runTween({
+            targets: pulse,
+            alpha: 0,
+            duration: 260,
+            ease: 'Sine.easeIn',
+          }),
+        ]);
+      } finally {
+        this._setMountDynamaxState(mount, {
+          dynamaxed: true,
+          gigantamaxed: options?.gigantamaxed === true,
+        });
+        if (spr.active) {
+          spr.clearTint();
+          spr.setAlpha(baseAlpha);
+        }
+        ring?.destroy?.();
+        pulse?.destroy?.();
+      }
+    }
+
+    async playDynamaxEnd(side, options = {}) {
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!mount || !spr || !spr.active || !spr.visible) {
+        this._setMountDynamaxState(mount, { dynamaxed: false, gigantamaxed: false });
+        return;
+      }
+
+      const safePrev = this._dynamaxScaleMultiplier(mount) || 1.5;
+      const baseScaleX = Number(spr.scaleX || 1) / safePrev;
+      const baseScaleY = Number(spr.scaleY || 1) / safePrev;
+      const startScaleX = baseScaleX * safePrev;
+      const startScaleY = baseScaleY * safePrev;
+      const depth = Number.isFinite(spr.depth) ? spr.depth : 7;
+      const baseAlpha = spr.alpha;
+      const fadeRing = this.add.ellipse(
+        spr.x,
+        spr.y - (spr.displayHeight * 0.42),
+        Math.max(34, Math.round(spr.displayWidth * 0.76)),
+        Math.max(18, Math.round(spr.displayHeight * 0.42)),
+        options?.gigantamaxed === true ? 0xffb8dd : 0xffb7b7,
+        0.22,
+      ).setDepth(depth + 1.4);
+
+      try {
+        this.tweens.killTweensOf(spr);
+        if (options?.audioEnabled !== false) this.audio?.play?.('se/hit_weak', 0.35);
+        spr.setTintFill(0xffffff);
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: startScaleX * 1.03,
+            scaleY: startScaleY * 1.03,
+            duration: 120,
+            ease: 'Sine.easeOut',
+          }),
+          this._runTween({
+            targets: fadeRing,
+            alpha: 0.34,
+            duration: 120,
+            ease: 'Sine.easeOut',
+          }),
+        ]);
+        await Promise.all([
+          this._runTween({
+            targets: spr,
+            scaleX: baseScaleX,
+            scaleY: baseScaleY,
+            duration: 240,
+            ease: 'Cubic.easeInOut',
+          }),
+          this._runTween({
+            targets: fadeRing,
+            alpha: 0,
+            scaleX: 1.45,
+            scaleY: 1.45,
+            duration: 240,
+            ease: 'Sine.easeIn',
+          }),
+        ]);
+      } finally {
+        this._setMountDynamaxState(mount, { dynamaxed: false, gigantamaxed: false });
+        if (spr.active) {
+          spr.clearTint();
+          spr.setAlpha(baseAlpha);
+        }
+        fadeRing?.destroy?.();
       }
     }
 
