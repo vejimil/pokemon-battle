@@ -1,15 +1,17 @@
-import {loadLocalDex, LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_TYPES, LOCAL_TYPE_CHART} from './local-dex.js';
+import {LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_TYPES, LOCAL_TYPE_CHART} from './local-dex.js';
 import {KO_NAME_MAPS} from './i18n-ko-data.js';
 import {OFFICIAL_KO_SPECIES, OFFICIAL_KO_ITEMS} from './i18n-ko-official.js';
 import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdownLocalSinglesChoices, isShowdownLocalBattle} from './engine/showdown-local-bridge.js';
 import {Aliases} from './data/aliases.js';
-import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA, EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
+import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
 import {resolveItemIconUrl, applyPokerogueAtlasFrameToElement, POKEROGUE_ASSET_PATHS} from './pokerogue-assets.js';
 import {createPhaserBattleController} from './phaser-battle-controller.js';
 import {loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationDelayMs} from './pokerogue-transplant-runtime/runtime/pokemon-metrics.js';
 import {BattleTimelineExecutor} from './battle-presentation/timeline.js';
 import {resolveFormChangePresentation} from './battle-presentation/form-change-presentation.js';
 import {createBattleLocaleManager} from './battle-i18n/locale-manager.js';
+import {SHOWDOWN_TARGET_HINTS, statOrder, statLabels, statusNames, commonItems, VALIDATION_PROFILES, BUILDER_ALLOWED_NONSTANDARD, NONSTANDARD_REASON_LABELS, ASSET_BASE_SPECIES_ALIASES, BUILDER_BATTLE_ONLY_FORM_SUFFIXES, ENGINE_AUTHORITATIVE_SINGLES_FORMAT, OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES, targetHints, MOVE_FLAG_LABELS, VOLATILE_STATUS_LABELS, SIDE_CONDITION_LABELS, WEATHER_LABELS, TERRAIN_LABELS, SPECIAL_ITEM_LINKED_FORM_OVERRIDES, SPECIAL_MOVE_LINKED_FORM_OVERRIDES, FORM_ASSET_OVERRIDES, EXPLICIT_ONLY_FORM_FAMILIES, MAX_MOVE_NAMES, GENERIC_Z_MOVE_NAMES, DYNAMAX_BANNED_SPECIES, TERA_LOW_POWER_EXEMPT_MOVES, PROTECT_MOVE_IDS, SCREEN_MOVE_IDS, CHOICE_ITEM_IDS, STRUGGLE_MOVE} from './battle-constants.js';
+import {setDex, getDex, moveNameCache, CURRENT_OFFICIAL_ITEM_ID_SET, CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET, isAllowedNonstandard, isDexSupported, extractSecondaryAilment, extractSecondaryBoosts, formatTargetFromDex, isFutureMegaSpeciesData, applyFutureMegaSpeciesMetadataPatches, resolveProjectMegaAbilityName, applyProjectMegaAbilityRulesToDex, fetchJson, pathExists, loadManifest, detectAssetBases, loadDataProvider, loadMoveNames, getSpeciesData, getMoveData, getItemData} from './dex-data.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
 
@@ -22,373 +24,15 @@ const FLAGS = window.FLAGS = {
   battleLocaleV1: true,        // namespace-based battle messages
   battleMsgActionTagsV1: false, // @d/@s message tag parser
 };
-const SHOWDOWN_TARGET_HINTS = {
-  normal: 'single-opponent',
-  adjacentFoe: 'single-opponent',
-  adjacentAlly: 'ally',
-  adjacentAllyOrSelf: 'ally-or-self',
-  allySide: 'ally-side',
-  foeSide: 'opponent-side',
-  allAdjacent: 'all-other-pokemon',
-  allAdjacentFoes: 'all-opponents',
-  all: 'all-pokemon',
-  scripted: 'single-opponent',
-  randomNormal: 'single-opponent',
-  self: 'self',
-  any: 'single-opponent',
-};
-const statOrder = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
-const statLabels = {hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe'};
-const statusNames = {brn: 'Burn', par: 'Paralysis', psn: 'Poison', tox: 'Toxic', slp: 'Sleep', frz: 'Freeze'};
 const typeIds = LOCAL_TYPE_IDS;
 const TYPES = LOCAL_TYPES;
 const natureOrder = LOCAL_NATURE_ORDER;
 const natures = LOCAL_NATURES;
-const commonItems = [
-  'Leftovers','Life Orb','Choice Band','Choice Specs','Choice Scarf','Focus Sash','Assault Vest','Sitrus Berry','Rocky Helmet','Expert Belt',
-  'Lum Berry','Booster Energy','Heavy-Duty Boots','Air Balloon','Weakness Policy','Eviolite','Clear Amulet','Scope Lens','Muscle Band','Wise Glasses',
-  'Mystic Water','Charcoal','Miracle Seed','Magnet','Black Glasses','Never-Melt Ice','Soft Sand','Dragon Fang','Pixie Plate','Poison Barb',
-  'Silver Powder','Spell Tag','Sharp Beak','Twisted Spoon','Hard Stone','Silk Scarf','Metal Coat','Black Sludge'
-];
-const VALIDATION_PROFILES = {
-  open: {
-    id: 'open',
-    label: '자유 규칙 / Open custom',
-    description: '프로젝트 전체 범위를 넓게 허용합니다. 중복 종족 / 도구는 경고만 띄웁니다. / Broad project-scope validation. Duplicate species and items stay as warnings only.',
-    enforceSpeciesClause: false,
-    enforceItemClause: false,
-    forcedLevel: null,
-    recommendedMode: null,
-  },
-  standardsingles: {
-    id: 'standardsingles',
-    label: '스탠다드 싱글 느낌 / Standard-style singles',
-    description: '싱글용 기본 클로즈를 더 엄격하게 적용합니다. 종족 중복은 불가이며 도구 중복은 허용합니다. / Stricter singles-style clauses: Species Clause on, Item Clause off.',
-    enforceSpeciesClause: true,
-    enforceItemClause: false,
-    forcedLevel: null,
-    recommendedMode: 'singles',
-  },
-  vgcdoubles: {
-    id: 'vgcdoubles',
-    label: 'VGC 스타일 더블 / VGC-style doubles',
-    description: '더블 + 종족 클로즈 + 도구 클로즈 + 레벨 50 고정 검증을 적용합니다. / Doubles with Species Clause, Item Clause, and fixed level 50 validation.',
-    enforceSpeciesClause: true,
-    enforceItemClause: true,
-    forcedLevel: 50,
-    recommendedMode: 'doubles',
-  },
-};
-
-const BUILDER_ALLOWED_NONSTANDARD = new Set(['Past']);
-const NONSTANDARD_REASON_LABELS = {
-  Future: 'is marked as future / unreleased content in the loaded data.',
-  CAP: 'belongs to CAP/custom content, not official cartridge data.',
-  LGPE: 'belongs to the Let’s Go ruleset only.',
-  Unobtainable: 'is marked unobtainable in the loaded data.',
-  Gigantamax: 'is Gigantamax-only battle content and should not be chosen directly here.',
-};
-const ASSET_BASE_SPECIES_ALIASES = Object.freeze({
-  NIDORANFE: 'Nidoran-F',
-  NIDORANMA: 'Nidoran-M',
-});
-const BUILDER_BATTLE_ONLY_FORM_SUFFIXES = new Set(['mega', 'megax', 'megay', 'primal', 'gmax']);
-const ENGINE_AUTHORITATIVE_SINGLES_FORMAT = 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
-const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
-  'Meganium-Mega': 'Mega Sol',
-  'Emboar-Mega': 'Mold Breaker',
-  'Feraligatr-Mega': 'Dragonize',
-});
-const targetHints = {
-  'selected-pokemon': 'single-opponent',
-  'random-opponent': 'single-opponent',
-  'all-opponents': 'all-opponents',
-  'all-other-pokemon': 'all-other-pokemon',
-  'all-pokemon': 'all-pokemon',
-  user: 'self',
-  'user-and-allies': 'self-side',
-  'user-or-ally': 'ally-or-self',
-  ally: 'ally',
-  'ally-side': 'ally-side',
-  'users-field': 'self-side',
-  'opponents-field': 'opponent-side',
-  'entire-field': 'field',
-  'specific-move': 'single-opponent',
-  'selected-pokemon-me-first': 'single-opponent',
-  'user-or-ally': 'ally-or-self',
-};
-const MOVE_FLAG_LABELS = Object.freeze({
-  contact: ['접촉', 'Contact'],
-  protect: ['방어 영향', 'Affected by Protect'],
-  reflectable: ['매직코트 반사', 'Reflectable'],
-  bypasssub: ['대타 관통', 'Bypasses Substitute'],
-  mirror: ['미러무브 가능', 'Mirror Move'],
-  heal: ['회복 계열', 'Healing move'],
-  sound: ['소리 기술', 'Sound move'],
-  powder: ['가루 기술', 'Powder move'],
-  pulse: ['파동 기술', 'Pulse move'],
-  punch: ['주먹 기술', 'Punch move'],
-  bite: ['물기 기술', 'Biting move'],
-  slicing: ['베기 기술', 'Slicing move'],
-  bullet: ['탄/폭탄 기술', 'Ball/Bomb move'],
-  dance: ['춤 기술', 'Dance move'],
-  wind: ['바람 기술', 'Wind move'],
-  snatch: ['가로채기 대상', 'Snatchable'],
-  recharge: ['다음 턴 쉬기', 'Needs recharge'],
-});
-const VOLATILE_STATUS_LABELS = Object.freeze({
-  encore: ['앵콜 상태', 'Encore'],
-  leechseed: ['씨뿌리기', 'Leech Seed'],
-  confusion: ['혼란', 'Confusion'],
-  flinch: ['풀죽음', 'Flinch'],
-  protect: ['방어', 'Protect'],
-  substitute: ['대타출동', 'Substitute'],
-  yawn: ['하품', 'Yawn'],
-  taunt: ['도발', 'Taunt'],
-  disable: ['금지', 'Disable'],
-  torment: ['괴롭힘', 'Torment'],
-  embargo: ['금제', 'Embargo'],
-  nightmare: ['악몽', 'Nightmare'],
-});
-const SIDE_CONDITION_LABELS = Object.freeze({
-  stealthrock: ['스텔스록', 'Stealth Rock'],
-  spikes: ['압정뿌리기', 'Spikes'],
-  toxicspikes: ['독압정', 'Toxic Spikes'],
-  stickyweb: ['끈적끈적네트', 'Sticky Web'],
-  tailwind: ['순풍', 'Tailwind'],
-  reflect: ['리플렉터', 'Reflect'],
-  lightscreen: ['빛의장막', 'Light Screen'],
-  auroraveil: ['오로라베일', 'Aurora Veil'],
-});
-const WEATHER_LABELS = Object.freeze({
-  rain: ['비', 'Rain'],
-  raindance: ['비', 'Rain'],
-  primordialsea: ['폭우', 'Heavy Rain'],
-  sun: ['쾌청', 'Sun'],
-  sunnyday: ['쾌청', 'Sun'],
-  desolateland: ['강한 햇살', 'Harsh Sun'],
-  sand: ['모래바람', 'Sandstorm'],
-  sandstorm: ['모래바람', 'Sandstorm'],
-  snow: ['눈', 'Snow'],
-  hail: ['싸라기눈', 'Hail'],
-});
-const TERRAIN_LABELS = Object.freeze({
-  electricterrain: ['일렉트릭필드', 'Electric Terrain'],
-  grassyterrain: ['그래스필드', 'Grassy Terrain'],
-  mistyterrain: ['미스트필드', 'Misty Terrain'],
-  psychicterrain: ['사이코필드', 'Psychic Terrain'],
-});
 
 const typeChart = LOCAL_TYPE_CHART;
 
-const moveNameCache = [];
-const speciesDataCache = new Map();
-const moveDataCache = new Map();
-const itemDataCache = new Map();
 const imageInfoCache = new Map();
 let fallbackMetricsPromise = null;
-
-const SPECIAL_ITEM_LINKED_FORM_OVERRIDES = Object.freeze({
-  arceus: Object.freeze({
-    fistplate: 'Arceus-Fighting',
-    skyplate: 'Arceus-Flying',
-    toxicplate: 'Arceus-Poison',
-    earthplate: 'Arceus-Ground',
-    stoneplate: 'Arceus-Rock',
-    insectplate: 'Arceus-Bug',
-    spookyplate: 'Arceus-Ghost',
-    ironplate: 'Arceus-Steel',
-    flameplate: 'Arceus-Fire',
-    splashplate: 'Arceus-Water',
-    meadowplate: 'Arceus-Grass',
-    zapplate: 'Arceus-Electric',
-    mindplate: 'Arceus-Psychic',
-    icicleplate: 'Arceus-Ice',
-    dracoplate: 'Arceus-Dragon',
-    dreadplate: 'Arceus-Dark',
-    pixieplate: 'Arceus-Fairy',
-  }),
-  genesect: Object.freeze({
-    shockdrive: 'Genesect-Shock',
-    burndrive: 'Genesect-Burn',
-    chilldrive: 'Genesect-Chill',
-    dousedrive: 'Genesect-Douse',
-  }),
-  silvally: Object.freeze({
-    fightingmemory: 'Silvally-Fighting',
-    flyingmemory: 'Silvally-Flying',
-    poisonmemory: 'Silvally-Poison',
-    groundmemory: 'Silvally-Ground',
-    rockmemory: 'Silvally-Rock',
-    bugmemory: 'Silvally-Bug',
-    ghostmemory: 'Silvally-Ghost',
-    steelmemory: 'Silvally-Steel',
-    firememory: 'Silvally-Fire',
-    watermemory: 'Silvally-Water',
-    grassmemory: 'Silvally-Grass',
-    electricmemory: 'Silvally-Electric',
-    psychicmemory: 'Silvally-Psychic',
-    icememory: 'Silvally-Ice',
-    dragonmemory: 'Silvally-Dragon',
-    darkmemory: 'Silvally-Dark',
-    fairymemory: 'Silvally-Fairy',
-  }),
-  zacian: Object.freeze({
-    rustedsword: 'Zacian-Crowned',
-  }),
-  zamazenta: Object.freeze({
-    rustedshield: 'Zamazenta-Crowned',
-  }),
-});
-const SPECIAL_MOVE_LINKED_FORM_OVERRIDES = Object.freeze({
-  keldeo: Object.freeze({
-    secretsword: 'Keldeo-Resolute',
-  }),
-});
-const FORM_ASSET_OVERRIDES = Object.freeze({
-  'Eevee-Gmax': 'EEVEE_2',
-  'Xerneas': 'XERNEAS_1',
-  'Xerneas-Neutral': 'XERNEAS',
-  'Greninja-Bond': 'GRENINJA_2',
-  'Greninja-Ash': 'GRENINJA_2',
-  'Greninja-Mega': 'GRENINJA_3',
-  'Pikachu-Rock-Star': 'PIKACHU_3',
-  'Pikachu-Belle': 'PIKACHU_4',
-  'Pikachu-Pop-Star': 'PIKACHU_5',
-  'Pikachu-PhD': 'PIKACHU_6',
-  'Pikachu-Libre': 'PIKACHU_7',
-  'Pikachu-Gmax': 'PIKACHU_17',
-  'Zygarde-10%': 'ZYGARDE_1',
-  'Zygarde-Complete': 'ZYGARDE_3',
-  'Zygarde-Mega': 'ZYGARDE_5',
-  'Kyogre-Primal': 'KYOGRE_1',
-  'Groudon-Primal': 'GROUDON_1',
-  'Necrozma-Dusk-Mane': 'NECROZMA_1',
-  'Necrozma-Dawn-Wings': 'NECROZMA_2',
-  'Necrozma-Ultra': 'NECROZMA_3',
-  'Arceus-Fighting': 'ARCEUS_1',
-  'Arceus-Flying': 'ARCEUS_2',
-  'Arceus-Poison': 'ARCEUS_3',
-  'Arceus-Ground': 'ARCEUS_4',
-  'Arceus-Rock': 'ARCEUS_5',
-  'Arceus-Bug': 'ARCEUS_6',
-  'Arceus-Ghost': 'ARCEUS_7',
-  'Arceus-Steel': 'ARCEUS_8',
-  'Arceus-Fire': 'ARCEUS_10',
-  'Arceus-Water': 'ARCEUS_11',
-  'Arceus-Grass': 'ARCEUS_12',
-  'Arceus-Electric': 'ARCEUS_13',
-  'Arceus-Psychic': 'ARCEUS_14',
-  'Arceus-Ice': 'ARCEUS_15',
-  'Arceus-Dragon': 'ARCEUS_16',
-  'Arceus-Dark': 'ARCEUS_17',
-  'Arceus-Fairy': 'ARCEUS_18',
-  'Genesect-Shock': 'GENESECT_1',
-  'Genesect-Burn': 'GENESECT_2',
-  'Genesect-Chill': 'GENESECT_3',
-  'Genesect-Douse': 'GENESECT_4',
-  'Zacian-Crowned': 'ZACIAN_1',
-  'Zamazenta-Crowned': 'ZAMAZENTA_1',
-  'Ogerpon-Teal-Tera': 'OGERPON_8',
-  'Ogerpon-Wellspring-Tera': 'OGERPON_9',
-  'Ogerpon-Hearthflame-Tera': 'OGERPON_10',
-  'Ogerpon-Cornerstone-Tera': 'OGERPON_11',
-});
-const EXPLICIT_ONLY_FORM_FAMILIES = new Set(['EEVEE', 'GRENINJA', 'PIKACHU']);
-
-const MAX_MOVE_NAMES = Object.freeze({
-  normal: 'Max Strike',
-  fighting: 'Max Knuckle',
-  flying: 'Max Airstream',
-  poison: 'Max Ooze',
-  ground: 'Max Quake',
-  rock: 'Max Rockfall',
-  bug: 'Max Flutterby',
-  ghost: 'Max Phantasm',
-  steel: 'Max Steelspike',
-  fire: 'Max Flare',
-  water: 'Max Geyser',
-  grass: 'Max Overgrowth',
-  electric: 'Max Lightning',
-  psychic: 'Max Mindstorm',
-  ice: 'Max Hailstorm',
-  dragon: 'Max Wyrmwind',
-  dark: 'Max Darkness',
-  fairy: 'Max Starfall',
-  stellar: 'Max Strike',
-});
-const GENERIC_Z_MOVE_NAMES = Object.freeze({
-  normal: 'Breakneck Blitz',
-  fighting: 'All-Out Pummeling',
-  flying: 'Supersonic Skystrike',
-  poison: 'Acid Downpour',
-  ground: 'Tectonic Rage',
-  rock: 'Continental Crush',
-  bug: 'Savage Spin-Out',
-  ghost: 'Never-Ending Nightmare',
-  steel: 'Corkscrew Crash',
-  fire: 'Inferno Overdrive',
-  water: 'Hydro Vortex',
-  grass: 'Bloom Doom',
-  electric: 'Gigavolt Havoc',
-  psychic: 'Shattered Psyche',
-  ice: 'Subzero Slammer',
-  dragon: 'Devastating Drake',
-  dark: 'Black Hole Eclipse',
-  fairy: 'Twinkle Tackle',
-  stellar: 'Breakneck Blitz',
-});
-const DYNAMAX_BANNED_SPECIES = new Set(['zacian', 'zamazenta', 'eternatus']);
-const TERA_LOW_POWER_EXEMPT_MOVES = new Set([
-  'waterspout','eruption','electroball','gyroball','heatcrash','heavyslam','grassknot','lowkick','flail','reversal','wringout','crushgrip','storedpower','powertrip','magnitude','naturalgift','present','spitup','trumpcard','weatherball','terrainpulse','risingvoltage','dragonenergy'
-]);
-
-const PROTECT_MOVE_IDS = new Set(['protect','detect','maxguard','spikyshield','kingsshield','banefulbunker','silktrap','burningbulwark','obstruct']);
-const SCREEN_MOVE_IDS = new Set(['reflect','lightscreen','auroraveil']);
-const CHOICE_ITEM_IDS = new Set(['choiceband','choicespecs','choicescarf']);
-const STRUGGLE_MOVE = Object.freeze({
-  id: 'struggle',
-  name: 'Struggle',
-  apiName: 'struggle',
-  power: 50,
-  accuracy: 100,
-  pp: 1,
-  priority: 0,
-  type: 'typeless',
-  category: 'physical',
-  target: 'single-opponent',
-  critRate: 0,
-  drain: 0,
-  healing: 0,
-  minHits: 1,
-  maxHits: 1,
-  ailment: 'none',
-  ailmentChance: 0,
-  flinchChance: 0,
-  statChance: 0,
-  statChanges: [],
-  effectChance: 0,
-  metaCategory: '',
-  isNonstandard: null,
-  isZ: false,
-  isMax: false,
-  zBasePower: 0,
-  zBoosts: {},
-  zEffect: '',
-  maxBasePower: 0,
-  flags: {protect: true, contact: true},
-  sideCondition: '',
-  weather: '',
-  terrain: '',
-  stallingMove: false,
-  breaksProtect: false,
-  selfSwitch: '',
-  forceSwitch: false,
-  recoil: 25,
-  selfBoosts: {},
-  selfAilment: '',
-  selfVolatileStatus: '',
-});
 
 function normalizeAssetFamilyKey(name) {
   return toId(name).toUpperCase();
@@ -2271,8 +1915,6 @@ function slugify(text) {
 function toId(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
-const CURRENT_OFFICIAL_ITEM_ID_SET = new Set(EXTERNALLY_VERIFIED_CURRENT_ITEMS_IN_LOCAL_DATA.map(toId));
-const CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET = new Set(EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.map(toId));
 const EXPLICIT_ITEM_ALIAS_REVERSE = new Map(Object.entries(EXTERNALLY_VERIFIED_ITEM_KO_ALIASES || {}).flatMap(([english, aliases]) => (aliases || []).map(alias => [normalizeSearchKey(alias), english])));
 function titleCase(text) {
   return String(text || '').split(/[-\s]+/).filter(Boolean).map(part => part[0]?.toUpperCase() + part.slice(1)).join('\n');
@@ -3132,18 +2774,8 @@ function renderPickerOptions() {
 function dataSourceLabel() {
   return state.dex ? `Local Dex ${state.dexVersion || ''}`.trim() : state.dataProvider;
 }
-function isAllowedNonstandard(value, entry = null, kind = '') {
-  if (!value) return true;
-  if (BUILDER_ALLOWED_NONSTANDARD.has(value)) return true;
-  const entryName = typeof entry === 'string' ? entry : (entry?.name || '');
-  if (kind === 'items' && value === 'Future' && CURRENT_OFFICIAL_ITEM_ID_SET.has(toId(entryName))) return true;
-  return false;
-}
 function explainNonstandard(value) {
   return NONSTANDARD_REASON_LABELS[value] || `is marked as ${value} in the loaded data.`;
-}
-function isDexSupported(entry, kind = '') {
-  return Boolean(entry?.exists) && isAllowedNonstandard(entry?.isNonstandard, entry, kind) && !entry?.tier?.includes?.('Unreleased');
 }
 function getDexSpeciesEntry(name) {
   if (!state.dex) return null;
@@ -3158,25 +2790,6 @@ function getFullLearnsetIds(speciesName) {
   if (Array.isArray(learnset)) return learnset.map(toId);
   if (learnset && typeof learnset === 'object') return Object.keys(learnset).map(toId);
   return [];
-}
-function formatTargetFromDex(target) {
-  return SHOWDOWN_TARGET_HINTS[target] || 'single-opponent';
-}
-function extractSecondaryAilment(move) {
-  const pool = [move.secondary, ...(Array.isArray(move.secondaries) ? move.secondaries : [])].filter(Boolean);
-  for (const entry of pool) {
-    if (entry.status) return {ailment: entry.status, chance: entry.chance || 100};
-  }
-  if (move.status) return {ailment: move.status, chance: 100};
-  return {ailment: '', chance: 0};
-}
-function extractSecondaryBoosts(move) {
-  const pool = [move.secondary, ...(Array.isArray(move.secondaries) ? move.secondaries : [])].filter(Boolean);
-  for (const entry of pool) {
-    if (entry.boosts) return {boosts: entry.boosts, chance: entry.chance || 100};
-  }
-  if (move.boosts) return {boosts: move.boosts, chance: 100};
-  return {boosts: null, chance: 0};
 }
 function formatPokemonDisplayName(name) {
   return String(name || '').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -3318,235 +2931,6 @@ function loadSavedState() {
     console.warn('Failed to load saved state', error);
     resetTeams();
   }
-}
-async function fetchJson(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-  return res.json();
-}
-async function loadManifest() {
-  state.manifest = await fetchJson('./assets/manifest.json');
-}
-async function pathExists(url) {
-  try {
-    const res = await fetch(url, {method: 'HEAD', cache: 'no-store'});
-    if (res.ok) return true;
-    if (res.status === 405) {
-      const retry = await fetch(url, {cache: 'no-store'});
-      return retry.ok;
-    }
-    return false;
-  } catch (error) {
-    return false;
-  }
-}
-async function detectAssetBases() {
-  const samplePokemon = state.manifest?.pokemon?.front?.find(id => id && id !== '000') || 'GENGAR';
-  const pokemonBases = ['./assets/Pokemon', './assets/pokemon', 'assets/Pokemon', 'assets/pokemon'];
-  for (const base of pokemonBases) {
-    const probe = `${base}/Front/${samplePokemon}.png`;
-    if (await pathExists(probe)) {
-      state.assetBase.pokemon = base;
-      break;
-    }
-  }
-
-  const sampleItem = slugify((state.manifest?.items || []).find(Boolean) || 'leftovers');
-  const itemBases = ['./assets/items', 'assets/items'];
-  for (const base of itemBases) {
-    const probe = `${base}/${sampleItem}.png`;
-    if (await pathExists(probe)) {
-      state.assetBase.items = base;
-      break;
-    }
-  }
-}
-function isFutureMegaSpeciesData(species) {
-  if (!species?.exists) return false;
-  if (species.isNonstandard !== 'Future') return false;
-  const formeId = toId(species.forme || '');
-  return formeId === 'mega' || /-mega/i.test(species.name || '');
-}
-function applyFutureMegaSpeciesMetadataPatches(dex) {
-  if (!dex?.species?.all) return;
-  for (const species of dex.species.all()) {
-    if (!isFutureMegaSpeciesData(species)) continue;
-    const battleOnly = species.battleOnly || species.changesFrom || species.baseSpecies || species.name;
-    species.isMega = true;
-    if (!species.battleOnly && battleOnly) species.battleOnly = battleOnly;
-    if (species.id && dex?.data?.Pokedex?.[species.id]) {
-      dex.data.Pokedex[species.id].isMega = true;
-      if (!dex.data.Pokedex[species.id].battleOnly && battleOnly) dex.data.Pokedex[species.id].battleOnly = battleOnly;
-    }
-  }
-}
-function resolveProjectMegaAbilityName(dex, species) {
-  if (!species?.exists) return '';
-  const official = OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES[species.name];
-  if (official) return official;
-  const baseSpeciesName = species.baseSpecies || species.changesFrom || species.name;
-  const baseSpecies = dex?.species?.get?.(baseSpeciesName);
-  const hiddenAbility = baseSpecies?.exists ? String(baseSpecies.abilities?.H || '').trim() : '';
-  if (hiddenAbility) return hiddenAbility;
-  return Object.values(species.abilities || {}).find(Boolean) || '';
-}
-function applyProjectMegaAbilityRulesToDex(dex) {
-  if (!dex?.species?.all) return;
-  for (const species of dex.species.all()) {
-    if (!isFutureMegaSpeciesData(species)) continue;
-    const nextAbility = resolveProjectMegaAbilityName(dex, species);
-    if (!nextAbility) continue;
-    species.abilities = {0: nextAbility};
-    if (species.id && dex?.data?.Pokedex?.[species.id]) {
-      dex.data.Pokedex[species.id].abilities = {0: nextAbility};
-    }
-  }
-}
-async function loadDataProvider() {
-  const runtime = await loadLocalDex();
-  state.dex = runtime.Dex.mod ? runtime.Dex.mod('gen9') : runtime.Dex;
-  applyFutureMegaSpeciesMetadataPatches(state.dex);
-  applyProjectMegaAbilityRulesToDex(state.dex);
-  speciesDataCache.clear();
-  state.dexSource = runtime.source;
-  state.dexVersion = runtime.version;
-  state.dataProvider = 'Local Showdown data';
-}
-async function loadMoveNames() {
-  if (!state.dex) throw new Error('Local Dex failed to load.');
-  const names = state.dex.moves.all()
-    .filter(move => isDexSupported(move) && !move.isZ && !move.isMax)
-    .map(move => move.name)
-    .sort((a, b) => a.localeCompare(b));
-  moveNameCache.splice(0, moveNameCache.length, ...names);
-}
-async function getSpeciesData(speciesName) {
-  const key = slugify(speciesName);
-  if (speciesDataCache.has(key)) return speciesDataCache.get(key);
-  if (!state.dex) throw new Error('Local Dex failed to load.');
-
-  const species = state.dex.species.get(speciesName);
-  if (!species?.exists) throw new Error(`Species not found in local data: ${speciesName}`);
-
-  const abilityNames = uniqueNames(Object.values(species.abilities || {}).filter(Boolean));
-  const fullLearnset = state.dex.species.getFullLearnset(species.id) || {};
-  const learnsetSources = Object.fromEntries(Object.entries(fullLearnset).map(([moveId, sources]) => [toId(moveId), Array.isArray(sources) ? [...sources] : []]));
-  const data = {
-    id: species.num || 0,
-    name: species.name,
-    apiName: species.id,
-    baseSpecies: species.baseSpecies || species.name,
-    forme: species.forme || '',
-    types: [...(species.types || [])].map(type => type.toLowerCase()),
-    abilities: abilityNames,
-    stats: {...species.baseStats},
-    weight: species.weightkg || 0,
-    evolves: Boolean(species.evos?.length),
-    learnset: Object.keys(learnsetSources),
-    learnsetSources,
-    requiredItem: species.requiredItem || '',
-    requiredItems: Array.isArray(species.requiredItems) ? [...species.requiredItems] : [],
-    requiredMove: species.requiredMove || '',
-    requiredAbility: species.requiredAbility || '',
-    requiredTeraType: species.requiredTeraType ? String(species.requiredTeraType).toLowerCase() : '',
-    battleOnly: species.battleOnly || '',
-    changesFrom: species.changesFrom || '',
-    isNonstandard: species.isNonstandard ?? null,
-    tier: species.tier ?? '',
-    doublesTier: species.doublesTier ?? '',
-    natDexTier: species.natDexTier ?? '',
-    gender: species.gender || '',
-    genderRatio: species.genderRatio ? {...species.genderRatio} : null,
-    eggGroups: Array.isArray(species.eggGroups) ? [...species.eggGroups] : [],
-    canGigantamax: species.canGigantamax || '',
-    abilityMap: {...(species.abilities || {})},
-    learnsetLineage: state.dex.species.getLearnsetLineage(species.id).map(entry => ({
-      ...entry,
-      speciesName: state.dex.species.get(entry.id)?.name || entry.id,
-    })),
-  };
-  speciesDataCache.set(key, data);
-  return data;
-}
-async function getMoveData(moveName) {
-  const key = slugify(moveName);
-  if (!key) throw new Error('Move is blank');
-  if (moveDataCache.has(key)) return moveDataCache.get(key);
-  if (!state.dex) throw new Error('Local Dex failed to load.');
-
-  const move = state.dex.moves.get(moveName);
-  if (!move?.exists) throw new Error(`Move not found in local data: ${moveName}`);
-
-  const secondaryStatus = extractSecondaryAilment(move);
-  const secondaryBoosts = extractSecondaryBoosts(move);
-  const result = {
-    id: move.id,
-    name: move.name,
-    apiName: move.id,
-    power: move.basePower || 0,
-    accuracy: move.accuracy === true ? 100 : (move.accuracy || 100),
-    pp: move.pp || 0,
-    priority: move.priority || 0,
-    type: String(move.type || '').toLowerCase(),
-    category: String(move.category || '').toLowerCase(),
-    target: formatTargetFromDex(move.target),
-    critRate: move.critRatio ? Math.max(0, Number(move.critRatio) - 1) : 0,
-    drain: Array.isArray(move.drain) ? Math.round((move.drain[0] / move.drain[1]) * 100) : 0,
-    healing: Array.isArray(move.heal) ? Math.round((move.heal[0] / move.heal[1]) * 100) : 0,
-    minHits: Array.isArray(move.multihit) ? move.multihit[0] : (move.multihit || 1),
-    maxHits: Array.isArray(move.multihit) ? move.multihit[1] : (move.multihit || 1),
-    ailment: secondaryStatus.ailment,
-    ailmentChance: secondaryStatus.chance,
-    flinchChance: move.secondary?.volatileStatus === 'flinch' ? (move.secondary?.chance || 100) : 0,
-    statChance: secondaryBoosts.chance,
-    statChanges: Object.entries(secondaryBoosts.boosts || move.boosts || {}).map(([stat, change]) => ({stat, change})),
-    effectChance: move.secondary?.chance || move.secondaries?.[0]?.chance || 0,
-    metaCategory: move.category === 'Status' ? 'status' : '',
-    isNonstandard: move.isNonstandard ?? null,
-    isZ: Boolean(move.isZ),
-    isMax: Boolean(move.isMax),
-    zBasePower: move.zMove?.basePower || 0,
-    zBoosts: move.zMove?.boost ? {...move.zMove.boost} : {},
-    zEffect: move.zMove?.effect || '',
-    maxBasePower: move.maxMove?.basePower || 0,
-    flags: {...(move.flags || {})},
-    sideCondition: move.sideCondition || '',
-    weather: move.weather || '',
-    terrain: move.terrain || '',
-    stallingMove: Boolean(move.stallingMove),
-    breaksProtect: Boolean(move.breaksProtect),
-    selfSwitch: move.selfSwitch || '',
-    forceSwitch: Boolean(move.forceSwitch),
-    recoil: Array.isArray(move.recoil) ? Math.round((move.recoil[0] / move.recoil[1]) * 100) : 0,
-    hasCrashDamage: Boolean(move.hasCrashDamage),
-    multiaccuracy: Boolean(move.multiaccuracy),
-    selfBoosts: {...(move.self?.boosts || move.selfBoost?.boosts || {})},
-    selfAilment: move.self?.status || '',
-    selfVolatileStatus: move.self?.volatileStatus || '',
-    volatileStatus: move.volatileStatus || '',
-    secondaryVolatileStatus: move.secondary?.volatileStatus || move.secondaries?.[0]?.volatileStatus || '',
-  };
-  moveDataCache.set(key, result);
-  return result;
-}
-async function getItemData(itemName) {
-  const key = slugify(itemName);
-  if (!key) throw new Error('Item is blank');
-  if (itemDataCache.has(key)) return itemDataCache.get(key);
-  if (!state.dex) throw new Error('Local Dex failed to load.');
-  const item = state.dex.items.get(itemName);
-  if (!item?.exists) throw new Error(`Item not found in local data: ${itemName}`);
-  const result = {
-    name: item.name,
-    apiName: item.id,
-    zMove: item.zMove,
-    zMoveType: item.zMoveType ? String(item.zMoveType).toLowerCase() : '',
-    zMoveFrom: item.zMoveFrom || '',
-    itemUser: Array.isArray(item.itemUser) ? [...item.itemUser] : [],
-    megaStone: item.megaStone ? {...item.megaStone} : null,
-  };
-  itemDataCache.set(key, result);
-  return result;
 }
 function joinReadableList(values, displayFn = (value) => value) {
   const list = Array.from(new Set((values || []).filter(Boolean).map(displayFn)));
@@ -7689,10 +7073,16 @@ async function bootstrap() {
   showRuntime('업로드한 에셋과 현지화된 전투 데이터를 불러오는 중… / Loading uploaded assets and fully localized battle data…', 'loading');
   window.__PKB_POKEROGUE_ASSET_AUDIT__ = getPokerogueAssetAuditSummary();
   resetTeams();
-  await loadManifest();
-  await detectAssetBases();
+  state.manifest = await loadManifest();
+  const assetPaths = await detectAssetBases(state.manifest);
+  if (assetPaths.pokemon) state.assetBase.pokemon = assetPaths.pokemon;
+  if (assetPaths.items) state.assetBase.items = assetPaths.items;
   loadSavedState();
-  await loadDataProvider();
+  const {source: dexSource, version: dexVersion} = await loadDataProvider();
+  state.dex = getDex();
+  state.dexSource = dexSource;
+  state.dexVersion = dexVersion;
+  state.dataProvider = 'Local Showdown data';
   await initializeShowdownLocalStatus();
   buildAssetDex();
   await loadMoveNames();
