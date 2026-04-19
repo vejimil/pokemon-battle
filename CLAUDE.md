@@ -120,8 +120,8 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 7. `BA-26` 배틀 내 폼체인지 표시명 고정 ✅ 완료 (2026-04-17)
 8. `BA-24` 테라스탈 구현 ✅ 1차 완료 (2026-04-17)
 9. `BA-25` 다이맥스 구현 ✅ 완료 (2026-04-19)
-10. `BA-23` 기술/날씨/필드 연출 완벽화 (다음)
-11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (고정 후순위)
+10. `BA-23` 기술/날씨/필드 연출 완벽화 ✅ 완료 (2026-04-19)
+11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (다음)
 
 ### ✅ 2026-04-17 오늘 작업 요약
 - `BA-27`/`BA-26` 구현 및 후속 회귀 안정화 완료.
@@ -143,7 +143,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `timeline.js`에 `terastallize` 핸들러 추가(메시지 → 테라 연출 → info patch 순서)
   - `battle-shell-scene.js`에 `playTerastallize()` 추가
   - `app.js` locale namespace에 `pokemon-info` 추가(테라 타입 로컬라이즈)
-- 현재 남은 우선순위(고정): `BA-23 -> BA-28`
+- 현재 남은 우선순위(고정): `BA-28`
 
 ### ✅ 2026-04-19 오늘 작업 요약 (BA-25)
 - 원본 선독 후 반영:
@@ -175,6 +175,59 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - 다이맥스 배율 2.0x와 metrics/shadow 재적용 배율을 완전히 동기화
   - 확대 기준은 중앙-하단(`origin(0.5, 1)`) 유지
   - 일반 다이맥스만 base Y를 소폭 하향(+12) 적용, 거다이맥스는 추가 하향 없음 (`battle-shell-scene.js`)
+
+### ✅ 2026-04-19 BA-23 완료 (기술/날씨/필드 연출)
+- 원본 선독 후 정합 이식:
+  - `pokerogue_codes/src/data/battle-anims.ts` (`AnimFocus.SCREEN` 좌표계)
+  - `pokerogue_codes/src/phases/common-anim-phase.ts`, `pokerogue_codes/src/field/arena.ts` (weather/terrain common anim 호출)
+- 핵심 구현:
+  - `battle-anim-player.js`: `focus=SCREEN(4)` 처리 + 애니 스케일 옵션 지원
+  - `battle-shell-scene.js`: `playFieldAnim()` 추가(`common-*` 날씨/필드 애니 재생)
+  - `timeline.js`: `weather_start/tick`, `terrain_start`에서 `common-*` 연출 연결
+  - `app.js`: Z 기술 연출 힌트 주입
+    - 물리 Z → `Giga Impact`
+    - 특수 Z → `Hyper Beam`
+    - 변화 Z → 원본 기술 + `animationScale=1.35`
+- 회귀 가드 확인:
+  - 기술 전 HP/스프라이트 선반영 금지 유지
+  - timeline lock 중 message-only 유지
+  - `move -> hp -> faint/switch` 순서 유지
+  - 테라스탈/다이맥스 경로 독립 유지
+- 검증:
+  - `node --check src/battle-presentation/battle-anim-player.js` PASS
+  - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` PASS
+  - `node --check src/battle-presentation/timeline.js` PASS
+  - `node --check src/app.js` PASS
+  - `npm run verify:ba20` PASS
+  - `npm run verify:passb` PASS
+  - `npm run verify:stage22` PASS
+
+### ✅ 2026-04-19 BA-23 후속 보강 (사용자 피드백 반영)
+- 증상:
+  - 가뭄/모래바람/필드 common 연출이 보이지 않음
+  - `버티기(Endure)`, `바디프레스(Body Press)`, `사이코키네시스(Psychic)` 등 일부 기술 연출 누락
+- 원인:
+  - `battle-anim-player`에서 `USER/TARGET` 프레임이 비활성화된 상태
+  - `graphic=''`(무그래픽) anim-data를 로더가 거부
+  - `AnimTimedAddBgEvent/AnimTimedUpdateBgEvent` 미구현
+- 수정:
+  - `battle-anim-player.js`
+    - `USER/TARGET` 프레임 재활성화
+    - `graphic=''` anim-data 허용
+    - timed BG 이벤트(`AnimTimedAddBgEvent`/`AnimTimedUpdateBgEvent`) 실행 경로 추가
+  - `timeline.js`
+    - 모래바람/싸라기눈 weather damage 메시지 locale key 연결
+    - weather damage 시점 필드 애니 재생 연결
+  - `app.js`
+    - Z 메타에 타입(`zMoveType`) 전달
+    - Z 물리/특수도 스케일 확대(공통 `1.4`) + 타입 tint 적용
+- 검증:
+  - `node --check src/battle-presentation/battle-anim-player.js` PASS
+  - `node --check src/battle-presentation/timeline.js` PASS
+  - `node --check src/app.js` PASS
+  - `npm run verify:ba20` PASS
+  - `npm run verify:passb` PASS
+  - `npm run verify:stage22` PASS
 
 ### ✅ M5. locale 네임스페이스 로더 — 완료 (2026-04-16)
 - 원본 참조: `pokerogue_codes/src/plugins/utils-plugins.ts`, `pokerogue_codes/src/plugins/i18n.ts`
@@ -245,9 +298,10 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
     - `npm run verify:stage22` PASS
     - `npm run verify:passb` PASS
 
-### 🔜 BA-23. 기술/날씨/필드 연출 완벽화 (다음)
-- 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 완성
-- 현재 최우선 착수 대상
+### ✅ BA-23. 기술/날씨/필드 연출 완벽화 — 완료 (2026-04-19)
+- `AnimFocus.SCREEN` 좌표계 보정 + `weather/terrain common-*` 연출 연결 완료
+- Z 기술 연출 규칙(물리/특수/변화) 반영 완료
+- 검증: `node --check`(수정 파일), `npm run verify:ba20`, `npm run verify:passb`, `npm run verify:stage22` PASS
 
 ### ✅ BA-24. 테라스탈 구현 — 1차 완료 (2026-04-17)
 - 원본 참조:
@@ -337,8 +391,8 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 7. `BA-26` 배틀 내 폼체인지 표시명 고정 ✅ 완료 (2026-04-17)
 8. `BA-24` 테라스탈 구현 ✅ 1차 완료 (2026-04-17)
 9. `BA-25` 다이맥스 구현 ✅ 완료 (2026-04-19)
-10. `BA-23` 기술/날씨/필드 연출 완벽화 (다음)
-11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (고정 후순위)
+10. `BA-23` 기술/날씨/필드 연출 완벽화 ✅ 완료 (2026-04-19)
+11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (다음)
 
 **✅ BA-21: 선택 완료 후 대기 메시지 정합 — 완료 (2026-04-16)** (`app.js`)
 - `buildBattleMessageModel()` / `renderBattleMessagesWindow()` / `buildPhaserMessageWindowModel()`에 waiting 분기 추가
@@ -363,9 +417,10 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `timeline.js` `switch_in`에서 `setBattlerSprite(...,{visible:!fromBall})`를 이벤트 시점에 실행해 조기 스냅샷 노출 방지
   - 검증: `node --check src/app.js`, `node --check src/battle-presentation/timeline.js`, `npm run verify:stage22`, `npm run verify:passb` PASS
 
-**BA-23: 기술/날씨/필드 연출 완벽화 (다음)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`)
-- 기술, 날씨, 필드 연출 품질을 원본 체감 기준으로 단계적으로 보강
-- 고정 순서상 다음 착수
+**✅ BA-23: 기술/날씨/필드 연출 완벽화 — 완료 (2026-04-19)** (`timeline.js`, `battle-shell-scene.js`, `battle-anim-player.js`, `app.js`)
+- 원본 `battle-anims.ts`/`common-anim-phase.ts`/`arena.ts` 정합 이식
+- weather/terrain common anim 연결 + Z 기술 연출 규칙(물리/특수/변화) 반영
+- 검증: `node --check`(수정 파일), `npm run verify:ba20`, `npm run verify:passb`, `npm run verify:stage22` PASS
 
 **✅ BA-24: 테라스탈 구현 — 1차 완료 (2026-04-17)** (`showdown-engine.cjs`, `event-schema.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - `-terastallize`를 독립 `terastallize` 이벤트로 파싱하고 `target/teraType/teraTypeName/trigger/fromSource`를 구조화

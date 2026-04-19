@@ -1484,6 +1484,44 @@ export function createBattleShellSceneClass(Phaser, env) {
       this._syncMountTeraFx(mount, 0);
     }
 
+    _resolveAnimEndpoints(userSide, targetSide) {
+      const userMount = this._mountForBattleSide(userSide)
+        || this._mountForBattleSide('p1')
+        || this.playerMount
+        || this.enemyMount;
+      const targetMount = this._mountForBattleSide(targetSide)
+        || this._mountForBattleSide('p2')
+        || this.enemyMount
+        || this.playerMount;
+      const uSpr = userMount?.phaserSprite;
+      const tSpr = targetMount?.phaserSprite;
+      if (!uSpr || !tSpr) return null;
+      return {
+        userInfo: {
+          x: uSpr.x,
+          y: uSpr.y,
+          displayHeight: uSpr.displayHeight || 64,
+          sprite: uSpr,
+        },
+        targetInfo: {
+          x: tSpr.x,
+          y: tSpr.y,
+          displayHeight: tSpr.displayHeight || 64,
+          sprite: tSpr,
+        },
+      };
+    }
+
+    async playFieldAnim(animName, options = {}) {
+      if (!this.animPlayer || !animName) return;
+      const endpoints = this._resolveAnimEndpoints('p1', 'p2');
+      if (!endpoints) return;
+      await this.animPlayer.play(animName, endpoints.userInfo, endpoints.targetInfo, {
+        audioEnabled: options?.audioEnabled !== false,
+        scale: Number.isFinite(Number(options?.scale)) ? Number(options.scale) : 1,
+      });
+    }
+
     /**
      * Play the visual animation for a move.
      * Called by the timeline executor for move_use events.
@@ -1495,30 +1533,9 @@ export function createBattleShellSceneClass(Phaser, env) {
      */
     async playMoveAnim(moveName, actorSide, targetSide, options = {}) {
       if (!this.animPlayer || !moveName) return;
-
-      const userMount = this._mountForBattleSide(actorSide);
-      const targetMount = this._mountForBattleSide(targetSide);
-      if (!userMount || !targetMount) return;
-
-      const uSpr = userMount.phaserSprite;
-      const tSpr = targetMount.phaserSprite;
-      if (!uSpr || !tSpr) return;
-
-      // Battler sprites use origin(0.5, 1): x = horizontal center, y = bottom edge.
-      const userInfo = {
-        x: uSpr.x,
-        y: uSpr.y,
-        displayHeight: uSpr.displayHeight || 64,
-        sprite: uSpr,
-      };
-      const targetInfo = {
-        x: tSpr.x,
-        y: tSpr.y,
-        displayHeight: tSpr.displayHeight || 64,
-        sprite: tSpr,
-      };
-
-      await this.animPlayer.play(moveName, userInfo, targetInfo, options);
+      const endpoints = this._resolveAnimEndpoints(actorSide, targetSide);
+      if (!endpoints) return;
+      await this.animPlayer.play(moveName, endpoints.userInfo, endpoints.targetInfo, options);
     }
   };
 }

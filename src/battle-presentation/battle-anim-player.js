@@ -31,7 +31,7 @@ const FT_GRAPHIC = 2;
 const AF_TARGET      = 1;
 const AF_USER        = 2;
 const AF_USER_TARGET = 3;
-// AF_SCREEN = 4 not used
+const AF_SCREEN      = 4;
 
 // AnimBlendType
 const AB_NORMAL   = 0;
@@ -41,10 +41,9 @@ const AB_ADD      = 1;
 // 30fps (PokeRogue: getFrameMs(3) = 1000/30 ≈ 33.33ms per frame)
 const FRAME_MS = 1000 / 30;
 
-// Sprint 6 hotfix:
-// Temporarily disable USER/TARGET battler-copy motion frames.
-// Keep GRAPHIC-only move animations until the original behavior is re-reviewed.
-const ENABLE_BATTLER_COPY_PHASE2 = false;
+// USER/TARGET battler-copy frames are required by many original animations
+// (e.g. Protect, Endure, Body Press, Psychic, weather/terrain common effects).
+const ENABLE_BATTLER_COPY_PHASE2 = true;
 
 // PokeRogue hardcoded focus reference points (logical 320×180 space).
 // Derived from: userFocusX/Y and targetFocusX/Y in battle-anims.ts lines 669-672.
@@ -62,6 +61,8 @@ export class BattleAnimPlayer {
     this._animCache   = new Map();   // slug → anim config (or null if missing)
     this._texLoaded   = new Set();   // graphic keys already loaded
     this._texLoading  = new Map();   // graphic key → Promise (in-flight)
+    this._bgTexLoaded  = new Set();  // background texture keys for timed bg events
+    this._bgTexLoading = new Map();  // background texture key → Promise
     // Bug fix: track the cancel function of the currently running animation.
     // Calling it destroys all pool sprites and resolves the Promise immediately.
     this._activeCancel = null;
@@ -73,7 +74,7 @@ export class BattleAnimPlayer {
    * @param {string} moveName        — Showdown display name (e.g. 'Flamethrower')
    * @param {{ x:number, y:number, displayHeight:number, sprite?:Phaser.GameObjects.Image }} userInfo
    * @param {{ x:number, y:number, displayHeight:number, sprite?:Phaser.GameObjects.Image }} targetInfo
-   * @param {{ audioEnabled?: boolean }} [options]
+   * @param {{ audioEnabled?: boolean, scale?: number, tint?: number|null }} [options]
    * @returns {Promise<void>} resolves when animation finishes (or immediately on error)
    */
   async play(moveName, userInfo, targetInfo, options = {}) {
@@ -89,14 +90,25 @@ export class BattleAnimPlayer {
     const anim = await this._loadAnim(slug);
     if (!anim) return;
 
-    await this._ensureGraphicLoaded(anim.graphic);
+    const hasGraphicFrames = anim.frames.some(spriteFrames =>
+      Array.isArray(spriteFrames) && spriteFrames.some(frame => frame?.target === FT_GRAPHIC),
+    );
+    const texKey = anim.graphic ? `pkb-ba/${anim.graphic}` : '';
+    if (anim.graphic) {
+      await this._ensureGraphicLoaded(anim.graphic);
+    }
+    if (hasGraphicFrames && (!texKey || !this.scene.textures.exists(texKey))) return;
 
-    const texKey = `pkb-ba/${anim.graphic}`;
-    if (!this.scene.textures.exists(texKey)) return;  // load failed silently
+    const bgResources = this._collectBgResourceNames(anim);
+    if (bgResources.length) {
+      await Promise.all(bgResources.map(resourceName => this._ensureBgLoaded(resourceName)));
+    }
 
     return new Promise(resolve => {
-      const cancel = this._runAnim(anim, texKey, userInfo, targetInfo, {
+      const cancel = this._runAnim(anim, texKey || null, userInfo, targetInfo, {
         audioEnabled: options.audioEnabled !== false,
+        scale: Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1,
+        tint: Number.isFinite(Number(options.tint)) ? Number(options.tint) : null,
       }, () => {
         // Clear our cancel handle when the animation finishes normally.
         if (this._activeCancel === cancel) this._activeCancel = null;
@@ -117,7 +129,7 @@ export class BattleAnimPlayer {
       if (!res.ok) return null;
       const data = await res.json();
       const raw = Array.isArray(data) ? data[0] : data;
-      if (!raw?.frames?.length || !raw.graphic) return null;
+      if (!raw?.frames?.length) return null;
 
       // Build frameTimedEvents as Map<frameIndex, event[]>
       const fte = new Map();
@@ -127,7 +139,7 @@ export class BattleAnimPlayer {
         }
       }
 
-      const config = { graphic: raw.graphic, frames: raw.frames, fte };
+      const config = { graphic: String(raw.graphic || '').trim(), frames: raw.frames, fte };
       this._animCache.set(slug, config);
       return config;
     } catch {
@@ -168,6 +180,52 @@ export class BattleAnimPlayer {
     return p;
   }
 
+  _bgTextureKey(resourceName) {
+    return `pkb-ba-bg/${resourceName}`;
+  }
+
+  _collectBgResourceNames(anim) {
+    if (!anim?.fte || !(anim.fte instanceof Map)) return [];
+    const out = new Set();
+    for (const events of anim.fte.values()) {
+      for (const ev of events || []) {
+        if (ev?.eventType !== 'AnimTimedAddBgEvent') continue;
+        const name = String(ev.resourceName || '').trim();
+        if (name) out.add(name);
+      }
+    }
+    return Array.from(out);
+  }
+
+  _ensureBgLoaded(resourceName) {
+    const name = String(resourceName || '').trim();
+    if (!name) return Promise.resolve();
+    const key = this._bgTextureKey(name);
+    if (this._bgTexLoaded.has(key) || this.scene.textures.exists(key)) {
+      this._bgTexLoaded.add(key);
+      return Promise.resolve();
+    }
+    if (this._bgTexLoading.has(key)) return this._bgTexLoading.get(key);
+
+    const p = new Promise(resolve => {
+      const filename = encodeURIComponent(name) + '.png';
+      const url = `./assets/pokerogue/battle__anims/${filename}`;
+      this.scene.load.image(key, url);
+      this.scene.load.once('complete', () => {
+        this._bgTexLoaded.add(key);
+        this._bgTexLoading.delete(key);
+        resolve();
+      });
+      this.scene.load.once('loaderror', () => {
+        this._bgTexLoading.delete(key);
+        resolve();
+      });
+      this.scene.load.start();
+    });
+    this._bgTexLoading.set(key, p);
+    return p;
+  }
+
   // ──────────────────────────────────────────────────── animation core ───
 
   /**
@@ -183,6 +241,10 @@ export class BattleAnimPlayer {
     const frameCount = frames.length;
     if (!frameCount) { callback(); return () => {}; }
     const audioEnabled = options?.audioEnabled !== false;
+    const scaleMultiplier = Number.isFinite(options?.scale) && Number(options.scale) > 0
+      ? Number(options.scale)
+      : 1;
+    const globalTint = Number.isFinite(Number(options?.tint)) ? Number(options.tint) : null;
 
     const uX = userInfo.x,   uY = userInfo.y,   uH = userInfo.displayHeight ?? 64;
     const tX = targetInfo.x, tY = targetInfo.y, tH = targetInfo.displayHeight ?? 64;
@@ -199,6 +261,8 @@ export class BattleAnimPlayer {
     const hasBattlerFrames = ENABLE_BATTLER_COPY_PHASE2 && frames.some(spriteFrames =>
       Array.isArray(spriteFrames) && spriteFrames.some(frame => frame?.target === FT_USER || frame?.target === FT_TARGET)
     );
+    const bgLayerRef = { value: null };
+    let extraFrames = 0;
     let destroyed = false;
 
     const cleanUp = () => {
@@ -214,6 +278,8 @@ export class BattleAnimPlayer {
         try { if (uSrc?.active) uSrc.setVisible(prevUserVisible); } catch {}
         try { if (tSrc?.active) tSrc.setVisible(prevTargetVisible); } catch {}
       }
+      try { bgLayerRef.value?.destroy?.(); } catch {}
+      bgLayerRef.value = null;
       callback();
     };
 
@@ -236,6 +302,7 @@ export class BattleAnimPlayer {
       for (const frame of spriteFrames) {
         const frameData = this._computeFrameData(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine);
         if (frame.target === FT_GRAPHIC) {
+          if (!texKey) continue;
           if (g >= graphicPool.length) {
             const spr = this.scene.add.sprite(0, 0, texKey, 0);
             spr.setDepth(12);  // above battlers (6-7), below UI (30+)
@@ -251,11 +318,15 @@ export class BattleAnimPlayer {
           try { spr.setFrame(frameIdx); } catch {}
 
           // Transform
-          spr.setScale(frameData.scaleX, frameData.scaleY);
+          spr.setScale(frameData.scaleX * scaleMultiplier, frameData.scaleY * scaleMultiplier);
           spr.setAngle(frameData.angle);
           spr.setAlpha((frame.opacity ?? 255) / 255);
           spr.setVisible(frame.visible !== false);
           this._setBlendMode(spr, frame.blendType ?? AB_NORMAL);
+          this._applyToneAndColor(spr, frame, globalTint);
+          if (Number.isFinite(frame.priority)) {
+            spr.setDepth(2 + (Number(frame.priority) * 2));
+          }
           continue;
         }
 
@@ -293,14 +364,18 @@ export class BattleAnimPlayer {
         );
         copySprite.setAngle(frameData.angle);
         copySprite.setScale(
-          frameData.scaleX * sourceScaleX,
-          frameData.scaleY * sourceScaleY
+          frameData.scaleX * sourceScaleX * scaleMultiplier,
+          frameData.scaleY * sourceScaleY * scaleMultiplier
         );
         copySprite.setAlpha((frame.opacity ?? 255) / 255);
         // Source battlers are intentionally hidden during USER/TARGET overlay frames.
         // Do not gate overlay visibility on source visibility, or the battler vanishes.
         copySprite.setVisible(frame.visible !== false);
         this._setBlendMode(copySprite, frame.blendType ?? AB_NORMAL);
+        this._applyToneAndColor(copySprite, frame, globalTint);
+        if (Number.isFinite(frame.priority)) {
+          copySprite.setDepth(2 + (Number(frame.priority) * 2));
+        }
       }
 
       // Hide any pool sprites not used in this frame.
@@ -311,15 +386,19 @@ export class BattleAnimPlayer {
       // Timed events at this frame index
       const fte = anim.fte.get(f);
       if (fte) {
-        for (const ev of fte) this._fireSoundEvent(ev, audioEnabled);
+        for (const ev of fte) {
+          const extra = this._fireTimedEvent(ev, { audioEnabled, bgLayerRef });
+          if (extra > extraFrames) extraFrames = extra;
+        }
       }
 
       f++;
       if (f < frameCount) {
         this.scene.time.delayedCall(FRAME_MS, tick);
       } else {
-        // Small tail delay so the last frame is visible before cleanup.
-        this.scene.time.delayedCall(FRAME_MS * 0.5, cleanUp);
+        // Keep tail long enough for timed BG updates (original returns duration*2 frames).
+        const tailMs = FRAME_MS * (0.5 + Math.max(0, extraFrames));
+        this.scene.time.delayedCall(tailMs, cleanUp);
       }
     };
 
@@ -338,9 +417,10 @@ export class BattleAnimPlayer {
     let y = (frame.y ?? 0) + USER_FOCUS_Y;
     let scaleX = ((frame.zoomX ?? 100) / 100) * (frame.mirror ? -1 : 1);
     const scaleY = (frame.zoomY ?? 100) / 100;
-    const focus = frame.focus ?? AF_TARGET;
+    const focus = Number.isFinite(Number(frame.focus)) ? Number(frame.focus) : AF_TARGET;
 
     switch (focus) {
+      case 0:
       case AF_TARGET:
         x += tX - TARGET_FOCUS_X;
         y += tY - (tH / 2) - TARGET_FOCUS_Y;
@@ -365,10 +445,10 @@ export class BattleAnimPlayer {
         }
         break;
       }
-      case 0:  // some frames have focus:0 — treat as TARGET fallback
+      case AF_SCREEN:
+        // Screen focus uses absolute logical coordinates (320x180 space).
+        break;
       default:
-        x += tX - TARGET_FOCUS_X;
-        y += tY - (tH / 2) - TARGET_FOCUS_Y;
         break;
     }
     return { x, y, scaleX, scaleY, angle: -(frame.angle ?? 0) };
@@ -412,6 +492,41 @@ export class BattleAnimPlayer {
     copy.setDepth(source.depth ?? copy.depth);
   }
 
+  _applyToneAndColor(sprite, frame, globalTint = null) {
+    if (!sprite || !frame) return;
+    const color = Array.isArray(frame.color) ? frame.color : null;
+    const tone = Array.isArray(frame.tone) ? frame.tone : null;
+    const hasColor = color && Number(color[3] || 0) > 0;
+    const hasTone = tone && (Number(tone[0] || 0) !== 0 || Number(tone[1] || 0) !== 0 || Number(tone[2] || 0) !== 0);
+    const hasGlobalTint = Number.isFinite(Number(globalTint));
+    if (!hasColor && !hasTone && !hasGlobalTint) {
+      sprite.clearTint?.();
+      return;
+    }
+    const clamp = value => Math.max(0, Math.min(255, Math.round(value)));
+    let r = 255, g = 255, b = 255;
+    if (hasColor) {
+      r = clamp(color[0]);
+      g = clamp(color[1]);
+      b = clamp(color[2]);
+    }
+    if (hasTone) {
+      r = clamp(r + Number(tone[0] || 0));
+      g = clamp(g + Number(tone[1] || 0));
+      b = clamp(b + Number(tone[2] || 0));
+    }
+    if (hasGlobalTint) {
+      const gr = (Number(globalTint) >> 16) & 0xff;
+      const gg = (Number(globalTint) >> 8) & 0xff;
+      const gb = Number(globalTint) & 0xff;
+      const mix = 0.45;
+      r = clamp((r * (1 - mix)) + (gr * mix));
+      g = clamp((g * (1 - mix)) + (gg * mix));
+      b = clamp((b * (1 - mix)) + (gb * mix));
+    }
+    sprite.setTint?.((r << 16) | (g << 8) | b);
+  }
+
   _setBlendMode(sprite, blend) {
     sprite.setBlendMode(
       blend === AB_ADD ? 1  :   // Phaser.BlendModes.ADD = 1
@@ -421,6 +536,90 @@ export class BattleAnimPlayer {
   }
 
   // ─────────────────────────────────────────────────── timed sound events ─
+
+  _fireTimedEvent(ev, context = {}) {
+    if (!ev || typeof ev !== 'object') return 0;
+    const eventType = String(ev.eventType || '');
+    if (eventType === 'AnimTimedSoundEvent') {
+      this._fireSoundEvent(ev, context.audioEnabled !== false);
+      return 0;
+    }
+    if (eventType === 'AnimTimedAddBgEvent') {
+      return this._fireAddBgEvent(ev, context);
+    }
+    if (eventType === 'AnimTimedUpdateBgEvent') {
+      return this._fireUpdateBgEvent(ev, context);
+    }
+    return 0;
+  }
+
+  _fireAddBgEvent(ev, context = {}) {
+    const bgLayerRef = context?.bgLayerRef;
+    if (!bgLayerRef) return 0;
+
+    try { bgLayerRef.value?.destroy?.(); } catch {}
+    bgLayerRef.value = null;
+
+    const width = Number(this.scene.scale?.width) || 320;
+    const height = Number(this.scene.scale?.height) || 180;
+    const resourceName = String(ev.resourceName || '').trim();
+    const opacity = Math.max(0, Math.min(255, Number(ev.opacity) || 0)) / 255;
+    const duration = Math.max(0, Number(ev.duration) || 0);
+    const bgX = Number(ev.bgX) || 0;
+    const bgY = Number(ev.bgY) || 0;
+
+    let layer = null;
+    if (resourceName) {
+      const bgKey = this._bgTextureKey(resourceName);
+      if (this.scene.textures.exists(bgKey)) {
+        layer = this.scene.add.tileSprite(width / 2, height / 2, width + 120, height + 80, bgKey);
+        layer.setOrigin(0.5, 0.5);
+        layer.tilePositionX = bgX;
+        layer.tilePositionY = bgY;
+      }
+    }
+    if (!layer) {
+      layer = this.scene.add.rectangle(width / 2, height / 2, width + 120, height + 80, 0xffffff, opacity);
+    } else {
+      layer.setAlpha(opacity);
+    }
+    layer.setDepth(3);
+    bgLayerRef.value = layer;
+
+    if (duration > 0) {
+      this.scene.tweens.add({
+        targets: layer,
+        duration: duration * 100,
+      });
+    }
+    return duration * 2;
+  }
+
+  _fireUpdateBgEvent(ev, context = {}) {
+    const bgLayerRef = context?.bgLayerRef;
+    const layer = bgLayerRef?.value;
+    const duration = Math.max(0, Number(ev.duration) || 0);
+    if (!layer) return duration * 2;
+
+    const tweenProps = {};
+    if (Number.isFinite(Number(ev.opacity))) {
+      tweenProps.alpha = Math.max(0, Math.min(255, Number(ev.opacity))) / 255;
+    }
+    if ('tilePositionX' in layer && Number.isFinite(Number(ev.bgX))) {
+      tweenProps.tilePositionX = Number(ev.bgX);
+    }
+    if ('tilePositionY' in layer && Number.isFinite(Number(ev.bgY))) {
+      tweenProps.tilePositionY = Number(ev.bgY);
+    }
+    if (Object.keys(tweenProps).length) {
+      this.scene.tweens.add({
+        targets: layer,
+        duration: Math.max(1, duration * 100),
+        ...tweenProps,
+      });
+    }
+    return duration * 2;
+  }
 
   /**
    * Fire an AnimTimedSoundEvent: lazy-load the audio file if needed, then play.

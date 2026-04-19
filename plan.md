@@ -18,16 +18,70 @@ Target: `/workspaces/pokemon-battle`
   - Max/G-Max 기술명·기술 모션 fallback 보정
   - 거다이맥스 가능 종 자동 거다이맥스 강제
   - 다이맥스 2.0x + metrics 동기화 + 일반 다이맥스 base Y 하향 조정
+- `BA-23` 기술/날씨/필드 연출 보강 완료
+  - 원본 `battle-anims.ts`, `common-anim-phase.ts`, `arena.ts` 선독 후 정합 이식
+  - `focus=SCREEN` 좌표계 이식(필드/스크린 계열 애니 위치 보정)
+  - 날씨/필드 `common-*` 연출 연결(`weather_start/tick`, `terrain_start`)
+  - Z 기술 연출 규칙 반영: 물리=`Giga Impact`, 특수=`Hyper Beam`, 변화=`원본 기술 + scale 1.35`
+- `BA-23` 후속 보강 완료 (사용자 피드백 반영)
+  - `AnimTimedAddBg/AnimTimedUpdateBg` 배경 이벤트 지원(가뭄/모래바람 등 필드 배경 연출 복원)
+  - `USER/TARGET` 프레임 재활성화 + `graphic=''` 애니 허용(버티기/바디프레스/사이코키네시스 계열 복원)
+  - Z 물리/특수도 확대 적용(`scale 1.4`) + 타입 기반 tint 추가
 
 ### 고정 순서 반영
 - 요청 고정 순서: `25 -> 23 -> 28`
 - 현재 남은 순서:
-1. `BA-23` 기술/날씨/필드 연출 완벽화
-2. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
+1. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
 
 ---
 
-## 1) BA-25 완료 보고 (최종 안정화 포함)
+## 1) BA-23 완료 보고 (원본 정합 이식)
+
+### 반영 파일
+- `src/battle-presentation/battle-anim-player.js`
+- `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+- `src/battle-presentation/timeline.js`
+- `src/app.js`
+
+### 핵심 반영
+1. 원본 좌표계 정합
+- `AnimFocus.SCREEN(4)`를 원본(`battle-anims.ts`)과 동일하게 절대 좌표로 처리
+- 기존 TARGET fallback 오적용 제거로 스크린/필드 계열 프레임 위치 보정
+
+2. 날씨/필드 연출
+- `timeline weather_start/tick`, `terrain_start`에서 `common-*` 애니를 씬으로 실행
+- `battle-shell-scene.js`에 `playFieldAnim()` 추가(기존 `BattleAnimPlayer` 재사용)
+
+3. Z 기술 연출
+- 턴 해석 시 선택정보 기반 Z 힌트 주입(`app.js`)
+- `move_use` 이벤트에 Z 분류 메타를 실어 연출 분기
+  - 물리 Z: `Giga Impact`
+  - 특수 Z: `Hyper Beam`
+  - 변화 Z: 원본 기술 + `animationScale=1.35`
+  - 공통: 타입 기반 tint 적용
+
+4. 후속 보강 (사용자 피드백)
+- `battle-anim-player.js`
+  - `AnimTimedAddBgEvent` / `AnimTimedUpdateBgEvent` 실행 경로 이식
+  - `USER/TARGET` 프레임 재생 복원
+  - `graphic`이 비어 있는 anim-data도 재생 가능하도록 로더 조건 보완
+- `timeline.js`
+  - 모래바람/싸라기눈 피해 메시지를 weather locale key로 출력
+  - 날씨 피해 데미지 시점에 대응 필드 애니 재생
+- `app.js`
+  - Z 메타에 `zMoveType` 전달
+- 결과:
+  - 가뭄/모래바람/전기필드 등 common 연출 표시 복원
+  - `protect`, `body-press`, `psychic`, `endure` 등 기존 비어 보이던 기술 연출 복원
+
+4. 타임라인 회귀 가드 유지
+- 기존 순서(`move -> hp -> faint/switch`) 유지
+- 타임라인 message-only 잠금 경로 변경 없음
+- 테라스탈/다이맥스 경로 독립 유지
+
+---
+
+## 2) BA-25 완료 보고 (최종 안정화 포함)
 
 ### 원본 조사(수정 전 선행)
 - `pokerogue_codes/src/field/pokemon.ts`
@@ -81,18 +135,17 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
-## 2) 검증 결과
+## 3) 검증 결과
 
 ### 정적 검사
-- `node --check server/showdown-engine.cjs` PASS
-- `node --check src/battle-presentation/event-schema.js` PASS
+- `node --check src/battle-presentation/battle-anim-player.js` PASS
 - `node --check src/battle-presentation/timeline.js` PASS
 - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` PASS
 - `node --check src/app.js` PASS
 
 ### 기존 회귀 스위트
 - `npm run verify:ba20` PASS
-- `npm run verify:stage22` 최근 재실행에서 메가 케이스 간헐 FAIL 관찰(플래키)
+- `npm run verify:stage22` PASS (금회 1회 실행, FAIL 미발생)
 - `npm run verify:passb` PASS
 
 ### 인라인 다이맥스 검증
@@ -106,12 +159,7 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
-## 3) 다음 작업 (고정)
-
-### BA-23 (다음 착수)
-1. move/weather/terrain 템포를 원본 체감으로 미세 조정
-2. 누락된 메시지 키/사운드/완충 간격 보강
-3. `move -> hp -> faint/switch` 회귀 재검증
+## 4) 다음 작업 (고정)
 
 ### BA-28
 1. KO 모드 영어 노출 포켓몬/기술 수집
@@ -120,7 +168,7 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
-## 4) 공통 작업 원칙 (유지)
+## 5) 공통 작업 원칙 (유지)
 
 - 수정 전 원본 코드 선독/정합 이식
 - 배틀 연출 완성 전 UI 폴리시(UI-P1~P5) 착수 금지
@@ -129,10 +177,10 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
-## 5) 빠른 시작 메모
+## 6) 빠른 시작 메모
 
 - 먼저 읽기: `CLAUDE.md` -> `plan.md` -> `planprevious.md`
-- 다음 착수 항목: `BA-23`
+- 다음 착수 항목: `BA-28`
 - 회귀 핵심 가드:
   - 기술 전 HP/스프라이트 선반영 금지
   - 타임라인 중 message-only 유지

@@ -6925,17 +6925,35 @@ function renderPendingChoices() {
   )}</div>`;
 }
 async function resolveEngineTurn(battle = state.battle) {
-  const dynamaxAnimationHints = {};
+  const moveAnimationHints = {};
+  const normalizeMoveCategoryForAnim = category => {
+    const id = toId(category || '');
+    return id === 'physical' || id === 'special' ? id : 'status';
+  };
   [0, 1].forEach(player => {
     const actionSlots = getEngineActionSlots(player, battle);
     actionSlots.forEach((activeIndex, requestSlot) => {
       const choice = getEngineDraftChoice(player, activeIndex, battle);
-      if (choice?.kind !== 'move' || !choice?.dynamax) return;
+      if (choice?.kind !== 'move') return;
       const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
       const moveInfo = Array.isArray(moveRequest?.moves) ? moveRequest.moves[choice.moveIndex] : null;
       const baseMove = resolveEngineMoveName(moveInfo?.move || choice.move || '');
       if (!baseMove) return;
-      dynamaxAnimationHints[`${getEngineSideId(player)}_${requestSlot}`] = baseMove;
+      const hintKey = `${getEngineSideId(player)}_${requestSlot}`;
+      if (choice?.dynamax) {
+        moveAnimationHints[hintKey] = { kind: 'dynamax', baseMove };
+        return;
+      }
+      if (choice?.z) {
+        const dexCategory = state.dex?.moves?.get?.(baseMove)?.category || '';
+        const dexType = state.dex?.moves?.get?.(baseMove)?.type || '';
+        moveAnimationHints[hintKey] = {
+          kind: 'zmove',
+          baseMove,
+          category: normalizeMoveCategoryForAnim(moveInfo?.category || dexCategory),
+          moveType: toId(moveInfo?.type || dexType || ''),
+        };
+      }
     });
   });
   pruneEnginePendingChoices(battle);
@@ -6944,22 +6962,44 @@ async function resolveEngineTurn(battle = state.battle) {
   if (Array.isArray(nextSnapshot?.events) && nextSnapshot.events.length) {
     nextSnapshot.events.forEach(ev => {
       if (ev?.type !== 'move_use') return;
-      const moveId = toId(ev.move || '');
-      if (!moveId.startsWith('max') && !moveId.startsWith('gmax')) return;
       const side = ev.actor?.side;
       const slot = Number.isInteger(ev.actor?.slot) ? ev.actor.slot : 0;
       const hintKey = `${side}_${slot}`;
-      let animationMove = String(dynamaxAnimationHints[hintKey] || '').trim();
-      if (!animationMove && (side === 'p1' || side === 'p2')) {
-        const sideIndex = side === 'p2' ? 1 : 0;
-        const actorSide = nextSnapshot.players?.[sideIndex];
-        const teamIndex = Number.isInteger(actorSide?.active?.[slot]) ? actorSide.active[slot] : -1;
-        const actorMon = Number.isInteger(teamIndex) && teamIndex >= 0 ? actorSide?.team?.[teamIndex] : null;
-        animationMove = resolveEngineMoveName(actorMon?.lastMoveUsed || '');
+      const hint = moveAnimationHints[hintKey];
+      const moveId = toId(ev.move || '');
+      if (moveId.startsWith('max') || moveId.startsWith('gmax')) {
+        let animationMove = String(hint?.kind === 'dynamax' ? hint.baseMove : '').trim();
+        if (!animationMove && (side === 'p1' || side === 'p2')) {
+          const sideIndex = side === 'p2' ? 1 : 0;
+          const actorSide = nextSnapshot.players?.[sideIndex];
+          const teamIndex = Number.isInteger(actorSide?.active?.[slot]) ? actorSide.active[slot] : -1;
+          const actorMon = Number.isInteger(teamIndex) && teamIndex >= 0 ? actorSide?.team?.[teamIndex] : null;
+          animationMove = resolveEngineMoveName(actorMon?.lastMoveUsed || '');
+        }
+        if (animationMove && toId(animationMove) !== moveId) {
+          ev.animationMove = animationMove;
+        }
+        if (hint?.kind === 'dynamax') delete moveAnimationHints[hintKey];
+        return;
       }
-      if (animationMove && toId(animationMove) !== moveId) {
-        ev.animationMove = animationMove;
+
+      if (hint?.kind !== 'zmove') return;
+      const zCategory = hint.category || 'status';
+      let zAnimationMove = '';
+      if (zCategory === 'physical') zAnimationMove = 'Giga Impact';
+      else if (zCategory === 'special') zAnimationMove = 'Hyper Beam';
+      else zAnimationMove = hint.baseMove || resolveEngineMoveName(ev.move || '');
+      if (zAnimationMove) {
+        ev.animationMove = zAnimationMove;
       }
+      if (zCategory === 'status') {
+        ev.animationScale = 1.35;
+      }
+      ev.zMove = true;
+      ev.zMoveCategory = zCategory;
+      ev.zMoveBaseMove = hint.baseMove || '';
+      ev.zMoveType = hint.moveType || '';
+      delete moveAnimationHints[hintKey];
     });
   }
   const adoptedBattle = adoptEngineBattleSnapshot(nextSnapshot);

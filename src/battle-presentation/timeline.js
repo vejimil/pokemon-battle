@@ -115,6 +115,21 @@ const WEATHER_CLEAR_KEYS = {
   deltastream: 'strongWindsClearMessage',
 };
 
+const WEATHER_COMMON_ANIMS = {
+  raindance: 'common-rain',
+  rain: 'common-rain',
+  primordialsea: 'common-heavy-rain',
+  sunnyday: 'common-sunny',
+  sun: 'common-sunny',
+  desolateland: 'common-harsh-sun',
+  sandstorm: 'common-sandstorm',
+  sand: 'common-sandstorm',
+  hail: 'common-hail',
+  snow: 'common-snow',
+  snowscape: 'common-snow',
+  deltastream: 'common-strong-winds',
+};
+
 const TERRAIN_START_KEYS = {
   electricterrain: 'electricStartMessage',
   grassyterrain: 'grassyStartMessage',
@@ -127,6 +142,13 @@ const TERRAIN_CLEAR_KEYS = {
   grassyterrain: 'grassyClearMessage',
   mistyterrain: 'mistyClearMessage',
   psychicterrain: 'psychicClearMessage',
+};
+
+const TERRAIN_COMMON_ANIMS = {
+  electricterrain: 'common-electric-terrain',
+  grassyterrain: 'common-grassy-terrain',
+  mistyterrain: 'common-misty-terrain',
+  psychicterrain: 'common-psychic-terrain',
 };
 
 const SIDE_EFFECT_KEY_PREFIX = {
@@ -153,6 +175,37 @@ const SIDE_EFFECT_KEY_PREFIX = {
 const DAMAGE_SOURCE_MESSAGE_KEY = {
   stealthrock: 'stealthRockActivateTrap',
   spikes: 'spikesActivateTrap',
+};
+
+const WEATHER_DAMAGE_MESSAGE_KEY = {
+  sandstorm: 'sandstormDamageMessage',
+  hail: 'hailDamageMessage',
+};
+
+const WEATHER_DAMAGE_ANIMS = {
+  sandstorm: 'common-sandstorm',
+  hail: 'common-hail',
+};
+
+const Z_MOVE_TINT_BY_TYPE = {
+  normal: 0xf5f2d0,
+  fire: 0xff9b54,
+  water: 0x6fb4ff,
+  electric: 0xffde4b,
+  grass: 0x79d86b,
+  ice: 0xaee9ff,
+  fighting: 0xff8d6a,
+  poison: 0xc37bff,
+  ground: 0xd8b66a,
+  flying: 0xb8d7ff,
+  psychic: 0xff7db8,
+  bug: 0xb9d96b,
+  rock: 0xc4a06a,
+  ghost: 0x9f87ff,
+  dragon: 0x7f8dff,
+  dark: 0x8d7c70,
+  steel: 0xc8d4e4,
+  fairy: 0xffb0dd,
 };
 
 const EVENT_GAP_SHORT_MS = 140;
@@ -388,6 +441,10 @@ export class BattleTimelineExecutor {
     return this._isEnglishLocale() ? 'The weather returned to normal.' : '날씨가 원래대로 돌아왔다.';
   }
 
+  _weatherCommonAnimName(weatherId) {
+    return WEATHER_COMMON_ANIMS[toId(weatherId)] || '';
+  }
+
   _terrainStartMessage(terrainId, effectLabel = '') {
     const key = TERRAIN_START_KEYS[terrainId];
     if (key) return this._t('terrain', key, {}, TERRAIN_LABELS[terrainId] || '');
@@ -407,6 +464,23 @@ export class BattleTimelineExecutor {
       );
     }
     return this._isEnglishLocale() ? 'The terrain disappeared.' : '필드 효과가 사라졌다.';
+  }
+
+  _terrainCommonAnimName(terrainId) {
+    return TERRAIN_COMMON_ANIMS[toId(terrainId)] || '';
+  }
+
+  async _playFieldAnim(animName, options = {}) {
+    const scene = this._scene();
+    if (!scene?.playFieldAnim || !animName) return;
+    const ANIM_TIMEOUT_MS = 5000;
+    await Promise.race([
+      scene.playFieldAnim(animName, {
+        audioEnabled: this._audioEnabled,
+        scale: Number.isFinite(Number(options?.scale)) ? Number(options.scale) : 1,
+      }),
+      new Promise(resolve => setTimeout(resolve, ANIM_TIMEOUT_MS)),
+    ]);
   }
 
   _normalizeSideEffectId(effect) {
@@ -451,11 +525,22 @@ export class BattleTimelineExecutor {
 
   _damageSourceMessage(ev = {}) {
     const sourceId = toId(ev?.fromEffectId || '');
-    const key = DAMAGE_SOURCE_MESSAGE_KEY[sourceId];
-    if (!key) return '';
+    const weatherDamageKey = WEATHER_DAMAGE_MESSAGE_KEY[sourceId];
     const targetSide = ev?.target?.side;
     const targetName = this._slotName(targetSide, ev?.target?.slot ?? 0);
     const pokemonNameWithAffix = this._pokemonNameWithAffix(targetName, targetSide);
+    if (weatherDamageKey) {
+      const fallback = sourceId === 'sandstorm'
+        ? this._isEnglishLocale()
+          ? `${pokemonNameWithAffix} is buffeted\nby the sandstorm!`
+          : `모래바람이\n${pokemonNameWithAffix}를 덮쳤다!`
+        : this._isEnglishLocale()
+          ? `${pokemonNameWithAffix} is pelted\nby the hail!`
+          : `싸라기눈이\n${pokemonNameWithAffix}를 덮쳤다!`;
+      return this._t('weather', weatherDamageKey, { pokemonNameWithAffix }, fallback);
+    }
+    const key = DAMAGE_SOURCE_MESSAGE_KEY[sourceId];
+    if (!key) return '';
     const fallback = sourceId === 'stealthrock'
       ? this._isEnglishLocale()
         ? `Pointed stones dug into\n${pokemonNameWithAffix}!`
@@ -466,6 +551,14 @@ export class BattleTimelineExecutor {
           : `${pokemonNameWithAffix}은(는)\n압정뿌리기의 데미지를 입었다!`
         : '';
     return this._t('arena-tag', key, { pokemonNameWithAffix }, fallback);
+  }
+
+  _weatherDamageAnimName(effectId = '') {
+    return WEATHER_DAMAGE_ANIMS[toId(effectId)] || '';
+  }
+
+  _zMoveTint(typeId = '') {
+    return Z_MOVE_TINT_BY_TYPE[toId(typeId)] || 0xffffff;
   }
 
   /** Get the tracked species name for a side+slot, localized for display. */
@@ -935,6 +1028,10 @@ export class BattleTimelineExecutor {
         const actorNameWithAffix = this._pokemonNameWithAffix(actorName, ev.actor?.side);
         const moveName = this._localizeMoveName(ev.move || '') || ev.move || '';
         const animationMoveName = String(ev.animationMove || ev.baseMove || ev.move || '').trim();
+        const animationScale = Number.isFinite(Number(ev.animationScale))
+          ? Math.max(0.25, Math.min(4, Number(ev.animationScale)))
+          : (ev?.zMove ? 1.4 : 1);
+        const animationTint = ev?.zMove ? this._zMoveTint(ev?.zMoveType) : null;
         await this._showMsg(this._t(
           'battle',
           'useMove',
@@ -949,7 +1046,11 @@ export class BattleTimelineExecutor {
           // Max duration: generous upper bound so even long animations always complete.
           const ANIM_TIMEOUT_MS = 5000;
           await Promise.race([
-            scene.playMoveAnim(animationMoveName, ev.actor?.side, ev.target?.side, { audioEnabled: this._audioEnabled }),
+            scene.playMoveAnim(animationMoveName, ev.actor?.side, ev.target?.side, {
+              audioEnabled: this._audioEnabled,
+              scale: animationScale,
+              tint: animationTint,
+            }),
             new Promise(resolve => setTimeout(resolve, ANIM_TIMEOUT_MS)),
           ]);
         } else {
@@ -965,6 +1066,10 @@ export class BattleTimelineExecutor {
         const sourceMessage = this._damageSourceMessage(ev);
         if (sourceMessage) {
           await this._showMsg(sourceMessage, { minMs: 560 });
+        }
+        const weatherDamageAnim = this._weatherDamageAnimName(ev?.fromEffectId);
+        if (weatherDamageAnim) {
+          await this._playFieldAnim(weatherDamageAnim);
         }
         this._playHitByResult(ev.hitResult ?? 'effective');
         const hpPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
@@ -1085,6 +1190,7 @@ export class BattleTimelineExecutor {
         this._activeWeatherId = weatherId || this._activeWeatherId;
         const wLabel = this._weatherStartMessage(weatherId, ev.weather);
         await this._showMsg(wLabel, { minMs: 700 });
+        await this._playFieldAnim(this._weatherCommonAnimName(this._activeWeatherId));
         break;
       }
 
@@ -1094,7 +1200,10 @@ export class BattleTimelineExecutor {
         break;
       }
 
-      // BA-3: weather_tick is intentionally silent — avoid spamming messages every turn.
+      case 'weather_tick': {
+        await this._playFieldAnim(this._weatherCommonAnimName(this._activeWeatherId));
+        break;
+      }
 
       // ── BA-3: Terrain ────────────────────────────────────────────────────
       case 'terrain_start': {
@@ -1102,6 +1211,7 @@ export class BattleTimelineExecutor {
         this._activeTerrainId = effectId || this._activeTerrainId;
         const tLabel = this._terrainStartMessage(effectId, ev.effect || ev.raw || '');
         await this._showMsg(tLabel, { minMs: 620 });
+        await this._playFieldAnim(this._terrainCommonAnimName(this._activeTerrainId));
         break;
       }
 
@@ -1392,7 +1502,6 @@ export class BattleTimelineExecutor {
       }
 
       // ── no-op events ──────────────────────────────────────────────────────
-      case 'weather_tick':
       case 'turn_end':
       case 'effect_activate':
       case 'single_turn_effect':
