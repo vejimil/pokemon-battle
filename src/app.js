@@ -1623,7 +1623,7 @@ function resolveTimelineEventSideSlot(ev) {
   };
 }
 
-function resolveTimelineEventMon(ev, battle = state.battle) {
+function resolveTimelineEventMon(ev, battle = state.battle, { fallbackSpecies = '' } = {}) {
   if (!battle?.players || !ev) return null;
   const sideSlot = resolveTimelineEventSideSlot(ev);
   const sideId = sideSlot?.side;
@@ -1633,18 +1633,19 @@ function resolveTimelineEventMon(ev, battle = state.battle) {
   const side = battle.players?.[sideIndex];
   if (!side?.team?.length) return null;
 
-  const candidates = [];
   const activeTeamIndex = side.active?.[slot];
-  if (Number.isInteger(activeTeamIndex) && side.team[activeTeamIndex]) {
-    candidates.push(side.team[activeTeamIndex]);
-  }
+  const activeMon = Number.isInteger(activeTeamIndex) && side.team[activeTeamIndex]
+    ? side.team[activeTeamIndex]
+    : null;
 
   const speciesId = toId(
     ev?.toSpecies
     || ev?.species
     || (ev?.type === 'forme_change' ? '' : ev?.to)
+    || fallbackSpecies
     || ''
   );
+  const speciesMatches = [];
   if (speciesId) {
     for (const mon of side.team) {
       if (!mon) continue;
@@ -1654,11 +1655,23 @@ function resolveTimelineEventMon(ev, battle = state.battle) {
         toId(mon.species || ''),
         toId(mon.baseSpecies || ''),
       ];
-      if (ids.includes(speciesId)) candidates.push(mon);
+      if (ids.includes(speciesId)) speciesMatches.push(mon);
     }
   }
+  if (speciesMatches.length) {
+    if (ev?.type === 'terastallize') {
+      const teraMatch = speciesMatches.find(mon => mon?.terastallized);
+      if (teraMatch) return teraMatch;
+    }
+    if (ev?.type === 'dynamax_start') {
+      const dynaMatch = speciesMatches.find(mon => mon?.dynamaxed);
+      if (dynaMatch) return dynaMatch;
+    }
+    if (activeMon && speciesMatches.includes(activeMon)) return activeMon;
+    return speciesMatches[0];
+  }
 
-  return candidates.find(Boolean) || null;
+  return activeMon || side.team.find(Boolean) || null;
 }
 
 function resolveTimelineSwitchSpriteOverride(ev, battle = state.battle) {
@@ -1696,7 +1709,7 @@ function buildTimelineStaticInfoPatch(mon) {
   };
 }
 
-function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state.battle } = {}) {
+function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state.battle, initialNames = {} } = {}) {
   if (!ev || !battle?.players) return null;
   const sideSlot = resolveTimelineEventSideSlot(ev);
   const side = sideSlot?.side;
@@ -1704,7 +1717,8 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
   const sideIndex = side === 'p2' ? 1 : 0;
   const sideState = battle.players?.[sideIndex] || null;
   const perspective = playerSide === 'p2' ? 1 : 0;
-  const mon = resolveTimelineEventMon(ev, battle);
+  const fallbackSpecies = String(initialNames?.[`${side}_${sideSlot.slot}`] || '');
+  const mon = resolveTimelineEventMon(ev, battle, { fallbackSpecies });
   const activeTeamIndex = Number.isInteger(sideState?.active?.[sideSlot.slot])
     ? sideState.active[sideSlot.slot]
     : -1;
@@ -1893,7 +1907,11 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
       initialSlotInfo,
       localeManager: localeEnabled ? battleLocaleManager : null,
       localeLanguage,
-      resolveVisualState: ev => resolveTimelineEventVisualState(ev, { playerSide: cfg.playerSide, battle: state.battle }),
+      resolveVisualState: ev => resolveTimelineEventVisualState(ev, {
+        playerSide: cfg.playerSide,
+        battle: state.battle,
+        initialNames,
+      }),
       // BA-26: battle-facing species display uses base species (form prefix/suffix hidden)
       localizeMonName: name => localizeBattleSpeciesName(name) || name,
       // BA-26 exception: forme_change presentation message should keep form labels.
@@ -2081,6 +2099,24 @@ function runtimeSupportsDynamax() {
   if (hasRequestToggle) return true;
   const formatId = String(battle?.engineMeta?.formatid || '').toLowerCase();
   return formatId.startsWith('gen8');
+}
+
+function canUseDynamaxNow(moveRequest = null) {
+  return Boolean(moveRequest?.canDynamax && runtimeSupportsDynamax());
+}
+
+function getDynamaxUnavailableReason(moveRequest = null) {
+  if (canUseDynamaxNow(moveRequest)) return '';
+  if (!runtimeSupportsDynamax()) {
+    return lang(
+      '현재 배틀 포맷에서는 다이맥스를 사용할 수 없습니다.',
+      'Dynamax is unavailable in the current battle format.'
+    );
+  }
+  return lang(
+    '이 턴에는 다이맥스를 사용할 수 없습니다.',
+    'Dynamax is unavailable for this turn.'
+  );
 }
 
 const UI_STRINGS = Object.freeze({
@@ -4947,7 +4983,9 @@ function enforceMonRequiredTeraType(mon, speciesData = mon?.data) {
 async function buildShowdownPayloadMon(mon, player, slot) {
   const startSpecies = normalizeShowdownStartSpecies(mon);
   const startSpeciesData = startSpecies ? await getSpeciesData(startSpecies).catch(() => null) : null;
-  const intendsGigantamax = /-gmax/i.test(String(mon.displaySpecies || mon.formSpecies || mon.species || ''));
+  const explicitGigantamaxChoice = /-gmax/i.test(String(mon.displaySpecies || mon.formSpecies || mon.species || ''));
+  const hasGigantamaxFactor = Boolean(startSpeciesData?.canGigantamax || mon?.data?.canGigantamax);
+  const intendsGigantamax = hasGigantamaxFactor || explicitGigantamaxChoice;
   const startAbility = resolveShowdownStartAbility(mon, startSpeciesData);
   const requiredTeraType = resolveRequiredTeraTypeFromSpeciesData(startSpeciesData);
   const resolvedTeraType = requiredTeraType || toId(mon.teraType || startSpeciesData?.types?.[0] || '') || '';
@@ -5009,7 +5047,7 @@ async function buildShowdownPayloadMon(mon, player, slot) {
         name: startSpecies,
         baseSpecies: battleBaseSpecies,
         types: deepClone(startSpeciesData?.types || mon.data?.types || []),
-        canGigantamax: mon.data?.canGigantamax || '',
+        canGigantamax: startSpeciesData?.canGigantamax || mon.data?.canGigantamax || '',
         battleOnly: mon.data?.battleOnly || '',
         changesFrom: mon.data?.changesFrom || '',
       },
@@ -5335,6 +5373,35 @@ function getAvailableEngineZMoveOptions(moveRequest) {
     ? moveRequest.canZMove.map((info, index) => info ? {index, info} : null).filter(Boolean)
     : [];
 }
+function resolveEngineMoveName(rawMoveName = '') {
+  const raw = String(rawMoveName || '').trim();
+  if (!raw) return '';
+  const resolved = state.dex?.moves?.get?.(raw);
+  if (resolved?.exists && resolved.name) return resolved.name;
+  return raw;
+}
+function getEngineMaxMoveEntry(moveRequest, moveIndex) {
+  const maxMoves = moveRequest?.maxMoves?.maxMoves;
+  if (!Array.isArray(maxMoves)) return null;
+  return maxMoves[moveIndex] || null;
+}
+function isEngineDynamaxMoveMode(choice, mon, moveRequest) {
+  if (!moveRequest) return false;
+  if (choice?.dynamax) return true;
+  if (mon?.dynamaxed) return true;
+  return Boolean(Array.isArray(moveRequest?.maxMoves?.maxMoves) && !moveRequest?.canDynamax);
+}
+function getEngineDisplayMoveName(moveRequest, moveIndex, baseMoveName, choice = null, mon = null) {
+  const zModeActive = Boolean(choice?.z && getAvailableEngineZMoveOptions(moveRequest).length);
+  if (zModeActive && Array.isArray(moveRequest?.canZMove) && moveRequest.canZMove[moveIndex]?.move) {
+    return resolveEngineMoveName(moveRequest.canZMove[moveIndex].move);
+  }
+  if (isEngineDynamaxMoveMode(choice, mon, moveRequest)) {
+    const maxMove = getEngineMaxMoveEntry(moveRequest, moveIndex);
+    if (maxMove?.move) return resolveEngineMoveName(maxMove.move);
+  }
+  return resolveEngineMoveName(baseMoveName);
+}
 function buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle = state.battle) {
   const requestSlot = getEngineRequestSlotForActiveIndex(player, activeIndex, battle);
   if (requestSlot < 0) return null;
@@ -5382,10 +5449,12 @@ function toggleEngineDraftFlag(player, activeIndex, flag, battle = state.battle)
   } else if (flag === 'tera') {
     if (!moveRequest?.canTerastallize) return false;
     next.tera = !previous.tera;
+    if (next.tera) next.dynamax = false;
   } else if (flag === 'dynamax') {
     if (!moveRequest?.canDynamax || !runtimeSupportsDynamax()) return false;
     next.dynamax = !previous.dynamax;
     if (next.dynamax) {
+      next.tera = false;
       next.z = false;
       next.ultra = false;
     }
@@ -5451,6 +5520,7 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
       z: Boolean(rawChoice.z && getAvailableEngineZMoveOptions(moveRequest).length),
       dynamax: Boolean(rawChoice.dynamax && moveRequest?.canDynamax && runtimeSupportsDynamax()),
     };
+    if (sanitizedDraft.tera && sanitizedDraft.dynamax) sanitizedDraft.dynamax = false;
     if (!sanitizedDraft.mega && !sanitizedDraft.ultra && !sanitizedDraft.tera && !sanitizedDraft.z && !sanitizedDraft.dynamax) {
       clearEnginePendingChoice(player, slot, battle);
       return createEmptyBattleChoice();
@@ -5516,6 +5586,7 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
     dynamax: Boolean(rawChoice.dynamax && moveRequest?.canDynamax && runtimeSupportsDynamax()),
   };
   if (sanitized.z && sanitized.dynamax) sanitized.dynamax = false;
+  if (sanitized.tera && sanitized.dynamax) sanitized.dynamax = false;
   setEnginePendingChoice(player, slot, sanitized, battle);
   return sanitized;
 }
@@ -5590,8 +5661,10 @@ function getEngineChoiceSummary(player, slot, battle = state.battle) {
   if (choice.kind === 'move') {
     const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, slot, battle));
     const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+    const mon = side?.team?.[slot] || null;
     const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[choice.moveIndex] : null;
-    let text = choice.z && zInfo?.move ? displayMoveName(zInfo.move) : displayMoveName(choice.move);
+    const displayMove = getEngineDisplayMoveName(moveRequest, choice.moveIndex, choice.move, choice, mon);
+    let text = choice.z && zInfo?.move ? displayMoveName(resolveEngineMoveName(zInfo.move)) : displayMoveName(displayMove || choice.move);
     if (choice.mega) text += state.language === 'ko' ? ' · 메가진화' : ' · Mega';
     if (choice.ultra) text += state.language === 'ko' ? ' · 울트라버스트' : ' · Ultra Burst';
     if (choice.tera) text += state.language === 'ko' ? ' · 테라' : ' · Tera';
@@ -5819,15 +5892,21 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       toggles.appendChild(ultraBtn);
     }
 
-    if (!forcedContinuation && moveRequest?.canDynamax && runtimeSupportsDynamax()) {
+    if (!forcedContinuation) {
+      const canUseDynamax = canUseDynamaxNow(moveRequest);
+      const dynamaxReason = getDynamaxUnavailableReason(moveRequest);
       const dynaBtn = document.createElement('button');
       dynaBtn.type = 'button';
-      dynaBtn.className = `toggle-pill ${choice.dynamax ? 'active' : ''}`;
+      dynaBtn.className = `toggle-pill ${choice.dynamax && canUseDynamax ? 'active' : ''}`;
       dynaBtn.textContent = '다이맥스 / Dynamax';
-      dynaBtn.addEventListener('click', () => {
-        if (!toggleEngineDraftFlag(player, activeIndex, 'dynamax', battle)) return;
-        renderBattle();
-      });
+      dynaBtn.disabled = !canUseDynamax;
+      if (dynamaxReason) dynaBtn.title = dynamaxReason;
+      if (!dynaBtn.disabled) {
+        dynaBtn.addEventListener('click', () => {
+          if (!toggleEngineDraftFlag(player, activeIndex, 'dynamax', battle)) return;
+          renderBattle();
+        });
+      }
       toggles.appendChild(dynaBtn);
     }
 
@@ -5880,7 +5959,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
       const canZHere = Boolean(Array.isArray(moveRequest?.canZMove) && moveRequest.canZMove[moveIndex]);
       const selectable = isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex) && (!zModeActive || canZHere);
       const zInfo = canZHere ? moveRequest.canZMove[moveIndex] : null;
-      const displayMove = zModeActive && zInfo?.move ? zInfo.move : moveName;
+      const displayMove = getEngineDisplayMoveName(moveRequest, moveIndex, moveName, choice, mon);
       btn.disabled = !selectable || forcedContinuation;
       if (btn.disabled) btn.classList.add('disabled');
       if (isLockedSingleMove && choice.kind === 'move' && choice.moveIndex === moveIndex) btn.classList.remove('disabled');
@@ -6386,6 +6465,7 @@ function buildPhaserMoveDetailModel(mon, moveInfo, slotInfo, moveRequest, choice
   const moveData = buildLocalMoveUiData(moveName);
   const preview = buildMoveDetailFallback(mon, moveInfo, moveRequest, choice, moveData, moveIndex) || {};
   const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[moveIndex] : null;
+  const displayMove = getEngineDisplayMoveName(moveRequest, moveIndex, moveName, choice, mon);
   const resolvedType = toId(preview?.type || moveData?.type || '') || 'unknown';
   const resolvedCategory = toId(preview?.category || moveData?.category || 'status') || 'status';
   const accuracyValue = preview?.accuracy ?? moveData?.accuracy;
@@ -6393,7 +6473,7 @@ function buildPhaserMoveDetailModel(mon, moveInfo, slotInfo, moveRequest, choice
   const ppMax     = Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? null);
   const ppRatio   = (ppMax > 0 && ppCurrent !== null) ? clamp(ppCurrent / ppMax, 0, 1) : null;
   return {
-    name: displayMoveName((choice?.z && zInfo?.move) ? zInfo.move : moveName || lang('기술 없음', 'No move')),
+    name: displayMoveName(preview?.name || ((choice?.z && zInfo?.move) ? zInfo.move : displayMove || moveName || lang('기술 없음', 'No move'))),
     type: resolvedType,
     typeLabel: displayType(preview?.type || moveData?.type || '') || '—',
     category: ['physical', 'special', 'status'].includes(resolvedCategory) ? resolvedCategory : 'status',
@@ -6473,7 +6553,6 @@ function renderBattleFightWindow(battle, player) {
       ['z', availableZMoves.length, 'Z'],
       ['mega', moveRequest?.canMegaEvo, 'Mega'],
       ['ultra', moveRequest?.canUltraBurst, 'Ultra'],
-      ['dynamax', moveRequest?.canDynamax && runtimeSupportsDynamax(), 'Dmax'],
     ];
     gimmickFlags.forEach(([flag, enabled, label]) => {
       if (!enabled || forcedContinuation) return;
@@ -6490,6 +6569,23 @@ function renderBattleFightWindow(battle, player) {
       }
       actions.appendChild(btn);
     });
+    if (!forcedContinuation) {
+      const canUseDynamax = canUseDynamaxNow(moveRequest);
+      const dynamaxReason = getDynamaxUnavailableReason(moveRequest);
+      const dmaxBtn = document.createElement('button');
+      dmaxBtn.type = 'button';
+      dmaxBtn.className = `pkbattle-inline-action pkbattle-inline-action-gimmick ${choice.dynamax && canUseDynamax ? 'active' : ''}`;
+      dmaxBtn.textContent = 'Dmax';
+      dmaxBtn.disabled = inputLocked || !canUseDynamax;
+      if (dynamaxReason) dmaxBtn.title = dynamaxReason;
+      if (!dmaxBtn.disabled) {
+        dmaxBtn.addEventListener('click', () => {
+          if (!toggleEngineDraftFlag(player, activeIndex, 'dynamax', battle)) return;
+          renderBattle();
+        });
+      }
+      actions.appendChild(dmaxBtn);
+    }
   }
 
   function updateMoveDetail(idx) {
@@ -6498,13 +6594,13 @@ function renderBattleFightWindow(battle, player) {
     const slotInfo = mon?.moveSlots?.[idx] || null;
     const moveName = moveInfo?.move || slotInfo?.name || '';
     const activeChoice = getEngineDraftChoice(player, activeIndex, battle);
+    const displayedMoveName = getEngineDisplayMoveName(moveRequest, idx, moveName, activeChoice, mon);
     detailPanel.innerHTML = `<div class="pkbattle-window-note">${lang('불러오는 중…', 'Loading…')}</div>`;
     Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
       if (!detailPanel.isConnected) return;
       const preview = buildMoveDetailFallback(mon, moveInfo, moveRequest, activeChoice, moveData, idx);
-      const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[idx] : null;
       const resolvedCategory = preview?.category || moveData?.category || '—';
-      const resolvedName = displayMoveName((activeChoice.z && zInfo?.move) ? zInfo.move : moveName || lang('기술 없음', 'No move'));
+      const resolvedName = displayMoveName(preview?.name || displayedMoveName || moveName || lang('기술 없음', 'No move'));
       detailPanel.innerHTML = `
         <div class="pkbattle-detail-top">
           <div class="pkbattle-detail-name-wrap">
@@ -6528,18 +6624,19 @@ function renderBattleFightWindow(battle, player) {
   (moveRequest?.moves || []).forEach((moveInfo, moveIndex) => {
     const slotInfo = mon?.moveSlots?.[moveIndex] || null;
     const moveName = moveInfo?.move || slotInfo?.name || '';
+    const displayedMoveName = getEngineDisplayMoveName(moveRequest, moveIndex, moveName, choice, mon);
     const selectable = isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex) && (!(choice.z && availableZMoves.length) || Boolean(moveRequest.canZMove?.[moveIndex]));
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `pkbattle-move-card pkbattle-move-textline ${choice.kind === 'move' && choice.moveIndex === moveIndex ? 'active' : ''}`;
     button.disabled = inputLocked || !selectable || forcedContinuation;
-    button.innerHTML = `<strong>${displayMoveName((choice.z && moveRequest?.canZMove?.[moveIndex]?.move) ? moveRequest.canZMove[moveIndex].move : moveName)}</strong>`;
+    button.innerHTML = `<strong>${displayMoveName(displayedMoveName)}</strong>`;
     Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
       if (!button.isConnected) return;
       const preview = buildMoveDetailFallback(mon, moveInfo, moveRequest, choice, moveData, moveIndex);
       const moveType = displayType(preview?.type || moveData?.type || '') || '—';
       const pp = `${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}`;
-      button.innerHTML = `<strong>${displayMoveName((choice.z && moveRequest?.canZMove?.[moveIndex]?.move) ? moveRequest.canZMove[moveIndex].move : moveName)}</strong><small>${moveType} · PP ${pp}</small>`;
+      button.innerHTML = `<strong>${displayMoveName(preview?.name || displayedMoveName || moveName)}</strong><small>${moveType} · PP ${pp}</small>`;
     });
     button.addEventListener('mouseenter', () => updateMoveDetail(moveIndex));
     button.addEventListener('focus', () => updateMoveDetail(moveIndex));
@@ -6934,9 +7031,9 @@ function buildPhaserFightWindowModel(battle, player) {
   const moves = moveEntries.map((moveInfo, moveIndex) => {
     const slotInfo = mon?.moveSlots?.[moveIndex];
     const moveName = moveInfo?.move || slotInfo?.name || '—';
-    const useZLabel = choice.z && moveRequest?.canZMove?.[moveIndex]?.move;
+    const displayedMoveName = getEngineDisplayMoveName(moveRequest, moveIndex, moveName, choice, mon);
     return {
-      label: displayMoveName(useZLabel ? moveRequest.canZMove[moveIndex].move : moveName),
+      label: displayMoveName(displayedMoveName || moveName),
       sublabel: `${displayType(moveInfo?.type || slotInfo?.type || '') || '—'} · PP ${Number.isFinite(moveInfo?.pp) ? moveInfo.pp : (slotInfo?.pp ?? '—')}/${Number.isFinite(moveInfo?.maxpp) ? moveInfo.maxpp : (slotInfo?.maxPp ?? '—')}`,
       disabled: inputLocked || !isEngineMoveButtonSelectable(moveRequest, moveInfo, moveIndex),
       active: choice.kind === 'move' && choice.moveIndex === moveIndex,
@@ -6950,7 +7047,16 @@ function buildPhaserFightWindowModel(battle, player) {
   if (!forcedContinuation && availableZMoves.length) toggles.push({label: 'Z', active: Boolean(choice.z), disabled: inputLocked, action: {type: 'toggle', flag: 'z'}, kind: 'text'});
   if (!forcedContinuation && moveRequest?.canMegaEvo) toggles.push({label: lang('메가', 'Mega'), active: Boolean(choice.mega), disabled: inputLocked, action: {type: 'toggle', flag: 'mega'}, kind: 'text'});
   if (!forcedContinuation && moveRequest?.canUltraBurst) toggles.push({label: lang('울트라', 'Ultra'), active: Boolean(choice.ultra), disabled: inputLocked, action: {type: 'toggle', flag: 'ultra'}, kind: 'text'});
-  if (!forcedContinuation && moveRequest?.canDynamax && runtimeSupportsDynamax()) toggles.push({label: 'Dmax', active: Boolean(choice.dynamax), disabled: inputLocked, action: {type: 'toggle', flag: 'dynamax'}, kind: 'text'});
+  if (!forcedContinuation) {
+    const canUseDynamax = canUseDynamaxNow(moveRequest);
+    toggles.push({
+      label: 'Dmax',
+      active: Boolean(choice.dynamax && canUseDynamax),
+      disabled: inputLocked || !canUseDynamax,
+      action: canUseDynamax ? {type: 'toggle', flag: 'dynamax'} : null,
+      kind: 'text',
+    });
+  }
   const detailMoveInfo = moveEntries[detailIndex] || null;
   const detailSlotInfo = mon?.moveSlots?.[detailIndex] || null;
   const detail = buildPhaserMoveDetailModel(mon, detailMoveInfo, detailSlotInfo, moveRequest, choice, detailIndex);
@@ -7413,9 +7519,43 @@ function renderPendingChoices() {
   )}</div>`;
 }
 async function resolveEngineTurn(battle = state.battle) {
+  const dynamaxAnimationHints = {};
+  [0, 1].forEach(player => {
+    const actionSlots = getEngineActionSlots(player, battle);
+    actionSlots.forEach((activeIndex, requestSlot) => {
+      const choice = getEngineDraftChoice(player, activeIndex, battle);
+      if (choice?.kind !== 'move' || !choice?.dynamax) return;
+      const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+      const moveInfo = Array.isArray(moveRequest?.moves) ? moveRequest.moves[choice.moveIndex] : null;
+      const baseMove = resolveEngineMoveName(moveInfo?.move || choice.move || '');
+      if (!baseMove) return;
+      dynamaxAnimationHints[`${getEngineSideId(player)}_${requestSlot}`] = baseMove;
+    });
+  });
   pruneEnginePendingChoices(battle);
   seedEngineForcedPendingChoices(battle);
   const nextSnapshot = await submitShowdownLocalSinglesChoices({battleId: battle.id, battle});
+  if (Array.isArray(nextSnapshot?.events) && nextSnapshot.events.length) {
+    nextSnapshot.events.forEach(ev => {
+      if (ev?.type !== 'move_use') return;
+      const moveId = toId(ev.move || '');
+      if (!moveId.startsWith('max') && !moveId.startsWith('gmax')) return;
+      const side = ev.actor?.side;
+      const slot = Number.isInteger(ev.actor?.slot) ? ev.actor.slot : 0;
+      const hintKey = `${side}_${slot}`;
+      let animationMove = String(dynamaxAnimationHints[hintKey] || '').trim();
+      if (!animationMove && (side === 'p1' || side === 'p2')) {
+        const sideIndex = side === 'p2' ? 1 : 0;
+        const actorSide = nextSnapshot.players?.[sideIndex];
+        const teamIndex = Number.isInteger(actorSide?.active?.[slot]) ? actorSide.active[slot] : -1;
+        const actorMon = Number.isInteger(teamIndex) && teamIndex >= 0 ? actorSide?.team?.[teamIndex] : null;
+        animationMove = resolveEngineMoveName(actorMon?.lastMoveUsed || '');
+      }
+      if (animationMove && toId(animationMove) !== moveId) {
+        ev.animationMove = animationMove;
+      }
+    });
+  }
   const adoptedBattle = adoptEngineBattleSnapshot(nextSnapshot);
 
   if (FLAGS.battlePresentationV2 && Array.isArray(adoptedBattle?.events) && adoptedBattle.events.length > 0) {

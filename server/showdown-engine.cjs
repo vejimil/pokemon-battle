@@ -1,4 +1,4 @@
-const {BattleStreams, Dex, Pokemon} = require('../node_modules/@pkmn/sim');
+const {BattleStreams, Dex, Pokemon, Side} = require('../node_modules/@pkmn/sim');
 const {randomUUID} = require('crypto');
 
 const weatherMap = Object.freeze({
@@ -83,6 +83,7 @@ const RUNTIME_FUTURE_ABILITY_PATCHES = Object.freeze({
 });
 
 let futureAbilityRuntimePatched = false;
+let crossGenDynamaxRuntimePatched = false;
 
 function applyFutureAbilityRuntimePatches(dex) {
   if (!dex?.data?.Abilities) return;
@@ -100,6 +101,29 @@ function patchPokemonEffectiveWeatherForMegaSol() {
     return weather;
   };
   futureAbilityRuntimePatched = true;
+}
+
+function patchSideCanDynamaxForCustomGen9() {
+  if (crossGenDynamaxRuntimePatched) return;
+  const original = Side.prototype.canDynamaxNow;
+  Side.prototype.canDynamaxNow = function patchedCanDynamaxNow() {
+    const battle = this?.battle;
+    if (!battle) return false;
+    if (battle.gen === 8) return original.call(this);
+    const formatId = toId(battle.format?.id || battle.formatid || '');
+    if (!formatId.startsWith('gen9customgame')) return false;
+    if (battle.ruleTable?.has?.('dynamaxclause')) return false;
+    // @pkmn/sim seeds side.dynamaxUsed=true for all non-Gen8 formats.
+    // For the project custom Gen9 format we intentionally allow one Dynamax use.
+    if (this.dynamaxUsed === true && Number(battle.turn || 0) <= 1) {
+      const activeHasDynamax = Array.isArray(this.active)
+        && this.active.some(mon => Boolean(mon?.volatiles?.dynamax));
+      if (!activeHasDynamax) this.dynamaxUsed = false;
+    }
+    if (battle.gameType === 'multi' && battle.turn % 2 !== [1, 1, 0, 0][this.n]) return false;
+    return !this.dynamaxUsed;
+  };
+  crossGenDynamaxRuntimePatched = true;
 }
 
 function applyProjectFuturePatchesToDex(dex) {
@@ -1024,6 +1048,9 @@ class ShowdownLocalSinglesSession {
       const team = (player.team || []).map(mon => {
         const requiredTeraType = resolveRequiredTeraTypeForSpecies(mon?.species || '', dexForTeam);
         const teraType = requiredTeraType || mon.teraType || undefined;
+        const speciesData = dexForTeam?.species?.get?.(mon?.species || '');
+        const hasGigantamaxForm = Boolean(speciesData?.exists && speciesData?.canGigantamax);
+        const resolvedGigantamax = Boolean(mon?.gigantamax || hasGigantamaxForm);
         if (requiredTeraType) {
           mon.teraType = requiredTeraType;
           if (mon?.ui && typeof mon.ui === 'object') mon.ui.teraType = requiredTeraType;
@@ -1040,7 +1067,7 @@ class ShowdownLocalSinglesSession {
           ivs: mon.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31},
           level: Number(mon.level || 100),
           shiny: Boolean(mon.shiny),
-          gigantamax: Boolean(mon.gigantamax),
+          gigantamax: resolvedGigantamax,
           teraType,
         };
       });
@@ -1240,6 +1267,7 @@ class ShowdownEngineService {
   constructor() {
     this.sessions = new Map();
     patchPokemonEffectiveWeatherForMegaSol();
+    patchSideCanDynamaxForCustomGen9();
     applyProjectFuturePatchesToDex(Dex);
     try {
       applyProjectFuturePatchesToDex(Dex.mod('gen9'));

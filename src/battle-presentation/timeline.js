@@ -934,6 +934,7 @@ export class BattleTimelineExecutor {
         const actorName = this._slotName(ev.actor?.side, ev.actor?.slot ?? 0);
         const actorNameWithAffix = this._pokemonNameWithAffix(actorName, ev.actor?.side);
         const moveName = this._localizeMoveName(ev.move || '') || ev.move || '';
+        const animationMoveName = String(ev.animationMove || ev.baseMove || ev.move || '').trim();
         await this._showMsg(this._t(
           'battle',
           'useMove',
@@ -948,12 +949,12 @@ export class BattleTimelineExecutor {
           // Max duration: generous upper bound so even long animations always complete.
           const ANIM_TIMEOUT_MS = 5000;
           await Promise.race([
-            scene.playMoveAnim(ev.move, ev.actor?.side, ev.target?.side, { audioEnabled: this._audioEnabled }),
+            scene.playMoveAnim(animationMoveName, ev.actor?.side, ev.target?.side, { audioEnabled: this._audioEnabled }),
             new Promise(resolve => setTimeout(resolve, ANIM_TIMEOUT_MS)),
           ]);
         } else {
           // Fallback: SE-only when scene not available.
-          await this._playMoveSe(ev.move);
+          await this._playMoveSe(animationMoveName || ev.move);
           await this._delay(280);
         }
         break;
@@ -1277,13 +1278,19 @@ export class BattleTimelineExecutor {
         const linkedDisplayName = linkedToSpecies
           ? (this._localizeMonName(linkedToSpecies) || linkedToSpecies)
           : '';
+        const teraTypeId = toId(ev.teraType || ev.teraTypeName || '');
         const teraPatch = {
           ...(visual?.infoPatch || {}),
         };
         if (linkedDisplayName) teraPatch.displayName = linkedDisplayName;
-        if (!Object.prototype.hasOwnProperty.call(teraPatch, 'teraType')) {
-          const teraTypeId = toId(ev.teraType || ev.teraTypeName || '');
-          if (teraTypeId) teraPatch.teraType = teraTypeId;
+        const patchTeraTypeId = toId(teraPatch.teraType || '');
+        if ((!Object.prototype.hasOwnProperty.call(teraPatch, 'teraType') || !patchTeraTypeId) && teraTypeId) {
+          teraPatch.teraType = teraTypeId;
+        }
+        // Post-turn snapshots after an immediate KO can carry reverted/non-tera typings.
+        // For the terastallize event itself, keep info box type icons aligned to tera type.
+        if (teraTypeId && teraTypeId !== 'stellar') {
+          teraPatch.types = [teraTypeId];
         }
         if (Object.keys(teraPatch).length) {
           this._applyInfoForSlot(side, slot, teraPatch);
@@ -1309,6 +1316,13 @@ export class BattleTimelineExecutor {
         if (isMegaPairMarker) break;
         const teraLinkedForm = this._isTerastallizeLinkedFormChange(ev);
         const slotInfoBefore = this._slotInfoFor(side, slot);
+        const hpBefore = Number(slotInfoBefore?.hp);
+        const faintedBefore = Boolean(slotInfoBefore?.fainted)
+          || (Number.isFinite(hpBefore) && hpBefore <= 0);
+        // Showdown can emit a silent detailschange right after faint (e.g. Ogerpon
+        // tera form rolling back to base). Applying that during the same timeline
+        // turn visually erases the just-played tera/form state.
+        if (ev.silent && faintedBefore) break;
         // Keep raw English for ID comparisons; localize for display messages
         const preNameRaw = this._slotNameRaw(side, slot);
         const preName = this._localizeMonName(preNameRaw) || preNameRaw;
@@ -1351,9 +1365,7 @@ export class BattleTimelineExecutor {
         // Compare raw English names to reliably detect form changes
         const changed = toSpecies && toId(toSpecies) !== toId(preNameRaw);
         const shouldShowFallback = ev.mechanism === '-formechange' && !toSpecies;
-        const hpBefore = Number(slotInfoBefore?.hp);
-        const suppressMessageByFaint = Boolean(slotInfoBefore?.fainted)
-          || (Number.isFinite(hpBefore) && hpBefore <= 0);
+        const suppressMessageByFaint = faintedBefore;
         if (!teraLinkedForm && !suppressMessageByFaint && !ev.silent && (changed || shouldShowFallback)) {
           const msg = this._buildFormChangeMessage(
             preNameForMessage,

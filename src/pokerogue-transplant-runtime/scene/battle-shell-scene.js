@@ -258,7 +258,7 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     _dynamaxScaleMultiplier(mount) {
-      return mount?.dynamaxed ? 1.5 : 1;
+      return mount?.dynamaxed ? 2 : 1;
     }
 
     _resolveMountScale(mount, baseScale = 1) {
@@ -1063,8 +1063,8 @@ export function createBattleShellSceneClass(Phaser, env) {
       const safePrev = this._dynamaxScaleMultiplier(mount) || 1;
       const baseScaleX = Number(spr.scaleX || 1) / safePrev;
       const baseScaleY = Number(spr.scaleY || 1) / safePrev;
-      const targetScaleX = baseScaleX * 1.5;
-      const targetScaleY = baseScaleY * 1.5;
+      const targetScaleX = baseScaleX * 2;
+      const targetScaleY = baseScaleY * 2;
       const depth = Number.isFinite(spr.depth) ? spr.depth : 7;
       const baseAlpha = spr.alpha;
       const ring = this.add.ellipse(
@@ -1156,7 +1156,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         return;
       }
 
-      const safePrev = this._dynamaxScaleMultiplier(mount) || 1.5;
+      const safePrev = this._dynamaxScaleMultiplier(mount) || 2;
       const baseScaleX = Number(spr.scaleX || 1) / safePrev;
       const baseScaleY = Number(spr.scaleY || 1) / safePrev;
       const startScaleX = baseScaleX * safePrev;
