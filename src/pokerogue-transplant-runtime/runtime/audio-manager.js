@@ -177,6 +177,44 @@ export class BattleAudioManager {
     }
   }
 
+  /**
+   * Load and play a looping BGM track. Stops any currently playing BGM first.
+   * @param {string} key     e.g. 'bgm/battle_champion_geeta'
+   * @param {string} path    relative path under assets/pokerogue/audio/
+   */
+  async playBgm(key, path) {
+    this.stopBgm();
+    try {
+      if (!this.scene.cache.audio.has(key)) {
+        await this._loadAudioRuntime(key, path);
+      }
+      const vol = this._routeVolume(key);
+      this._bgmSound = this.scene.sound.add(key, { loop: true, volume: vol });
+      this._bgmSound.play();
+    } catch (err) {
+      console.warn(`[BattleAudio] bgm play failed (${key}):`, err.message ?? err);
+    }
+  }
+
+  /** Stop and destroy the currently playing BGM, if any. */
+  stopBgm() {
+    if (this._bgmSound) {
+      try { this._bgmSound.stop(); this._bgmSound.destroy(); } catch {}
+      this._bgmSound = null;
+    }
+  }
+
+  /**
+   * Pick a random battle_*.mp3 from the provided list and play it as BGM.
+   * @param {string[]} trackNames  array of filename stems (without .mp3), e.g. ['battle_final', ...]
+   */
+  async playRandomBattleBgm(trackNames) {
+    if (!trackNames?.length) return;
+    const name = trackNames[Math.floor(Math.random() * trackNames.length)];
+    const key = `bgm/${name}`;
+    await this.playBgm(key, `bgm/${name}.mp3`);
+  }
+
   // ─── private ──────────────────────────────────────────────────────────────
 
   /** Queue a load during preload phase. No-op if key is already cached. */

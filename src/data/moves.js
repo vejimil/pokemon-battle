@@ -12997,7 +12997,6 @@ export const Moves = {
         accuracy: 100,
         basePower: 100,
         category: "Special",
-        isNonstandard: "Future",
         name: "Nihil Light",
         pp: 10,
         priority: 0,

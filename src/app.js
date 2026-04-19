@@ -15,6 +15,8 @@ import {setDex, getDex, moveNameCache, CURRENT_OFFICIAL_ITEM_ID_SET, CURRENT_OFF
 
 const STORAGE_KEY = 'pkb-static-state-v3';
 
+const BATTLE_BGM_TRACKS = ['battle_aether_boss','battle_aether_grunt','battle_alola_champion','battle_alola_elite','battle_aqua_magma_boss','battle_aqua_magma_grunt','battle_bb_elite','battle_champion_alder','battle_champion_geeta','battle_champion_iris','battle_champion_kieran','battle_champion_kukui','battle_champion_nemona','battle_colress','battle_final','battle_final_encounter','battle_flare_boss','battle_flare_grunt','battle_galactic_admin','battle_galactic_boss','battle_galactic_grunt','battle_galar_champion','battle_galar_elite','battle_galar_gym','battle_hoenn_champion_g5','battle_hoenn_champion_g6','battle_hoenn_elite','battle_hoenn_gym','battle_jacinthe','battle_johto_champion','battle_johto_gym','battle_kalos_champion','battle_kalos_elite','battle_kalos_gym','battle_kanto_champion','battle_kanto_gym','battle_legendary_arceus','battle_legendary_birds_galar','battle_legendary_calyrex','battle_legendary_deoxys','battle_legendary_dia_pal','battle_legendary_dusk_dawn','battle_legendary_entei','battle_legendary_eternatus_p1','battle_legendary_eternatus_p2','battle_legendary_giratina','battle_legendary_glas_spec','battle_legendary_gro_kyo','battle_legendary_ho_oh','battle_legendary_kanto','battle_legendary_kor_mir','battle_legendary_kyurem','battle_legendary_lake_trio','battle_legendary_loyal_three','battle_legendary_lugia','battle_legendary_mew','battle_legendary_ogerpon','battle_legendary_origin_forme','battle_legendary_pecharunt','battle_legendary_raikou','battle_legendary_rayquaza','battle_legendary_regis_g5','battle_legendary_regis_g6','battle_legendary_res_zek','battle_legendary_riders','battle_legendary_ruinous','battle_legendary_sinnoh','battle_legendary_sol_lun','battle_legendary_suicune','battle_legendary_tapu','battle_legendary_terapagos','battle_legendary_ub','battle_legendary_ultra_nec','battle_legendary_unova','battle_legendary_xern_yvel','battle_legendary_zac_zam','battle_macro_boss','battle_macro_grunt','battle_mustard','battle_oleana','battle_paldea_elite','battle_paldea_gym','battle_plasma_boss','battle_plasma_grunt','battle_rival','battle_rival_2','battle_rival_3','battle_rival_3_afd','battle_rocket_boss','battle_rocket_grunt','battle_rogue_mega','battle_sinnoh_champion','battle_sinnoh_gym','battle_skull_admin','battle_skull_boss','battle_skull_grunt','battle_star_admin','battle_star_boss','battle_star_grunt','battle_trainer','battle_trainer_afd','battle_unova_elite','battle_unova_gym','battle_wild','battle_wild_strong'];
+
 // Battle presentation feature flags (Sprint 1 — all false by default)
 // Exposed on window so the browser console can toggle them: window.FLAGS.battlePresentationV2 = true
 const FLAGS = window.FLAGS = {
@@ -4532,6 +4534,7 @@ async function startBattle() {
     // Wait for Phaser scene + audio to be ready first, then fire events in background.
     if (FLAGS.battlePresentationV2 && Array.isArray(state.battle?.events) && state.battle.events.length > 0) {
       await syncPhaserBattleRenderer(state.battle);
+      getPrimaryBattleScene()?.audio?.playRandomBattleBgm?.(BATTLE_BGM_TRACKS).catch(() => {});
       playTimelineAcrossActiveViews(state.battle.events, {
         onComplete: () => {
           clearTimelineSpriteOverrides();
