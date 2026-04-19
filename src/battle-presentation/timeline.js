@@ -100,6 +100,21 @@ const WEATHER_START_KEYS = {
   deltastream: 'strongWindsStartMessage',
 };
 
+const WEATHER_LAPSE_KEYS = {
+  raindance: 'rainLapseMessage',
+  rain: 'rainLapseMessage',
+  primordialsea: 'heavyRainLapseMessage',
+  sunnyday: 'sunnyLapseMessage',
+  sun: 'sunnyLapseMessage',
+  desolateland: 'harshSunLapseMessage',
+  sandstorm: 'sandstormLapseMessage',
+  sand: 'sandstormLapseMessage',
+  hail: 'hailLapseMessage',
+  snow: 'snowLapseMessage',
+  snowscape: 'snowLapseMessage',
+  deltastream: 'strongWindsLapseMessage',
+};
+
 const WEATHER_CLEAR_KEYS = {
   raindance: 'rainClearMessage',
   rain: 'rainClearMessage',
@@ -129,6 +144,9 @@ const WEATHER_COMMON_ANIMS = {
   snowscape: 'common-snow',
   deltastream: 'common-strong-winds',
 };
+const WEATHER_COMMON_ANIM_SCALE = 1.0;
+
+const WEATHER_DAMAGE_IDS = new Set(['sandstorm', 'sand', 'hail']);
 
 const TERRAIN_START_KEYS = {
   electricterrain: 'electricStartMessage',
@@ -271,6 +289,7 @@ export class BattleTimelineExecutor {
     this._consumedTerastallizeFormSeqs = new Set();
     this._activeWeatherId = '';
     this._activeTerrainId = '';
+    this._lastWeatherStartTurn = null;
   }
 
   // ── accessors ─────────────────────────────────────────────────────────────
@@ -426,6 +445,14 @@ export class BattleTimelineExecutor {
     return this._isEnglishLocale()
       ? `Weather changed: ${rawWeather || weatherId}`
       : `날씨 변화: ${rawWeather || weatherId}`;
+  }
+
+  _weatherLapseMessage(weatherId, rawWeather = '') {
+    const key = WEATHER_LAPSE_KEYS[weatherId];
+    if (key) return this._t('weather', key, {}, WEATHER_LABELS[weatherId] || '');
+    return this._isEnglishLocale()
+      ? `The weather continues: ${rawWeather || weatherId}`
+      : `날씨가 계속된다: ${rawWeather || weatherId}`;
   }
 
   _weatherClearMessage(weatherId) {
@@ -1051,11 +1078,12 @@ export class BattleTimelineExecutor {
           // (e.g. Phaser delayedCall cancelled on scene reset / loaderror).
           // Max duration: generous upper bound so even long animations always complete.
           const ANIM_TIMEOUT_MS = 5000;
+          const moveAnimOptions = { audioEnabled: this._audioEnabled };
+          if (animationScale !== 1) moveAnimOptions.scale = animationScale;
+          if (Number.isFinite(animationTint)) moveAnimOptions.tint = animationTint;
           await Promise.race([
             scene.playMoveAnim(animationMoveName, ev.actor?.side, ev.target?.side, {
-              audioEnabled: this._audioEnabled,
-              scale: animationScale,
-              tint: animationTint,
+              ...moveAnimOptions,
             }),
             new Promise(resolve => setTimeout(resolve, ANIM_TIMEOUT_MS)),
           ]);
@@ -1194,20 +1222,46 @@ export class BattleTimelineExecutor {
       case 'weather_start': {
         const weatherId = toId(ev.weather);
         this._activeWeatherId = weatherId || this._activeWeatherId;
+        this._lastWeatherStartTurn = Number.isFinite(Number(ev?.turn)) ? Number(ev.turn) : null;
         const wLabel = this._weatherStartMessage(weatherId, ev.weather);
         await this._showMsg(wLabel, { minMs: 700 });
-        await this._playFieldAnim(this._weatherCommonAnimName(this._activeWeatherId));
+        await this._playFieldAnim(this._weatherCommonAnimName(this._activeWeatherId), {
+          scale: WEATHER_COMMON_ANIM_SCALE,
+          scaleGraphicsOnly: true,
+        });
         break;
       }
 
       case 'weather_end': {
         await this._showMsg(this._weatherClearMessage(this._activeWeatherId), { minMs: 560 });
         this._activeWeatherId = '';
+        this._lastWeatherStartTurn = null;
         break;
       }
 
       case 'weather_tick': {
-        await this._playFieldAnim(this._weatherCommonAnimName(this._activeWeatherId));
+        const tickWeatherId = toId(ev.weather || this._activeWeatherId);
+        if (tickWeatherId) this._activeWeatherId = tickWeatherId;
+        if (!this._activeWeatherId) break;
+        const tickTurn = Number.isFinite(Number(ev?.turn)) ? Number(ev.turn) : null;
+        if (
+          tickTurn !== null
+          && this._lastWeatherStartTurn !== null
+          && tickTurn === this._lastWeatherStartTurn
+        ) {
+          // Prevent duplicated back-to-back weather animation right after weather-start
+          // (especially ability-triggered weather on the same turn).
+          break;
+        }
+        if (WEATHER_DAMAGE_IDS.has(this._activeWeatherId)) break;
+        const lapseMessage = this._weatherLapseMessage(this._activeWeatherId, ev.weather || '');
+        if (lapseMessage) {
+          await this._showMsg(lapseMessage, { minMs: 560 });
+        }
+        await this._playFieldAnim(this._weatherCommonAnimName(this._activeWeatherId), {
+          scale: WEATHER_COMMON_ANIM_SCALE,
+          scaleGraphicsOnly: true,
+        });
         break;
       }
 
@@ -1218,11 +1272,17 @@ export class BattleTimelineExecutor {
         const tLabel = this._terrainStartMessage(effectId, ev.effect || ev.raw || '');
         await this._showMsg(tLabel, { minMs: 620 });
         await this._playFieldAnim(this._terrainCommonAnimName(this._activeTerrainId));
+        const scene = this._scene();
+        if (scene?.setPersistentTerrainBackground) {
+          await scene.setPersistentTerrainBackground(this._activeTerrainId);
+        }
         break;
       }
 
       case 'terrain_end': {
         await this._showMsg(this._terrainClearMessage(this._activeTerrainId), { minMs: 520 });
+        const scene = this._scene();
+        scene?.clearPersistentTerrainBackground?.();
         this._activeTerrainId = '';
         break;
       }

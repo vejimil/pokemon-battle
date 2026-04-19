@@ -3236,11 +3236,12 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 
 .pkbattle-phaser-mount {
-  width: 100%;
+  width: min(100%, calc(46vh * 16 / 9));
   max-width: 1120px;
   aspect-ratio: 16 / 9;
+  height: auto;
   min-height: 0;
-  max-height: 46vh;
+  max-height: none;
   margin-inline: auto;
   border-radius: 22px;
   overflow: hidden;

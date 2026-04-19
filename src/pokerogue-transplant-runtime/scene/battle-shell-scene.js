@@ -12,6 +12,13 @@ import { BattleAnimPlayer } from '../../battle-presentation/battle-anim-player.j
 const SHADOW_GLOBAL_OFFSET = Object.freeze({ x: 0, y: 0 });
 const ENABLE_BATTLER_SHADOWS = false;
 const NORMAL_DYNAMAX_BASE_Y_OFFSET = 12;
+const FIELD_BG_LAYER_DEPTH = 5.4;
+const TERRAIN_BG_RESOURCE_BY_ID = Object.freeze({
+  electricterrain: 'PRAS- Electric Terrain BG',
+  grassyterrain: 'PRAS- Giga Drain BG',
+  mistyterrain: 'PRAS- Misty Terrain BG',
+  psychicterrain: 'PRAS- Psychic Terrain BG',
+});
 const TERA_TYPE_TINTS = Object.freeze({
   normal:   0xa8a878,
   fighting: 0xc03028,
@@ -43,6 +50,8 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.sceneKey = 'pkb-transplant-battle-shell-scene';
       this.isBootstrapped = false;
       this.currentModel = null;
+      this._persistentTerrainBg = null;
+      this._persistentTerrainId = '';
       this.ui = null;
       this.handleResize = () => this.layoutSafely();
       this.handleWindowKeyDown = event => this.handleGlobalKeyDown(event);
@@ -54,6 +63,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         // Cancel any in-flight move animation so its Promise resolves and the
         // timeline executor doesn't hang if the scene shuts down mid-animation.
         try { this.animPlayer?._activeCancel?.(); } catch (_error) {}
+        try { this.clearPersistentTerrainBackground?.(); } catch (_error) {}
         try { this._teraSparkleTimer?.remove?.(); this._teraSparkleTimer = null; } catch (_error) {}
         try { this._destroyMountTeraFx(this.enemySprite); } catch (_error) {}
         try { this._destroyMountTeraFx(this.playerSprite); } catch (_error) {}
@@ -760,6 +770,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.arenaBg.setPosition(0, 0);
       this.arenaEnemyBase.setPosition(ARENA_OFFSETS.enemy.x, ARENA_OFFSETS.enemy.y);
       this.arenaPlayerBase.setPosition(ARENA_OFFSETS.player.x, ARENA_OFFSETS.player.y);
+      this._layoutPersistentTerrainBackground();
       this.ui?.layout?.();
       this._applyMountMetricsSnapshot(this.enemySprite);
       this._applyMountMetricsSnapshot(this.playerSprite);
@@ -782,6 +793,80 @@ export function createBattleShellSceneClass(Phaser, env) {
       const sideIndex = side === 'p2' ? 1 : 0;
       const isPlayerViewSide = sideIndex === perspective;
       return isPlayerViewSide ? this.playerSprite : this.enemySprite;
+    }
+
+    _terrainBgResourceName(terrainId = '') {
+      const id = String(terrainId || '').toLowerCase().trim();
+      return TERRAIN_BG_RESOURCE_BY_ID[id] || '';
+    }
+
+    _bgTextureKey(resourceName) {
+      return `pkb-ba-bg/${resourceName}`;
+    }
+
+    _setImageCoverSize(layer, textureKey) {
+      if (!layer || !textureKey || !this.textures.exists(textureKey)) return;
+      const width = Number(this.scale?.width) || 320;
+      const height = Number(this.scale?.height) || 180;
+      layer.setOrigin(0, 0);
+      layer.setPosition(0, 0);
+      layer.setDisplaySize(width, height);
+    }
+
+    _layoutPersistentTerrainBackground() {
+      const layer = this._persistentTerrainBg;
+      if (!layer?.active) return;
+      const width = Number(this.scale?.width) || 320;
+      const height = Number(this.scale?.height) || 180;
+      layer.setPosition(0, 0);
+      layer.setDisplaySize(width, height);
+    }
+
+    _ensureBgTextureLoaded(resourceName) {
+      const name = String(resourceName || '').trim();
+      if (!name) return Promise.resolve();
+      const key = this._bgTextureKey(name);
+      if (this.textures.exists(key)) return Promise.resolve();
+      return new Promise(resolve => {
+        const filename = encodeURIComponent(name) + '.png';
+        const url = `./assets/pokerogue/battle__anims/${filename}`;
+        this.load.image(key, url);
+        this.load.once('complete', () => resolve());
+        this.load.once('loaderror', () => resolve());
+        this.load.start();
+      });
+    }
+
+    async setPersistentTerrainBackground(terrainId = '') {
+      const normalizedTerrainId = String(terrainId || '').toLowerCase().trim();
+      const resourceName = this._terrainBgResourceName(normalizedTerrainId);
+      if (!resourceName) {
+        this.clearPersistentTerrainBackground();
+        return;
+      }
+      await this._ensureBgTextureLoaded(resourceName);
+      const key = this._bgTextureKey(resourceName);
+      if (!this.textures.exists(key)) return;
+      if (this._persistentTerrainBg?.active && this._persistentTerrainBg.texture?.key === key) {
+        this._persistentTerrainId = normalizedTerrainId;
+        this._layoutPersistentTerrainBackground();
+        this._persistentTerrainBg.setVisible(true);
+        return;
+      }
+      this.clearPersistentTerrainBackground();
+      const layer = this.add.image(0, 0, key)
+        .setOrigin(0, 0)
+        .setDepth(FIELD_BG_LAYER_DEPTH)
+        .setAlpha(1);
+      this._setImageCoverSize(layer, key);
+      this._persistentTerrainBg = layer;
+      this._persistentTerrainId = normalizedTerrainId;
+    }
+
+    clearPersistentTerrainBackground() {
+      try { this._persistentTerrainBg?.destroy?.(); } catch (_error) {}
+      this._persistentTerrainBg = null;
+      this._persistentTerrainId = '';
     }
 
     _runTween(config = {}) {
@@ -1485,11 +1570,15 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     _resolveAnimEndpoints(userSide, targetSide) {
-      const userMount = this._mountForBattleSide(userSide)
+      const normalizedUserSide = userSide === 'p2' ? 'p2' : 'p1';
+      const normalizedTargetSide = targetSide === 'p1' || targetSide === 'p2'
+        ? targetSide
+        : (normalizedUserSide === 'p1' ? 'p2' : 'p1');
+      const userMount = this._mountForBattleSide(normalizedUserSide)
         || this._mountForBattleSide('p1')
         || this.playerMount
         || this.enemyMount;
-      const targetMount = this._mountForBattleSide(targetSide)
+      const targetMount = this._mountForBattleSide(normalizedTargetSide)
         || this._mountForBattleSide('p2')
         || this.enemyMount
         || this.playerMount;
@@ -1519,6 +1608,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       await this.animPlayer.play(animName, endpoints.userInfo, endpoints.targetInfo, {
         audioEnabled: options?.audioEnabled !== false,
         scale: Number.isFinite(Number(options?.scale)) ? Number(options.scale) : 1,
+        scaleGraphicsOnly: options?.scaleGraphicsOnly === true,
       });
     }
 
@@ -1535,7 +1625,19 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (!this.animPlayer || !moveName) return;
       const endpoints = this._resolveAnimEndpoints(actorSide, targetSide);
       if (!endpoints) return;
-      await this.animPlayer.play(moveName, endpoints.userInfo, endpoints.targetInfo, options);
+      const perspective = Number.isInteger(this.currentModel?.perspective)
+        ? clamp(Number(this.currentModel.perspective), 0, 1)
+        : 0;
+      const localPlayerSide = perspective === 1 ? 'p2' : 'p1';
+      const isOppAnim = (actorSide === 'p1' || actorSide === 'p2')
+        ? actorSide !== localPlayerSide
+        : false;
+      const variantIndex = isOppAnim ? 1 : 0;
+      await this.animPlayer.play(moveName, endpoints.userInfo, endpoints.targetInfo, {
+        ...options,
+        variantIndex,
+        oppAnim: isOppAnim,
+      });
     }
   };
 }

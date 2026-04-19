@@ -58,6 +58,14 @@ const BATTLER_COPY_BASE_OFFSET_X = 0;
 const BATTLER_COPY_BASE_OFFSET_Y = 0;
 const BATTLER_COPY_NO_GRAPHIC_OFFSET_X = 0;
 const BATTLER_COPY_NO_GRAPHIC_OFFSET_Y = 0;
+// Original PokeRogue timed BG geometry (battle-anims.ts AnimTimedAddBgEvent).
+const TIMED_BG_BASE_X = 320;
+const TIMED_BG_BASE_Y = 284;
+const TIMED_BG_WIDTH = 896;
+const TIMED_BG_HEIGHT = 576;
+const TIMED_BG_SCALE = 1.25;
+// Keep timed BG under battlers (enemy depth=6, player depth=7 in battle-shell-scene).
+const TIMED_BG_LAYER_DEPTH = 5.9;
 
 export class BattleAnimPlayer {
   /**
@@ -65,7 +73,7 @@ export class BattleAnimPlayer {
    */
   constructor(scene) {
     this.scene = scene;
-    this._animCache   = new Map();   // slug → anim config (or null if missing)
+    this._animCache   = new Map();   // slug → { variants: (anim config|null)[] } (or null if missing)
     this._texLoaded   = new Set();   // graphic keys already loaded
     this._texLoading  = new Map();   // graphic key → Promise (in-flight)
     this._bgTexLoaded  = new Set();  // background texture keys for timed bg events
@@ -94,8 +102,14 @@ export class BattleAnimPlayer {
     if (!moveName || !userInfo || !targetInfo) return;
     const slug = moveName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
 
-    const anim = await this._loadAnim(slug);
+    const variantIndex = Number.isFinite(Number(options?.variantIndex))
+      ? Math.max(0, Number(options.variantIndex) | 0)
+      : 0;
+    const anim = await this._loadAnim(slug, variantIndex);
     if (!anim) return;
+    const applyOppAnimSwap = options?.oppAnim === true && Number(anim.variantCount || 1) > 1;
+    const resolvedUserInfo = applyOppAnimSwap ? targetInfo : userInfo;
+    const resolvedTargetInfo = applyOppAnimSwap ? userInfo : targetInfo;
 
     const hasGraphicFrames = anim.frames.some(spriteFrames =>
       Array.isArray(spriteFrames) && spriteFrames.some(frame => frame?.target === FT_GRAPHIC),
@@ -112,9 +126,10 @@ export class BattleAnimPlayer {
     }
 
     return new Promise(resolve => {
-      const cancel = this._runAnim(anim, texKey || null, userInfo, targetInfo, {
+      const cancel = this._runAnim(anim, texKey || null, resolvedUserInfo, resolvedTargetInfo, {
         audioEnabled: options.audioEnabled !== false,
         scale: Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1,
+        scaleGraphicsOnly: options?.scaleGraphicsOnly === true,
         tint: Number.isFinite(Number(options.tint)) ? Number(options.tint) : null,
       }, () => {
         // Clear our cancel handle when the animation finishes normally.
@@ -128,27 +143,38 @@ export class BattleAnimPlayer {
   // ─────────────────────────────────────────────────── asset loading ─────
 
   /** Fetch and parse anim-data JSON for the given move slug. */
-  async _loadAnim(slug) {
-    if (this._animCache.has(slug)) return this._animCache.get(slug);
+  async _loadAnim(slug, variantIndex = 0) {
+    const selectVariant = entry => {
+      if (!entry || !Array.isArray(entry.variants) || !entry.variants.length) return null;
+      const normalizedIndex = Math.max(0, Number(variantIndex) | 0);
+      const selected = entry.variants[normalizedIndex] || entry.variants.find(Boolean) || null;
+      if (!selected) return null;
+      return {
+        ...selected,
+        variantCount: entry.variants.length,
+      };
+    };
+    if (this._animCache.has(slug)) return selectVariant(this._animCache.get(slug));
     this._animCache.set(slug, null);
     try {
       const res = await fetch(`./assets/pokerogue/anim-data/${slug}.json`);
       if (!res.ok) return null;
       const data = await res.json();
-      const raw = Array.isArray(data) ? data[0] : data;
-      if (!raw?.frames?.length) return null;
-
-      // Build frameTimedEvents as Map<frameIndex, event[]>
-      const fte = new Map();
-      if (raw.frameTimedEvents && typeof raw.frameTimedEvents === 'object') {
-        for (const [k, v] of Object.entries(raw.frameTimedEvents)) {
-          fte.set(Number(k), Array.isArray(v) ? v : [v]);
+      const raws = Array.isArray(data) ? data : [data];
+      const variants = raws.map(raw => {
+        if (!raw?.frames?.length) return null;
+        const fte = new Map();
+        if (raw.frameTimedEvents && typeof raw.frameTimedEvents === 'object') {
+          for (const [k, v] of Object.entries(raw.frameTimedEvents)) {
+            fte.set(Number(k), Array.isArray(v) ? v : [v]);
+          }
         }
-      }
-
-      const config = { graphic: String(raw.graphic || '').trim(), frames: raw.frames, fte };
-      this._animCache.set(slug, config);
-      return config;
+        return { graphic: String(raw.graphic || '').trim(), frames: raw.frames, fte };
+      });
+      if (!variants.some(Boolean)) return null;
+      const cacheEntry = { variants };
+      this._animCache.set(slug, cacheEntry);
+      return selectVariant(cacheEntry);
     } catch {
       return null;
     }
@@ -251,6 +277,9 @@ export class BattleAnimPlayer {
     const scaleMultiplier = Number.isFinite(options?.scale) && Number(options.scale) > 0
       ? Number(options.scale)
       : 1;
+    const scaleGraphicsOnly = options?.scaleGraphicsOnly === true;
+    const graphicScaleMultiplier = scaleMultiplier;
+    const battlerScaleMultiplier = scaleGraphicsOnly ? 1 : scaleMultiplier;
     const globalTint = Number.isFinite(Number(options?.tint)) ? Number(options.tint) : null;
 
     const uX = userInfo.x,   uY = userInfo.y,   uH = userInfo.displayHeight ?? 64;
@@ -328,7 +357,10 @@ export class BattleAnimPlayer {
           try { spr.setFrame(frameIdx); } catch {}
 
           // Transform
-          spr.setScale(frameData.scaleX * scaleMultiplier, frameData.scaleY * scaleMultiplier);
+          spr.setScale(
+            frameData.scaleX * graphicScaleMultiplier,
+            frameData.scaleY * graphicScaleMultiplier,
+          );
           spr.setAngle(frameData.angle);
           spr.setAlpha((frame.opacity ?? 255) / 255);
           spr.setVisible(frame.visible !== false);
@@ -383,8 +415,8 @@ export class BattleAnimPlayer {
         copySprite.setAngle(frameData.angle);
         const orientedScaleX = Math.sign(sourceScaleX) * sourceScale;
         copySprite.setScale(
-          frameData.scaleX * orientedScaleX * scaleMultiplier,
-          frameData.scaleY * sourceScale * scaleMultiplier
+          frameData.scaleX * orientedScaleX * battlerScaleMultiplier,
+          frameData.scaleY * sourceScale * battlerScaleMultiplier
         );
         copySprite.setAlpha((frame.opacity ?? 255) / 255);
         // Source battlers are intentionally hidden during USER/TARGET overlay frames.
@@ -516,14 +548,21 @@ export class BattleAnimPlayer {
     if (!sprite || !frame) return;
     const color = Array.isArray(frame.color) ? frame.color : null;
     const tone = Array.isArray(frame.tone) ? frame.tone : null;
+    const toneGray = tone ? Number(tone[3] || 0) : 0;
     const hasColor = color && Number(color[3] || 0) > 0;
-    const hasTone = tone && (Number(tone[0] || 0) !== 0 || Number(tone[1] || 0) !== 0 || Number(tone[2] || 0) !== 0);
+    const hasTone = tone && (
+      Number(tone[0] || 0) !== 0
+      || Number(tone[1] || 0) !== 0
+      || Number(tone[2] || 0) !== 0
+      || toneGray !== 0
+    );
     const hasGlobalTint = Number.isFinite(Number(globalTint));
     if (!hasColor && !hasTone && !hasGlobalTint) {
       sprite.clearTint?.();
       return;
     }
     const clamp = value => Math.max(0, Math.min(255, Math.round(value)));
+    const clamp01 = value => Math.max(0, Math.min(1, Number(value) || 0));
     let r = 255, g = 255, b = 255;
     if (hasColor) {
       r = clamp(color[0]);
@@ -531,9 +570,19 @@ export class BattleAnimPlayer {
       b = clamp(color[2]);
     }
     if (hasTone) {
-      r = clamp(r + Number(tone[0] || 0));
-      g = clamp(g + Number(tone[1] || 0));
-      b = clamp(b + Number(tone[2] || 0));
+      // Mirror original sprite shader intent:
+      // 1) gray mix via tone[3], 2) rgb tone shift scaled by current alpha.
+      const grayMix = clamp01(toneGray / 255);
+      if (grayMix > 0) {
+        const luma = (0.299 * r) + (0.587 * g) + (0.114 * b);
+        r = clamp((r * (1 - grayMix)) + (luma * grayMix));
+        g = clamp((g * (1 - grayMix)) + (luma * grayMix));
+        b = clamp((b * (1 - grayMix)) + (luma * grayMix));
+      }
+      const alphaFactor = clamp01(sprite?.alpha ?? 1);
+      r = clamp(r + (Number(tone[0] || 0) * alphaFactor));
+      g = clamp(g + (Number(tone[1] || 0) * alphaFactor));
+      b = clamp(b + (Number(tone[2] || 0) * alphaFactor));
     }
     if (hasGlobalTint) {
       const gr = (Number(globalTint) >> 16) & 0xff;
@@ -598,30 +647,30 @@ export class BattleAnimPlayer {
     try { bgLayerRef.value?.destroy?.(); } catch {}
     bgLayerRef.value = null;
 
-    const width = Number(this.scene.scale?.width) || 320;
-    const height = Number(this.scene.scale?.height) || 180;
     const resourceName = String(ev.resourceName || '').trim();
     const opacity = Math.max(0, Math.min(255, Number(ev.opacity) || 0)) / 255;
     const duration = Math.max(0, Number(ev.duration) || 0);
     const bgX = Number(ev.bgX) || 0;
     const bgY = Number(ev.bgY) || 0;
+    const layerX = bgX - TIMED_BG_BASE_X;
+    const layerY = bgY - TIMED_BG_BASE_Y;
 
     let layer = null;
     if (resourceName) {
       const bgKey = this._bgTextureKey(resourceName);
       if (this.scene.textures.exists(bgKey)) {
-        layer = this.scene.add.tileSprite(width / 2, height / 2, width + 120, height + 80, bgKey);
-        layer.setOrigin(0.5, 0.5);
-        layer.tilePositionX = bgX;
-        layer.tilePositionY = bgY;
+        layer = this.scene.add.tileSprite(layerX, layerY, TIMED_BG_WIDTH, TIMED_BG_HEIGHT, bgKey);
+        layer.setOrigin(0, 0);
+        layer.setScale(TIMED_BG_SCALE);
       }
     }
     if (!layer) {
-      layer = this.scene.add.rectangle(width / 2, height / 2, width + 120, height + 80, 0xffffff, opacity);
-    } else {
-      layer.setAlpha(opacity);
+      layer = this.scene.add.rectangle(layerX, layerY, TIMED_BG_WIDTH, TIMED_BG_HEIGHT, 0x000000)
+        .setOrigin(0, 0)
+        .setScale(TIMED_BG_SCALE);
     }
-    layer.setDepth(3);
+    layer.setAlpha(opacity);
+    layer.setDepth(TIMED_BG_LAYER_DEPTH);
     bgLayerRef.value = layer;
 
     if (duration > 0) {
@@ -643,11 +692,11 @@ export class BattleAnimPlayer {
     if (Number.isFinite(Number(ev.opacity))) {
       tweenProps.alpha = Math.max(0, Math.min(255, Number(ev.opacity))) / 255;
     }
-    if ('tilePositionX' in layer && Number.isFinite(Number(ev.bgX))) {
-      tweenProps.tilePositionX = Number(ev.bgX);
+    if (Number.isFinite(Number(ev.bgX))) {
+      tweenProps.x = (Number(ev.bgX) * 0.5) - 320;
     }
-    if ('tilePositionY' in layer && Number.isFinite(Number(ev.bgY))) {
-      tweenProps.tilePositionY = Number(ev.bgY);
+    if (Number.isFinite(Number(ev.bgY))) {
+      tweenProps.y = (Number(ev.bgY) * 0.5) - 284;
     }
     if (Object.keys(tweenProps).length) {
       this.scene.tweens.add({

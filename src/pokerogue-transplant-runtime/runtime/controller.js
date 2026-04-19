@@ -119,9 +119,9 @@ export class TransplantBattleController {
         resolution: 1, // 원본 PokeRogue와 동일; DPR 스케일은 INTEGER_SCALE이 CSS 배율로 담당
         dom: { createContainer: true },
         scale: {
-          // INTEGER_SCALE ensures only integer multipliers (1x, 2x, 3x…) are used.
-          // This is critical for pixel-art fonts: non-integer scale blurs canvas text.
-          mode: Phaser.Scale.INTEGER_SCALE,
+          // Keep the original 16:9 logical view while filling the mount area.
+          // FIT prevents undersized 1x letterboxing on smaller split panes.
+          mode: Phaser.Scale.FIT,
           autoCenter: Phaser.Scale.CENTER_BOTH,
           width: LOGICAL_WIDTH,
           height: LOGICAL_HEIGHT,

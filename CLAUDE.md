@@ -219,15 +219,21 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
     - timed BG 이벤트(`AnimTimedAddBgEvent`/`AnimTimedUpdateBgEvent`) 실행 경로 추가
     - copy sprite origin을 원본과 동일한 중심(0.5,0.5)으로 조정
     - 일반/무그래픽 애니 분리 base offset(`NO_GRAPHIC y`) 추가
+    - timed BG 좌표/크기/스케일/업데이트식을 원본 상수와 동일하게 재정렬
+      - add: `x = bgX - 320`, `y = bgY - 284`, `896x576`, `scale=1.25`
+      - update: `x = bgX*0.5 - 320`, `y = bgY*0.5 - 284`
+    - timed BG depth를 배틀러 하단층으로 복원(플래시 우측 편중 현상 대응)
+    - tone gray(`tone[3]`) 반영으로 원본식 스프라이트 암전 연출 보강
   - `timeline.js`
     - 모래바람/싸라기눈 weather damage 메시지 locale key 연결
     - weather damage 시점 필드 애니 재생 연결
     - terrain id 정규화(`move:` prefix 제거) 추가
+    - weather common scale은 유지(`1.25`)하되 `scaleGraphicsOnly`로 적용해 배틀러 본체 확대 부작용 제거하려했으나 시패 =>1.0 적용
   - `showdown-engine.cjs`
     - `-fieldstart/-fieldend`의 `terrain_start/end.effect`를 `parts[2]` 기준으로 보정
   - `app.js`
     - Z 메타에 타입(`zMoveType`) 전달
-    - Z 물리/특수도 스케일 확대(공통 `1.4`) + 타입 tint 적용
+    - Z 물리/특수도 스케일 확대(공통 `1.0`) + 타입 tint 적용
 - 검증:
   - `node --check src/battle-presentation/battle-anim-player.js` PASS
   - `node --check src/battle-presentation/timeline.js` PASS
@@ -431,9 +437,19 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - 후속 보강(사용자 피드백):
   - `showdown-engine.cjs` `-fieldstart/-fieldend` effect 파싱을 `parts[2]` 기준으로 고정
   - `timeline.js` terrain effect `move:` 접두 정규화(`move: Electric Terrain` -> `electricterrain`)
-  - `battle-anim-player.js` USER/TARGET copy origin/scale 정합 + no-graphic 전용 base Y(+8) 분리
+  - `battle-anim-player.js` USER/TARGET copy origin/scale 정합 + no-graphic base 오프셋(0,0) 정리
+  - `timeline.js` 비데미지 날씨 턴말 lapse 메시지+연출 추가, weather_start 동턴 중복 tick 연출 스킵
+  - `battle-shell-scene.js` terrain persistent BG 레이어 추가(terrain_end까지 유지)
+  - `battle-anim-player.js` BG tileSprite cover-scale 보정으로 terrain/기술 배경 4분할 seam 완화
+  - `battle-anim-player.js` anim-data 배열형 move variant(0/1)를 actor 시점으로 선택
+  - `battle-shell-scene.js` terrain persistent BG를 단일 image cover 렌더로 전환(시전 후 seam 완화)
+  - `battle-anim-player.js` timed BG 레이어 depth/좌표 tween을 원본형으로 재정렬(부분 번쩍임 완화)
+  - `styles.css` P1/P2 Phaser mount 16:9 고정(화면비 차이 환경 정합)
+  - `battle-anim-player.js` move array variant에서 원본 `oppAnim` USER/TARGET swap 복원
+  - `runtime/controller.js` Phaser scale mode `FIT` 전환으로 split 뷰 중앙 축소(letterbox) 완화
+  - `timeline.js` weather common 연출 스케일(1.25) 보정으로 화면 커버 범위 확장 => 1.0으로 수정
 - 검증: `node --check`(수정 파일), `npm run verify:ba20`, `npm run verify:passb`, `npm run verify:stage22`
-  - `verify:stage22`는 3회 실행 결과 FAIL/PASS/FAIL(mega feraligatr)로 플래키 재현성 있음
+  - 금회 `verify:stage22` 1회 PASS (기존 mega feraligatr 플래키 이력은 유지 관찰)
 
 **✅ BA-24: 테라스탈 구현 — 1차 완료 (2026-04-17)** (`showdown-engine.cjs`, `event-schema.js`, `timeline.js`, `battle-shell-scene.js`, `app.js`)
 - `-terastallize`를 독립 `terastallize` 이벤트로 파싱하고 `target/teraType/teraTypeName/trigger/fromSource`를 구조화

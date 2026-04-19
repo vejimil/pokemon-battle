@@ -26,9 +26,21 @@ Target: `/workspaces/pokemon-battle`
 - `BA-23` 후속 보강 완료 (사용자 피드백 반영)
   - `AnimTimedAddBg/AnimTimedUpdateBg` 배경 이벤트 지원(가뭄/모래바람 등 필드 배경 연출 복원)
   - `USER/TARGET` 프레임 재활성화 + `graphic=''` 애니 허용(버티기/바디프레스/사이코키네시스 계열 복원)
-  - Z 물리/특수도 확대 적용(`scale 1.4`) + 타입 기반 tint 추가
+  - Z 물리/특수도 확대 적용(`scale 1.0`) + 타입 기반 tint 추가
   - terrain 파싱/정규화 보강(`move: Electric Terrain` 계열 id 인식)
-  - USER/TARGET copy origin/scale 보정 + no-graphic 전용 base Y(+8) 오프셋 분리
+  - USER/TARGET copy origin/scale 보정 + no-graphic 전용 base 오프셋(0,0) 정리
+  - terrain 지속 배경 레이어 추가(terrain_end까지 유지)
+  - 비데미지 날씨 턴말 lapse 메시지+연출 추가, weather_start 동턴 중복 tick 연출 스킵
+  - move anim JSON array variant(상대 시점) 선택 로직 추가
+  - move anim 상대 시점에서 원본 `oppAnim` 규칙(USER/TARGET swap) 복원
+  - BG 타일 레이어 cover-scale 보정으로 4분할 seam 완화
+  - terrain 지속 BG를 tile 반복이 아닌 단일 이미지 cover 표시로 교체
+  - timed BG 좌표/크기/스케일/업데이트식을 원본 상수(`x=-320`, `y=-284`, `896x576`, `scale=1.25`)로 재정렬
+  - timed BG depth를 배틀러 하단층으로 복원(플래시 우측 편중 현상 대응)
+  - Phaser P1/P2 mount를 16:9 고정 폭 계산(`min(100%, 46vh*16/9)`)으로 화면비 일치
+  - Phaser scale mode를 `FIT`으로 전환해 split 뷰 중앙 축소(letterbox) 완화
+  - weather common 연출 스케일(`1.25`)은 유지하되 graphic-only 적용으로 포켓몬 본체 확대 부작용 제거하려 했으니, graphic-only 미적용으로 1.0 적용
+  - battle tone 처리에 gray 채널(`tone[3]`)을 반영해 원본식 스프라이트 암전 연출 보강
 
 ### 고정 순서 반영
 - 요청 고정 순서: `25 -> 23 -> 28`
@@ -59,20 +71,35 @@ Target: `/workspaces/pokemon-battle`
 - `move_use` 이벤트에 Z 분류 메타를 실어 연출 분기
   - 물리 Z: `Giga Impact`
   - 특수 Z: `Hyper Beam`
-  - 변화 Z: 원본 기술 + `animationScale=1.35`
-  - 공통: 타입 기반 tint 적용
+  - 변화 Z: 원본 기술
+  - 타입 기반 tint 적용
 
 4. 후속 보강 (사용자 피드백)
 - `battle-anim-player.js`
   - `AnimTimedAddBgEvent` / `AnimTimedUpdateBgEvent` 실행 경로 이식
   - `USER/TARGET` 프레임 재생 복원
   - `graphic`이 비어 있는 anim-data도 재생 가능하도록 로더 조건 보완
+  - BG tileSprite를 화면 단일 cover 스케일로 맞춰 terrain/기술 배경 분할감 완화
+  - anim-data 배열형 move에서 actor 시점에 맞는 variant(0/1) 선택
+  - anim-data 배열형 move에서 `oppAnim` 활성 시 USER/TARGET endpoint swap 적용
+  - timed BG add/update 좌표/알파 tween을 원본 규칙(`x/y`, depth 중간층)으로 재정렬
 - `timeline.js`
   - 모래바람/싸라기눈 피해 메시지를 weather locale key로 출력
   - 날씨 피해 데미지 시점에 대응 필드 애니 재생
   - `terrain_start` effect를 `move:` 접두 포함 문자열에서도 정상 인식하도록 정규화
+  - 비데미지 날씨(`sun/rain/snow/heavy-rain/harsh-sun/strong-winds`) 턴말 lapse 메시지+연출 추가
+  - weather_start와 동턴 weather_tick의 중복 연출 스킵
+  - terrain 시작 시 persistent terrain BG 적용, 종료 시 해제
 - `showdown-engine.cjs`
   - `-fieldstart/-fieldend` effect를 `parts[2]` 기준으로 파싱해 `[from] ability` 태그 오염 제거
+- `battle-shell-scene.js`
+  - terrain별 persistent BG(`electric/grassy/misty/psychic`) 관리 API 추가
+  - `playMoveAnim`에서 actor 시점 기준 variantIndex 계산 전달
+  - persistent terrain BG를 단일 image cover 렌더로 변경(타일 반복 seam 제거)
+- `styles.css`
+  - P1/P2 Phaser mount 비율을 16:9로 고정해 화면비 차이 환경에서도 동일 비율 유지
+- `runtime/controller.js`
+  - Phaser scale mode를 `INTEGER_SCALE -> FIT`으로 전환해 split 뷰 letterbox 완화
 - `app.js`
   - Z 메타에 `zMoveType` 전달
 - 결과:
@@ -152,7 +179,7 @@ Target: `/workspaces/pokemon-battle`
 
 ### 기존 회귀 스위트
 - `npm run verify:ba20` PASS
-- `npm run verify:stage22` FAIL/PASS/FAIL (Mega Feraligatr 케이스 플래키, 재현성 있음)
+- `npm run verify:stage22` PASS (금회 1회 실행, 기존 Mega Feraligatr 플래키 이력은 유지 관찰)
 - `npm run verify:passb` PASS
 
 ### 인라인 다이맥스 검증
