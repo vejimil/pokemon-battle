@@ -131,6 +131,14 @@ function displayCondition(cond = '') {
   return String(cond || '').replace(/\btox\b/g, 'tox').trim();
 }
 
+function resolveRequiredTeraTypeForSpecies(speciesName = '', dex = Dex.mod ? Dex.mod('gen9') : Dex) {
+  const species = dex?.species?.get?.(speciesName);
+  if (!species?.exists) return '';
+  const baseSpeciesId = toId(species.baseSpecies || species.name || '');
+  if (baseSpeciesId !== 'ogerpon') return '';
+  return String(species.requiredTeraType || '').trim();
+}
+
 function mapTargetHint(target) {
   const id = toId(target);
   if (id === 'self') return 'self';
@@ -957,22 +965,31 @@ class ShowdownLocalSinglesSession {
     this.write(`>start ${JSON.stringify({formatid: this.formatid, debug: true})}`);
     applyProjectFuturePatchesToDex(this.stream?.dex);
     applyProjectFuturePatchesToDex(this.stream?.battle?.dex);
+    const dexForTeam = this.stream?.battle?.dex || this.stream?.dex || (Dex.mod ? Dex.mod('gen9') : Dex);
     this.players.forEach((player, index) => {
       const slot = `p${index + 1}`;
-      const team = (player.team || []).map(mon => ({
-        species: mon.species,
-        name: mon.name || mon.species,
-        item: mon.item || '',
-        ability: mon.ability || '',
-        moves: Array.isArray(mon.moves) ? mon.moves.filter(Boolean) : [],
-        nature: mon.nature || '',
-        gender: mon.gender || '',
-        evs: mon.evs || {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0},
-        ivs: mon.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31},
-        level: Number(mon.level || 100),
-        shiny: Boolean(mon.shiny),
-        teraType: mon.teraType || undefined,
-      }));
+      const team = (player.team || []).map(mon => {
+        const requiredTeraType = resolveRequiredTeraTypeForSpecies(mon?.species || '', dexForTeam);
+        const teraType = requiredTeraType || mon.teraType || undefined;
+        if (requiredTeraType) {
+          mon.teraType = requiredTeraType;
+          if (mon?.ui && typeof mon.ui === 'object') mon.ui.teraType = requiredTeraType;
+        }
+        return {
+          species: mon.species,
+          name: mon.name || mon.species,
+          item: mon.item || '',
+          ability: mon.ability || '',
+          moves: Array.isArray(mon.moves) ? mon.moves.filter(Boolean) : [],
+          nature: mon.nature || '',
+          gender: mon.gender || '',
+          evs: mon.evs || {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0},
+          ivs: mon.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31},
+          level: Number(mon.level || 100),
+          shiny: Boolean(mon.shiny),
+          teraType,
+        };
+      });
       this.write(`>player ${slot} ${JSON.stringify({name: player.name || `Player ${index + 1}`, team})}`);
     });
   }

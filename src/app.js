@@ -289,6 +289,10 @@ const FORM_ASSET_OVERRIDES = Object.freeze({
   'Genesect-Douse': 'GENESECT_4',
   'Zacian-Crowned': 'ZACIAN_1',
   'Zamazenta-Crowned': 'ZAMAZENTA_1',
+  'Ogerpon-Teal-Tera': 'OGERPON_8',
+  'Ogerpon-Wellspring-Tera': 'OGERPON_9',
+  'Ogerpon-Hearthflame-Tera': 'OGERPON_10',
+  'Ogerpon-Cornerstone-Tera': 'OGERPON_11',
 });
 const EXPLICIT_ONLY_FORM_FAMILIES = new Set(['EEVEE', 'GRENINJA', 'PIKACHU']);
 
@@ -861,6 +865,11 @@ function getAutoSpriteIdForSpecies(speciesName, gender = '', baseSpeciesName = '
   // battle sprite instead of reusing the disguised sprite family entry.
   const speciesId = toId(speciesName || baseSpeciesName || '');
   if (speciesId === 'mimikyubusted' || speciesId === 'mimikyubustedtotem') return 'MIMIKYU_1';
+  // Ogerpon tera forms have assets at indices 8-11, misaligned from dex form order — hardcode.
+  if (speciesId === 'ogerpontealtera') return 'OGERPON_8';
+  if (speciesId === 'ogerponwellspringtera') return 'OGERPON_9';
+  if (speciesId === 'ogerponhearthflametera') return 'OGERPON_10';
+  if (speciesId === 'ogerponcornerstonetera') return 'OGERPON_11';
   const family = getFamilyForSpecies(speciesName || baseSpeciesName);
   if (!family) return '';
   const resolvedSpecies = normalizeLocalizedInput('species', speciesName || baseSpeciesName, state.allSpeciesChoices || state.speciesChoices || []) || speciesName || baseSpeciesName || family.baseSpeciesName;
@@ -4398,6 +4407,7 @@ async function hydrateSelectedSpecies(options = {}) {
     mon.displaySpecies = data.name;
     if (!mon.ability || !data.abilities.includes(mon.ability)) mon.ability = data.abilities[0] || '';
     if (!mon.teraType) mon.teraType = data.types[0] || 'normal';
+    enforceMonRequiredTeraType(mon, data);
     rebuildMoveDatalist(mon);
     syncMonSprite(mon);
     if (els.speciesStatus) {
@@ -4433,7 +4443,16 @@ function renderEditor() {
   els.levelInput.value = mon.level;
   els.natureSelect.value = mon.nature || 'Jolly';
   if (els.genderSelect) els.genderSelect.value = mon.gender || '';
+  enforceMonRequiredTeraType(mon, mon.data);
+  const requiredTeraType = resolveRequiredTeraTypeFromSpeciesData(mon.data);
   els.teraSelect.value = mon.teraType || 'normal';
+  els.teraSelect.disabled = Boolean(requiredTeraType);
+  els.teraSelect.title = requiredTeraType
+    ? lang(
+      `${displaySpeciesName(mon.data?.name || mon.species || '')}은(는) ${displayType(requiredTeraType)} 테라 타입으로 고정됩니다.`,
+      `${mon.data?.name || mon.species || 'This species'} is locked to ${displayType(requiredTeraType)} Tera type.`
+    )
+    : '';
   els.shinyCheckbox.checked = Boolean(mon.shiny);
   els.moveInputs.forEach((input, idx) => input.value = displayMoveName(mon.moves[idx] || ''));
   els.editorSpeciesName.textContent = displayName;
@@ -4756,7 +4775,9 @@ function wireEditorEvents() {
   });
   els.teraSelect.addEventListener('change', async () => {
     const mon = getSelectedMon();
-    mon.teraType = els.teraSelect.value;
+    const requiredTeraType = resolveRequiredTeraTypeFromSpeciesData(mon?.data);
+    mon.teraType = requiredTeraType || els.teraSelect.value;
+    if (requiredTeraType) els.teraSelect.value = requiredTeraType;
     await hydrateSelectedSpecies();
     await renderValidation();
   });
@@ -4881,11 +4902,27 @@ function resolveShowdownStartAbility(mon, startSpeciesData) {
   if (allowed.some(name => toId(name) === toId(selectedAbility))) return selectedAbility;
   return allowed[0] || selectedAbility;
 }
+function resolveRequiredTeraTypeFromSpeciesData(speciesData) {
+  const baseSpeciesId = toId(speciesData?.baseSpecies || speciesData?.name || '');
+  if (baseSpeciesId !== 'ogerpon') return '';
+  const required = toId(speciesData?.requiredTeraType || '');
+  return TYPES.includes(required) ? required : '';
+}
+function enforceMonRequiredTeraType(mon, speciesData = mon?.data) {
+  if (!mon) return false;
+  const required = resolveRequiredTeraTypeFromSpeciesData(speciesData);
+  if (!required) return false;
+  if (toId(mon.teraType) === required) return false;
+  mon.teraType = required;
+  return true;
+}
 
 async function buildShowdownPayloadMon(mon, player, slot) {
   const startSpecies = normalizeShowdownStartSpecies(mon);
   const startSpeciesData = startSpecies ? await getSpeciesData(startSpecies).catch(() => null) : null;
   const startAbility = resolveShowdownStartAbility(mon, startSpeciesData);
+  const requiredTeraType = resolveRequiredTeraTypeFromSpeciesData(startSpeciesData);
+  const resolvedTeraType = requiredTeraType || toId(mon.teraType || startSpeciesData?.types?.[0] || '') || '';
   const battleBaseSpecies = startSpeciesData?.baseSpecies || mon.baseSpecies || mon.data?.baseSpecies || startSpecies || mon.species;
   const startSpriteId = getAutoSpriteIdForSpecies(startSpecies, mon.gender || '', battleBaseSpecies) || mon.spriteAutoId || mon.spriteId || '';
   const megaCandidate = getMegaCandidateForMon(mon);
@@ -4913,7 +4950,7 @@ async function buildShowdownPayloadMon(mon, player, slot) {
     happiness: 255,
     evs: deepClone(mon.evs || {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0}),
     ivs: deepClone(mon.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31}),
-    teraType: mon.teraType || startSpeciesData?.types?.[0] || '',
+    teraType: resolvedTeraType,
     ui: {
       id: `${player}-${slot}`,
       player,
@@ -4936,7 +4973,7 @@ async function buildShowdownPayloadMon(mon, player, slot) {
       nature: mon.nature || '',
       gender: mon.gender || '',
       level: Number(mon.level || 100),
-      teraType: mon.teraType || startSpeciesData?.types?.[0] || '',
+      teraType: resolvedTeraType,
       evs: deepClone(mon.evs || {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0}),
       ivs: deepClone(mon.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31}),
       data: {
