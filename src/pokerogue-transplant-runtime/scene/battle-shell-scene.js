@@ -11,6 +11,7 @@ import { BattleAnimPlayer } from '../../battle-presentation/battle-anim-player.j
 // Negative x = left, negative y = up.
 const SHADOW_GLOBAL_OFFSET = Object.freeze({ x: 0, y: 0 });
 const ENABLE_BATTLER_SHADOWS = false;
+const NORMAL_DYNAMAX_BASE_Y_OFFSET = 12;
 const TERA_TYPE_TINTS = Object.freeze({
   normal:   0xa8a878,
   fighting: 0xc03028,
@@ -261,6 +262,17 @@ export function createBattleShellSceneClass(Phaser, env) {
       return mount?.dynamaxed ? 2 : 1;
     }
 
+    _dynamaxBaseYOffsetForState(dynamaxed = false, gigantamaxed = false) {
+      return dynamaxed && !gigantamaxed ? NORMAL_DYNAMAX_BASE_Y_OFFSET : 0;
+    }
+
+    _dynamaxBaseYOffset(mount) {
+      return this._dynamaxBaseYOffsetForState(
+        mount?.dynamaxed === true,
+        mount?.gigantamaxed === true,
+      );
+    }
+
     _resolveMountScale(mount, baseScale = 1) {
       return Number(baseScale || 1) * this._dynamaxScaleMultiplier(mount);
     }
@@ -270,8 +282,9 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (!mount?.phaserSprite || !snap) return;
       const baseX = mount.baseX ?? mount.phaserSprite.x;
       const baseY = mount.baseY ?? mount.phaserSprite.y;
+      const dmaxYOffset = this._dynamaxBaseYOffset(mount);
       const spriteX = baseX + snap.offsetX;
-      const spriteY = baseY + snap.offsetY;
+      const spriteY = baseY + snap.offsetY + dmaxYOffset;
       mount.phaserSprite
         .setOrigin(0.5, 1)
         .setScale(this._resolveMountScale(mount, snap.sprScale))
@@ -293,7 +306,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         const shadowH = snap.shadowH * scaleMultiplier;
         const shadowBaseline = snap.shadowBaseline * scaleMultiplier;
         const shadowX = baseX + snap.offsetX + snap.shX + SHADOW_GLOBAL_OFFSET.x;
-        const shadowY = baseY + snap.offsetY + snap.shY + SHADOW_GLOBAL_OFFSET.y;
+        const shadowY = baseY + snap.offsetY + snap.shY + SHADOW_GLOBAL_OFFSET.y + dmaxYOffset;
         const finalShadowY = shadowY - shadowBaseline;
         mount.shadow.setPosition(shadowX, finalShadowY);
         mount.shadow.setSize(shadowW, shadowH);
@@ -304,6 +317,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           baseY,
           offsetX: snap.offsetX,
           offsetY: snap.offsetY,
+          dmaxYOffset,
           shX: snap.shX,
           shY: snap.shY,
           shadowBaseline,
@@ -322,9 +336,11 @@ export function createBattleShellSceneClass(Phaser, env) {
     _setMountDynamaxState(mount, options = {}) {
       if (!mount?.phaserSprite) return;
       const prevMultiplier = this._dynamaxScaleMultiplier(mount);
+      const prevBaseYOffset = this._dynamaxBaseYOffset(mount);
       mount.dynamaxed = options?.dynamaxed === true;
       mount.gigantamaxed = mount.dynamaxed && options?.gigantamaxed === true;
       const nextMultiplier = this._dynamaxScaleMultiplier(mount);
+      const nextBaseYOffset = this._dynamaxBaseYOffset(mount);
 
       if (mount.metricsSnapshot) {
         this._applyMountMetricsSnapshot(mount);
@@ -337,6 +353,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       const baseScaleX = Number(spr.scaleX || 1) / safePrev;
       const baseScaleY = Number(spr.scaleY || 1) / safePrev;
       spr.setScale(baseScaleX * nextMultiplier, baseScaleY * nextMultiplier);
+      spr.setY(Number(spr.y || 0) + (nextBaseYOffset - prevBaseYOffset));
     }
 
     setBattlerDynamaxState(side, options = {}) {
@@ -1063,6 +1080,9 @@ export function createBattleShellSceneClass(Phaser, env) {
       const safePrev = this._dynamaxScaleMultiplier(mount) || 1;
       const baseScaleX = Number(spr.scaleX || 1) / safePrev;
       const baseScaleY = Number(spr.scaleY || 1) / safePrev;
+      const prevBaseYOffset = this._dynamaxBaseYOffset(mount);
+      const nextBaseYOffset = this._dynamaxBaseYOffsetForState(true, options?.gigantamaxed === true);
+      const targetY = Number(spr.y || 0) + (nextBaseYOffset - prevBaseYOffset);
       const targetScaleX = baseScaleX * 2;
       const targetScaleY = baseScaleY * 2;
       const depth = Number.isFinite(spr.depth) ? spr.depth : 7;
@@ -1116,6 +1136,7 @@ export function createBattleShellSceneClass(Phaser, env) {
             targets: spr,
             scaleX: targetScaleX,
             scaleY: targetScaleY,
+            y: targetY,
             duration: 260,
             ease: 'Cubic.easeOut',
           }),
@@ -1159,6 +1180,9 @@ export function createBattleShellSceneClass(Phaser, env) {
       const safePrev = this._dynamaxScaleMultiplier(mount) || 2;
       const baseScaleX = Number(spr.scaleX || 1) / safePrev;
       const baseScaleY = Number(spr.scaleY || 1) / safePrev;
+      const prevBaseYOffset = this._dynamaxBaseYOffset(mount);
+      const nextBaseYOffset = this._dynamaxBaseYOffsetForState(false, false);
+      const targetY = Number(spr.y || 0) + (nextBaseYOffset - prevBaseYOffset);
       const startScaleX = baseScaleX * safePrev;
       const startScaleY = baseScaleY * safePrev;
       const depth = Number.isFinite(spr.depth) ? spr.depth : 7;
@@ -1196,6 +1220,7 @@ export function createBattleShellSceneClass(Phaser, env) {
             targets: spr,
             scaleX: baseScaleX,
             scaleY: baseScaleY,
+            y: targetY,
             duration: 240,
             ease: 'Cubic.easeInOut',
           }),
