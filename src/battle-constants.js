@@ -207,6 +207,11 @@ export const SPECIAL_MOVE_LINKED_FORM_OVERRIDES = Object.freeze({
     secretsword: 'Keldeo-Resolute',
   }),
 });
+// Moves that auto-replace when a Pokémon is in a specific mega (or other battle-only) form.
+// key = toId(formSpecies), value = { toId(originalMove): replacementMoveName }
+export const MEGA_FORM_MOVE_REPLACEMENTS = Object.freeze({
+  zygardemega: Object.freeze({ coreenforcer: 'Nihil Light' }),
+});
 export const FORM_ASSET_OVERRIDES = Object.freeze({
   'Eevee-Gmax': 'EEVEE_2',
   'Xerneas': 'XERNEAS_1',

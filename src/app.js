@@ -10,7 +10,7 @@ import {loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationD
 import {BattleTimelineExecutor} from './battle-presentation/timeline.js';
 import {resolveFormChangePresentation} from './battle-presentation/form-change-presentation.js';
 import {createBattleLocaleManager} from './battle-i18n/locale-manager.js';
-import {SHOWDOWN_TARGET_HINTS, statOrder, statLabels, statusNames, commonItems, VALIDATION_PROFILES, BUILDER_ALLOWED_NONSTANDARD, NONSTANDARD_REASON_LABELS, ASSET_BASE_SPECIES_ALIASES, BUILDER_BATTLE_ONLY_FORM_SUFFIXES, ENGINE_AUTHORITATIVE_SINGLES_FORMAT, OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES, targetHints, MOVE_FLAG_LABELS, VOLATILE_STATUS_LABELS, SIDE_CONDITION_LABELS, WEATHER_LABELS, TERRAIN_LABELS, SPECIAL_ITEM_LINKED_FORM_OVERRIDES, SPECIAL_MOVE_LINKED_FORM_OVERRIDES, FORM_ASSET_OVERRIDES, EXPLICIT_ONLY_FORM_FAMILIES, MAX_MOVE_NAMES, GENERIC_Z_MOVE_NAMES, DYNAMAX_BANNED_SPECIES, TERA_LOW_POWER_EXEMPT_MOVES, PROTECT_MOVE_IDS, SCREEN_MOVE_IDS, CHOICE_ITEM_IDS, STRUGGLE_MOVE} from './battle-constants.js';
+import {SHOWDOWN_TARGET_HINTS, statOrder, statLabels, statusNames, commonItems, VALIDATION_PROFILES, BUILDER_ALLOWED_NONSTANDARD, NONSTANDARD_REASON_LABELS, ASSET_BASE_SPECIES_ALIASES, BUILDER_BATTLE_ONLY_FORM_SUFFIXES, ENGINE_AUTHORITATIVE_SINGLES_FORMAT, OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES, targetHints, MOVE_FLAG_LABELS, VOLATILE_STATUS_LABELS, SIDE_CONDITION_LABELS, WEATHER_LABELS, TERRAIN_LABELS, SPECIAL_ITEM_LINKED_FORM_OVERRIDES, SPECIAL_MOVE_LINKED_FORM_OVERRIDES, FORM_ASSET_OVERRIDES, EXPLICIT_ONLY_FORM_FAMILIES, MAX_MOVE_NAMES, GENERIC_Z_MOVE_NAMES, DYNAMAX_BANNED_SPECIES, TERA_LOW_POWER_EXEMPT_MOVES, PROTECT_MOVE_IDS, SCREEN_MOVE_IDS, CHOICE_ITEM_IDS, STRUGGLE_MOVE, MEGA_FORM_MOVE_REPLACEMENTS} from './battle-constants.js';
 import {setDex, getDex, moveNameCache, CURRENT_OFFICIAL_ITEM_ID_SET, CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET, isAllowedNonstandard, isDexSupported, extractSecondaryAilment, extractSecondaryBoosts, formatTargetFromDex, isFutureMegaSpeciesData, applyFutureMegaSpeciesMetadataPatches, resolveProjectMegaAbilityName, applyProjectMegaAbilityRulesToDex, fetchJson, pathExists, loadManifest, detectAssetBases, loadDataProvider, loadMoveNames, getSpeciesData, getMoveData, getItemData} from './dex-data.js';
 
 const STORAGE_KEY = 'pkb-static-state-v3';
@@ -4778,6 +4778,23 @@ function isEngineDynamaxMoveMode(choice, mon, moveRequest) {
   if (mon?.dynamaxed) return true;
   return Boolean(Array.isArray(moveRequest?.maxMoves?.maxMoves) && !moveRequest?.canDynamax);
 }
+function getMegaFormMoveReplacement(mon, baseMoveName, choice = null) {
+  const baseMoveId = toId(baseMoveName);
+  const formId = toId(mon?.formSpecies || mon?.species || '');
+  const megaFormId = toId(mon?.megaSpecies || '');
+
+  // After actual mega evolution: forward lookup (original base move -> replacement)
+  if (MEGA_FORM_MOVE_REPLACEMENTS[formId]?.[baseMoveId]) {
+    return MEGA_FORM_MOVE_REPLACEMENTS[formId][baseMoveId];
+  }
+
+  // Before mega evolution, preview the replacement only when mega is currently armed.
+  if (choice?.mega && megaFormId && MEGA_FORM_MOVE_REPLACEMENTS[megaFormId]?.[baseMoveId]) {
+    return MEGA_FORM_MOVE_REPLACEMENTS[megaFormId][baseMoveId];
+  }
+
+  return null;
+}
 function getEngineDisplayMoveName(moveRequest, moveIndex, baseMoveName, choice = null, mon = null) {
   const zModeActive = Boolean(choice?.z && getAvailableEngineZMoveOptions(moveRequest).length);
   if (zModeActive && Array.isArray(moveRequest?.canZMove) && moveRequest.canZMove[moveIndex]?.move) {
@@ -4787,6 +4804,8 @@ function getEngineDisplayMoveName(moveRequest, moveIndex, baseMoveName, choice =
     const maxMove = getEngineMaxMoveEntry(moveRequest, moveIndex);
     if (maxMove?.move) return resolveEngineMoveName(maxMove.move);
   }
+  const megaReplacement = getMegaFormMoveReplacement(mon, baseMoveName, choice);
+  if (megaReplacement) return megaReplacement;
   return resolveEngineMoveName(baseMoveName);
 }
 function buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle = state.battle) {
@@ -5359,7 +5378,7 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
         ? (canZHere ? ' · Z 선택 / Z armed' : ' · Z 불가 / Z unavailable')
         : (canZHere ? ' · Z 가능 / Z ready' : '');
       btn.innerHTML = `<strong>${displayMoveName(displayMove)}</strong><small>불러오는 중… / Loading… · ${ppLabel}${zLabel}${disabled ? ' · 엔진 비활성 / Engine-disabled' : ''}</small>`;
-      Promise.resolve(getMoveData(moveName).catch(() => null)).then(moveData => {
+      Promise.resolve(getMoveData(displayMove || moveName).catch(() => null)).then(moveData => {
         if (!btn.isConnected) return;
         const previewChoice = zModeActive && canZHere
           ? {...choice, kind: 'move', move: moveName, moveIndex, z: true}
@@ -5849,10 +5868,10 @@ function buildLocalMoveUiData(moveName = '') {
 
 function buildPhaserMoveDetailModel(mon, moveInfo, slotInfo, moveRequest, choice, moveIndex) {
   const moveName = moveInfo?.move || slotInfo?.name || '';
-  const moveData = buildLocalMoveUiData(moveName);
+  const displayMove = getEngineDisplayMoveName(moveRequest, moveIndex, moveName, choice, mon);
+  const moveData = buildLocalMoveUiData(displayMove || moveName);
   const preview = buildMoveDetailFallback(mon, moveInfo, moveRequest, choice, moveData, moveIndex) || {};
   const zInfo = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[moveIndex] : null;
-  const displayMove = getEngineDisplayMoveName(moveRequest, moveIndex, moveName, choice, mon);
   const resolvedType = toId(preview?.type || moveData?.type || '') || 'unknown';
   const resolvedCategory = toId(preview?.category || moveData?.category || 'status') || 'status';
   const accuracyValue = preview?.accuracy ?? moveData?.accuracy;

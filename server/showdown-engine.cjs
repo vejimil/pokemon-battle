@@ -81,14 +81,54 @@ const RUNTIME_FUTURE_ABILITY_PATCHES = Object.freeze({
     num: 311,
   },
 });
+const RUNTIME_FUTURE_MOVE_PATCHES = Object.freeze({
+  nihillight: Object.freeze({
+    // ignoreImmunity keys are move types (not target types).
+    // Dragon: true allows this Dragon move to bypass Fairy immunity.
+    ignoreImmunity: Object.freeze({ Dragon: true }),
+  }),
+});
 
 let futureAbilityRuntimePatched = false;
 let crossGenDynamaxRuntimePatched = false;
+let megaMoveSlotRuntimePatched = false;
+
+// Map of mega species ID → { originalMoveId: replacementMoveId } for mid-battle slot swap.
+const MEGA_EVOLUTION_MOVE_SWAPS = Object.freeze({
+  zygardemega: Object.freeze({ coreenforcer: 'nihillight' }),
+});
 
 function applyFutureAbilityRuntimePatches(dex) {
   if (!dex?.data?.Abilities) return;
   for (const [abilityId, definition] of Object.entries(RUNTIME_FUTURE_ABILITY_PATCHES)) {
     dex.data.Abilities[abilityId] = {...definition};
+  }
+}
+function applyFutureMoveRuntimePatches(dex) {
+  if (!dex?.data?.Moves) return;
+  for (const [moveId, patch] of Object.entries(RUNTIME_FUTURE_MOVE_PATCHES)) {
+    const current = dex.data.Moves[moveId];
+    if (!current) continue;
+    const nextIgnoreImmunity = patch.ignoreImmunity === true
+      ? true
+      : {
+        ...(current.ignoreImmunity === true ? {} : (current.ignoreImmunity || {})),
+        ...(patch.ignoreImmunity || {}),
+      };
+    dex.data.Moves[moveId] = {
+      ...current,
+      ...patch,
+      ignoreImmunity: nextIgnoreImmunity,
+    };
+    const runtimeMove = dex.moves?.get?.(moveId);
+    if (runtimeMove?.exists) {
+      runtimeMove.ignoreImmunity = patch.ignoreImmunity === true
+        ? true
+        : {
+          ...(runtimeMove.ignoreImmunity === true ? {} : (runtimeMove.ignoreImmunity || {})),
+          ...(patch.ignoreImmunity || {}),
+        };
+    }
   }
 }
 
@@ -126,9 +166,53 @@ function patchSideCanDynamaxForCustomGen9() {
   crossGenDynamaxRuntimePatched = true;
 }
 
+function patchBattleActionsRunMegaEvoForMoveSwap() {
+  if (megaMoveSlotRuntimePatched) return;
+  const BattleActions = require('../node_modules/@pkmn/sim/build/cjs/sim/battle-actions.js').BattleActions;
+  const original = BattleActions.prototype.runMegaEvo;
+  BattleActions.prototype.runMegaEvo = function patchedRunMegaEvo(pokemon) {
+    const result = original.call(this, pokemon);
+    if (!result) return result;
+    // After mega evolution, swap moveslots for species with special move replacements.
+    const megaSpeciesId = String(pokemon.species?.id || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const swapMap = MEGA_EVOLUTION_MOVE_SWAPS[megaSpeciesId];
+    if (!swapMap) return result;
+    const dex = this.battle.dex;
+    const swapPairs = [];
+    for (const slotList of [pokemon.moveSlots, pokemon.baseMoveSlots]) {
+      for (const slot of slotList) {
+        const replacementId = swapMap[slot.id];
+        if (!replacementId) continue;
+        const newMove = dex.moves.get(replacementId);
+        if (!newMove.exists) continue;
+        swapPairs.push([slot.id, newMove.id]);
+        slot.id = newMove.id;
+        slot.move = newMove.name;
+        slot.target = newMove.target;
+        // pp is intentionally preserved from original slot
+      }
+    }
+    if (swapPairs.length) {
+      for (const action of this.battle.queue.list || []) {
+        if (action?.choice !== 'move' || action?.pokemon !== pokemon) continue;
+        const currentMoveId = toId(action.move?.id || action.move || action.moveid || '');
+        const pair = swapPairs.find(([fromId]) => fromId === currentMoveId);
+        if (!pair) continue;
+        const [, nextMoveId] = pair;
+        action.move = dex.getActiveMove(nextMoveId);
+        if (action.moveid) action.moveid = nextMoveId;
+      }
+    }
+    return result;
+  };
+  megaMoveSlotRuntimePatched = true;
+}
+
 function applyProjectFuturePatchesToDex(dex) {
   if (!dex) return;
+  patchBattleActionsRunMegaEvoForMoveSwap();
   applyFutureAbilityRuntimePatches(dex);
+  applyFutureMoveRuntimePatches(dex);
   applyFutureMegaSpeciesMetadataPatches(dex);
   applyProjectMegaAbilityRulesToDex(dex);
 }

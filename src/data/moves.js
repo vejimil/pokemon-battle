@@ -13003,7 +13003,7 @@ export const Moves = {
         flags: { protect: 1, mirror: 1, metronome: 1 },
         ignoreEvasion: true,
         ignoreDefensive: true,
-        ignoreImmunity: { 'Fairy': true },
+        ignoreImmunity: { 'Dragon': true },
         target: "allAdjacentFoes",
         type: "Dragon",
     },
