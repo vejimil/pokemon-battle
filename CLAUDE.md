@@ -53,9 +53,15 @@ assets/pokerogue/items/
 - `BA-25` 다이맥스
 - `BA-26` 폼체인지 표시명 정책
 - `BA-27` 타임라인 재생 중 입력 잠금
-- `BA-28` 한/영 명칭 분리 1차
+- `BA-28` 한/영 명칭 분리 1~2차
 - 아이템 스프라이트 보강 + 아이콘 manifest 인덱스 우선 매칭
 - 아이템 한글화 보정(`Loaded Dice`, ZA 메가스톤 fallback)
+- 폼 접미사 번역 누락 보정(`Droopy/Stretchy/Roaming/Artisan/Masterpiece/Terastal`)
+- 언어 완결도 감사 스크립트 추가(`audit:language`) 및 0 leak 확인
+- 미할당 렌더러블 스프라이트 폼 fallback 정책 반영(`unresolvedRenderableCount: 0`)
+- Pikachu cap/cosplay 폼 전용 번호 에셋 매핑 상향(`PIKACHU_2`, `PIKACHU_8`~`PIKACHU_15`)
+- 아이템 manifest 자동화/검증 스크립트 추가(`build:item-manifests`, `verify:item-manifests`)
+- 기본 검증 묶음 추가(`verify:core`)
 
 상세 완료 로그는 `CLAUDEMDPREVIOUS.md` 2026-04-19~20 섹션 참조.
 
@@ -63,18 +69,14 @@ assets/pokerogue/items/
 
 ## 4) 활성 우선순위
 
-1. `BA-28` 후속: 미할당 스프라이트 33건 처리 정책 확정
-- 입력: `reports/missing-sprite-audit.json`
-- 산출: 분류표 + override 우선순위
+1. 스프라이트 품질 보강 2차 (잔여)
+- fallback으로 해소한 폼 중 전용 번호 에셋 매핑 검증/상향
+- 우선: Totem/사이즈/진품 폼, Pikachu starter/female 표시 정책
 
-2. 아이템 아이콘 최적화 2차
-- manifest 자동 생성 스크립트
-- manifest-실파일 drift 검증 추가(CI 포함)
-
-3. 한/영 완결도 2차 점검
-- 한국어 모드: 완전 한글
-- 영어 모드: 완전 영어
-- 빌더/배틀/타임라인 전 구간 스모크 점검
+2. manifest/검증 파이프라인 문서화 및 CI 연계
+- 로컬 기본 루틴은 `verify:core`로 고정
+- CI 도입 시 `verify:core`를 기본 게이트로 연결
+- 에셋 추가 시 `build:item-manifests` 절차 문서화
 
 ---
 
@@ -93,6 +95,9 @@ assets/pokerogue/items/
 - `node --check src/app.js`
 - `node --check src/battle-presentation/timeline.js`
 - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+- `npm run audit:language`
+- `npm run verify:item-manifests`
+- `npm run verify:core`
 - `npm run verify:ba20`
 - `npm run verify:stage22`
 - `npm run verify:passb`

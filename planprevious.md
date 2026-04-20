@@ -101,6 +101,13 @@ Target: `/workspaces/pokemon-battle`
   - `src/i18n-ko-locales.js` 생성(locale 기반 species/moves/abilities 추출)
   - `return102`/`frustration102` 정규화
   - `ability_show` 메시지/바 로컬라이즈 연결
+- `BA-28` 한/영 완결도 2차 완료
+  - `FORM_SUFFIX_TRANSLATIONS` 누락 6종 보강:
+    - `Droopy`, `Stretchy`, `Roaming`, `Artisan`, `Masterpiece`, `Terastal`
+  - 언어 감사 스크립트 추가:
+    - `scripts/audit-language-completeness.mjs`
+    - 결과 리포트 `reports/language-completeness-audit.json`
+    - 누출 결과 `species/moves/abilities/items = 0`
 - 스프라이트/아이템 감사
   - `scripts/audit-missing-sprites.mjs`, `reports/missing-sprite-audit.json`
   - `scripts/audit-item-sprites.mjs`, `reports/item-sprite-audit.json`
@@ -111,6 +118,25 @@ Target: `/workspaces/pokemon-battle`
 - 아이템 한글화 마감 보정
   - `Loaded Dice` → `속임수 주사위`
   - ZA 신규 메가스톤 영문 누출 시 `<종족명>나이트` fallback 표시(예: `Emboarite`)
+- 스프라이트 미할당 폼 정책 반영
+  - `FORM_ASSET_OVERRIDES`에 Totem/사이즈/진품/캡폼 fallback 명시
+  - 감사 결과 `unresolvedRenderableCount: 33 -> 0`
+- 스프라이트 품질 보강 2차(부분)
+  - Pikachu cap/cosplay 전용 번호 에셋 매핑:
+    - `Pikachu-Cosplay -> PIKACHU_2`
+    - `Pikachu-Original/Hoenn/Sinnoh/Unova/Kalos/Alola/Partner/World -> PIKACHU_8~15`
+- 아이템 manifest 자동화/검증 스크립트 추가
+  - `scripts/build-item-manifests.mjs`
+  - `scripts/verify-item-manifests.mjs`
+  - `package.json` 스크립트(`build:item-manifests`, `verify:item-manifests`) 등록
+- 검증 루틴 묶음 추가
+  - `package.json`: `audit:language`, `verify:core`
+  - `verify:core`:
+    - `verify:item-manifests`
+    - `audit:language`
+    - `verify:ba20`
+    - `verify:stage22`
+    - `verify:passb`
 
 ---
 
@@ -121,6 +147,11 @@ Target: `/workspaces/pokemon-battle`
 - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` PASS
 - `node --check src/i18n-ko-locales.js` PASS
 - `node --check src/pokerogue-assets.js` PASS
+- `node --check src/battle-constants.js` PASS
+- `node --check scripts/audit-language-completeness.mjs` PASS
+- `npm run audit:language` PASS
+- `npm run verify:item-manifests` PASS
+- `npm run verify:core` PASS
 - `npm run verify:ba20` PASS
 - `npm run verify:stage22` PASS
 - `npm run verify:passb` PASS

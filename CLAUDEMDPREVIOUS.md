@@ -8,6 +8,28 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
+### ✅ 2026-04-20 후속 정리 완료
+- `BA-28` 언어 완결도 2차
+  - `src/app.js` `FORM_SUFFIX_TRANSLATIONS` 보강:
+    - `Droopy`, `Stretchy`, `Roaming`, `Artisan`, `Masterpiece`, `Terastal`
+  - `scripts/audit-language-completeness.mjs` 추가
+  - `reports/language-completeness-audit.json` 생성
+  - 감사 결과: `species/moves/abilities/items` 한글 누출 0
+- 스프라이트 품질 보강 2차(부분)
+  - `src/battle-constants.js` Pikachu cap/cosplay 매핑 상향:
+    - `Pikachu-Cosplay -> PIKACHU_2`
+    - `Pikachu-Original/Hoenn/Sinnoh/Unova/Kalos/Alola/Partner/World -> PIKACHU_8~15`
+  - 스프라이트 감사 재확인:
+    - `reports/missing-sprite-audit.json` `unresolvedRenderableCount: 0` 유지
+- 검증 파이프라인 정리
+  - `package.json`:
+    - `audit:language`
+    - `verify:core` (`verify:item-manifests` + `audit:language` + `verify:ba20/stage22/passb`)
+  - 실행 결과:
+    - `npm run verify:core` PASS
+
+---
+
 ### ✅ BA-1. 배틀 메시지 순차 표시 — 완료 (2026-04-13)
 ### ✅ BA-2. 울음소리(Cry) 연결 — 완료 (2026-04-13)
 ### ✅ BA-3. 어빌리티 바 + 날씨/지형 연출 — 완료 (2026-04-13)
@@ -563,6 +585,13 @@ Target: `/workspaces/pokemon-battle`
 - 마감 보정:
   - `Loaded Dice` → `속임수 주사위`
   - ZA 신규 메가스톤 영문 누출 시 `<종족명>나이트` fallback(예: `Emboarite`)
+- 후속 정책 반영:
+  - `FORM_ASSET_OVERRIDES` fallback 확장(Totem/사이즈/진품/캡폼)
+  - `reports/missing-sprite-audit.json` 기준 `unresolvedRenderableCount`를 `0`으로 해소
+  - 아이템 manifest 자동화/검증 스크립트 추가
+    - `scripts/build-item-manifests.mjs`
+    - `scripts/verify-item-manifests.mjs`
+    - `npm run build:item-manifests`, `npm run verify:item-manifests`
 
 ### ✅ 검증
 - `node --check src/app.js`
@@ -570,6 +599,7 @@ Target: `/workspaces/pokemon-battle`
 - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
 - `node --check src/i18n-ko-locales.js`
 - `node --check src/pokerogue-assets.js`
+- `npm run verify:item-manifests`
 - `npm run verify:ba20`
 - `npm run verify:stage22`
 - `npm run verify:passb`

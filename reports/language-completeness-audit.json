@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-04-20T06:27:17.658Z",
+  "dexVersion": "smogon-pokemon-showdown-master-2026-03-29",
+  "summary": {
+    "species": {
+      "count": 0,
+      "sample": []
+    },
+    "moves": {
+      "count": 0,
+      "sample": []
+    },
+    "abilities": {
+      "count": 0,
+      "sample": []
+    },
+    "items": {
+      "count": 0,
+      "sample": []
+    },
+    "labelIssues": {
+      "count": 0,
+      "sample": []
+    }
+  }
+}

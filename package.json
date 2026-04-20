@@ -5,11 +5,15 @@
   "description": "PKB engine-first runtime with finalized legacy cleanup audit residue",
   "scripts": {
     "start": "node ./server/server.cjs",
+    "audit:language": "node ./scripts/audit-language-completeness.mjs",
     "audit:items": "node ./scripts/audit-item-support.mjs",
+    "build:item-manifests": "node ./scripts/build-item-manifests.mjs",
     "audit:item-truth": "node ./scripts/audit-battle-form-and-item-truth.mjs",
     "verify:passb": "node ./scripts/verify-passb-form-truth.mjs",
     "verify:ba20": "node ./scripts/verify-ba20-form-change-branches.mjs",
     "verify:stage22": "node ./scripts/verify-stage22-battle-regressions.cjs",
+    "verify:item-manifests": "node ./scripts/verify-item-manifests.mjs",
+    "verify:core": "npm run verify:item-manifests && npm run audit:language && npm run verify:ba20 && npm run verify:stage22 && npm run verify:passb",
     "verify:metrics-parity": "node ./scripts/verify-metrics-parity.mjs",
     "audit:metrics-drift": "node ./scripts/audit-metrics-drift.mjs"
   },
