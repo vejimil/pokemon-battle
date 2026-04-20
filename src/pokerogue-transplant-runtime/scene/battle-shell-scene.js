@@ -1603,17 +1603,25 @@ export function createBattleShellSceneClass(Phaser, env) {
       const uSpr = userMount?.phaserSprite;
       const tSpr = targetMount?.phaserSprite;
       if (!uSpr || !tSpr) return null;
+      // Animation focus uses `displayHeight / 2` for vertical centering (matches
+      // PokeRogue `battle-anims.ts`). Dynamax doubles displayHeight, pushing the
+      // focus far above the battler and making moves "float up". Divide out the
+      // dynamax multiplier so anim focus tracks the base-size center.
+      const uDynaMult = this._dynamaxScaleMultiplier(userMount) || 1;
+      const tDynaMult = this._dynamaxScaleMultiplier(targetMount) || 1;
+      const uDH = (uSpr.displayHeight || 64) / uDynaMult;
+      const tDH = (tSpr.displayHeight || 64) / tDynaMult;
       return {
         userInfo: {
           x: uSpr.x,
           y: uSpr.y,
-          displayHeight: uSpr.displayHeight || 64,
+          displayHeight: uDH,
           sprite: uSpr,
         },
         targetInfo: {
           x: tSpr.x,
           y: tSpr.y,
-          displayHeight: tSpr.displayHeight || 64,
+          displayHeight: tDH,
           sprite: tSpr,
         },
       };

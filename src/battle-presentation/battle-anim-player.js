@@ -380,6 +380,12 @@ export class BattleAnimPlayer {
 
         const srcSprite = isUser ? uSrc : tSrc;
         if (!srcSprite || !srcSprite.active) continue;
+        // If the source battler was already hidden before the animation started
+        // (fainted this turn, pre-switch-in, form-change teardown), suppress its
+        // USER/TARGET copy. Without this guard, weather/field anims at turn end
+        // resurrect the fainted sprite through the overlay path.
+        if (isUser && !prevUserVisible) continue;
+        if (isTarget && !prevTargetVisible) continue;
 
         const pool = isUser ? userPool : targetPool;
         const spriteIndex = isUser ? u++ : t++;

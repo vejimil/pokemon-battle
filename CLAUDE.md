@@ -63,8 +63,11 @@ assets/pokerogue/items/
 - 아이템 manifest 자동화/검증 스크립트 추가(`build:item-manifests`, `verify:item-manifests`)
 - 기본 검증 묶음 추가(`verify:core`)
 - 에셋 잔여 정리 작업은 임시 보류(기능 안정화/HUD/통신 확장 우선)
-- PBS metrics 3번째 컬럼 scale 오해석 제거(Mega Chandelure/Terapagos 최종폼 등 2배 확대 버그 해소)
-- 스프라이트 재노출 방어: `mount.fainted` 추적 + `renderBattlerSprite`/그림자 재노출 가드, 스위치인/sprite 교체 시 해제
+- PBS metrics 3번째 컬럼(animation speed) scale 오해석 제거(Mega Chandelure/Terapagos 등 2배 확대 해소)
+- 스프라이트 재노출 방어: `mount.fainted` 추적 + `renderBattlerSprite`/그림자 재노출 가드
+- 다이맥스 기술 focus 부상 해소: `_resolveAnimEndpoints`가 다이맥스 multiplier로 displayHeight를 정규화
+- 날씨 연출 중 기절 copy 재노출 차단: `BattleAnimPlayer`가 `prevUserVisible/prevTargetVisible`로 원본 숨김 상태일 때 USER/TARGET copy 스킵
+- metrics 파이프라인 주석화(로딩 파일 5종·사용처 2곳 기록)
 
 상세 완료 로그는 `CLAUDEMDPREVIOUS.md` 2026-04-19~20 섹션 참조.
 
@@ -72,10 +75,11 @@ assets/pokerogue/items/
 
 ## 4) 활성 우선순위
 
-1. 배틀 연출 안정화 (1차 패치 완료)
-- Mega Chandelure/Terapagos 크기: PBS 3rd 컬럼을 scale로 오해석 → 제거. 작은 포켓몬(Pichu/Tatsugiri)이 동일 값 "2"를 공유하는 점으로 scale 의미 불가 확정
-- 대형 포켓몬 기술 시작 좌표: 원본 PokeRogue와 동일하게 `displayHeight/2` 기준 중앙 정렬 → 다이맥스/진짜 큰 종의 경우 원본 의도된 동작, scale 오해석 해소로 Mega Chandelure/Terapagos도 정합됨 (추가 케이스 발생 시 재진단)
-- faint 이후 재노출: `mount.fainted` 플래그 도입, `renderBattlerSprite`/그림자 재노출 가드, `switchInBattler`/`prepareSwitchInBattler`/`setBattlerSprite`에서 해제
+1. 배틀 연출 안정화 (2차 패치 완료)
+- Mega Chandelure/Terapagos 크기: PBS 3번째 컬럼(animation speed) scale 오해석 제거 (프로젝트 방침상 미사용)
+- 다이맥스 기술 focus 부상: `_resolveAnimEndpoints`에서 focus 계산용 displayHeight를 dynamax multiplier로 정규화 (시각 스케일은 유지)
+- faint 이후 재노출: `mount.fainted` 플래그 + BattleAnimPlayer copy 스프라이트에 `prevVisible` 가드 → 날씨/필드 anim에서 copy 경유 재노출 차단
+- 소형 back 스프라이트(Pikachu 등) 상단 치우침: 프레임 높이 편차/PBS Y 보정값 간 calibration 이슈로 추정, 디버그 가시화 단계로 보류
 
 2. HUD 확정
 - 정보창 이름 비트맵 폰트 적용(깨짐 방지)

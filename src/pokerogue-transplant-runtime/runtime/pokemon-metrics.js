@@ -22,6 +22,17 @@ export const DBK_DEFAULTS = Object.freeze({
   showPlayerSideShadows: false,
 });
 
+// Usage map (for reference when extending):
+//   battle-shell-scene.js renderBattlerSprite() — per-species offset/shadow in battle.
+//   app.js renderPokemonSpritePreview()         — team builder preview frames.
+// Files loaded (later overrides earlier):
+//   pokemon_metrics.txt           — gens 1-8 base species
+//   pokemon_metrics_forms.txt     — non-gen-9 form variants (mega, regional, etc.)
+//   pokemon_metrics_female.txt    — gender splits
+//   pokemon_metrics_Gen_9_Pack.txt — gen 9 species + forms (Terapagos, etc.)
+//   pokemon_metrics_gmax.txt      — Gigantamax forms (used by dynamax presentation)
+// Lookup falls back from (SPECIES_FORM_GENDER) → (SPECIES_FORM) → (SPECIES).
+
 const METRICS_FILES = [
   './assets/Pokemon/PBS/pokemon_metrics.txt',
   './assets/Pokemon/PBS/pokemon_metrics_forms.txt',

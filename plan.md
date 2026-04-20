@@ -43,16 +43,26 @@ Target: `/workspaces/pokemon-battle`
 
 ## 1) 다음 할 일 (우선순위)
 
-1. 배틀 연출 안정화 (1차 완료 · 회귀 관찰 단계)
+1. 배틀 연출 안정화 (2차 패치 완료 · 회귀 관찰 단계)
 - [완료] Mega Chandelure / Terapagos 최종폼 크기
-  - 원인: `pokemon-metrics.js` 파서가 PBS 3번째 컬럼을 scale로 오해석 (Pichu·Tatsugiri 등 소형 폼도 “2”를 공유해 scale 불가 확정)
-  - 조치: `pokemon_metrics.js`에서 3번째 컬럼 scale 저장 제거 + 정책 주석 추가
-- [완료] 대형 포켓몬 기술 시작 좌표 상단 치우침
-  - 원인 진단: `_computeFrameData`는 원본 PokeRogue(`battle-anims.ts`)와 동일하게 `displayHeight/2` 기반 중앙 정렬. 다이맥스/진짜 큰 종은 원본 의도된 거동
-  - 실제 체감 이슈는 1번 scale 버그로 인한 2배 확대가 주요 원인이었으며, 해당 수정으로 Mega Chandelure·Terapagos 정합. 다이맥스 등 잔여 케이스는 회귀 관찰
-- [완료] faint 이후/날씨 중 스프라이트 재노출 방어
-  - 조치: `mount.fainted` 추적 도입, `renderBattlerSprite`/`shadow` setVisible 경로에 가드, `faintBattler`에서 set, `switchInBattler`·`prepareSwitchInBattler`·`setBattlerSprite`에서 해제
-- 회귀 관찰: 실제 배틀에서 대형 폼 기술 시작점, 폼체인지/다이맥스 해제 후 재노출 여부를 사용자 플레이로 재검증
+  - 원인: PBS 3번째 컬럼(실제로는 AnimationSpeed 관련)이 scale로 오해석
+  - 조치: `pokemon-metrics.js`에서 3번째 컬럼 무시 (사용자 확인: 애니메이션 스피드는 프로젝트에서 미사용 방침)
+- [완료] 다이맥스 기술 연출 시작 좌표 “위로 붕 뜸”
+  - 원인: 다이맥스 2x scale로 `sprite.displayHeight`가 2배가 되어 `displayHeight/2` 중앙 정렬이 실제 기본 중앙보다 위로 이동
+  - 조치: `_resolveAnimEndpoints`에서 `displayHeight /= dynamaxMultiplier`로 애니 focus용 기준 높이를 base 크기로 정규화 (시각 스프라이트는 그대로 2x 유지)
+- [완료] faint 후 날씨 연출 중 스프라이트 copy 재노출
+  - 원인: `BattleAnimPlayer`가 USER/TARGET 프레임 기반으로 배틀러 copy sprite를 생성·노출하는데, 원본이 `setVisible(false)`여도 copy는 생성되어 표시되는 경로가 존재
+  - 조치: copy 생성 직전에 `prevUserVisible`/`prevTargetVisible` 체크 추가 — 원본이 애니 시작 시점에 숨겨져 있었다면 copy를 건너뜀
+  - 이전 패치(`mount.fainted` 가드)와 상호 보완
+- [분석] 소형 back 스프라이트(Pikachu 등) 상단 치우침
+  - 프레임 높이 편차: Pikachu back=47px, Charizard back=98px, PBS BackSprite.Y 오프셋이 그 편차를 보정하도록 설계됨
+  - Pikachu: baseY(118)+5=123 (feet 추정), Charizard: baseY(118)+41=159 (frame bottom; 실제 발 위치는 프레임 내 빈 영역만큼 위)
+  - 가설: 프레임 내부 padding이 종마다 달라 PBS Y가 보정해야 하는데, baseY=118 기준에서 시각적 ground line과 어긋날 가능성
+  - 다음 단계: 디버그 플래그로 스프라이트 하단 y / ground line 시각화 후 보정값 확정 (보류)
+- [완료] metrics 사용 현황 정리
+  - 로딩: `loadPokemonMetrics` → 5개 파일(기본/forms/female/Gen_9/gmax) 병합, 후행 override
+  - 사용처: `battle-shell-scene.renderBattlerSprite`(실전), `app.js renderPokemonSpritePreview`(빌더 미리보기)
+  - Gmax metrics는 이미 로드 중이므로 거다이맥스 전용 오프셋은 파일 추가/보정만으로 반영 가능
 
 2. HUD 확정
 - 포켓몬 정보창 이름 렌더링 안정화
