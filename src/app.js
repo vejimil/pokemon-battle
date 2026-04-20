@@ -1627,40 +1627,35 @@ async function initializeShowdownLocalStatus() {
 }
 function buildShowdownStatusNote() {
   const status = state.showdownLocal || {};
-  if (status.available) {
-    return `로컬 Showdown 엔진 / Local Showdown engine: 연결됨 / connected (${status.engine || 'local Node service'})<br>${lang('싱글 배틀은 이 번들된 로컬 Node 엔진이 있을 때만 시작할 수 있습니다.', 'Singles battles only start when this bundled local Node engine is available.')}`;
-  }
-  if (status.bundledNodeServer) {
-    return `로컬 Showdown 엔진 / Local Showdown engine: 현재 사용할 수 없음 / currently unavailable<br>${lang('이 페이지는 번들된 Node 서버에서 열렸지만 엔진 API 확인에 실패했습니다. 정확한 싱글 배틀은 차단되며, 팀 빌더만 계속 사용할 수 있습니다.', 'This page is running through the bundled Node server, but the engine API check failed. Accurate singles battles are blocked, while the team builder remains available.')}${status.error ? `<br>Probe error: ${status.error}` : ''}`;
-  }
-  return `로컬 Showdown 엔진 / Local Showdown engine: 정적 미리보기에서는 자동 확인하지 않음 / not auto-probed in static preview<br>${lang('현재 페이지는 번들된 Node 서버가 아닌 정적 미리보기/파일 경로에서 열려 있으므로 `npm start`로 로컬 서버를 띄우기 전까지 싱글 배틀을 시작하지 않습니다. 팀 빌더와 선택 UI는 계속 사용할 수 있습니다.', 'This page is being opened from a static preview or file path instead of the bundled Node server, so singles battles will not start until you run `npm start` and open the local server build. The team builder and selection UI stay available.')}`;
+  if (status.available) return lang('준비됨', 'Ready');
+  return lang('준비 중', 'Preparing');
 }
 
 function getEngineAuthoritativeSinglesRuntimeDescriptor() {
   return {
     id: 'engine-authoritative-singles',
-    title: lang('엔진 필수 싱글', 'Engine-required singles'),
-    badge: lang('엔진 싱글', 'Engine singles'),
+    title: lang('싱글', 'Singles'),
+    badge: lang('사용 가능', 'Available'),
     badgeTone: 'ready',
-    heroLabel: lang('로컬 Showdown 싱글 엔진 필수', 'Local Showdown singles required'),
-    detail: `${buildShowdownStatusNote()}<br>${lang('싱글 배틀 판정의 실제 기준은 브라우저 커스텀 로직이 아니라 번들된 로컬 Node 엔진입니다.', 'Singles battle resolution is driven by the bundled local Node engine rather than browser custom logic.')}<br>${lang('다이맥스 토글은 엔진 요청에 canDynamax가 제공되는 포맷에서만 노출됩니다.', 'The Dynamax toggle appears only in formats where engine requests provide canDynamax.')}`,
+    heroLabel: lang('싱글', 'Singles'),
+    detail: '',
     startAllowed: true,
     startBlockedReason: '',
-    startMessage: lang('로컬 Showdown 엔진 필수 싱글 배틀을 시작합니다.', 'Starting an engine-required singles battle through the local Showdown engine.'),
+    startMessage: lang('배틀 시작!', 'Battle started!'),
   };
 }
 
 function getBlockedSinglesRuntimeDescriptor(extraReason = '') {
-  const reasonLine = extraReason ? `<br>${extraReason}` : '';
+  const waitMessage = lang('아직 준비 중입니다.', 'Still preparing.');
   return {
     id: 'blocked-singles-awaiting-engine',
-    title: lang('싱글 대기 중', 'Singles waiting for engine'),
-    badge: lang('엔진 필요', 'Engine required'),
+    title: lang('싱글', 'Singles'),
+    badge: lang('준비 중', 'Preparing'),
     badgeTone: 'warning',
-    heroLabel: lang('로컬 엔진이 필요한 싱글', 'Singles require the local engine'),
-    detail: `${buildShowdownStatusNote()}<br>${lang('지원되는 싱글 배틀은 번들된 로컬 엔진이 준비된 경우에만 열립니다.', 'Supported singles battles only open when the bundled local engine is available.')}<br>${lang('다이맥스 토글은 엔진 요청에 canDynamax가 제공되는 포맷에서만 노출됩니다.', 'The Dynamax toggle appears only in formats where engine requests provide canDynamax.')}${reasonLine}`,
+    heroLabel: lang('싱글', 'Singles'),
+    detail: extraReason ? `${waitMessage}<br>${lang('잠시 후 다시 시도해주세요.', 'Please try again shortly.')}` : waitMessage,
     startAllowed: false,
-    startBlockedReason: lang('싱글 배틀은 번들된 로컬 Showdown 엔진이 준비된 경우에만 시작할 수 있습니다.', 'Singles battles can start only when the bundled local Showdown engine is available.'),
+    startBlockedReason: lang('현재는 싱글 배틀을 시작할 수 없습니다.', 'Singles battle is unavailable right now.'),
     startMessage: '',
   };
 }
@@ -1668,13 +1663,13 @@ function getBlockedSinglesRuntimeDescriptor(extraReason = '') {
 function getBlockedDoublesRuntimeDescriptor() {
   return {
     id: 'blocked-doubles-awaiting-engine',
-    title: lang('더블 마이그레이션 대기 중', 'Doubles migration pending'),
-    badge: lang('더블 보류', 'Doubles blocked'),
+    title: lang('더블', 'Doubles'),
+    badge: lang('준비 중', 'Preparing'),
     badgeTone: 'warning',
-    heroLabel: lang('엔진 마이그레이션 전 더블', 'Doubles awaiting engine migration'),
-    detail: `${lang('더블은 아직 로컬 엔진으로 마이그레이션되지 않았습니다.', 'Doubles have not been migrated to the local engine yet.')}<br>${lang('팀 빌더와 선택 UI는 계속 사용할 수 있지만, 실제 더블 배틀 시작은 엔진 경로가 준비될 때까지 차단됩니다.', 'The team builder and selection UI remain available, but actual doubles battle start stays blocked until an engine-backed path is ready.')}<br>${lang('지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드로 노출하지 않습니다.', 'Unsupported browser battle execution paths are not exposed as user-facing normal modes.')}<br>${lang('다이맥스 토글은 엔진 요청에 canDynamax가 제공되는 포맷에서만 노출됩니다.', 'The Dynamax toggle appears only in formats where engine requests provide canDynamax.')}`,
+    heroLabel: lang('더블', 'Doubles'),
+    detail: lang('아직 준비 중입니다.', 'Still preparing.'),
     startAllowed: false,
-    startBlockedReason: lang('더블 배틀은 아직 엔진 기반 경로가 없으므로 현재 빌드에서는 시작할 수 없습니다.', 'Doubles battles cannot start in the current build because there is no engine-backed path yet.'),
+    startBlockedReason: lang('현재는 더블 배틀을 시작할 수 없습니다.', 'Doubles battle is unavailable right now.'),
     startMessage: '',
   };
 }
@@ -1769,15 +1764,15 @@ function getDynamaxUnavailableReason(moveRequest = null) {
 
 const UI_STRINGS = Object.freeze({
   ko: {
-    title: 'PKB — 포켓몬 로컬 배틀 빌더',
-    hero_eyebrow: '로컬 2인 배틀 프로토타입',
+    title: 'PKB — 포켓몬 배틀 빌더',
+    hero_eyebrow: '2인 배틀',
     lang_label: '언어',
     meta_mode: '배틀 모드',
     meta_engine: '엔진',
-    meta_engine_value: '로컬 Showdown 엔진 필수 싱글',
+    meta_engine_value: '싱글',
     runtime_title: '런타임',
     reset_storage_btn: '저장 데이터 초기화',
-    runtime_loading: '시뮬레이터 런타임, Dex 데이터, 업로드된 에셋을 불러오는 중…',
+    runtime_loading: '로딩중...',
     setup_title: '설정',
     mode_singles: '싱글',
     mode_doubles: '더블',
@@ -1803,7 +1798,7 @@ const UI_STRINGS = Object.freeze({
     level_label: '레벨',
     tera_type_label: '테라 타입',
     shiny_label: '색이 다른 포켓몬',
-    species_status_default: '포켓몬을 선택하면 배틀 데이터를 불러옵니다.',
+    species_status_default: '포켓몬을 선택하세요.',
     ability_note_default: '포켓몬을 선택하면 특성 목록이 표시됩니다.',
     item_note_default: '지닌 도구가 없습니다.',
     moves_title: '기술',
@@ -1836,15 +1831,15 @@ const UI_STRINGS = Object.freeze({
     picker_search_placeholder: '검색',
   },
   en: {
-    title: 'PKB — Local Pokémon Battle Builder',
-    hero_eyebrow: 'Local 2-player battle prototype',
+    title: 'PKB — Pokémon Battle Builder',
+    hero_eyebrow: '2-player battle',
     lang_label: 'Language',
     meta_mode: 'Battle mode',
     meta_engine: 'Engine',
-    meta_engine_value: 'Local Showdown engine required for singles',
+    meta_engine_value: 'Singles',
     runtime_title: 'Runtime',
     reset_storage_btn: 'Reset saved data',
-    runtime_loading: 'Loading simulator runtime, Dex data, and uploaded assets…',
+    runtime_loading: 'Loading...',
     setup_title: 'Setup',
     mode_singles: 'Singles',
     mode_doubles: 'Doubles',
@@ -1870,7 +1865,7 @@ const UI_STRINGS = Object.freeze({
     level_label: 'Level',
     tera_type_label: 'Tera type',
     shiny_label: 'Shiny',
-    species_status_default: 'Choose a species to load battle data.',
+    species_status_default: 'Choose a species.',
     ability_note_default: 'Select a species to load its ability list.',
     item_note_default: 'No held item selected.',
     moves_title: 'Moves',
@@ -2994,7 +2989,7 @@ function getStatusIcon(status) {
 function showRuntime(message, type = 'loading', notes = '') {
   els.runtimeStatus.textContent = localizeText(message);
   els.runtimeStatus.className = `runtime-status ${type}`;
-  els.runtimeNotes.innerHTML = String(notes || '').split('<br>').map(part => localizeText(part)).join('<br>');
+  if (els.runtimeNotes) els.runtimeNotes.textContent = '';
 }
 function saveState() {
   const snapshot = {
@@ -3566,25 +3561,29 @@ function typeIconPath(typeName, small = false) {
   return `./assets/types/${small ? 'small/' : ''}${idx}.png`;
 }
 function createTypePill(type) {
+  const wrap = document.createElement('span');
+  wrap.className = 'type-pill';
+  const label = displayType(type);
   const url = typeIconPath(type, true);
-  if (!url) {
-    const span = document.createElement('span');
-    span.className = 'type-chip-text';
-    span.textContent = titleCase(type);
-    return span;
+  if (url) {
+    const img = document.createElement('img');
+    img.src = url;
+    img.alt = label;
+    img.loading = 'lazy';
+    img.className = 'type-pill-icon';
+    img.onerror = () => {
+      img.remove();
+      wrap.classList.add('no-icon');
+    };
+    wrap.appendChild(img);
+  } else {
+    wrap.classList.add('no-icon');
   }
-  const img = document.createElement('img');
-  img.src = url;
-  img.alt = type;
-  img.loading = 'lazy';
-  img.className = 'type-chip';
-  img.onerror = () => {
-    const span = document.createElement('span');
-    span.className = 'type-chip-text';
-    span.textContent = titleCase(type);
-    img.replaceWith(span);
-  };
-  return img;
+  const text = document.createElement('span');
+  text.className = 'type-pill-text';
+  text.textContent = label;
+  wrap.appendChild(text);
+  return wrap;
 }
 async function ensureImageInfo(url) {
   if (imageInfoCache.has(url)) return imageInfoCache.get(url);
@@ -3814,11 +3813,26 @@ function renderEditorBaseStats(mon) {
     return;
   }
   const total = statOrder.reduce((sum, stat) => sum + Number(stats[stat] || 0), 0);
-  const totalLabel = lang('합계', 'Total');
-  const cells = statOrder
-    .map(stat => `<span class="base-stat-chip"><span class="base-stat-label">${statLabels[stat]}</span><span class="base-stat-value">${stats[stat] ?? '—'}</span></span>`)
+  const maxBaseStat = 255;
+  const rows = statOrder
+    .map(stat => {
+      const value = Number(stats[stat] || 0);
+      const fill = clamp((value / maxBaseStat) * 100, 0, 100);
+      return `
+        <div class="base-stat-row">
+          <span class="base-stat-label">${statLabels[stat]}</span>
+          <div class="base-stat-bar"><span class="base-stat-fill" style="width:${fill}%"></span></div>
+          <span class="base-stat-value">${value}</span>
+        </div>
+      `;
+    })
     .join('');
-  els.editorBaseStats.innerHTML = `${cells}<span class="base-stat-chip base-stat-total"><span class="base-stat-label">${totalLabel}</span><span class="base-stat-value">${total}</span></span>`;
+  const summary = `
+    <div class="base-stat-summary">
+      <span class="base-stat-summary-total">${lang('합계', 'Total')}: ${total}</span>
+    </div>
+  `;
+  els.editorBaseStats.innerHTML = `${rows}${summary}`;
   els.editorBaseStats.hidden = false;
 }
 function renderEditorFlags(mon) {
@@ -3836,6 +3850,12 @@ function createStatInputs(gridEl, prefix, values, onChange) {
   gridEl.innerHTML = '';
   const maxVal = prefix === 'ev' ? 252 : 31;
   const defaultVal = prefix === 'ev' ? 0 : 31;
+  const applyStatValue = (input, stat, raw, options = {}) => {
+    if (!Number.isFinite(raw)) return;
+    const next = onChange(stat, raw);
+    if (!Number.isFinite(next)) return;
+    if (options.forceWrite || Number(next) !== Number(raw)) input.value = String(next);
+  };
   for (const stat of statOrder) {
     const wrap = document.createElement('label');
     wrap.className = `stat-input stat-input-${prefix}`;
@@ -3848,13 +3868,14 @@ function createStatInputs(gridEl, prefix, values, onChange) {
     input.max = maxVal;
     input.value = values[stat];
     input.addEventListener('input', () => {
+      if (input.value === '') return;
       const raw = Number(input.value);
-      if (!Number.isFinite(raw)) return;
-      onChange(stat, raw);
+      applyStatValue(input, stat, raw);
     });
     input.addEventListener('blur', () => {
-      const clamped = clamp(Number(input.value) || 0, 0, maxVal);
-      if (String(clamped) !== input.value) input.value = clamped;
+      const parsed = input.value === '' ? defaultVal : Number(input.value);
+      const raw = Number.isFinite(parsed) ? parsed : defaultVal;
+      applyStatValue(input, stat, raw, {forceWrite: true});
     });
     row.appendChild(input);
     if (prefix === 'ev') {
@@ -3865,8 +3886,7 @@ function createStatInputs(gridEl, prefix, values, onChange) {
       toggleBtn.title = lang('클릭: 252 즉시 입력 / 다시 클릭: 0', 'Click: set 252 / click again: reset to 0');
       toggleBtn.addEventListener('click', () => {
         const next = Number(values[stat]) === 252 ? 0 : 252;
-        input.value = next;
-        onChange(stat, next);
+        applyStatValue(input, stat, next, {forceWrite: true});
       });
       row.appendChild(toggleBtn);
     } else {
@@ -3877,8 +3897,7 @@ function createStatInputs(gridEl, prefix, values, onChange) {
       toggleBtn.title = lang('클릭: 31 즉시 입력 / 다시 클릭: 0', 'Click: set 31 / click again: reset to 0');
       toggleBtn.addEventListener('click', () => {
         const next = Number(values[stat]) === 31 ? 0 : 31;
-        input.value = next;
-        onChange(stat, next);
+        applyStatValue(input, stat, next, {forceWrite: true});
       });
       row.appendChild(toggleBtn);
     }
@@ -3941,29 +3960,18 @@ function renderRoster() {
     : lang('더블 · 4마리', 'Doubles · 4 Pokémon');
 }
 function implementedAbilityNote(name) {
-  const runtime = getSelectedBattleRuntimeDescriptor();
   if (!slugify(name)) return lang('포켓몬을 선택하면 특성을 고를 수 있습니다.', "Select one of the Pokémon's native abilities.");
-  if (runtime.id === 'engine-authoritative-singles') {
-    return state.language === 'ko'
-      ? `${displayAbilityName(name)} 특성 판정은 현재 선택된 엔진 필수 싱글 경로에서 로컬 Showdown 엔진이 담당한다. 팀 빌더 표시는 참고용이며 실제 전투 판정은 엔진 스냅샷과 요청을 따른다.`
-      : `${displayAbilityName(name)} is resolved by the local Showdown engine in the current engine-required singles path. Builder labels are informational only; real battle behavior follows the engine request and snapshot.`;
-  }
-  return state.language === 'ko'
-    ? `${displayAbilityName(name)} 특성은 팀 빌더에서는 저장되고 검증되지만, 현재 선택된 런타임은 배틀 시작이 차단된 상태이다.`
-    : `${displayAbilityName(name)} is stored and validated in the team builder, but the currently selected runtime is blocked from battle start.`;
+  return lang(
+    `선택된 특성: ${displayAbilityName(name)}`,
+    `Selected ability: ${displayAbilityName(name)}`
+  );
 }
 function implementedItemNote(name) {
-  const runtime = getSelectedBattleRuntimeDescriptor();
   if (!slugify(name)) return lang('지닌 도구가 없습니다.', 'No held item selected.');
-  const supportSummary = buildItemSupportSummary(name);
-  const runtimeSummary = runtime.id === 'engine-authoritative-singles'
-    ? (state.language === 'ko'
-      ? `${displayItemName(name)} 도구 판정은 현재 선택된 엔진 필수 싱글 경로에서 로컬 Showdown 엔진이 담당한다. 팀 빌더 표시는 참고용이며 실제 전투 판정은 엔진 스냅샷과 요청을 따른다.`
-      : `${displayItemName(name)} is resolved by the local Showdown engine in the current engine-required singles path. Builder labels are informational only; real battle behavior follows the engine request and snapshot.`)
-    : (state.language === 'ko'
-      ? `${displayItemName(name)} 도구는 팀 빌더에서는 저장되고 검증되지만, 현재 선택된 런타임은 배틀 시작이 차단된 상태이다.`
-      : `${displayItemName(name)} is stored and validated in the team builder, but the currently selected runtime is blocked from battle start.`);
-  return [supportSummary, runtimeSummary].filter(Boolean).join(' ');
+  return lang(
+    `선택된 도구: ${displayItemName(name)}`,
+    `Selected item: ${displayItemName(name)}`
+  );
 }
 async function hydrateSelectedSpecies(options = {}) {
   const {render = true, persist = true} = options;
@@ -3984,7 +3992,7 @@ async function hydrateSelectedSpecies(options = {}) {
     if (!mon.teraType) mon.teraType = 'normal';
     if (els.speciesStatus) els.speciesStatus.textContent = mon.species
       ? lang('업로드된 스프라이트와 일치하는 포켓몬이 없습니다.', 'No uploaded sprite matched that species name.')
-      : lang('포켓몬을 선택하면 로컬 전투 데이터를 불러옵니다.', 'Choose a species to load local battle data.');
+      : lang('포켓몬을 선택하세요.', 'Choose a species.');
     if (persist) saveState();
     if (render) renderAll();
     return;
@@ -3994,7 +4002,7 @@ async function hydrateSelectedSpecies(options = {}) {
   mon.manualFormSpecies = sanitizeManualFormSpecies(mon, resolved.baseSpeciesName);
   mon.formSpecies = resolveAutomaticBuilderSpecies(mon, mon.manualFormSpecies || resolved.baseSpeciesName) || mon.manualFormSpecies || resolved.baseSpeciesName;
   mon.species = mon.formSpecies;
-  if (els.speciesStatus) els.speciesStatus.textContent = lang('로컬 전투 데이터에서 포켓몬 정보를 불러오는 중…', 'Loading species data from local battle data…');
+  if (els.speciesStatus) els.speciesStatus.textContent = lang('포켓몬 정보를 불러오는 중...', 'Loading species data...');
   try {
     const data = await getSpeciesData(mon.formSpecies);
     mon.data = data;
@@ -4021,7 +4029,7 @@ async function hydrateSelectedSpecies(options = {}) {
     mon.data = null;
     mon.displaySpecies = mon.formSpecies || mon.species || '';
     syncMonSprite(mon);
-    if (els.speciesStatus) els.speciesStatus.textContent = lang('로컬 전투 데이터에서 포켓몬 정보를 불러오지 못했습니다.', 'Species data could not be loaded from local battle data.');
+    if (els.speciesStatus) els.speciesStatus.textContent = lang('포켓몬 정보를 불러오지 못했습니다.', 'Could not load species data.');
   }
   if (persist) saveState();
   if (render) renderAll();
@@ -4069,9 +4077,9 @@ function renderEditor() {
         ? `${displaySpeciesName(mon.data.name)} 불러옴 · ${mon.data.types.map(displayType).join(' · ')}${spriteNote}${formNote}`
         : `${displaySpeciesName(mon.data.name)} loaded · ${mon.data.types.map(displayType).join(' · ')}${spriteNote}${formNote}`;
     }
-    else if (mon.spriteId) els.speciesStatus.textContent = lang('로컬 전투 데이터에서 포켓몬 정보를 불러오지 못했습니다.', 'Species data could not be loaded from local battle data.');
+    else if (mon.spriteId) els.speciesStatus.textContent = lang('포켓몬 정보를 불러오지 못했습니다.', 'Could not load species data.');
     else if (mon.species || mon.displaySpecies) els.speciesStatus.textContent = lang('업로드된 스프라이트와 일치하는 포켓몬이 없습니다.', 'No uploaded sprite matched that species name.');
-    else els.speciesStatus.textContent = lang('포켓몬을 선택하면 로컬 전투 데이터를 불러옵니다.', 'Choose a species to load local battle data.');
+    else els.speciesStatus.textContent = lang('포켓몬을 선택하세요.', 'Choose a species.');
   }
   els.editorAbilityNote.textContent = mon.ability ? implementedAbilityNote(mon.ability) : lang('포켓몬을 선택하면 특성 목록이 로드됩니다.', 'Select a species to load its ability list.');
   els.editorAbilityEffect.textContent = implementedItemNote(mon.item);
@@ -4080,15 +4088,22 @@ function renderEditor() {
   els.abilitySelect.value = mon.ability || '';
   renderAnimatedSprite(els.editorSprite, {spriteId: mon.spriteId, facing: 'front', shiny: mon.shiny, size: 'large'});
   createStatInputs(els.evGrid, 'ev', mon.evs, (stat, value) => {
-    mon.evs[stat] = clamp(Number.isFinite(value) ? value : 0, 0, 252);
+    const parsed = Math.trunc(Number.isFinite(value) ? value : 0);
+    const clamped = clamp(parsed, 0, 252);
+    const otherTotal = statOrder.reduce((sum, current) => current === stat ? sum : sum + Number(mon.evs[current] || 0), 0);
+    const remaining = Math.max(0, 510 - otherTotal);
+    mon.evs[stat] = Math.min(clamped, remaining);
     updateEvTotalDisplay(mon);
     saveState();
     renderValidation();
+    return mon.evs[stat];
   });
   createStatInputs(els.ivGrid, 'iv', mon.ivs, (stat, value) => {
-    mon.ivs[stat] = clamp(Number.isFinite(value) ? value : 31, 0, 31);
+    const parsed = Math.trunc(Number.isFinite(value) ? value : 31);
+    mon.ivs[stat] = clamp(parsed, 0, 31);
     saveState();
     renderValidation();
+    return mon.ivs[stat];
   });
   updateEvTotalDisplay(mon);
 }
@@ -4264,15 +4279,15 @@ async function renderValidation() {
     els.builderErrors.textContent = '';
     if (runtimeBlocked) {
       els.validationSummary.textContent = lang(
-        `팀은 유효하지만 현재 선택된 배틀 경로는 ${runtime.title} 상태입니다. ${runtime.startBlockedReason}`,
-        `Teams are valid, but the currently selected battle path is ${runtime.title}. ${runtime.startBlockedReason}`
+        `팀은 유효하지만 현재 모드는 아직 시작할 수 없습니다. ${runtime.startBlockedReason}`,
+        `Teams are valid, but this mode is not available yet. ${runtime.startBlockedReason}`
       );
       els.startBattleBtn.disabled = true;
       els.startBattleBtn.title = localizeText(runtime.startBlockedReason || runtime.title);
     } else {
       els.validationSummary.textContent = state.builderWarnings.length
-        ? lang(`팀이 기본 검증을 통과했습니다. 엔진 필수 싱글 경로로 시작할 수 있으며, 고급 출처/런타임 주의 ${state.builderWarnings.length}개가 있습니다.`, `Teams pass validation. Engine-required singles can start, with ${state.builderWarnings.length} advanced source/runtime warning${state.builderWarnings.length === 1 ? '' : 's'}.`)
-        : lang('양쪽 팀이 유효합니다. 엔진 필수 싱글 배틀을 시작할 수 있습니다.', 'Both teams are valid. Engine-required singles battle start is ready.');
+        ? lang(`팀이 기본 검증을 통과했습니다. 경고 ${state.builderWarnings.length}개를 확인한 뒤 배틀을 시작할 수 있습니다.`, `Teams pass validation. Review ${state.builderWarnings.length} warning${state.builderWarnings.length === 1 ? '' : 's'} before starting.`)
+        : lang('양쪽 팀이 유효합니다. 배틀을 시작할 수 있습니다.', 'Both teams are valid. You can start the battle.');
       els.startBattleBtn.disabled = false;
       els.startBattleBtn.title = '';
     }
@@ -4651,12 +4666,8 @@ async function startBattle() {
   const runtime = getSelectedBattleRuntimeDescriptor();
   if (!runtime.startAllowed) {
     showRuntime(
-      lang(
-        '현재 선택된 배틀은 정확한 엔진 경로가 준비될 때까지 시작이 차단됩니다.',
-        'The currently selected battle is blocked until its accurate engine-backed path is available.'
-      ),
-      'warning',
-      `${runtime.detail}<br>${runtime.startBlockedReason}`
+      lang('아직 시작할 수 없습니다.', 'Not ready to start yet.'),
+      'warning'
     );
     renderAll();
     return;
@@ -4664,12 +4675,8 @@ async function startBattle() {
 
   if (runtime.id !== 'engine-authoritative-singles') {
     showRuntime(
-      lang(
-        '현재 빌드에서는 엔진 필수 싱글만 시작할 수 있습니다.',
-        'Only engine-required singles can start in the current build.'
-      ),
-      'warning',
-      `${runtime.detail}<br>${runtime.startBlockedReason}`
+      lang('현재는 싱글 배틀만 시작할 수 있습니다.', 'Only singles can start right now.'),
+      'warning'
     );
     renderAll();
     return;
@@ -4707,14 +4714,12 @@ async function startBattle() {
       available: false,
       error: error.message || String(error),
     };
-    const blocked = getBlockedSinglesRuntimeDescriptor(`Engine start error: ${error.message}`);
     showRuntime(
       lang(
-        '로컬 Showdown 싱글 엔진 시작에 실패했습니다. 싱글 시작은 차단되며 팀 빌더만 계속 사용할 수 있습니다.',
-        'Starting the local Showdown singles engine failed. Singles start is blocked and only the team builder remains available.'
+        '배틀 시작에 실패했습니다. 잠시 후 다시 시도해주세요.',
+        'Battle start failed. Please try again shortly.'
       ),
-      'error',
-      `${blocked.detail}<br>Engine error: ${error.message}`
+      'error'
     );
     renderAll();
   }
@@ -7282,7 +7287,7 @@ async function bootstrap() {
   bindElements();
   applyLanguageToStaticUi();
   syncLanguageControls();
-  showRuntime('업로드한 에셋과 현지화된 전투 데이터를 불러오는 중… / Loading uploaded assets and fully localized battle data…', 'loading');
+  showRuntime(lang('로딩중...', 'Loading...'), 'loading');
   window.__PKB_POKEROGUE_ASSET_AUDIT__ = getPokerogueAssetAuditSummary();
   resetTeams();
   state.manifest = await loadManifest();
@@ -7304,20 +7309,11 @@ async function bootstrap() {
   wireBattleEvents();
   renderAll();
   state.runtimeReady = true;
-  const showdownStatusNote = buildShowdownStatusNote();
-  showRuntime(
-    '준비 완료. 로컬 에셋과 현지화된 전투 데이터가 연결되었습니다. / Runtime ready. Local assets, localized battle data, and form-aware sprite resolution are connected.',
-    'ready',
-    `포켓몬 스프라이트 경로 / Pokémon sprite base: ${state.assetBase.pokemon}<br>데이터 공급원 / Data provider: ${dataSourceLabel()}${state.dexSource ? `<br>Dex source: ${state.dexSource}` : ''}<br>${lang(`외부 검증 기준 현재 공식이지만 로컬 데이터에 아직 없는 아이템 수 / current official items still absent from the local data bundle: ${EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.length}`, `Current official items verified externally but still absent from the local data bundle: ${EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA.length}`)}<br>${showdownStatusNote}<br>${lang('이 빌드는 종족 / learnset / 기술 / 아이템 / 특성 / 포맷 / 성격 / 상태 / 타입 상성의 로컬 데이터를 불러오고, 저장된 팀을 그 로컬 Dex 기준으로 복원하며, 이벤트 전용 기술 묶음 검사와 검증 프로필 기반 Species Clause / Item Clause / 레벨 50 강제까지 더 강한 validator를 사용합니다. 아이템 표시는 이제 텍스트 전용으로 정리되어, 사용자용 UI에서 아이콘 누락 여부를 더 이상 노출하지 않습니다. 이번 단계에서는 싱글을 로컬 Showdown 엔진 필수 경로로 고정했고, 더블은 엔진 기반 경로가 준비될 때까지 차단하며, 다른 지원되지 않는 브라우저 배틀 실행 경로는 사용자용 정상 모드에 노출하지 않습니다.', 'This build loads vendored local data for species / learnsets / moves / items / abilities / formats / natures / conditions / type chart, restores saved teams against that local Dex, and runs a stronger validator including event-only move bundle checks and profile-based Species Clause / Item Clause / level-50 enforcement. Item presentation is now text-only, so missing-icon state is no longer exposed in the normal user-facing UI. In this step, singles are locked to the local Showdown engine-required path, doubles stay blocked until an engine-backed route exists, and unsupported browser battle execution paths are kept out of user-facing normal mode.')}`
-  );
+  showRuntime(lang('로딩완료!', 'Loaded!'), 'ready');
   syncRuntimeModeUi();
 }
 
 bootstrap().catch(error => {
   console.error(error);
-  showRuntime(
-    '시작에 실패했습니다. 브라우저 콘솔과 로컬 데이터 모듈을 확인하세요. / Startup failed. Check the browser console and local data modules.',
-    'error',
-    `Error: ${error.message}`
-  );
+  showRuntime(lang('로딩실패', 'Load failed'), 'error');
 });

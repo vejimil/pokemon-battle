@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PKB — 포켓몬 로컬 배틀 빌더</title>
+    <title>PKB — 포켓몬 배틀 빌더</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%2230%22 fill=%22%23ef4444%22/%3E%3Cpath d=%22M2 32h60%22 stroke=%22%23ffffff%22 stroke-width=%226%22/%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%2210%22 fill=%22%23ffffff%22 stroke=%22%23111827%22 stroke-width=%224%22/%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%224%22 fill=%22%23111827%22/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -11,7 +11,7 @@
     <div class="page-shell">
       <header class="hero">
         <div>
-          <p class="eyebrow" data-i18n="hero_eyebrow">로컬 2인 배틀 프로토타입</p>
+          <p class="eyebrow" data-i18n="hero_eyebrow">2인 배틀</p>
           <h1>PKB</h1>
         </div>
         <div class="hero-meta">
@@ -28,7 +28,7 @@
           </div>
           <div class="meta-card">
             <span class="meta-label" data-i18n="meta_engine">엔진</span>
-            <strong id="hero-engine-value" data-i18n="meta_engine_value">로컬 Showdown 엔진 필수 싱글</strong>
+            <strong id="hero-engine-value" data-i18n="meta_engine_value">싱글</strong>
           </div>
         </div>
       </header>
@@ -40,12 +40,12 @@
             <button id="reset-storage-btn" class="ghost-btn" type="button" data-i18n="reset_storage_btn">저장 데이터 초기화</button>
           </div>
           <div id="runtime-status" class="runtime-status loading" data-i18n="runtime_loading">
-            시뮬레이터 런타임, Dex 데이터, 업로드된 에셋을 불러오는 중…
+            로딩중...
           </div>
           <div id="runtime-notes" class="runtime-notes"></div>
           <div class="runtime-mode-card">
             <div class="runtime-mode-header">
-              <strong id="runtime-mode-badge" class="turn-chip wait">런타임 확인 중</strong>
+              <strong id="runtime-mode-badge" class="turn-chip wait">확인 중...</strong>
               <span id="runtime-mode-title" class="small-note">—</span>
             </div>
             <div id="runtime-mode-detail" class="helper-note runtime-mode-detail">—</div>
