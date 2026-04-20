@@ -12,6 +12,7 @@ import { BattleAnimPlayer } from '../../battle-presentation/battle-anim-player.j
 const SHADOW_GLOBAL_OFFSET = Object.freeze({ x: 0, y: 0 });
 const ENABLE_BATTLER_SHADOWS = false;
 const NORMAL_DYNAMAX_BASE_Y_OFFSET = 12;
+const PLAYER_DYNAMAX_METRICS_RATIO = 2;
 const FIELD_BG_LAYER_DEPTH = 5.4;
 const TERRAIN_BG_RESOURCE_BY_ID = Object.freeze({
   electricterrain: 'PRAS- Electric Terrain BG',
@@ -280,8 +281,18 @@ export function createBattleShellSceneClass(Phaser, env) {
       return dynamaxed && !gigantamaxed ? NORMAL_DYNAMAX_BASE_Y_OFFSET : 0;
     }
 
+    _dynamaxMetricsRatio(mount) {
+      return mount?.name === 'player' ? PLAYER_DYNAMAX_METRICS_RATIO : 1;
+    }
+
+    _dynamaxBaseYOffsetForMountState(mount, dynamaxed = false, gigantamaxed = false) {
+      const baseOffset = this._dynamaxBaseYOffsetForState(dynamaxed, gigantamaxed);
+      return baseOffset * this._dynamaxMetricsRatio(mount);
+    }
+
     _dynamaxBaseYOffset(mount) {
-      return this._dynamaxBaseYOffsetForState(
+      return this._dynamaxBaseYOffsetForMountState(
+        mount,
         mount?.dynamaxed === true,
         mount?.gigantamaxed === true,
       );
@@ -1181,7 +1192,11 @@ export function createBattleShellSceneClass(Phaser, env) {
       const baseScaleX = Number(spr.scaleX || 1) / safePrev;
       const baseScaleY = Number(spr.scaleY || 1) / safePrev;
       const prevBaseYOffset = this._dynamaxBaseYOffset(mount);
-      const nextBaseYOffset = this._dynamaxBaseYOffsetForState(true, options?.gigantamaxed === true);
+      const nextBaseYOffset = this._dynamaxBaseYOffsetForMountState(
+        mount,
+        true,
+        options?.gigantamaxed === true,
+      );
       const targetY = Number(spr.y || 0) + (nextBaseYOffset - prevBaseYOffset);
       const targetScaleX = baseScaleX * 2;
       const targetScaleY = baseScaleY * 2;
@@ -1281,7 +1296,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       const baseScaleX = Number(spr.scaleX || 1) / safePrev;
       const baseScaleY = Number(spr.scaleY || 1) / safePrev;
       const prevBaseYOffset = this._dynamaxBaseYOffset(mount);
-      const nextBaseYOffset = this._dynamaxBaseYOffsetForState(false, false);
+      const nextBaseYOffset = this._dynamaxBaseYOffsetForMountState(mount, false, false);
       const targetY = Number(spr.y || 0) + (nextBaseYOffset - prevBaseYOffset);
       const startScaleX = baseScaleX * safePrev;
       const startScaleY = baseScaleY * safePrev;
