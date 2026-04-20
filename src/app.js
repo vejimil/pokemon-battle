@@ -1771,7 +1771,6 @@ const UI_STRINGS = Object.freeze({
   ko: {
     title: 'PKB — 포켓몬 로컬 배틀 빌더',
     hero_eyebrow: '로컬 2인 배틀 프로토타입',
-    hero_copy: '업로드한 스프라이트와 로컬 배틀 데이터를 불러와 두 팀을 직접 만든 뒤, 브라우저에서 바로 번갈아 조작하는 배틀을 플레이합니다.',
     lang_label: '언어',
     meta_mode: '배틀 모드',
     meta_engine: '엔진',
@@ -1839,7 +1838,6 @@ const UI_STRINGS = Object.freeze({
   en: {
     title: 'PKB — Local Pokémon Battle Builder',
     hero_eyebrow: 'Local 2-player battle prototype',
-    hero_copy: 'Load the uploaded sprites, icons, and local battle data, build two custom teams, and play a pass-and-play battle directly in the browser.',
     lang_label: 'Language',
     meta_mode: 'Battle mode',
     meta_engine: 'Engine',
@@ -3702,10 +3700,10 @@ function bindElements() {
     heroModeLabel: document.getElementById('hero-mode-label'),
     heroEngineValue: document.getElementById('hero-engine-value'),
     editorTitle: document.getElementById('editor-title'),
-    editorSubtitle: document.getElementById('editor-subtitle'),
     editorSprite: document.getElementById('editor-sprite'),
     editorSpeciesName: document.getElementById('editor-species-name'),
     editorTypeRow: document.getElementById('editor-type-row'),
+    editorBaseStats: document.getElementById('editor-base-stats'),
     editorFlags: document.getElementById('editor-flags'),
     editorAbilityNote: document.getElementById('editor-ability-note'),
     editorAbilityEffect: document.getElementById('editor-ability-effect'),
@@ -3807,6 +3805,22 @@ function buildStaticLists() {
   els.natureSelect.innerHTML = state.natureChoices.map(choice => `<option value="${choice.english}">${choice.display}</option>`).join('\n');
   els.teraSelect.innerHTML = TYPES.map(type => `<option value="${type}">${displayType(type)}</option>`).join('\n');
 }
+function renderEditorBaseStats(mon) {
+  if (!els.editorBaseStats) return;
+  const stats = mon.data?.stats;
+  if (!stats) {
+    els.editorBaseStats.hidden = true;
+    els.editorBaseStats.innerHTML = '';
+    return;
+  }
+  const total = statOrder.reduce((sum, stat) => sum + Number(stats[stat] || 0), 0);
+  const totalLabel = lang('합계', 'Total');
+  const cells = statOrder
+    .map(stat => `<span class="base-stat-chip"><span class="base-stat-label">${statLabels[stat]}</span><span class="base-stat-value">${stats[stat] ?? '—'}</span></span>`)
+    .join('');
+  els.editorBaseStats.innerHTML = `${cells}<span class="base-stat-chip base-stat-total"><span class="base-stat-label">${totalLabel}</span><span class="base-stat-value">${total}</span></span>`;
+  els.editorBaseStats.hidden = false;
+}
 function renderEditorFlags(mon) {
   if (!els.editorFlags) return;
   const flags = [];
@@ -3820,19 +3834,58 @@ function renderEditorFlags(mon) {
 }
 function createStatInputs(gridEl, prefix, values, onChange) {
   gridEl.innerHTML = '';
+  const maxVal = prefix === 'ev' ? 252 : 31;
+  const defaultVal = prefix === 'ev' ? 0 : 31;
   for (const stat of statOrder) {
     const wrap = document.createElement('label');
-    wrap.className = 'stat-input';
+    wrap.className = `stat-input stat-input-${prefix}`;
     wrap.innerHTML = `<span>${statLabels[stat]}</span>`;
+    const row = document.createElement('div');
+    row.className = 'stat-input-row';
     const input = document.createElement('input');
     input.type = 'number';
-    input.min = prefix === 'ev' ? 0 : 0;
-    input.max = prefix === 'ev' ? 252 : 31;
+    input.min = 0;
+    input.max = maxVal;
     input.value = values[stat];
-    input.addEventListener('input', () => onChange(stat, Number(input.value)));
-    wrap.appendChild(input);
+    input.addEventListener('input', () => {
+      const raw = Number(input.value);
+      if (!Number.isFinite(raw)) return;
+      onChange(stat, raw);
+    });
+    input.addEventListener('blur', () => {
+      const clamped = clamp(Number(input.value) || 0, 0, maxVal);
+      if (String(clamped) !== input.value) input.value = clamped;
+    });
+    row.appendChild(input);
+    if (prefix === 'ev') {
+      const toggleBtn = document.createElement('button');
+      toggleBtn.type = 'button';
+      toggleBtn.className = 'stat-input-quick ghost-btn';
+      toggleBtn.textContent = '252';
+      toggleBtn.title = lang('클릭: 252 즉시 입력 / 다시 클릭: 0', 'Click: set 252 / click again: reset to 0');
+      toggleBtn.addEventListener('click', () => {
+        const next = Number(values[stat]) === 252 ? 0 : 252;
+        input.value = next;
+        onChange(stat, next);
+      });
+      row.appendChild(toggleBtn);
+    } else {
+      const toggleBtn = document.createElement('button');
+      toggleBtn.type = 'button';
+      toggleBtn.className = 'stat-input-quick ghost-btn';
+      toggleBtn.textContent = '31';
+      toggleBtn.title = lang('클릭: 31 즉시 입력 / 다시 클릭: 0', 'Click: set 31 / click again: reset to 0');
+      toggleBtn.addEventListener('click', () => {
+        const next = Number(values[stat]) === 31 ? 0 : 31;
+        input.value = next;
+        onChange(stat, next);
+      });
+      row.appendChild(toggleBtn);
+    }
+    wrap.appendChild(row);
     gridEl.appendChild(wrap);
   }
+  return { defaultVal };
 }
 function getSelectedMon() {
   return state.teams[state.selected.player][state.selected.slot];
@@ -3981,7 +4034,6 @@ function renderEditor() {
   els.editorTitle.textContent = state.language === 'ko'
     ? `${state.playerNames[state.selected.player]} · 슬롯 ${state.selected.slot + 1}`
     : `${state.playerNames[state.selected.player]} · Slot ${state.selected.slot + 1}`;
-  els.editorSubtitle.textContent = lang('포켓몬, 사전 선택 폼, 기술, 능력치, 지닌 도구, 성격, 특성, 테라 타입을 설정하세요.', 'Set species, pre-battle forme, moves, stats, item, nature, ability, and tera type.');
   els.speciesInput.value = displaySpeciesName(mon.baseSpecies || mon.species || '');
   if (els.nicknameInput) els.nicknameInput.value = mon.nickname || '';
   els.itemInput.value = displayItemName(mon.item || '');
@@ -4003,6 +4055,7 @@ function renderEditor() {
   els.editorSpeciesName.textContent = displayName;
   els.editorTypeRow.innerHTML = '';
   (mon.data?.types || []).forEach(type => els.editorTypeRow.appendChild(createTypePill(type)));
+  renderEditorBaseStats(mon);
   renderEditorFlags(mon);
   syncMonSprite(mon);
   renderFormSelectors(mon);
@@ -4028,16 +4081,19 @@ function renderEditor() {
   renderAnimatedSprite(els.editorSprite, {spriteId: mon.spriteId, facing: 'front', shiny: mon.shiny, size: 'large'});
   createStatInputs(els.evGrid, 'ev', mon.evs, (stat, value) => {
     mon.evs[stat] = clamp(Number.isFinite(value) ? value : 0, 0, 252);
-    renderEditor();
+    updateEvTotalDisplay(mon);
     saveState();
     renderValidation();
   });
   createStatInputs(els.ivGrid, 'iv', mon.ivs, (stat, value) => {
     mon.ivs[stat] = clamp(Number.isFinite(value) ? value : 31, 0, 31);
-    renderEditor();
     saveState();
     renderValidation();
   });
+  updateEvTotalDisplay(mon);
+}
+function updateEvTotalDisplay(mon) {
+  if (!els.evTotal) return;
   const evTotal = Object.values(mon.evs).reduce((sum, value) => sum + Number(value || 0), 0);
   els.evTotal.textContent = state.language === 'ko' ? `합계: ${evTotal} / 510` : `Total: ${evTotal} / 510`;
 }

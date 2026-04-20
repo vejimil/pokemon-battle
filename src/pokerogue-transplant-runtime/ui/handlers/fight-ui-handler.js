@@ -5,6 +5,13 @@ import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
 
+// Move stat display: normalize missing/zero values to '---' (matches PokeRogue power/accuracy < 0 → '---')
+function formatMoveStatValue(raw) {
+  const trimmed = String(raw ?? '').trim();
+  if (!trimmed || trimmed === '—' || trimmed === '0') return '---';
+  return trimmed;
+}
+
 // PP ratio → color (matches PokeRogue TextStyle colors, non-legacy theme)
 function ppRatioToColor(ratio) {
   if (ratio === null || ratio === undefined) return { color: '#f8f8f8', shadow: '#6b5a73' };
@@ -24,11 +31,14 @@ export class FightUiHandler extends UiHandler {
     this.moveInfoContainer = null;
     this.cursorObj = null;
     this.moveButtons = [];
-    this.typeLabel = null;
     this.typeIcon = null;
     this.moveCategoryIcon = null;
     this.ppLabel = null;
     this.ppText = null;
+    this.powerLabel = null;
+    this.powerText = null;
+    this.accuracyLabel = null;
+    this.accuracyText = null;
     this.toggleButtons = [];
     this.footerButtons = [];
     this.fieldIndex = 0;
@@ -64,10 +74,12 @@ export class FightUiHandler extends UiHandler {
     });
 
     this.moveInfoContainer = scene.add.container(1, 0).setName('move-info');
-    // PokeRogue 원본 기본 fight UI 오른쪽 패널: TYPE 라벨 + 타입배지 + 카테고리아이콘 (row1) + PP (row2)
-    // Pow/Acc는 MoveInfoOverlay 전용 (INFO 버튼 홀드 시만 표시)
-    // 원본 scale: typeIcon=0.8 (line 269), moveCategoryIcon=1.0 (line 272)
-    this.typeLabel = addTextObject(this.ui, 245, -36, 'TYPE', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
+    // PokeRogue 원본 fight UI 오른쪽 패널 레이아웃 (scaledCanvas.width=320 기준):
+    //   row1 y=-36: typeIcon(263) + moveCategoryIcon(295)
+    //   row2 y=-26: ppLabel(250) + ppText(308)
+    //   row3 y=-18: powerLabel(250) + powerText(308)
+    //   row4 y=-10: accuracyLabel(250) + accuracyText(308)
+    // 원본 scale: typeIcon=0.8 (fight-ui-handler.ts:269), moveCategoryIcon=1.0 (line 272)
     this.typeIcon = env.textureExists(scene, env.UI_ASSETS.typesAtlas.key, 'unknown')
       ? scene.add.image(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.8).setVisible(false)
       : addTextObject(this.ui, 263, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0).setVisible(false);
@@ -76,12 +88,19 @@ export class FightUiHandler extends UiHandler {
       : addTextObject(this.ui, 295, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0).setVisible(false);
     this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
     this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
+    this.powerLabel = addTextObject(this.ui, 250, -18, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
+    this.powerText = addTextObject(this.ui, 308, -18, '---', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
+    this.accuracyLabel = addTextObject(this.ui, 250, -10, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
+    this.accuracyText = addTextObject(this.ui, 308, -10, '---', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
     this.moveInfoContainer.add([
-      this.typeLabel,
       this.typeIcon,
       this.moveCategoryIcon,
       this.ppLabel,
       this.ppText,
+      this.powerLabel,
+      this.powerText,
+      this.accuracyLabel,
+      this.accuracyText,
     ]);
     this.container.add(this.moveInfoContainer);
 
@@ -310,6 +329,13 @@ export class FightUiHandler extends UiHandler {
     this.ppText.setText(detail.ppLabel || '--/--');
     const ppColors = ppRatioToColor(detail.ppRatio ?? null);
     this.ppText.setColor(ppColors.color).setShadowColor(ppColors.shadow);
+
+    // POWER / ACCURACY — labels localized per ui language (ko: 위력/명중률, en: Power/Accuracy)
+    const isKo = this.ui.uiLanguage === 'ko';
+    this.powerLabel?.setText(isKo ? '위력' : 'Power');
+    this.accuracyLabel?.setText(isKo ? '명중률' : 'Accuracy');
+    this.powerText?.setText(formatMoveStatValue(detail.powerLabel));
+    this.accuracyText?.setText(formatMoveStatValue(detail.accuracyLabel));
   }
 
   updateToggles(toggles = []) {

@@ -68,6 +68,9 @@ assets/pokerogue/items/
 - 다이맥스 기술 focus 부상 해소: `_resolveAnimEndpoints`가 다이맥스 multiplier로 displayHeight를 정규화
 - 날씨 연출 중 기절 copy 재노출 차단: `BattleAnimPlayer`가 `prevUserVisible/prevTargetVisible`로 원본 숨김 상태일 때 USER/TARGET copy 스킵
 - metrics 파이프라인 주석화(로딩 파일 5종·사용처 2곳 기록)
+- HUD 1차: 기술 상세 POWER/ACC 행 원본 좌표 정합 + 원본에 없던 TYPE 라벨 제거
+- HUD 1차: 빌더 종족값 chip(HP/Atk/Def/SpA/SpD/Spe + 합계) 표시 · hero_copy/editor-subtitle 설명문 제거
+- HUD 1차: EV/IV 입력 포커스 손실 버그 수정(입력 중 `renderEditor()` 미호출) · EV 252/IV 31 즉시 토글 버튼 추가
 
 상세 완료 로그는 `CLAUDEMDPREVIOUS.md` 2026-04-19~20 섹션 참조.
 
@@ -81,12 +84,12 @@ assets/pokerogue/items/
 - faint 이후 재노출: `mount.fainted` 플래그 + BattleAnimPlayer copy 스프라이트에 `prevVisible` 가드 → 날씨/필드 anim에서 copy 경유 재노출 차단
 - 소형 back 스프라이트(Pikachu 등) 상단 치우침: 프레임 높이 편차/PBS Y 보정값 간 calibration 이슈로 추정, 디버그 가시화 단계로 보류
 
-2. HUD 확정
-- 정보창 이름 비트맵 폰트 적용(깨짐 방지)
-- 성별 표시
-- 기술 상세(type/power/accuracy) 가독성 개선(원본 자산/스타일 우선)
-- 파티 교체 메시지 locale 연결 + 텍스트 박스 내 레이아웃 보정
-- 빌더 UX: 종족값 표시, EV/IV 다자리 입력/길게누르기 입력 개선
+2. HUD 확정 (1차 완료 · 일부 후순위 잔여)
+- [완료] 기술 상세: 원본 좌표에 POWER/ACC 라벨 추가, 0/— → `---`, 스퓨리어스 TYPE 라벨 제거
+- [완료] 빌더 종족값 chip 표시 · 불필요 설명문 삭제 · EV/IV 포커스 손실 수정 · 252/31 즉시 토글
+- [기존 완료] 성별 표시(`GENDER_SYMBOL`/`GENDER_COLOR`), 파티 교체 메시지 locale(`lang()`)
+- [보류] 정보창 이름 비트맵 폰트 — 한글 비트맵 폰트 자산 확보 필요
+- [보류] EV/IV 다자리 연속 입력/화살표 길게 누르기 — 후순위
 
 3. 통신 플레이 확장
 - 방 생성/참가 -> 양측 빌더 -> 준비 완료 -> 배틀 시작 흐름
