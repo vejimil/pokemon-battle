@@ -144,6 +144,9 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `battle-shell-scene.js`에 `playTerastallize()` 추가
   - `app.js` locale namespace에 `pokemon-info` 추가(테라 타입 로컬라이즈)
 - 현재 남은 우선순위(고정): `BA-28` sprite 미할당 폼 후속 정리
+- 후속 최적화 TODO:
+  - 아이템 아이콘 manifest 자동 갱신 파이프라인 추가(`assets/manifest.json`, `assets/pokerogue/items/manifest.json`)
+  - 검증 스위트에 manifest-실파일 드리프트 체크를 포함해 누락/오타를 조기 감지
 
 ### ✅ 2026-04-20 오늘 작업 요약 (BA-28)
 - 한/영 명칭 분리 보강:
@@ -160,6 +163,14 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `scripts/audit-missing-sprites.mjs` 추가
   - `reports/missing-sprite-audit.json` 생성
   - 요약: front-only 29(`ETERNATUS_1`, `STUDIOPROP*`), 렌더 가능 폼 미할당 33건
+- 도구 스프라이트/아이콘 매칭 보강:
+  - 사용자 보강 에셋 반영 확인(standard 9, future 2)
+  - `src/pokerogue-assets.js`: 아이콘 해석을 manifest 인덱스 우선 매칭으로 전환, `--held/--bag` 변형 지원 유지
+  - `assets/pokerogue/items/manifest.json` 신규 추가, `assets/manifest.json` items 동기화
+  - 기대 효과: 존재하지 않는 URL 다중 probe를 줄여 브라우저 콘솔 404 노이즈 완화
+- 아이템 한글화 마감 보정:
+  - `Loaded Dice` 표기 교정: `속임수 주사위`
+  - ZA 신규 메가스톤(예: `Emboarite`) 영문 누출 시 megaStone/itemUser 기반 한국어 fallback(`염무왕나이트`) 표시 추가
 
 ### ✅ 2026-04-19 오늘 작업 요약 (BA-25)
 - 원본 선독 후 반영:

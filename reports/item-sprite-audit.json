@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-20T05:16:52.353Z",
+  "generatedAt": "2026-04-20T05:59:24.178Z",
   "inputs": {
     "itemDirs": {
       "currentItems": "/workspaces/pokemon-battle/assets/items",
@@ -7,102 +7,35 @@
       "pokerogueImagesItems": "/workspaces/pokemon-battle/assets/pokerogue/images/items"
     },
     "totalFilesByDir": {
-      "currentItems": 898,
+      "currentItems": 908,
       "pokerogueItems": 528,
       "pokerogueImagesItems": 0
     },
     "supportedItems": 578
   },
   "summary": {
-    "resolvedItems": 448,
-    "missingItems": 130,
+    "resolvedItems": 459,
+    "missingItems": 119,
     "resolvedByDir": {
-      "currentItems": 371,
-      "pokerogueItems": 77,
+      "currentItems": 381,
+      "pokerogueItems": 78,
       "pokerogueImagesItems": 0
     },
     "resolvedByVariant": {
-      "direct": 414,
+      "direct": 425,
       "held": 34,
       "bag": 0
     },
     "missingByGroup": {
       "tr-record": 100,
-      "other": 15,
-      "modern-battle-item": 9,
+      "other": 14,
       "fossilized": 4,
-      "stone-z-crystal": 2
+      "modern-battle-item": 1
     },
-    "futureCurrentOfficialMissing": 2,
+    "futureCurrentOfficialMissing": 0,
     "idAliasPossibleMissing": 0
   },
   "missing": [
-    {
-      "name": "Ability Shield",
-      "group": "modern-battle-item",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "ability-shield",
-        "ability_shield",
-        "abilityshield",
-        "ability shield"
-      ],
-      "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Clear Amulet",
-      "group": "modern-battle-item",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "clear-amulet",
-        "clear_amulet",
-        "clearamulet",
-        "clear amulet"
-      ],
-      "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Covert Cloak",
-      "group": "modern-battle-item",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "covert-cloak",
-        "covert_cloak",
-        "covertcloak",
-        "covert cloak"
-      ],
-      "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Eject Pack",
-      "group": "modern-battle-item",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "eject-pack",
-        "eject_pack",
-        "ejectpack",
-        "eject pack"
-      ],
-      "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Heavy-Duty Boots",
-      "group": "modern-battle-item",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "heavy-duty-boots",
-        "heavy_duty_boots",
-        "heavydutyboots",
-        "heavy-duty boots",
-        "heavy_duty boots"
-      ],
-      "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
-    },
     {
       "name": "Pretty Feather",
       "group": "modern-battle-item",
@@ -114,65 +47,6 @@
         "pretty feather"
       ],
       "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Punching Glove",
-      "group": "modern-battle-item",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "punching-glove",
-        "punching_glove",
-        "punchingglove",
-        "punching glove"
-      ],
-      "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Room Service",
-      "group": "modern-battle-item",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "room-service",
-        "room_service",
-        "roomservice",
-        "room service"
-      ],
-      "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Throat Spray",
-      "group": "modern-battle-item",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "throat-spray",
-        "throat_spray",
-        "throatspray",
-        "throat spray"
-      ],
-      "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Darkranite",
-      "group": "stone-z-crystal",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "darkranite"
-      ],
-      "isFutureCurrentOfficial": true,
-      "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Pyroarite",
-      "group": "stone-z-crystal",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "pyroarite"
-      ],
-      "isFutureCurrentOfficial": true,
       "isExternallyAbsentFromLocalData": false
     },
     {
@@ -1402,22 +1276,15 @@
       ],
       "isFutureCurrentOfficial": false,
       "isExternallyAbsentFromLocalData": false
-    },
-    {
-      "name": "Utility Umbrella",
-      "group": "other",
-      "idAliasCandidates": [],
-      "stemCandidates": [
-        "utility-umbrella",
-        "utility_umbrella",
-        "utilityumbrella",
-        "utility umbrella"
-      ],
-      "isFutureCurrentOfficial": false,
-      "isExternallyAbsentFromLocalData": false
     }
   ],
   "resolvedSample": [
+    {
+      "name": "Ability Shield",
+      "dir": "currentItems",
+      "stem": "ability-shield",
+      "variant": "direct"
+    },
     {
       "name": "Abomasite",
       "dir": "currentItems",
@@ -1821,6 +1688,12 @@
       "variant": "direct"
     },
     {
+      "name": "Clear Amulet",
+      "dir": "currentItems",
+      "stem": "clear-amulet",
+      "variant": "direct"
+    },
+    {
       "name": "Clefablite",
       "dir": "pokerogueItems",
       "stem": "clefablite",
@@ -1860,6 +1733,12 @@
       "name": "Cover Fossil",
       "dir": "currentItems",
       "stem": "cover-fossil",
+      "variant": "direct"
+    },
+    {
+      "name": "Covert Cloak",
+      "dir": "currentItems",
+      "stem": "covert-cloak",
       "variant": "direct"
     },
     {
@@ -1903,6 +1782,12 @@
       "dir": "currentItems",
       "stem": "darkinium-z--held",
       "variant": "held"
+    },
+    {
+      "name": "Darkranite",
+      "dir": "pokerogueItems",
+      "stem": "darkranite",
+      "variant": "direct"
     },
     {
       "name": "Dawn Stone",
@@ -2079,6 +1964,12 @@
       "variant": "direct"
     },
     {
+      "name": "Eject Pack",
+      "dir": "currentItems",
+      "stem": "eject-pack",
+      "variant": "direct"
+    },
+    {
       "name": "Electirizer",
       "dir": "currentItems",
       "stem": "electirizer",
@@ -2107,36 +1998,6 @@
       "dir": "currentItems",
       "stem": "electrium-z--held",
       "variant": "held"
-    },
-    {
-      "name": "Emboarite",
-      "dir": "pokerogueItems",
-      "stem": "emboarite",
-      "variant": "direct"
-    },
-    {
-      "name": "Enigma Berry",
-      "dir": "currentItems",
-      "stem": "enigma-berry",
-      "variant": "direct"
-    },
-    {
-      "name": "Eviolite",
-      "dir": "currentItems",
-      "stem": "eviolite",
-      "variant": "direct"
-    },
-    {
-      "name": "Excadrite",
-      "dir": "pokerogueItems",
-      "stem": "excadrite",
-      "variant": "direct"
-    },
-    {
-      "name": "Expert Belt",
-      "dir": "currentItems",
-      "stem": "expert-belt",
-      "variant": "direct"
     }
   ]
 }

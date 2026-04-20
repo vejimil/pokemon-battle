@@ -54,6 +54,20 @@ Target: `/workspaces/pokemon-battle`
   - 결과:
     - 한국어 모드에서 기술/특성 표기 영문 누출 축소
     - 영어 모드에서 id 기반 표기(`return102`)를 일반 영문 기술명으로 정규화
+- 도구 스프라이트 보강 및 아이콘 매칭 노이즈 억제
+  - 사용자 보강 에셋 반영 확인:
+    - standard 9: `ability-shield`, `clear-amulet`, `covert-cloak`, `eject-pack`, `heavy-duty-boots`, `punching-glove`, `room-service`, `throat-spray`, `utility-umbrella`
+    - future 2: `darkranite`, `pyroarite`
+  - `src/pokerogue-assets.js`:
+    - 아이템 아이콘 해석을 manifest 인덱스 우선 매칭으로 전환
+    - `--held`/`--bag` 변형을 포함한 stem 매칭 유지
+    - 존재하지 않는 URL 반복 probe를 줄여 콘솔 404 노이즈 완화
+  - `assets/pokerogue/items/manifest.json` 신규 생성
+  - `assets/manifest.json` items 목록 동기화(추가된 standard 아이템 반영)
+- 아이템 한글 표기 보정(2026-04-20 마감 패치)
+  - `Loaded Dice` 한국어 표기를 `장전된주사위` -> `속임수 주사위`로 교정
+  - ZA 신규 메가스톤 등 `isNonstandard=Future` 아이템에서 영문 누출 시,
+    megaStone/itemUser 기반으로 `<종족명>나이트` 한국어 fallback 표시 추가(예: `Emboarite` -> `염무왕나이트`)
 - 스프라이트 누락 조사 완료
   - `scripts/audit-missing-sprites.mjs` 추가
   - `reports/missing-sprite-audit.json` 생성
@@ -221,6 +235,9 @@ Target: `/workspaces/pokemon-battle`
 1. `reports/missing-sprite-audit.json`의 `unresolvedRenderableForms` 33건 분류
 2. 이름 불일치/기본 폼 재사용 가능 케이스(`Pikachu-*`, Totem 등)부터 `FORM_ASSET_OVERRIDES` 후보 확정
 3. front-only(`ETERNATUS_1`)처럼 back 미존재인 케이스는 에셋 보강 전까지 fallback 정책 확정
+4. 아이템 아이콘 최적화 2차:
+   - 에셋 추가 시 `assets/manifest.json` + `assets/pokerogue/items/manifest.json` 자동 재생성 스크립트 도입
+   - CI/검증에서 manifest-실파일 드리프트 감지(누락/오타 조기 탐지)
 
 ---
 

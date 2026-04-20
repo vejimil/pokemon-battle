@@ -1263,7 +1263,7 @@ export const OFFICIAL_KO_ITEMS = {
   "Life Orb": "생명의구슬",
   "Light Ball": "전기구슬",
   "Light Clay": "빛의점토",
-  "Loaded Dice": "장전된주사위",
+  "Loaded Dice": "속임수 주사위",
   "Lopunnite": "이어롭나이트",
   "Love Ball": "러브러브볼",
   "Love Sweet": "하트사탕공예",

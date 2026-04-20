@@ -12,6 +12,14 @@ const POKEROGUE_ASSET_PATHS = Object.freeze({
 const PROBE_CACHE = new Map();
 const JSON_CACHE = new Map();
 const ATLAS_CACHE = new Map();
+const ITEM_ICON_CACHE = new Map();
+let ITEM_ICON_CATALOG_PROMISE = null;
+
+const ITEM_ICON_CATALOG_SOURCES = Object.freeze([
+  {base: './assets/items', manifest: './assets/manifest.json', key: 'items'},
+  {base: './assets/pokerogue/items', manifest: './assets/pokerogue/items/manifest.json', key: 'items'},
+  {base: './assets/pokerogue/images/items', manifest: './assets/pokerogue/images/items/manifest.json', key: 'items'},
+]);
 
 function unique(values) {
   return Array.from(new Set(values.filter(Boolean)));
@@ -37,10 +45,7 @@ function buildItemStemCandidates(itemName = '') {
   const dash = normalizeStem(raw, '-');
   const underscore = normalizeStem(raw, '_');
   const compact = normalizeStem(raw, '').replace(/[^a-z0-9]/g, '');
-  const existingDash = raw.toLowerCase().replace(/\.png$/i, '');
-  const existingUnderscore = existingDash.replace(/-/g, '_');
-  const existingDashAgain = existingDash.replace(/_/g, '-');
-  return unique([dash, underscore, compact, existingDash, existingUnderscore, existingDashAgain]);
+  return unique([dash, underscore, compact]);
 }
 
 function probeImage(url) {
@@ -64,17 +69,70 @@ async function resolveFirstImage(urls = []) {
   return '';
 }
 
+function buildItemFileStemCandidates(stems = []) {
+  const out = [];
+  for (const stem of stems) {
+    out.push(stem);
+    out.push(`${stem}--held`);
+    out.push(`${stem}--bag`);
+  }
+  return unique(out.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+}
+
+function manifestItemsFromPayload(payload, key = 'items') {
+  const raw = Array.isArray(payload?.[key])
+    ? payload[key]
+    : (Array.isArray(payload) ? payload : []);
+  return new Set(raw.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+}
+
+async function loadItemIconCatalogByBase() {
+  if (ITEM_ICON_CATALOG_PROMISE) return ITEM_ICON_CATALOG_PROMISE;
+  ITEM_ICON_CATALOG_PROMISE = (async () => {
+    const entries = [];
+    for (const source of ITEM_ICON_CATALOG_SOURCES) {
+      const payload = await fetchJson(source.manifest);
+      entries.push([source.base, manifestItemsFromPayload(payload, source.key)]);
+    }
+    return new Map(entries);
+  })();
+  return ITEM_ICON_CATALOG_PROMISE;
+}
+
+function resolveItemIconFromCatalog(fileStems = [], catalogByBase = new Map()) {
+  for (const fileStem of fileStems) {
+    for (const source of ITEM_ICON_CATALOG_SOURCES) {
+      const set = catalogByBase.get(source.base);
+      if (!set?.has(fileStem)) continue;
+      return `${source.base}/${fileStem}.png`;
+    }
+  }
+  return '';
+}
+
+function buildItemIconProbeCandidates(fileStems = []) {
+  const bases = [...POKEROGUE_ASSET_PATHS.currentItems, ...POKEROGUE_ASSET_PATHS.pokerogueItems];
+  const candidates = [];
+  for (const fileStem of fileStems) {
+    for (const base of bases) candidates.push(`${base}/${fileStem}.png`);
+  }
+  return unique(candidates);
+}
+
 export async function resolveItemIconUrl(itemName = '') {
   const stems = buildItemStemCandidates(itemName);
   if (!stems.length) return '';
-  const candidates = [];
-  for (const stem of stems) {
-    for (const base of POKEROGUE_ASSET_PATHS.currentItems) candidates.push(`${base}/${stem}.png`);
-  }
-  for (const stem of stems) {
-    for (const base of POKEROGUE_ASSET_PATHS.pokerogueItems) candidates.push(`${base}/${stem}.png`);
-  }
-  return resolveFirstImage(unique(candidates));
+  const cacheKey = stems.join('|');
+  if (ITEM_ICON_CACHE.has(cacheKey)) return ITEM_ICON_CACHE.get(cacheKey);
+  const promise = (async () => {
+    const fileStems = buildItemFileStemCandidates(stems);
+    const catalogByBase = await loadItemIconCatalogByBase();
+    const hasCatalog = Array.from(catalogByBase.values()).some(set => set?.size);
+    if (hasCatalog) return resolveItemIconFromCatalog(fileStems, catalogByBase);
+    return resolveFirstImage(buildItemIconProbeCandidates(fileStems));
+  })();
+  ITEM_ICON_CACHE.set(cacheKey, promise);
+  return promise;
 }
 
 export async function resolvePokerogueUiAssetUrl(filename = '') {

@@ -2049,6 +2049,7 @@ const LOCALIZED_NAME_MAPS = {
     ...(KO_NAME_MAPS?.items || {}),
     ...Object.fromEntries(Object.entries(OFFICIAL_KO_ITEMS || {}).filter(([, value]) => value)),
     'Berserk Gene': '버서크유전자',
+    'Loaded Dice': '속임수 주사위',
   },
 };
 const FORM_SUFFIX_TRANSLATIONS = {
@@ -2342,8 +2343,12 @@ function getLocalizedName(kind, english) {
     || '';
   if (kind === 'species' && isSuspiciousLocalization(canonicalEnglish, localized)) return getLocalizedSpeciesFallback(canonicalEnglish) || canonicalEnglish;
   if (kind === 'items' && isSuspiciousLocalization(canonicalEnglish, localized)) {
+    const generatedAliases = getGeneratedItemSearchAliases(canonicalEnglish);
+    const generatedKorean = generatedAliases.find(alias => hasHangul(alias));
     return EXTERNALLY_VERIFIED_ITEM_KO_ALIASES?.[canonicalEnglish]?.[0]
       || EXTERNALLY_VERIFIED_ITEM_KO_ALIASES?.[english]?.[0]
+      || generatedKorean
+      || generatedAliases[0]
       || localized
       || canonicalEnglish;
   }
