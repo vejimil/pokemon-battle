@@ -218,7 +218,7 @@ export class TransplantBattleUI {
     if (this.playerSprite?.phaserSprite) {
       this.playerSprite.phaserSprite.setPosition(106, 148);
       this.playerSprite.baseX = 100;
-      this.playerSprite.baseY = 118;
+      this.playerSprite.baseY = 143;
     }
   }
 

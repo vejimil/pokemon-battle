@@ -588,9 +588,11 @@ export function createBattleShellSceneClass(Phaser, env) {
         const baseX = mount.baseX ?? mount.phaserSprite.x;
         const baseY = mount.baseY ?? mount.phaserSprite.y;
 
-        // Sprite offset: positive pbsY moves sprite DOWN (matches DBK / RPG Maker y-axis).
+        // Sprite offset:
+        // - Front sprite: positive pbsY moves sprite DOWN (DBK / RPG Maker y-axis).
+        // - Back sprite: invert pbsY sign so only backsprite uses the opposite vertical direction.
         const offsetX = isFront ? (metrics?.frontX ?? 0) : (metrics?.backX ?? 0);
-        const offsetY = isFront ? (metrics?.frontY ?? 0) : (metrics?.backY ?? 0);
+        const offsetY = isFront ? (metrics?.frontY ?? 0) : 0.5 * (metrics?.backY ?? 0);
         const spriteTargetX = baseX + offsetX;
         const spriteTargetY = baseY + offsetY;
         const sprScale = isFront
