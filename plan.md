@@ -1,6 +1,6 @@
 # PKB Battle Presentation 활성 계획
 
-Last updated: 2026-04-20  
+Last updated: 2026-04-20 (배틀 연출 안정화 1차)
 Target: `/workspaces/pokemon-battle`
 
 이 문서는 **현재 활성 작업/다음 액션**만 유지한다.  
@@ -43,17 +43,16 @@ Target: `/workspaces/pokemon-battle`
 
 ## 1) 다음 할 일 (우선순위)
 
-1. 배틀 연출 안정화 (원인 분석 우선)
-- 메가 샹델라/테라파고스 최종폼 크기 검증
-  - 원본 에셋 자체 크기 이슈인지, 런타임 스케일/오프셋 적용 이슈인지 분리 진단
-  - 런타임 스케일 문제면 원본 크기 기준으로 복원
-  - 원본 에셋 자체가 큰 경우는 근거 기록 후 보류
-- 대형 포켓몬 기술 연출 시작 좌표 상단 치우침 수정
-  - 다이맥스/메가/특수 대형 폼 포함 공통 규칙으로 시작점 정합
-  - `battle-anim-player` 좌표계/anchor/metrics 적용 경로 추적 후 수정
-- 전투 흐름 불일치 가시성 버그 정리
-  - faint 이후/날씨 연출 중 재노출 등 “보이면 안 되는 시점” 전수 점검
-  - 이벤트 순서(`move -> hp -> faint/switch`)와 scene 표시 상태를 강제 동기화
+1. 배틀 연출 안정화 (1차 완료 · 회귀 관찰 단계)
+- [완료] Mega Chandelure / Terapagos 최종폼 크기
+  - 원인: `pokemon-metrics.js` 파서가 PBS 3번째 컬럼을 scale로 오해석 (Pichu·Tatsugiri 등 소형 폼도 “2”를 공유해 scale 불가 확정)
+  - 조치: `pokemon_metrics.js`에서 3번째 컬럼 scale 저장 제거 + 정책 주석 추가
+- [완료] 대형 포켓몬 기술 시작 좌표 상단 치우침
+  - 원인 진단: `_computeFrameData`는 원본 PokeRogue(`battle-anims.ts`)와 동일하게 `displayHeight/2` 기반 중앙 정렬. 다이맥스/진짜 큰 종은 원본 의도된 거동
+  - 실제 체감 이슈는 1번 scale 버그로 인한 2배 확대가 주요 원인이었으며, 해당 수정으로 Mega Chandelure·Terapagos 정합. 다이맥스 등 잔여 케이스는 회귀 관찰
+- [완료] faint 이후/날씨 중 스프라이트 재노출 방어
+  - 조치: `mount.fainted` 추적 도입, `renderBattlerSprite`/`shadow` setVisible 경로에 가드, `faintBattler`에서 set, `switchInBattler`·`prepareSwitchInBattler`·`setBattlerSprite`에서 해제
+- 회귀 관찰: 실제 배틀에서 대형 폼 기술 시작점, 폼체인지/다이맥스 해제 후 재노출 여부를 사용자 플레이로 재검증
 
 2. HUD 확정
 - 포켓몬 정보창 이름 렌더링 안정화
@@ -65,6 +64,7 @@ Target: `/workspaces/pokemon-battle`
 - 빌더 편의성 개선
   - 종족값 표시
   - EV/IV 입력 UX 개선(다자리 연속 입력, 252 즉시 입력, 화살표 길게 누르기)
+  - 필요없는 설명 삭제 '업로드한 스프라이트와 로컬 배틀 데이터를 불러와 두 팀을 직접 만든 뒤, 브라우저에서 바로 번갈아 조작하는 배틀을 플레이합니다.' 등과 같은 설명문.
 
 3. 통신 플레이 확장
 - 방 생성/참가 및 양측 빌더 동기화

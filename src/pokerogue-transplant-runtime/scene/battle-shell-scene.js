@@ -186,6 +186,10 @@ export function createBattleShellSceneClass(Phaser, env) {
         phaserSprite: img,
         shadow,
         shadowVisibleByMetrics: false,
+        // Tracks whether the current occupant of this slot is fainted. When true,
+        // sprite refreshes (metrics reload, URL re-render) must not re-expose the
+        // battler — cleared only when a new sprite is staged for switch-in / form change.
+        fainted: false,
         dynamaxed: false,
         gigantamaxed: false,
         terastallized: false,
@@ -603,7 +607,10 @@ export function createBattleShellSceneClass(Phaser, env) {
           .setOrigin(0.5, 1)
           .setScale(this._resolveMountScale(mount, sprScale))
           .setPosition(spriteTargetX, spriteTargetY);
-        mount.phaserSprite.setVisible(true);
+        // Guard: never re-expose a fainted slot during a refresh (metrics reload,
+        // dynamax state apply, etc.). Switch-in / setBattlerSprite clears mount.fainted
+        // before staging the new sprite, so genuine reveals still reach setVisible(true).
+        mount.phaserSprite.setVisible(!mount.fainted);
         this._syncMountTeraFx(mount, 0);
 
         // Shadow: composite sprite offset + shadow offset (follows DBK apply_metrics_to_sprite
@@ -640,7 +647,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           );
           mount.shadow.setSize(shadowW, shadowH);
           mount.shadowVisibleByMetrics = true;
-          mount.shadow.setVisible(true);
+          mount.shadow.setVisible(!mount.fainted);
           this._logShadowMetrics(mount, 'init', {
             url,
             spriteId,
@@ -897,6 +904,9 @@ export function createBattleShellSceneClass(Phaser, env) {
     async prepareSwitchInBattler(side, spriteUrl = '') {
       const mount = this._mountForBattleSide(side);
       if (!mount) return;
+      // Incoming sprite belongs to the next occupant — lift the fainted guard so
+      // renderBattlerSprite can stage the new texture normally.
+      mount.fainted = false;
       if (spriteUrl) {
         await this.renderBattlerSprite(mount, { url: spriteUrl });
       }
@@ -916,6 +926,9 @@ export function createBattleShellSceneClass(Phaser, env) {
     async setBattlerSprite(side, spriteUrl = '', options = {}) {
       const mount = this._mountForBattleSide(side);
       if (!mount) return;
+      // Staging a new sprite (form change / switch-in) implies the slot has a
+      // live occupant again — clear the fainted guard so render can set visible.
+      mount.fainted = false;
       if (spriteUrl) {
         await this.renderBattlerSprite(mount, { url: spriteUrl });
       }
@@ -1467,6 +1480,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       spr.setAlpha(1);
       spr.setY(startY);
       if (mount?.shadow) mount.shadow.setVisible(false);
+      if (mount) mount.fainted = true;
       this._syncMountTeraFx(mount, 0);
     }
 
@@ -1479,6 +1493,10 @@ export function createBattleShellSceneClass(Phaser, env) {
       const mount = this._mountForBattleSide(side);
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active) return;
+
+      // A new occupant takes the slot — clear the fainted guard so subsequent
+      // sprite refreshes may expose the battler normally.
+      mount.fainted = false;
 
       // Restore metric-aligned base transform before playing switch visuals.
       this._applyMountMetricsSnapshot(mount);

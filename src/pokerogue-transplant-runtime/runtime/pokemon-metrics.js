@@ -71,15 +71,17 @@ function parseOneFile(text) {
     const vals = line.slice(eq + 1).split(',').map(v => Number(v.trim()));
 
     switch (key) {
+      // PBS standard FrontSprite/BackSprite = x, y. A third column appears in
+      // some community files (Gen 9 Pack, forms) but is NOT a scale multiplier —
+      // small species like Pichu/Tatsugiri and oversized Mega Chandelure/Terapagos
+      // all share value "2", which rules out scale semantics. Ignore extra columns.
       case 'FrontSprite':
         current.frontX     = vals[0] ?? 0;
         current.frontY     = vals[1] ?? 0;
-        if (Number.isFinite(vals[2]) && vals[2] > 0) current.frontScale = vals[2];
         break;
       case 'BackSprite':
         current.backX      = vals[0] ?? 0;
         current.backY      = vals[1] ?? 0;
-        if (Number.isFinite(vals[2]) && vals[2] > 0) current.backScale = vals[2];
         break;
       case 'ShadowSprite':
         current.shadowX      = vals[0] ?? 0;
