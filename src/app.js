@@ -1,6 +1,7 @@
 import {LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_TYPES, LOCAL_TYPE_CHART} from './local-dex.js';
 import {KO_NAME_MAPS} from './i18n-ko-data.js';
 import {OFFICIAL_KO_SPECIES, OFFICIAL_KO_ITEMS} from './i18n-ko-official.js';
+import {OFFICIAL_KO_LOCALE_NAMES} from './i18n-ko-locales.js';
 import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdownLocalSinglesChoices, isShowdownLocalBattle} from './engine/showdown-local-bridge.js';
 import {Aliases} from './data/aliases.js';
 import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
@@ -1563,6 +1564,7 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
       // BA-26 exception: forme_change presentation message should keep form labels.
       localizeMonNameWithForm: name => displaySpeciesName(name) || name,
       localizeMoveName: name => displayMoveName(name) || name,
+      localizeAbilityName: name => displayAbilityName(name) || name,
       ...cfg,
     }));
     await Promise.all(executors.map(executor => executor.play(events)));
@@ -1917,6 +1919,48 @@ function slugify(text) {
 function toId(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
+function resolveDexEntityName(kind, rawValue = '') {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+  const dexCollection = kind === 'moves'
+    ? state.dex?.moves
+    : kind === 'abilities'
+      ? state.dex?.abilities
+      : kind === 'species'
+        ? state.dex?.species
+        : kind === 'items'
+          ? state.dex?.items
+          : null;
+  const tryGet = (candidate = '') => {
+    if (!candidate || !dexCollection?.get) return '';
+    const entry = dexCollection.get(candidate);
+    return entry?.exists && entry?.name ? entry.name : '';
+  };
+  const direct = tryGet(raw);
+  if (direct) return direct;
+  const id = toId(raw);
+  if (id) {
+    const byId = tryGet(id);
+    if (byId) return byId;
+  }
+  if (kind === 'moves' && id) {
+    // Showdown request sometimes sends pseudo ids like return102/frustration102.
+    const stripped = id.replace(/\d+$/, '');
+    if (stripped && stripped !== id) {
+      const byStripped = tryGet(stripped);
+      if (byStripped) return byStripped;
+    }
+  }
+  return raw;
+}
+function resolveCanonicalDisplayName(kind, english = '') {
+  const raw = String(english || '').trim();
+  if (!raw) return '';
+  if (kind === 'moves' || kind === 'abilities' || kind === 'species' || kind === 'items') {
+    return resolveDexEntityName(kind, raw);
+  }
+  return raw;
+}
 const EXPLICIT_ITEM_ALIAS_REVERSE = new Map(Object.entries(EXTERNALLY_VERIFIED_ITEM_KO_ALIASES || {}).flatMap(([english, aliases]) => (aliases || []).map(alias => [normalizeSearchKey(alias), english])));
 function titleCase(text) {
   return String(text || '').split(/[-\s]+/).filter(Boolean).map(part => part[0]?.toUpperCase() + part.slice(1)).join('\n');
@@ -1966,10 +2010,39 @@ const statusLabels = {
   slp: '잠듦 / Sleep',
   frz: '얼음 / Freeze',
 };
+const KO_NAME_PATCHES = {
+  moves: {
+    'Paleo Wave': '팔레오웨이브',
+    'Shadow Strike': '섀도스트라이크',
+    'Polar Flare': '폴라플레어',
+  },
+  abilities: {
+    'No Ability': '특성없음',
+    'Embody Aspect (Cornerstone)': '체현(주춧돌)',
+    'Embody Aspect (Hearthflame)': '체현(화덕)',
+    'Embody Aspect (Teal)': '체현(벽록)',
+    'Embody Aspect (Wellspring)': '체현(우물)',
+    "Mind's Eye": '심안',
+    Mountaineer: '등산가',
+    Rebound: '리바운드',
+    Persistent: '집요',
+  },
+};
 const LOCALIZED_NAME_MAPS = {
   ...KO_NAME_MAPS,
+  moves: {
+    ...(KO_NAME_MAPS?.moves || {}),
+    ...(OFFICIAL_KO_LOCALE_NAMES?.moves || {}),
+    ...(KO_NAME_PATCHES?.moves || {}),
+  },
+  abilities: {
+    ...(KO_NAME_MAPS?.abilities || {}),
+    ...(OFFICIAL_KO_LOCALE_NAMES?.abilities || {}),
+    ...(KO_NAME_PATCHES?.abilities || {}),
+  },
   species: {
     ...(KO_NAME_MAPS?.species || {}),
+    ...(OFFICIAL_KO_LOCALE_NAMES?.species || {}),
     ...OFFICIAL_KO_SPECIES,
   },
   items: {
@@ -2246,10 +2319,11 @@ function translateFormSuffix(suffix = '') {
 }
 function getLocalizedSpeciesFallback(english) {
   if (!english) return '';
-  const speciesData = state.dex?.species?.get?.(english);
-  const baseEnglish = speciesData?.exists ? (speciesData.baseSpecies || speciesData.name) : String(english).split('-')[0];
+  const canonicalEnglish = resolveCanonicalDisplayName('species', english) || String(english || '');
+  const speciesData = state.dex?.species?.get?.(canonicalEnglish);
+  const baseEnglish = speciesData?.exists ? (speciesData.baseSpecies || speciesData.name) : String(canonicalEnglish).split('-')[0];
   const baseKorean = LOCALIZED_NAME_MAPS?.species?.[baseEnglish] || KO_NAME_MAPS?.species?.[baseEnglish] || baseEnglish;
-  const forme = speciesData?.forme || (String(english).includes('-') ? String(english).split('-').slice(1).join('-') : '');
+  const forme = speciesData?.forme || (String(canonicalEnglish).includes('-') ? String(canonicalEnglish).split('-').slice(1).join('-') : '');
   if (!forme) return baseKorean;
   const translated = translateFormSuffix(forme);
   if (['Alola', 'Galar', 'Hisui', 'Paldea'].includes(forme)) return `${translated} ${baseKorean}`;
@@ -2260,14 +2334,25 @@ function getLocalizedSpeciesFallback(english) {
 }
 function getLocalizedName(kind, english) {
   if (!english) return '';
-  const localized = LOCALIZED_NAME_MAPS?.[kind]?.[english] || KO_NAME_MAPS?.[kind]?.[english] || '';
-  if (kind === 'species' && isSuspiciousLocalization(english, localized)) return getLocalizedSpeciesFallback(english) || english;
-  if (kind === 'items' && isSuspiciousLocalization(english, localized)) return EXTERNALLY_VERIFIED_ITEM_KO_ALIASES?.[english]?.[0] || localized || english;
-  return localized || english;
+  const canonicalEnglish = resolveCanonicalDisplayName(kind, english) || String(english || '');
+  const localized = LOCALIZED_NAME_MAPS?.[kind]?.[english]
+    || LOCALIZED_NAME_MAPS?.[kind]?.[canonicalEnglish]
+    || KO_NAME_MAPS?.[kind]?.[english]
+    || KO_NAME_MAPS?.[kind]?.[canonicalEnglish]
+    || '';
+  if (kind === 'species' && isSuspiciousLocalization(canonicalEnglish, localized)) return getLocalizedSpeciesFallback(canonicalEnglish) || canonicalEnglish;
+  if (kind === 'items' && isSuspiciousLocalization(canonicalEnglish, localized)) {
+    return EXTERNALLY_VERIFIED_ITEM_KO_ALIASES?.[canonicalEnglish]?.[0]
+      || EXTERNALLY_VERIFIED_ITEM_KO_ALIASES?.[english]?.[0]
+      || localized
+      || canonicalEnglish;
+  }
+  return localized || canonicalEnglish;
 }
 function displayEntity(kind, english) {
   if (!english) return '';
-  return bilingualLabel(getLocalizedName(kind, english), english);
+  const canonicalEnglish = resolveCanonicalDisplayName(kind, english) || String(english || '');
+  return bilingualLabel(getLocalizedName(kind, canonicalEnglish), canonicalEnglish);
 }
 function displayType(typeName) {
   return localizeText(typeLabels[typeName] || bilingualLabel(titleCase(typeName), titleCase(typeName)));
@@ -4763,9 +4848,7 @@ function getAvailableEngineZMoveOptions(moveRequest) {
 function resolveEngineMoveName(rawMoveName = '') {
   const raw = String(rawMoveName || '').trim();
   if (!raw) return '';
-  const resolved = state.dex?.moves?.get?.(raw);
-  if (resolved?.exists && resolved.name) return resolved.name;
-  return raw;
+  return resolveCanonicalDisplayName('moves', raw);
 }
 function getEngineMaxMoveEntry(moveRequest, moveIndex) {
   const maxMoves = moveRequest?.maxMoves?.maxMoves;

@@ -246,6 +246,7 @@ export class BattleTimelineExecutor {
    * @param {function(string): string} [opts.localizeMonName]  translate English species name → display name
    * @param {function(string): string} [opts.localizeMonNameWithForm] translate English species name → form-aware display name
    * @param {function(string): string} [opts.localizeMoveName] translate English move name → display name
+   * @param {function(string): string} [opts.localizeAbilityName] translate English ability name → display name
    */
   constructor({
     onInputRequired,
@@ -262,6 +263,7 @@ export class BattleTimelineExecutor {
     localizeMonName,
     localizeMonNameWithForm,
     localizeMoveName,
+    localizeAbilityName,
   } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
     this.onComplete = onComplete ?? (() => {});
@@ -277,6 +279,7 @@ export class BattleTimelineExecutor {
       ? localizeMonNameWithForm
       : this._localizeMonName;
     this._localizeMoveName = typeof localizeMoveName === 'function' ? localizeMoveName : (n => String(n || ''));
+    this._localizeAbilityName = typeof localizeAbilityName === 'function' ? localizeAbilityName : (n => String(n || ''));
     this.running = false;
     // Tracks species name per slot. Key: "${side}_${slot}" e.g. "p1_0", "p2_0".
     // Pre-seeded from initialNames (previous turn's final roster).
@@ -1063,7 +1066,7 @@ export class BattleTimelineExecutor {
         const animationMoveName = String(ev.animationMove || ev.baseMove || ev.move || '').trim();
         const animationScale = Number.isFinite(Number(ev.animationScale))
           ? Math.max(0.25, Math.min(4, Number(ev.animationScale)))
-          : (ev?.zMove ? 1.4 : 1);
+          : (ev?.zMove ? 1.0 : 1);
         const animationTint = ev?.zMove ? this._zMoveTint(ev?.zMoveType) : null;
         await this._showMsg(this._t(
           'battle',
@@ -1199,14 +1202,15 @@ export class BattleTimelineExecutor {
       // ── BA-3: Ability bar ────────────────────────────────────────────────
       case 'ability_show': {
         const abilityOwner = this._slotName(ev.side, ev.slot ?? 0);
+        const abilityName = this._localizeAbilityName(ev.ability || '') || ev.ability || '';
         const abilityMsg = this._isEnglishLocale()
-          ? `${abilityOwner}'s Ability: ${ev.ability}!`
-          : `${abilityOwner}의 특성: ${ev.ability}!`;
+          ? `${abilityOwner}'s Ability: ${abilityName}!`
+          : `${abilityOwner}의 특성: ${abilityName}!`;
         const ui = this._ui;
         if (ui?.abilityBar) {
           ui.abilityBar.update({
             visible: true,
-            text: ev.ability,
+            text: abilityName,
             side: ev.side === this._playerSide ? 'player' : 'enemy',
           });
         }

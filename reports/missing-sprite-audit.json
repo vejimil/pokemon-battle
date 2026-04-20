@@ -1,0 +1,853 @@
+{
+  "generatedAt": "2026-04-20T05:02:18.958Z",
+  "summary": {
+    "frontCount": 1634,
+    "backCount": 1605,
+    "usableCount": 1605,
+    "frontOnlyCount": 29,
+    "backOnlyCount": 0,
+    "unresolvedRenderableCount": 33,
+    "overrideAssetMissingCount": 0,
+    "diagnosticsFamilies": 20
+  },
+  "frontOnly": [
+    "ETERNATUS_1",
+    "STUDIOPROP",
+    "STUDIOPROP_1",
+    "STUDIOPROP_10",
+    "STUDIOPROP_11",
+    "STUDIOPROP_12",
+    "STUDIOPROP_13",
+    "STUDIOPROP_14",
+    "STUDIOPROP_15",
+    "STUDIOPROP_16",
+    "STUDIOPROP_17",
+    "STUDIOPROP_18",
+    "STUDIOPROP_19",
+    "STUDIOPROP_2",
+    "STUDIOPROP_20",
+    "STUDIOPROP_21",
+    "STUDIOPROP_22",
+    "STUDIOPROP_23",
+    "STUDIOPROP_24",
+    "STUDIOPROP_25",
+    "STUDIOPROP_26",
+    "STUDIOPROP_27",
+    "STUDIOPROP_3",
+    "STUDIOPROP_4",
+    "STUDIOPROP_5",
+    "STUDIOPROP_6",
+    "STUDIOPROP_7",
+    "STUDIOPROP_8",
+    "STUDIOPROP_9"
+  ],
+  "backOnly": [],
+  "unresolvedRenderableForms": [
+    {
+      "baseSpecies": "Araquanid",
+      "species": "Araquanid-Totem",
+      "assetBaseId": "ARAQUANID",
+      "availableAssets": [
+        "ARAQUANID"
+      ]
+    },
+    {
+      "baseSpecies": "Eternatus",
+      "species": "Eternatus-Eternamax",
+      "assetBaseId": "ETERNATUS",
+      "availableAssets": [
+        "ETERNATUS",
+        "ETERNATUS_1"
+      ]
+    },
+    {
+      "baseSpecies": "Gourgeist",
+      "species": "Gourgeist-Small",
+      "assetBaseId": "GOURGEIST",
+      "availableAssets": [
+        "GOURGEIST"
+      ]
+    },
+    {
+      "baseSpecies": "Gourgeist",
+      "species": "Gourgeist-Large",
+      "assetBaseId": "GOURGEIST",
+      "availableAssets": [
+        "GOURGEIST"
+      ]
+    },
+    {
+      "baseSpecies": "Gourgeist",
+      "species": "Gourgeist-Super",
+      "assetBaseId": "GOURGEIST",
+      "availableAssets": [
+        "GOURGEIST"
+      ]
+    },
+    {
+      "baseSpecies": "Gumshoos",
+      "species": "Gumshoos-Totem",
+      "assetBaseId": "GUMSHOOS",
+      "availableAssets": [
+        "GUMSHOOS"
+      ]
+    },
+    {
+      "baseSpecies": "Kommo-o",
+      "species": "Kommo-o-Totem",
+      "assetBaseId": "KOMMOO",
+      "availableAssets": [
+        "KOMMOO"
+      ]
+    },
+    {
+      "baseSpecies": "Lurantis",
+      "species": "Lurantis-Totem",
+      "assetBaseId": "LURANTIS",
+      "availableAssets": [
+        "LURANTIS"
+      ]
+    },
+    {
+      "baseSpecies": "Marowak",
+      "species": "Marowak-Alola-Totem",
+      "assetBaseId": "MAROWAK",
+      "availableAssets": [
+        "MAROWAK",
+        "MAROWAK_1"
+      ]
+    },
+    {
+      "baseSpecies": "Mimikyu",
+      "species": "Mimikyu-Busted",
+      "assetBaseId": "MIMIKYU",
+      "availableAssets": [
+        "MIMIKYU",
+        "MIMIKYU_1"
+      ]
+    },
+    {
+      "baseSpecies": "Mimikyu",
+      "species": "Mimikyu-Busted-Totem",
+      "assetBaseId": "MIMIKYU",
+      "availableAssets": [
+        "MIMIKYU",
+        "MIMIKYU_1"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "species": "Pikachu-Original",
+      "assetBaseId": "PIKACHU",
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "species": "Pikachu-Hoenn",
+      "assetBaseId": "PIKACHU",
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "species": "Pikachu-Sinnoh",
+      "assetBaseId": "PIKACHU",
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "species": "Pikachu-Unova",
+      "assetBaseId": "PIKACHU",
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "species": "Pikachu-Kalos",
+      "assetBaseId": "PIKACHU",
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "species": "Pikachu-Alola",
+      "assetBaseId": "PIKACHU",
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "species": "Pikachu-Partner",
+      "assetBaseId": "PIKACHU",
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "species": "Pikachu-World",
+      "assetBaseId": "PIKACHU",
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "species": "Pikachu-Cosplay",
+      "assetBaseId": "PIKACHU",
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Poltchageist",
+      "species": "Poltchageist-Artisan",
+      "assetBaseId": "POLTCHAGEIST",
+      "availableAssets": [
+        "POLTCHAGEIST"
+      ]
+    },
+    {
+      "baseSpecies": "Polteageist",
+      "species": "Polteageist-Antique",
+      "assetBaseId": "POLTEAGEIST",
+      "availableAssets": [
+        "POLTEAGEIST"
+      ]
+    },
+    {
+      "baseSpecies": "Pumpkaboo",
+      "species": "Pumpkaboo-Small",
+      "assetBaseId": "PUMPKABOO",
+      "availableAssets": [
+        "PUMPKABOO"
+      ]
+    },
+    {
+      "baseSpecies": "Pumpkaboo",
+      "species": "Pumpkaboo-Large",
+      "assetBaseId": "PUMPKABOO",
+      "availableAssets": [
+        "PUMPKABOO"
+      ]
+    },
+    {
+      "baseSpecies": "Pumpkaboo",
+      "species": "Pumpkaboo-Super",
+      "assetBaseId": "PUMPKABOO",
+      "availableAssets": [
+        "PUMPKABOO"
+      ]
+    },
+    {
+      "baseSpecies": "Raticate",
+      "species": "Raticate-Alola-Totem",
+      "assetBaseId": "RATICATE",
+      "availableAssets": [
+        "RATICATE",
+        "RATICATE_1",
+        "RATICATE_female"
+      ]
+    },
+    {
+      "baseSpecies": "Ribombee",
+      "species": "Ribombee-Totem",
+      "assetBaseId": "RIBOMBEE",
+      "availableAssets": [
+        "RIBOMBEE"
+      ]
+    },
+    {
+      "baseSpecies": "Rockruff",
+      "species": "Rockruff-Dusk",
+      "assetBaseId": "ROCKRUFF",
+      "availableAssets": [
+        "ROCKRUFF"
+      ]
+    },
+    {
+      "baseSpecies": "Salazzle",
+      "species": "Salazzle-Totem",
+      "assetBaseId": "SALAZZLE",
+      "availableAssets": [
+        "SALAZZLE"
+      ]
+    },
+    {
+      "baseSpecies": "Sinistcha",
+      "species": "Sinistcha-Masterpiece",
+      "assetBaseId": "SINISTCHA",
+      "availableAssets": [
+        "SINISTCHA"
+      ]
+    },
+    {
+      "baseSpecies": "Sinistea",
+      "species": "Sinistea-Antique",
+      "assetBaseId": "SINISTEA",
+      "availableAssets": [
+        "SINISTEA"
+      ]
+    },
+    {
+      "baseSpecies": "Togedemaru",
+      "species": "Togedemaru-Totem",
+      "assetBaseId": "TOGEDEMARU",
+      "availableAssets": [
+        "TOGEDEMARU"
+      ]
+    },
+    {
+      "baseSpecies": "Vikavolt",
+      "species": "Vikavolt-Totem",
+      "assetBaseId": "VIKAVOLT",
+      "availableAssets": [
+        "VIKAVOLT"
+      ]
+    }
+  ],
+  "overrideAssetMissing": [],
+  "familyDiagnostics": [
+    {
+      "baseSpecies": "Araquanid",
+      "assetBaseId": "ARAQUANID",
+      "assignmentOrder": [
+        "Araquanid-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Araquanid-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Araquanid-Totem"
+      ],
+      "availableAssets": [
+        "ARAQUANID"
+      ]
+    },
+    {
+      "baseSpecies": "Eternatus",
+      "assetBaseId": "ETERNATUS",
+      "assignmentOrder": [
+        "Eternatus-Eternamax"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Eternatus-Eternamax"
+      ],
+      "unresolvedRenderable": [
+        "Eternatus-Eternamax"
+      ],
+      "availableAssets": [
+        "ETERNATUS",
+        "ETERNATUS_1"
+      ]
+    },
+    {
+      "baseSpecies": "Gourgeist",
+      "assetBaseId": "GOURGEIST",
+      "assignmentOrder": [
+        "Gourgeist-Small",
+        "Gourgeist-Large",
+        "Gourgeist-Super"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Gourgeist-Small",
+        "Gourgeist-Large",
+        "Gourgeist-Super"
+      ],
+      "unresolvedRenderable": [
+        "Gourgeist-Small",
+        "Gourgeist-Large",
+        "Gourgeist-Super"
+      ],
+      "availableAssets": [
+        "GOURGEIST"
+      ]
+    },
+    {
+      "baseSpecies": "Gumshoos",
+      "assetBaseId": "GUMSHOOS",
+      "assignmentOrder": [
+        "Gumshoos-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Gumshoos-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Gumshoos-Totem"
+      ],
+      "availableAssets": [
+        "GUMSHOOS"
+      ]
+    },
+    {
+      "baseSpecies": "Kommo-o",
+      "assetBaseId": "KOMMOO",
+      "assignmentOrder": [
+        "Kommo-o-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Kommo-o-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Kommo-o-Totem"
+      ],
+      "availableAssets": [
+        "KOMMOO"
+      ]
+    },
+    {
+      "baseSpecies": "Lurantis",
+      "assetBaseId": "LURANTIS",
+      "assignmentOrder": [
+        "Lurantis-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Lurantis-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Lurantis-Totem"
+      ],
+      "availableAssets": [
+        "LURANTIS"
+      ]
+    },
+    {
+      "baseSpecies": "Marowak",
+      "assetBaseId": "MAROWAK",
+      "assignmentOrder": [
+        "Marowak-Alola",
+        "Marowak-Alola-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Marowak-Alola-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Marowak-Alola-Totem"
+      ],
+      "availableAssets": [
+        "MAROWAK",
+        "MAROWAK_1"
+      ]
+    },
+    {
+      "baseSpecies": "Mimikyu",
+      "assetBaseId": "MIMIKYU",
+      "assignmentOrder": [
+        "Mimikyu-Totem",
+        "Mimikyu-Busted",
+        "Mimikyu-Busted-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Mimikyu-Busted",
+        "Mimikyu-Busted-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Mimikyu-Busted",
+        "Mimikyu-Busted-Totem"
+      ],
+      "availableAssets": [
+        "MIMIKYU",
+        "MIMIKYU_1"
+      ]
+    },
+    {
+      "baseSpecies": "Pikachu",
+      "assetBaseId": "PIKACHU",
+      "assignmentOrder": [
+        "Pikachu-Original",
+        "Pikachu-Hoenn",
+        "Pikachu-Sinnoh",
+        "Pikachu-Unova",
+        "Pikachu-Kalos",
+        "Pikachu-Alola",
+        "Pikachu-Partner",
+        "Pikachu-World",
+        "Pikachu-Rock-Star",
+        "Pikachu-Belle",
+        "Pikachu-Pop-Star",
+        "Pikachu-PhD",
+        "Pikachu-Libre",
+        "Pikachu-Cosplay",
+        "Pikachu-Gmax"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Pikachu-Original",
+        "Pikachu-Hoenn",
+        "Pikachu-Sinnoh",
+        "Pikachu-Unova",
+        "Pikachu-Kalos",
+        "Pikachu-Alola",
+        "Pikachu-Partner",
+        "Pikachu-World",
+        "Pikachu-Cosplay"
+      ],
+      "unresolvedRenderable": [
+        "Pikachu-Original",
+        "Pikachu-Hoenn",
+        "Pikachu-Sinnoh",
+        "Pikachu-Unova",
+        "Pikachu-Kalos",
+        "Pikachu-Alola",
+        "Pikachu-Partner",
+        "Pikachu-World",
+        "Pikachu-Cosplay"
+      ],
+      "availableAssets": [
+        "PIKACHU",
+        "PIKACHU_2",
+        "PIKACHU_3",
+        "PIKACHU_4",
+        "PIKACHU_5",
+        "PIKACHU_6",
+        "PIKACHU_7",
+        "PIKACHU_8",
+        "PIKACHU_9",
+        "PIKACHU_10",
+        "PIKACHU_11",
+        "PIKACHU_12",
+        "PIKACHU_13",
+        "PIKACHU_14",
+        "PIKACHU_15",
+        "PIKACHU_17",
+        "PIKACHU_female"
+      ]
+    },
+    {
+      "baseSpecies": "Poltchageist",
+      "assetBaseId": "POLTCHAGEIST",
+      "assignmentOrder": [
+        "Poltchageist-Artisan"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Poltchageist-Artisan"
+      ],
+      "unresolvedRenderable": [
+        "Poltchageist-Artisan"
+      ],
+      "availableAssets": [
+        "POLTCHAGEIST"
+      ]
+    },
+    {
+      "baseSpecies": "Polteageist",
+      "assetBaseId": "POLTEAGEIST",
+      "assignmentOrder": [
+        "Polteageist-Antique"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Polteageist-Antique"
+      ],
+      "unresolvedRenderable": [
+        "Polteageist-Antique"
+      ],
+      "availableAssets": [
+        "POLTEAGEIST"
+      ]
+    },
+    {
+      "baseSpecies": "Pumpkaboo",
+      "assetBaseId": "PUMPKABOO",
+      "assignmentOrder": [
+        "Pumpkaboo-Small",
+        "Pumpkaboo-Large",
+        "Pumpkaboo-Super"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Pumpkaboo-Small",
+        "Pumpkaboo-Large",
+        "Pumpkaboo-Super"
+      ],
+      "unresolvedRenderable": [
+        "Pumpkaboo-Small",
+        "Pumpkaboo-Large",
+        "Pumpkaboo-Super"
+      ],
+      "availableAssets": [
+        "PUMPKABOO"
+      ]
+    },
+    {
+      "baseSpecies": "Raticate",
+      "assetBaseId": "RATICATE",
+      "assignmentOrder": [
+        "Raticate-Alola",
+        "Raticate-Alola-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Raticate-Alola-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Raticate-Alola-Totem"
+      ],
+      "availableAssets": [
+        "RATICATE",
+        "RATICATE_1",
+        "RATICATE_female"
+      ]
+    },
+    {
+      "baseSpecies": "Ribombee",
+      "assetBaseId": "RIBOMBEE",
+      "assignmentOrder": [
+        "Ribombee-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Ribombee-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Ribombee-Totem"
+      ],
+      "availableAssets": [
+        "RIBOMBEE"
+      ]
+    },
+    {
+      "baseSpecies": "Rockruff",
+      "assetBaseId": "ROCKRUFF",
+      "assignmentOrder": [
+        "Rockruff-Dusk"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Rockruff-Dusk"
+      ],
+      "unresolvedRenderable": [
+        "Rockruff-Dusk"
+      ],
+      "availableAssets": [
+        "ROCKRUFF"
+      ]
+    },
+    {
+      "baseSpecies": "Salazzle",
+      "assetBaseId": "SALAZZLE",
+      "assignmentOrder": [
+        "Salazzle-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Salazzle-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Salazzle-Totem"
+      ],
+      "availableAssets": [
+        "SALAZZLE"
+      ]
+    },
+    {
+      "baseSpecies": "Sinistcha",
+      "assetBaseId": "SINISTCHA",
+      "assignmentOrder": [
+        "Sinistcha-Masterpiece"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Sinistcha-Masterpiece"
+      ],
+      "unresolvedRenderable": [
+        "Sinistcha-Masterpiece"
+      ],
+      "availableAssets": [
+        "SINISTCHA"
+      ]
+    },
+    {
+      "baseSpecies": "Sinistea",
+      "assetBaseId": "SINISTEA",
+      "assignmentOrder": [
+        "Sinistea-Antique"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Sinistea-Antique"
+      ],
+      "unresolvedRenderable": [
+        "Sinistea-Antique"
+      ],
+      "availableAssets": [
+        "SINISTEA"
+      ]
+    },
+    {
+      "baseSpecies": "Togedemaru",
+      "assetBaseId": "TOGEDEMARU",
+      "assignmentOrder": [
+        "Togedemaru-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Togedemaru-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Togedemaru-Totem"
+      ],
+      "availableAssets": [
+        "TOGEDEMARU"
+      ]
+    },
+    {
+      "baseSpecies": "Vikavolt",
+      "assetBaseId": "VIKAVOLT",
+      "assignmentOrder": [
+        "Vikavolt-Totem"
+      ],
+      "unresolvedAssignmentOrder": [
+        "Vikavolt-Totem"
+      ],
+      "unresolvedRenderable": [
+        "Vikavolt-Totem"
+      ],
+      "availableAssets": [
+        "VIKAVOLT"
+      ]
+    }
+  ]
+}

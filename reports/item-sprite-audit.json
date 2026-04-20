@@ -1,0 +1,2142 @@
+{
+  "generatedAt": "2026-04-20T05:16:52.353Z",
+  "inputs": {
+    "itemDirs": {
+      "currentItems": "/workspaces/pokemon-battle/assets/items",
+      "pokerogueItems": "/workspaces/pokemon-battle/assets/pokerogue/items",
+      "pokerogueImagesItems": "/workspaces/pokemon-battle/assets/pokerogue/images/items"
+    },
+    "totalFilesByDir": {
+      "currentItems": 898,
+      "pokerogueItems": 528,
+      "pokerogueImagesItems": 0
+    },
+    "supportedItems": 578
+  },
+  "summary": {
+    "resolvedItems": 448,
+    "missingItems": 130,
+    "resolvedByDir": {
+      "currentItems": 371,
+      "pokerogueItems": 77,
+      "pokerogueImagesItems": 0
+    },
+    "resolvedByVariant": {
+      "direct": 414,
+      "held": 34,
+      "bag": 0
+    },
+    "missingByGroup": {
+      "tr-record": 100,
+      "other": 15,
+      "modern-battle-item": 9,
+      "fossilized": 4,
+      "stone-z-crystal": 2
+    },
+    "futureCurrentOfficialMissing": 2,
+    "idAliasPossibleMissing": 0
+  },
+  "missing": [
+    {
+      "name": "Ability Shield",
+      "group": "modern-battle-item",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "ability-shield",
+        "ability_shield",
+        "abilityshield",
+        "ability shield"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Clear Amulet",
+      "group": "modern-battle-item",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "clear-amulet",
+        "clear_amulet",
+        "clearamulet",
+        "clear amulet"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Covert Cloak",
+      "group": "modern-battle-item",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "covert-cloak",
+        "covert_cloak",
+        "covertcloak",
+        "covert cloak"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Eject Pack",
+      "group": "modern-battle-item",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "eject-pack",
+        "eject_pack",
+        "ejectpack",
+        "eject pack"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Heavy-Duty Boots",
+      "group": "modern-battle-item",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "heavy-duty-boots",
+        "heavy_duty_boots",
+        "heavydutyboots",
+        "heavy-duty boots",
+        "heavy_duty boots"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Pretty Feather",
+      "group": "modern-battle-item",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "pretty-feather",
+        "pretty_feather",
+        "prettyfeather",
+        "pretty feather"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Punching Glove",
+      "group": "modern-battle-item",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "punching-glove",
+        "punching_glove",
+        "punchingglove",
+        "punching glove"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Room Service",
+      "group": "modern-battle-item",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "room-service",
+        "room_service",
+        "roomservice",
+        "room service"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Throat Spray",
+      "group": "modern-battle-item",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "throat-spray",
+        "throat_spray",
+        "throatspray",
+        "throat spray"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Darkranite",
+      "group": "stone-z-crystal",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "darkranite"
+      ],
+      "isFutureCurrentOfficial": true,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Pyroarite",
+      "group": "stone-z-crystal",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "pyroarite"
+      ],
+      "isFutureCurrentOfficial": true,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR00",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr00"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR01",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr01"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR02",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr02"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR03",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr03"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR04",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr04"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR05",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr05"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR06",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr06"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR07",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr07"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR08",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr08"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR09",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr09"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR10",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr10"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR11",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr11"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR12",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr12"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR13",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr13"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR14",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr14"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR15",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr15"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR16",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr16"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR17",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr17"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR18",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr18"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR19",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr19"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR20",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr20"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR21",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr21"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR22",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr22"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR23",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr23"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR24",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr24"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR25",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr25"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR26",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr26"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR27",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr27"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR28",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr28"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR29",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr29"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR30",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr30"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR31",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr31"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR32",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr32"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR33",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr33"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR34",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr34"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR35",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr35"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR36",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr36"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR37",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr37"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR38",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr38"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR39",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr39"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR40",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr40"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR41",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr41"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR42",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr42"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR43",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr43"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR44",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr44"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR45",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr45"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR46",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr46"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR47",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr47"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR48",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr48"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR49",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr49"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR50",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr50"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR51",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr51"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR52",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr52"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR53",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr53"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR54",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr54"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR55",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr55"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR56",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr56"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR57",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr57"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR58",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr58"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR59",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr59"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR60",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr60"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR61",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr61"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR62",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr62"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR63",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr63"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR64",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr64"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR65",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr65"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR66",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr66"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR67",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr67"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR68",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr68"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR69",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr69"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR70",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr70"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR71",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr71"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR72",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr72"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR73",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr73"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR74",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr74"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR75",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr75"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR76",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr76"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR77",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr77"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR78",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr78"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR79",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr79"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR80",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr80"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR81",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr81"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR82",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr82"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR83",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr83"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR84",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr84"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR85",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr85"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR86",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr86"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR87",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr87"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR88",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr88"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR89",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr89"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR90",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr90"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR91",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr91"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR92",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr92"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR93",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr93"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR94",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr94"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR95",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr95"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR96",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr96"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR97",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr97"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR98",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr98"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "TR99",
+      "group": "tr-record",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "tr99"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Fossilized Bird",
+      "group": "fossilized",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "fossilized-bird",
+        "fossilized_bird",
+        "fossilizedbird",
+        "fossilized bird"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Fossilized Dino",
+      "group": "fossilized",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "fossilized-dino",
+        "fossilized_dino",
+        "fossilizeddino",
+        "fossilized dino"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Fossilized Drake",
+      "group": "fossilized",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "fossilized-drake",
+        "fossilized_drake",
+        "fossilizeddrake",
+        "fossilized drake"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Fossilized Fish",
+      "group": "fossilized",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "fossilized-fish",
+        "fossilized_fish",
+        "fossilizedfish",
+        "fossilized fish"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Berserk Gene",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "berserk-gene",
+        "berserk_gene",
+        "berserkgene",
+        "berserk gene"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Bitter Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "bitter-berry",
+        "bitter_berry",
+        "bitterberry",
+        "bitter berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Burnt Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "burnt-berry",
+        "burnt_berry",
+        "burntberry",
+        "burnt berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Gold Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "gold-berry",
+        "gold_berry",
+        "goldberry",
+        "gold berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Ice Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "ice-berry",
+        "ice_berry",
+        "iceberry",
+        "ice berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Mail",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "mail"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Mint Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "mint-berry",
+        "mint_berry",
+        "mintberry",
+        "mint berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Miracle Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "miracle-berry",
+        "miracle_berry",
+        "miracleberry",
+        "miracle berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Mystery Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "mystery-berry",
+        "mystery_berry",
+        "mysteryberry",
+        "mystery berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Pink Bow",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "pink-bow",
+        "pink_bow",
+        "pinkbow",
+        "pink bow"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Polkadot Bow",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "polkadot-bow",
+        "polkadot_bow",
+        "polkadotbow",
+        "polkadot bow"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "PRZ Cure Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "prz-cure-berry",
+        "prz_cure_berry",
+        "przcureberry",
+        "prz cure berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "PSN Cure Berry",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "psn-cure-berry",
+        "psn_cure_berry",
+        "psncureberry",
+        "psn cure berry"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    },
+    {
+      "name": "Utility Umbrella",
+      "group": "other",
+      "idAliasCandidates": [],
+      "stemCandidates": [
+        "utility-umbrella",
+        "utility_umbrella",
+        "utilityumbrella",
+        "utility umbrella"
+      ],
+      "isFutureCurrentOfficial": false,
+      "isExternallyAbsentFromLocalData": false
+    }
+  ],
+  "resolvedSample": [
+    {
+      "name": "Abomasite",
+      "dir": "currentItems",
+      "stem": "abomasite",
+      "variant": "direct"
+    },
+    {
+      "name": "Absolite",
+      "dir": "currentItems",
+      "stem": "absolite",
+      "variant": "direct"
+    },
+    {
+      "name": "Absolite Z",
+      "dir": "pokerogueItems",
+      "stem": "absolite_z",
+      "variant": "direct"
+    },
+    {
+      "name": "Absorb Bulb",
+      "dir": "currentItems",
+      "stem": "absorb-bulb",
+      "variant": "direct"
+    },
+    {
+      "name": "Adamant Crystal",
+      "dir": "pokerogueItems",
+      "stem": "adamant_crystal",
+      "variant": "direct"
+    },
+    {
+      "name": "Adamant Orb",
+      "dir": "currentItems",
+      "stem": "adamant-orb",
+      "variant": "direct"
+    },
+    {
+      "name": "Adrenaline Orb",
+      "dir": "currentItems",
+      "stem": "adrenaline-orb",
+      "variant": "direct"
+    },
+    {
+      "name": "Aerodactylite",
+      "dir": "currentItems",
+      "stem": "aerodactylite",
+      "variant": "direct"
+    },
+    {
+      "name": "Aggronite",
+      "dir": "currentItems",
+      "stem": "aggronite",
+      "variant": "direct"
+    },
+    {
+      "name": "Aguav Berry",
+      "dir": "currentItems",
+      "stem": "aguav-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Air Balloon",
+      "dir": "currentItems",
+      "stem": "air-balloon",
+      "variant": "direct"
+    },
+    {
+      "name": "Alakazite",
+      "dir": "currentItems",
+      "stem": "alakazite",
+      "variant": "direct"
+    },
+    {
+      "name": "Aloraichium Z",
+      "dir": "currentItems",
+      "stem": "aloraichium-z--held",
+      "variant": "held"
+    },
+    {
+      "name": "Altarianite",
+      "dir": "currentItems",
+      "stem": "altarianite",
+      "variant": "direct"
+    },
+    {
+      "name": "Ampharosite",
+      "dir": "currentItems",
+      "stem": "ampharosite",
+      "variant": "direct"
+    },
+    {
+      "name": "Apicot Berry",
+      "dir": "currentItems",
+      "stem": "apicot-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Armor Fossil",
+      "dir": "currentItems",
+      "stem": "armor-fossil",
+      "variant": "direct"
+    },
+    {
+      "name": "Aspear Berry",
+      "dir": "currentItems",
+      "stem": "aspear-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Assault Vest",
+      "dir": "currentItems",
+      "stem": "assault-vest",
+      "variant": "direct"
+    },
+    {
+      "name": "Audinite",
+      "dir": "currentItems",
+      "stem": "audinite",
+      "variant": "direct"
+    },
+    {
+      "name": "Auspicious Armor",
+      "dir": "pokerogueItems",
+      "stem": "auspicious_armor",
+      "variant": "direct"
+    },
+    {
+      "name": "Babiri Berry",
+      "dir": "currentItems",
+      "stem": "babiri-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Banettite",
+      "dir": "currentItems",
+      "stem": "banettite",
+      "variant": "direct"
+    },
+    {
+      "name": "Barbaracite",
+      "dir": "pokerogueItems",
+      "stem": "barbaracite",
+      "variant": "direct"
+    },
+    {
+      "name": "Baxcalibrite",
+      "dir": "pokerogueItems",
+      "stem": "baxcalibrite",
+      "variant": "direct"
+    },
+    {
+      "name": "Beast Ball",
+      "dir": "currentItems",
+      "stem": "beast-ball",
+      "variant": "direct"
+    },
+    {
+      "name": "Beedrillite",
+      "dir": "currentItems",
+      "stem": "beedrillite",
+      "variant": "direct"
+    },
+    {
+      "name": "Belue Berry",
+      "dir": "currentItems",
+      "stem": "belue-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Berry Juice",
+      "dir": "currentItems",
+      "stem": "berry-juice",
+      "variant": "direct"
+    },
+    {
+      "name": "Berry Sweet",
+      "dir": "pokerogueItems",
+      "stem": "berry_sweet",
+      "variant": "direct"
+    },
+    {
+      "name": "Big Nugget",
+      "dir": "currentItems",
+      "stem": "big-nugget",
+      "variant": "direct"
+    },
+    {
+      "name": "Big Root",
+      "dir": "currentItems",
+      "stem": "big-root",
+      "variant": "direct"
+    },
+    {
+      "name": "Binding Band",
+      "dir": "currentItems",
+      "stem": "binding-band",
+      "variant": "direct"
+    },
+    {
+      "name": "Black Belt",
+      "dir": "currentItems",
+      "stem": "black-belt",
+      "variant": "direct"
+    },
+    {
+      "name": "Black Glasses",
+      "dir": "currentItems",
+      "stem": "black-glasses",
+      "variant": "direct"
+    },
+    {
+      "name": "Black Sludge",
+      "dir": "currentItems",
+      "stem": "black-sludge",
+      "variant": "direct"
+    },
+    {
+      "name": "Blastoisinite",
+      "dir": "currentItems",
+      "stem": "blastoisinite",
+      "variant": "direct"
+    },
+    {
+      "name": "Blazikenite",
+      "dir": "currentItems",
+      "stem": "blazikenite",
+      "variant": "direct"
+    },
+    {
+      "name": "Blue Orb",
+      "dir": "currentItems",
+      "stem": "blue-orb",
+      "variant": "direct"
+    },
+    {
+      "name": "Bluk Berry",
+      "dir": "currentItems",
+      "stem": "bluk-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Blunder Policy",
+      "dir": "pokerogueItems",
+      "stem": "blunder_policy",
+      "variant": "direct"
+    },
+    {
+      "name": "Booster Energy",
+      "dir": "pokerogueItems",
+      "stem": "booster_energy",
+      "variant": "direct"
+    },
+    {
+      "name": "Bottle Cap",
+      "dir": "currentItems",
+      "stem": "bottle-cap",
+      "variant": "direct"
+    },
+    {
+      "name": "Bright Powder",
+      "dir": "currentItems",
+      "stem": "bright-powder",
+      "variant": "direct"
+    },
+    {
+      "name": "Bug Gem",
+      "dir": "currentItems",
+      "stem": "bug-gem",
+      "variant": "direct"
+    },
+    {
+      "name": "Bug Memory",
+      "dir": "currentItems",
+      "stem": "bug-memory",
+      "variant": "direct"
+    },
+    {
+      "name": "Buginium Z",
+      "dir": "currentItems",
+      "stem": "buginium-z--held",
+      "variant": "held"
+    },
+    {
+      "name": "Burn Drive",
+      "dir": "currentItems",
+      "stem": "burn-drive",
+      "variant": "direct"
+    },
+    {
+      "name": "Cameruptite",
+      "dir": "currentItems",
+      "stem": "cameruptite",
+      "variant": "direct"
+    },
+    {
+      "name": "Cell Battery",
+      "dir": "currentItems",
+      "stem": "cell-battery",
+      "variant": "direct"
+    },
+    {
+      "name": "Chandelurite",
+      "dir": "pokerogueItems",
+      "stem": "chandelurite",
+      "variant": "direct"
+    },
+    {
+      "name": "Charcoal",
+      "dir": "currentItems",
+      "stem": "charcoal",
+      "variant": "direct"
+    },
+    {
+      "name": "Charizardite X",
+      "dir": "currentItems",
+      "stem": "charizardite-x",
+      "variant": "direct"
+    },
+    {
+      "name": "Charizardite Y",
+      "dir": "currentItems",
+      "stem": "charizardite-y",
+      "variant": "direct"
+    },
+    {
+      "name": "Charti Berry",
+      "dir": "currentItems",
+      "stem": "charti-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Cheri Berry",
+      "dir": "currentItems",
+      "stem": "cheri-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Chesnaughtite",
+      "dir": "pokerogueItems",
+      "stem": "chesnaughtite",
+      "variant": "direct"
+    },
+    {
+      "name": "Chesto Berry",
+      "dir": "currentItems",
+      "stem": "chesto-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Chilan Berry",
+      "dir": "currentItems",
+      "stem": "chilan-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Chill Drive",
+      "dir": "currentItems",
+      "stem": "chill-drive",
+      "variant": "direct"
+    },
+    {
+      "name": "Chimechite",
+      "dir": "pokerogueItems",
+      "stem": "chimechite",
+      "variant": "direct"
+    },
+    {
+      "name": "Chipped Pot",
+      "dir": "pokerogueItems",
+      "stem": "chipped_pot",
+      "variant": "direct"
+    },
+    {
+      "name": "Choice Band",
+      "dir": "currentItems",
+      "stem": "choice-band",
+      "variant": "direct"
+    },
+    {
+      "name": "Choice Scarf",
+      "dir": "currentItems",
+      "stem": "choice-scarf",
+      "variant": "direct"
+    },
+    {
+      "name": "Choice Specs",
+      "dir": "currentItems",
+      "stem": "choice-specs",
+      "variant": "direct"
+    },
+    {
+      "name": "Chople Berry",
+      "dir": "currentItems",
+      "stem": "chople-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Claw Fossil",
+      "dir": "currentItems",
+      "stem": "claw-fossil",
+      "variant": "direct"
+    },
+    {
+      "name": "Clefablite",
+      "dir": "pokerogueItems",
+      "stem": "clefablite",
+      "variant": "direct"
+    },
+    {
+      "name": "Clover Sweet",
+      "dir": "pokerogueItems",
+      "stem": "clover_sweet",
+      "variant": "direct"
+    },
+    {
+      "name": "Coba Berry",
+      "dir": "currentItems",
+      "stem": "coba-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Colbur Berry",
+      "dir": "currentItems",
+      "stem": "colbur-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Cornerstone Mask",
+      "dir": "pokerogueItems",
+      "stem": "cornerstone_mask",
+      "variant": "direct"
+    },
+    {
+      "name": "Cornn Berry",
+      "dir": "currentItems",
+      "stem": "cornn-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Cover Fossil",
+      "dir": "currentItems",
+      "stem": "cover-fossil",
+      "variant": "direct"
+    },
+    {
+      "name": "Crabominite",
+      "dir": "pokerogueItems",
+      "stem": "crabominite",
+      "variant": "direct"
+    },
+    {
+      "name": "Cracked Pot",
+      "dir": "pokerogueItems",
+      "stem": "cracked_pot",
+      "variant": "direct"
+    },
+    {
+      "name": "Custap Berry",
+      "dir": "currentItems",
+      "stem": "custap-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Damp Rock",
+      "dir": "currentItems",
+      "stem": "damp-rock",
+      "variant": "direct"
+    },
+    {
+      "name": "Dark Gem",
+      "dir": "currentItems",
+      "stem": "dark-gem",
+      "variant": "direct"
+    },
+    {
+      "name": "Dark Memory",
+      "dir": "currentItems",
+      "stem": "dark-memory",
+      "variant": "direct"
+    },
+    {
+      "name": "Darkinium Z",
+      "dir": "currentItems",
+      "stem": "darkinium-z--held",
+      "variant": "held"
+    },
+    {
+      "name": "Dawn Stone",
+      "dir": "currentItems",
+      "stem": "dawn-stone",
+      "variant": "direct"
+    },
+    {
+      "name": "Decidium Z",
+      "dir": "currentItems",
+      "stem": "decidium-z--held",
+      "variant": "held"
+    },
+    {
+      "name": "Deep Sea Scale",
+      "dir": "currentItems",
+      "stem": "deep-sea-scale",
+      "variant": "direct"
+    },
+    {
+      "name": "Deep Sea Tooth",
+      "dir": "currentItems",
+      "stem": "deep-sea-tooth",
+      "variant": "direct"
+    },
+    {
+      "name": "Delphoxite",
+      "dir": "pokerogueItems",
+      "stem": "delphoxite",
+      "variant": "direct"
+    },
+    {
+      "name": "Destiny Knot",
+      "dir": "currentItems",
+      "stem": "destiny-knot",
+      "variant": "direct"
+    },
+    {
+      "name": "Diancite",
+      "dir": "currentItems",
+      "stem": "diancite",
+      "variant": "direct"
+    },
+    {
+      "name": "Dive Ball",
+      "dir": "currentItems",
+      "stem": "dive-ball",
+      "variant": "direct"
+    },
+    {
+      "name": "Dome Fossil",
+      "dir": "currentItems",
+      "stem": "dome-fossil",
+      "variant": "direct"
+    },
+    {
+      "name": "Douse Drive",
+      "dir": "currentItems",
+      "stem": "douse-drive",
+      "variant": "direct"
+    },
+    {
+      "name": "Draco Plate",
+      "dir": "currentItems",
+      "stem": "draco-plate",
+      "variant": "direct"
+    },
+    {
+      "name": "Dragalgite",
+      "dir": "pokerogueItems",
+      "stem": "dragalgite",
+      "variant": "direct"
+    },
+    {
+      "name": "Dragon Fang",
+      "dir": "currentItems",
+      "stem": "dragon-fang",
+      "variant": "direct"
+    },
+    {
+      "name": "Dragon Gem",
+      "dir": "currentItems",
+      "stem": "dragon-gem",
+      "variant": "direct"
+    },
+    {
+      "name": "Dragon Memory",
+      "dir": "currentItems",
+      "stem": "dragon-memory",
+      "variant": "direct"
+    },
+    {
+      "name": "Dragon Scale",
+      "dir": "currentItems",
+      "stem": "dragon-scale",
+      "variant": "direct"
+    },
+    {
+      "name": "Dragoninite",
+      "dir": "pokerogueItems",
+      "stem": "dragoninite",
+      "variant": "direct"
+    },
+    {
+      "name": "Dragonium Z",
+      "dir": "currentItems",
+      "stem": "dragonium-z--held",
+      "variant": "held"
+    },
+    {
+      "name": "Drampanite",
+      "dir": "pokerogueItems",
+      "stem": "drampanite",
+      "variant": "direct"
+    },
+    {
+      "name": "Dread Plate",
+      "dir": "currentItems",
+      "stem": "dread-plate",
+      "variant": "direct"
+    },
+    {
+      "name": "Dream Ball",
+      "dir": "currentItems",
+      "stem": "dream-ball",
+      "variant": "direct"
+    },
+    {
+      "name": "Dubious Disc",
+      "dir": "currentItems",
+      "stem": "dubious-disc",
+      "variant": "direct"
+    },
+    {
+      "name": "Durin Berry",
+      "dir": "currentItems",
+      "stem": "durin-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Dusk Ball",
+      "dir": "currentItems",
+      "stem": "dusk-ball",
+      "variant": "direct"
+    },
+    {
+      "name": "Dusk Stone",
+      "dir": "currentItems",
+      "stem": "dusk-stone",
+      "variant": "direct"
+    },
+    {
+      "name": "Earth Plate",
+      "dir": "currentItems",
+      "stem": "earth-plate",
+      "variant": "direct"
+    },
+    {
+      "name": "Eelektrossite",
+      "dir": "pokerogueItems",
+      "stem": "eelektrossite",
+      "variant": "direct"
+    },
+    {
+      "name": "Eevium Z",
+      "dir": "currentItems",
+      "stem": "eevium-z--held",
+      "variant": "held"
+    },
+    {
+      "name": "Eject Button",
+      "dir": "currentItems",
+      "stem": "eject-button",
+      "variant": "direct"
+    },
+    {
+      "name": "Electirizer",
+      "dir": "currentItems",
+      "stem": "electirizer",
+      "variant": "direct"
+    },
+    {
+      "name": "Electric Gem",
+      "dir": "currentItems",
+      "stem": "electric-gem",
+      "variant": "direct"
+    },
+    {
+      "name": "Electric Memory",
+      "dir": "currentItems",
+      "stem": "electric-memory",
+      "variant": "direct"
+    },
+    {
+      "name": "Electric Seed",
+      "dir": "currentItems",
+      "stem": "electric-seed",
+      "variant": "direct"
+    },
+    {
+      "name": "Electrium Z",
+      "dir": "currentItems",
+      "stem": "electrium-z--held",
+      "variant": "held"
+    },
+    {
+      "name": "Emboarite",
+      "dir": "pokerogueItems",
+      "stem": "emboarite",
+      "variant": "direct"
+    },
+    {
+      "name": "Enigma Berry",
+      "dir": "currentItems",
+      "stem": "enigma-berry",
+      "variant": "direct"
+    },
+    {
+      "name": "Eviolite",
+      "dir": "currentItems",
+      "stem": "eviolite",
+      "variant": "direct"
+    },
+    {
+      "name": "Excadrite",
+      "dir": "pokerogueItems",
+      "stem": "excadrite",
+      "variant": "direct"
+    },
+    {
+      "name": "Expert Belt",
+      "dir": "currentItems",
+      "stem": "expert-belt",
+      "variant": "direct"
+    }
+  ]
+}

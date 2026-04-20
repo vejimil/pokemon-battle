@@ -121,7 +121,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 8. `BA-24` 테라스탈 구현 ✅ 1차 완료 (2026-04-17)
 9. `BA-25` 다이맥스 구현 ✅ 완료 (2026-04-19)
 10. `BA-23` 기술/날씨/필드 연출 완벽화 ✅ 완료 (2026-04-19)
-11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (다음)
+11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 ✅ 1차 완료 (2026-04-20)
 
 ### ✅ 2026-04-17 오늘 작업 요약
 - `BA-27`/`BA-26` 구현 및 후속 회귀 안정화 완료.
@@ -143,7 +143,23 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - `timeline.js`에 `terastallize` 핸들러 추가(메시지 → 테라 연출 → info patch 순서)
   - `battle-shell-scene.js`에 `playTerastallize()` 추가
   - `app.js` locale namespace에 `pokemon-info` 추가(테라 타입 로컬라이즈)
-- 현재 남은 우선순위(고정): `BA-28`
+- 현재 남은 우선순위(고정): `BA-28` sprite 미할당 폼 후속 정리
+
+### ✅ 2026-04-20 오늘 작업 요약 (BA-28)
+- 한/영 명칭 분리 보강:
+  - `src/i18n-ko-locales.js` 신규 생성 (`assets/pokerogue/locales/{en,ko}` 기반 `species/moves/abilities` 추출)
+  - `src/app.js`에 canonical name 해석(`move/ability/species/item`) + locale 맵 병합 + 누락 최소 patch(3 moves, 9 abilities)
+  - `return102`/`frustration102` 같은 엔진 move id를 기본 move명(`Return`/`Frustration`)으로 정규화
+  - 타임라인 executor에 `localizeAbilityName` 경로 추가(`src/battle-presentation/timeline.js`, `src/app.js`)
+- 검증:
+  - `node --check src/app.js`
+  - `node --check src/battle-presentation/timeline.js`
+  - `node --check src/i18n-ko-locales.js`
+  - `npm run verify:ba20`, `npm run verify:stage22`, `npm run verify:passb` PASS
+- 에셋 조사:
+  - `scripts/audit-missing-sprites.mjs` 추가
+  - `reports/missing-sprite-audit.json` 생성
+  - 요약: front-only 29(`ETERNATUS_1`, `STUDIOPROP*`), 렌더 가능 폼 미할당 33건
 
 ### ✅ 2026-04-19 오늘 작업 요약 (BA-25)
 - 원본 선독 후 반영:
@@ -377,9 +393,10 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
   - 폼명 고정은 UI/정보창/선택창에만 유지
   - 폼체인지 연출 메시지는 form-aware 표시(`localizeMonNameWithForm`)로 복원해 원래 메시지 톤 유지
 
-### 🔜 BA-28. 영칭 전용 포켓몬/기술 한국어명 탑재 (고정 후순위)
-- KO 모드에서 영어로 노출되는 포켓몬/기술명을 수집해 한국어명 맵 보강
-- `assets/pokerogue/locales/ko/*.json` 우선 참조, 미존재 항목은 `src/i18n-ko-data.js`(또는 신규 override)로 보완
+### ✅ BA-28. 영칭 전용 포켓몬/기술 한국어명 탑재 — 1차 완료 (2026-04-20)
+- KO 모드 영어 노출 기술/특성명 맵 보강(`src/i18n-ko-locales.js` + `src/app.js` patch)
+- 타임라인 ability bar/메시지의 특성명 로컬라이즈 적용(`src/battle-presentation/timeline.js`)
+- 후속: sprite 미할당 33건 대응 정책 확정(`reports/missing-sprite-audit.json`)
 
 ### 🐛 미확인 항목
 
@@ -406,7 +423,7 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 8. `BA-24` 테라스탈 구현 ✅ 1차 완료 (2026-04-17)
 9. `BA-25` 다이맥스 구현 ✅ 완료 (2026-04-19)
 10. `BA-23` 기술/날씨/필드 연출 완벽화 ✅ 완료 (2026-04-19)
-11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 (다음)
+11. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재 ✅ 1차 완료 (2026-04-20)
 
 **✅ BA-21: 선택 완료 후 대기 메시지 정합 — 완료 (2026-04-16)** (`app.js`)
 - `buildBattleMessageModel()` / `renderBattleMessagesWindow()` / `buildPhaserMessageWindowModel()`에 waiting 분기 추가
@@ -492,9 +509,10 @@ fieldUI는 y=180(화면 하단)에 위치. 자식 요소의 절대 y = 180 + loc
 - 타임라인 표시명(localizeMonName)도 기본 종족명 기준으로 통일
 - 검증: `node --check src/app.js`, `node --check src/battle-presentation/timeline.js`, `npm run verify:stage22`, `npm run verify:passb` PASS
 
-**BA-28: 영칭 전용 포켓몬/기술 한국어명 탑재 (고정 후순위)** (`src/i18n-ko-data.js` 또는 신규 파일)
-- KO 모드에서 영어로 노출되는 포켓몬/기술명을 수집해 한국어명 맵 보강
-- `assets/pokerogue/locales/ko/pokemon.json`, `assets/pokerogue/locales/ko/move.json` 우선 참조 후 미존재 항목 수동 보완
+**✅ BA-28: 영칭 전용 포켓몬/기술 한국어명 탑재 — 1차 완료 (2026-04-20)** (`src/i18n-ko-locales.js`, `src/app.js`, `src/battle-presentation/timeline.js`)
+- `assets/pokerogue/locales/{en,ko}` 기반 이름맵(`species/moves/abilities`) 추출 모듈 추가
+- move/ability canonical 해석 + 특성 타임라인 로컬라이즈 적용
+- 후속: `reports/missing-sprite-audit.json` 기준 sprite 미할당 33건 분류/대응
 
 
 ## UI 폴리시 — 배틀 완성 후 착수

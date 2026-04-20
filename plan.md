@@ -1,6 +1,6 @@
 # PKB Battle Presentation 활성 계획
 
-Last updated: 2026-04-19  
+Last updated: 2026-04-20  
 Target: `/workspaces/pokemon-battle`
 
 완료 이력 아카이브는 `planprevious.md` 기준으로 관리한다.  
@@ -8,7 +8,7 @@ Target: `/workspaces/pokemon-battle`
 
 ---
 
-## 0) 오늘 상태 요약 (2026-04-19)
+## 0) 오늘 상태 요약 (2026-04-20)
 
 ### 완료
 - `BA-24` 테라스탈 구현 (2차 보강 포함) 완료
@@ -41,11 +41,31 @@ Target: `/workspaces/pokemon-battle`
   - Phaser scale mode를 `FIT`으로 전환해 split 뷰 중앙 축소(letterbox) 완화
   - weather common 연출 스케일(`1.25`)은 유지하되 graphic-only 적용으로 포켓몬 본체 확대 부작용 제거하려 했으니, graphic-only 미적용으로 1.0 적용
   - battle tone 처리에 gray 채널(`tone[3]`)을 반영해 원본식 스프라이트 암전 연출 보강
+- `BA-28` 영문 누출 한글화 1차 완료
+  - `src/i18n-ko-locales.js` 신규 생성: `assets/pokerogue/locales/{en,ko}` 기준 `species/moves/abilities` 이름맵 자동 추출
+  - `src/app.js`
+    - 로케일 맵 병합 우선순위 보강(`KO_NAME_MAPS + locale 추출맵 + patch`)
+    - move/ability/species/item canonical name 해석 추가(`toId`, trailing power suffix fallback)
+    - `return102`/`frustration102` 같은 엔진 표시를 기본 기술명으로 정규화
+    - 누락 영문 잔여분(3 moves, 9 abilities) 최소 patch 추가
+  - `src/battle-presentation/timeline.js`
+    - `localizeAbilityName` 주입 경로 추가
+    - `ability_show` 메시지/ability bar 텍스트를 로컬라이즈된 이름으로 출력
+  - 결과:
+    - 한국어 모드에서 기술/특성 표기 영문 누출 축소
+    - 영어 모드에서 id 기반 표기(`return102`)를 일반 영문 기술명으로 정규화
+- 스프라이트 누락 조사 완료
+  - `scripts/audit-missing-sprites.mjs` 추가
+  - `reports/missing-sprite-audit.json` 생성
+  - 조사 결과:
+    - front-only: 29 (`ETERNATUS_1`, `STUDIOPROP*`)
+    - 렌더 가능 폼 중 미할당: 33
+    - 주요 항목: totem 계열, Pumpkaboo/Gourgeist 사이즈 폼, Sinistea/Polteageist 진품 폼, Pikachu cap/cosplay 일부
 
 ### 고정 순서 반영
 - 요청 고정 순서: `25 -> 23 -> 28`
 - 현재 남은 순서:
-1. `BA-28` 영칭 전용 포켓몬/기술 한국어명 탑재
+1. `BA-28` 후속: sprite 미할당 33건 대응 정책 결정(기본 폼 재사용 alias vs 에셋 추가)
 
 ---
 
@@ -176,6 +196,8 @@ Target: `/workspaces/pokemon-battle`
 - `node --check src/battle-presentation/timeline.js` PASS
 - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` PASS
 - `node --check src/app.js` PASS
+- `node --check src/i18n-ko-locales.js` PASS
+- `node --check scripts/audit-missing-sprites.mjs` PASS
 
 ### 기존 회귀 스위트
 - `npm run verify:ba20` PASS
@@ -195,10 +217,10 @@ Target: `/workspaces/pokemon-battle`
 
 ## 4) 다음 작업 (고정)
 
-### BA-28
-1. KO 모드 영어 노출 포켓몬/기술 수집
-2. `assets/pokerogue/locales/ko/*.json` 우선 보강
-3. 미존재 항목만 최소 override 추가
+### BA-28 후속 (Sprite Audit)
+1. `reports/missing-sprite-audit.json`의 `unresolvedRenderableForms` 33건 분류
+2. 이름 불일치/기본 폼 재사용 가능 케이스(`Pikachu-*`, Totem 등)부터 `FORM_ASSET_OVERRIDES` 후보 확정
+3. front-only(`ETERNATUS_1`)처럼 back 미존재인 케이스는 에셋 보강 전까지 fallback 정책 확정
 
 ---
 
@@ -214,7 +236,7 @@ Target: `/workspaces/pokemon-battle`
 ## 6) 빠른 시작 메모
 
 - 먼저 읽기: `CLAUDE.md` -> `plan.md` -> `planprevious.md`
-- 다음 착수 항목: `BA-28`
+- 다음 착수 항목: `BA-28` sprite 후속 정리
 - 회귀 핵심 가드:
   - 기술 전 HP/스프라이트 선반영 금지
   - 타임라인 중 message-only 유지
