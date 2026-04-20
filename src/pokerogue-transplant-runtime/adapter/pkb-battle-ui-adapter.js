@@ -52,6 +52,8 @@ export class PkbBattleUiAdapter {
     this.model = {};
     this.stateWindow = {};
     this.mode = UiMode.MESSAGE;
+    this.partyLastLeftCursor = 0;
+    this.partyLastRightCursor = 0;
   }
 
   setModel(model = {}) {
@@ -318,19 +320,18 @@ export class PkbBattleUiAdapter {
 
     if (selection.focusRegion === 'toggles') {
       switch (button) {
-        case Button.LEFT:
+        case Button.UP:
           if (selection.toggleCursor > 0) focusToggle(selection.toggleCursor - 1);
+          else focusMove(Math.min(selection.toggleCursor, Math.max(0, moves.length - 1)));
           break;
-        case Button.RIGHT:
+        case Button.DOWN:
           if (selection.toggleCursor < toggles.length - 1) focusToggle(selection.toggleCursor + 1);
           else if (footerActions.length) focusFooter(0);
           break;
-        case Button.DOWN:
-          if (footerActions.length) focusFooter(Math.min(selection.toggleCursor, footerActions.length - 1));
-          else focusMove(Math.min(selection.toggleCursor, Math.max(0, moves.length - 1)));
-          break;
-        case Button.UP:
+        case Button.RIGHT:
           focusMove(Math.min(selection.toggleCursor, Math.max(0, moves.length - 1)));
+          break;
+        case Button.LEFT:
           break;
         default:
           break;
@@ -340,19 +341,18 @@ export class PkbBattleUiAdapter {
 
     if (selection.focusRegion === 'footer') {
       switch (button) {
-        case Button.LEFT:
-          if (selection.footerCursor > 0) focusFooter(selection.footerCursor - 1);
-          else if (toggles.length) focusToggle(Math.min(selection.toggleCursor, toggles.length - 1));
-          break;
-        case Button.RIGHT:
-          if (selection.footerCursor < footerActions.length - 1) focusFooter(selection.footerCursor + 1);
-          break;
         case Button.UP:
-          if (toggles.length) focusToggle(Math.min(selection.footerCursor, toggles.length - 1));
-          else focusMove(Math.min(2 + selection.footerCursor, Math.max(0, moves.length - 1)));
+          if (toggles.length) focusToggle(toggles.length - 1);
+          else focusMove(Math.min(2, Math.max(0, moves.length - 1)));
           break;
         case Button.DOWN:
-          focusMove(Math.min(2 + selection.footerCursor, Math.max(0, moves.length - 1)));
+          focusMove(Math.min(2, Math.max(0, moves.length - 1)));
+          break;
+        case Button.LEFT:
+          if (toggles.length) focusToggle(Math.min(selection.footerCursor, toggles.length - 1));
+          break;
+        case Button.RIGHT:
+          focusMove(Math.min(selection.footerCursor, Math.max(0, moves.length - 1)));
           break;
         default:
           break;
@@ -375,7 +375,6 @@ export class PkbBattleUiAdapter {
         break;
       case Button.RIGHT:
         if (selection.moveCursor % 2 === 0 && moves[selection.moveCursor + 1]) focusMove(selection.moveCursor + 1);
-        else if (footerActions.length) focusFooter(Math.min(selection.moveCursor % 2, footerActions.length - 1));
         break;
       default:
         break;
@@ -475,13 +474,29 @@ export class PkbBattleUiAdapter {
       footerActions: this.getPartyFooterActions(),
       title: state.title || '',
       subtitle: state.subtitle || '',
+      slotCount: Number.isInteger(state.slotCount) ? state.slotCount : this.getPartySlotCount(),
+      battlerCount: Number.isInteger(state.battlerCount) ? state.battlerCount : this.getPartyBattlerCount(),
     };
+  }
+
+  getPartySlotCount() {
+    const explicit = this.getPartyState().slotCount;
+    if (Number.isInteger(explicit)) return clampIndex(explicit, 0, 6);
+    return clampIndex(this.getPartyOptions().length, 0, 6);
+  }
+
+  getPartyBattlerCount() {
+    const explicit = this.getPartyState().battlerCount;
+    if (Number.isInteger(explicit)) return Math.max(1, explicit);
+    return 1;
   }
 
   getPartySelectionState(previousCursor = null) {
     const partyOptions = this.getPartyOptions();
     const footerActions = this.getPartyFooterActions();
     const footerAction = footerActions[0] || null;
+    const slotCount = this.getPartySlotCount();
+    const battlerCount = this.getPartyBattlerCount();
     const activePartyIndex = findFlaggedIndex(partyOptions, ['active']);
     let cursor = Number.isInteger(previousCursor) ? previousCursor : null;
 
@@ -489,18 +504,16 @@ export class PkbBattleUiAdapter {
       cursor = activePartyIndex;
     }
 
-    if (cursor == null) {
-      cursor = this.getFirstSelectablePartyIndex();
-    }
+    if (cursor == null) cursor = 0;
 
-    const maxCursor = footerAction ? 6 : 5;
+    const maxCursor = footerAction ? 6 : Math.max(0, slotCount - 1);
     cursor = clampIndex(cursor, 0, maxCursor);
 
-    if (cursor < 6) {
-      const option = partyOptions[cursor] || null;
-      if (!option || option.disabled) cursor = this.getFirstSelectablePartyIndex();
-    } else if (!footerAction) {
-      cursor = this.getFirstSelectablePartyIndex();
+    if (cursor < 6 && cursor >= slotCount) {
+      cursor = Math.max(0, slotCount - 1);
+    }
+    if (cursor === 6 && !footerAction) {
+      cursor = Math.max(0, slotCount - 1);
     }
 
     return {
@@ -508,35 +521,57 @@ export class PkbBattleUiAdapter {
       partyOptions,
       footerActions,
       footerAction,
+      slotCount,
+      battlerCount,
     };
   }
 
   getSelectablePartyIndexes() {
-    const partyOptions = this.getPartyOptions();
-    const selectable = partyOptions
-      .map((option, index) => ({ option, index }))
-      .filter(({ option }) => Boolean(option))
-      .map(({ index }) => index);
+    const selectable = Array.from({ length: this.getPartySlotCount() }, (_, index) => index);
     if (this.getPartyFooterActions()[0]) selectable.push(6);
     return selectable;
   }
 
   getFirstSelectablePartyIndex() {
-    const firstEnabledSlot = this.getPartyOptions().findIndex(option => option && !option.disabled);
-    if (firstEnabledSlot >= 0) return firstEnabledSlot;
+    const slotCount = this.getPartySlotCount();
+    if (slotCount > 0) return 0;
     return this.getPartyFooterActions()[0] ? 6 : 0;
   }
 
   movePartySelection(currentCursor, button) {
-    const indexes = this.getSelectablePartyIndexes();
-    if (!indexes.length) return this.getPartySelectionState(currentCursor).cursor;
     const selection = this.getPartySelectionState(currentCursor);
-    const listIndex = indexes.indexOf(selection.cursor);
-    if (listIndex < 0) return indexes[0];
-    let nextListIndex = listIndex;
-    if (button === Button.UP || button === Button.LEFT) nextListIndex = Math.max(0, listIndex - 1);
-    if (button === Button.DOWN || button === Button.RIGHT) nextListIndex = Math.min(indexes.length - 1, listIndex + 1);
-    return indexes[nextListIndex];
+    const { slotCount, battlerCount } = selection;
+    if (!slotCount) return selection.cursor;
+
+    if (selection.cursor < battlerCount) this.partyLastLeftCursor = selection.cursor;
+    if (selection.cursor >= battlerCount && selection.cursor < 6) this.partyLastRightCursor = selection.cursor;
+
+    let nextCursor = selection.cursor;
+    switch (button) {
+      case Button.UP:
+        nextCursor = selection.cursor ? (selection.cursor < 6 ? selection.cursor - 1 : slotCount - 1) : 6;
+        break;
+      case Button.DOWN:
+        nextCursor = selection.cursor < 6 ? (selection.cursor < slotCount - 1 ? selection.cursor + 1 : 6) : 0;
+        break;
+      case Button.LEFT:
+        if (selection.cursor === 6) {
+          nextCursor = this.partyLastLeftCursor;
+        } else if (selection.cursor >= battlerCount && selection.cursor < 6) {
+          nextCursor = this.partyLastLeftCursor;
+        }
+        break;
+      case Button.RIGHT:
+        if (slotCount <= battlerCount) {
+          nextCursor = 6;
+        } else if (selection.cursor < battlerCount) {
+          nextCursor = this.partyLastRightCursor || battlerCount;
+        }
+        break;
+      default:
+        break;
+    }
+    return this.getPartySelectionState(nextCursor).cursor;
   }
 
   getPartySelectionSubmitAction(currentCursor) {

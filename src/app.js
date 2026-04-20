@@ -1199,6 +1199,9 @@ const state = {
   showdownLocal: {available: false, checked: false, skipped: false, bundledNodeServer: false, engineApiOrigin: '', probeMode: 'uninitialized'},
 };
 
+const MOVE_LOCALE_EFFECTS = {ko: new Map(), en: new Map()};
+const MOVE_LOCALE_LOAD_PROMISES = {ko: null, en: null};
+
 const els = {};
 let pickerReturnFocusEl = null;
 const phaserBattleRenderers = { 0: null, 1: null };
@@ -1911,6 +1914,61 @@ function slugify(text) {
 }
 function toId(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+function buildMoveLocaleEffectIndex(localeData = {}) {
+  const index = new Map();
+  for (const [rawKey, rawEntry] of Object.entries(localeData || {})) {
+    const moveId = toId(rawKey);
+    const effect = String(rawEntry?.effect || '').trim();
+    if (!moveId || !effect) continue;
+    if (!index.has(moveId)) index.set(moveId, effect);
+    const nameId = toId(rawEntry?.name || '');
+    if (nameId && !index.has(nameId)) index.set(nameId, effect);
+  }
+  return index;
+}
+async function loadMoveLocaleEffects(language = 'ko') {
+  const langKey = language === 'en' ? 'en' : 'ko';
+  if (MOVE_LOCALE_EFFECTS[langKey]?.size) return MOVE_LOCALE_EFFECTS[langKey];
+  if (MOVE_LOCALE_LOAD_PROMISES[langKey]) return MOVE_LOCALE_LOAD_PROMISES[langKey];
+  MOVE_LOCALE_LOAD_PROMISES[langKey] = fetchJson(`./assets/pokerogue/locales/${langKey}/move.json`)
+    .then(localeData => {
+      MOVE_LOCALE_EFFECTS[langKey] = buildMoveLocaleEffectIndex(localeData);
+      return MOVE_LOCALE_EFFECTS[langKey];
+    })
+    .catch(error => {
+      console.warn(`Failed to load move locale (${langKey})`, error);
+      MOVE_LOCALE_EFFECTS[langKey] = MOVE_LOCALE_EFFECTS[langKey] || new Map();
+      return MOVE_LOCALE_EFFECTS[langKey];
+    })
+    .finally(() => {
+      MOVE_LOCALE_LOAD_PROMISES[langKey] = null;
+    });
+  return MOVE_LOCALE_LOAD_PROMISES[langKey];
+}
+async function preloadMoveLocaleEffects() {
+  await Promise.all([loadMoveLocaleEffects('ko'), loadMoveLocaleEffects('en')]);
+}
+function getMoveLocaleEffectTextById(moveId = '', preferredLanguage = state.language) {
+  const id = toId(moveId);
+  if (!id) return '';
+  const primary = preferredLanguage === 'en' ? 'en' : 'ko';
+  const fallback = primary === 'ko' ? 'en' : 'ko';
+  return MOVE_LOCALE_EFFECTS[primary]?.get(id) || MOVE_LOCALE_EFFECTS[fallback]?.get(id) || '';
+}
+function getBuilderMoveDescriptionText(move, option = null) {
+  const candidates = [
+    move?.id,
+    move?.name,
+    option?.english,
+    option?.display,
+    option?.korean,
+  ];
+  for (const candidate of candidates) {
+    const localeEffect = getMoveLocaleEffectTextById(candidate, state.language);
+    if (localeEffect) return localeEffect;
+  }
+  return localizeText(move?.shortDesc || move?.desc || lang('설명 없음', 'No move description available.'));
 }
 function resolveDexEntityName(kind, rawValue = '') {
   const raw = String(rawValue || '').trim();
@@ -2653,23 +2711,14 @@ function renderMoveDetail(option) {
     els.pickerDetailAlt.textContent = alternate || lang('기술 상세', 'Move details');
   }
   const metaChips = [
-    `${lang('타입', 'Type')}: ${displayType(move.type)}`,
     `${lang('분류', 'Category')}: ${move.category ? lang(move.category === 'Status' ? '변화' : (move.category === 'Physical' ? '물리' : '특수'), move.category) : '—'}`,
     `${lang('위력', 'Power')}: ${move.basePower || '—'}`,
     `${lang('명중', 'Accuracy')}: ${move.accuracy === true ? lang('반드시', 'Sure-hit') : (move.accuracy || '—')}`,
     `${lang('PP', 'PP')}: ${move.pp || '—'}`,
-    `${lang('우선도', 'Priority')}: ${Number(move.priority || 0)}`,
-    `${lang('대상', 'Target')}: ${displayTargetHint(move.target)}`,
   ];
   els.pickerDetailMeta.innerHTML = metaChips.map(text => `<span class="picker-detail-chip">${text}</span>`).join('');
-  els.pickerDetailDesc.textContent = buildMoveEffectSummary(move);
-  const flagChips = [];
-  for (const [flag, enabled] of Object.entries(move.flags || {})) {
-    if (!enabled) continue;
-    flagChips.push(localizedMoveFlagLabel(flag));
-  }
-  if (move.secondary?.chance) flagChips.push(lang(`추가효과 ${move.secondary.chance}%`, `Secondary ${move.secondary.chance}%`));
-  els.pickerDetailFlags.innerHTML = flagChips.map(text => `<span class="picker-detail-chip">${text}</span>`).join('');
+  els.pickerDetailDesc.textContent = getBuilderMoveDescriptionText(move, option);
+  if (els.pickerDetailFlags) els.pickerDetailFlags.innerHTML = '';
 }
 function getPickerFallbackFocusTarget(picker = state.picker || {}) {
   if (picker.mode === 'species') return els.browseSpeciesBtn || els.speciesInput || document.body;
@@ -6086,14 +6135,6 @@ function renderBattleFightWindow(battle, player) {
     if (!inputLocked) backBtn.addEventListener('click', () => setBattleUiMode(player, 'command'));
     actions.appendChild(backBtn);
 
-    const switchBtn = document.createElement('button');
-    switchBtn.type = 'button';
-    switchBtn.className = `pkbattle-inline-action ${choice.kind === 'switch' ? 'active' : ''}`;
-    switchBtn.disabled = inputLocked || !canSwitch;
-    switchBtn.textContent = lang('포켓몬', 'Pokémon');
-    if (!switchBtn.disabled) switchBtn.addEventListener('click', () => setBattleUiMode(player, 'party'));
-    actions.appendChild(switchBtn);
-
     if (!forcedContinuation && moveRequest?.canTerastallize) {
       const teraBtn = document.createElement('button');
       teraBtn.type = 'button';
@@ -6630,7 +6671,6 @@ function buildPhaserFightWindowModel(battle, player) {
     detail,
     footerActions: [
       {label: lang('뒤로', 'Back'), disabled: inputLocked, action: {type: 'command', key: 'command'}},
-      {label: lang('교체', 'Switch'), disabled: inputLocked || !canSwitch, action: {type: 'command', key: 'party'}},
     ],
   };
 }
@@ -6645,6 +6685,9 @@ function buildPhaserPartyWindowModel(battle, player) {
   const options = getEngineSwitchOptions(player, activeIndex, battle);
   const optionMap = new Map(options.map(({mon, index}) => [index, mon]));
   const activeSet = new Set(getBattleActiveIndices(player, battle));
+  const partyTeam = (side?.team || []).slice(0, 6);
+  const slotCount = partyTeam.length;
+  const battlerCount = Math.max(state.mode === 'doubles' ? 2 : 1, activeSet.size || 0);
   const currentChoice = getEngineDraftChoice(player, activeIndex, battle);
   return {
     mode: 'party',
@@ -6653,21 +6696,35 @@ function buildPhaserPartyWindowModel(battle, player) {
     subtitle: forced
       ? lang('엔진이 교체를 요구하고 있습니다.', 'The engine requires a replacement.')
       : lang('교체할 포켓몬을 선택하세요.', 'Choose the Pokémon to switch in.'),
-    partyOptions: (side?.team || []).slice(0, 6).map((mon, index) => {
+    slotCount,
+    battlerCount,
+    partyOptions: partyTeam.map((mon, index) => {
       if (!mon) {
-        return {
-          label: lang('빈 슬롯', 'Empty slot'),
-          sublabel: '',
-          hpPercent: 0,
-          hpLabel: '',
-          disabled: true,
-          active: false,
-          action: null,
-        };
+        return null;
       }
+      const sourceMon = state.teams?.[player]?.[index] || null;
       const canSwitchTo = optionMap.has(index);
       const fainted = !mon.hp || mon.fainted;
       const hpPercent = mon.maxHp ? Math.max(0, Math.min(100, (mon.hp / mon.maxHp) * 100)) : 0;
+      const resolvedTypes = (Array.isArray(mon.types) && mon.types.length
+        ? mon.types
+        : (Array.isArray(sourceMon?.data?.types) && sourceMon.data.types.length
+          ? sourceMon.data.types
+          : []));
+      const typeLabels = resolvedTypes.map(type => displayType(type)).filter(Boolean);
+      const moveLabelsFromSlots = (mon.moveSlots || [])
+        .slice(0, 4)
+        .map(slot => displayMoveName(slot?.name || ''))
+        .filter(Boolean);
+      const moveLabelsFromSource = (sourceMon?.moves || [])
+        .slice(0, 4)
+        .map(name => displayMoveName(name || ''))
+        .filter(Boolean);
+      const moveLabels = moveLabelsFromSlots.length ? moveLabelsFromSlots : moveLabelsFromSource;
+      const speciesForAbility = state.dex?.species?.get?.(mon.species || sourceMon?.species || sourceMon?.baseSpecies || '');
+      const defaultAbility = speciesForAbility?.exists ? Object.values(speciesForAbility.abilities || {}).find(Boolean) : '';
+      const abilityName = mon.ability || sourceMon?.ability || defaultAbility || '';
+      const itemName = mon.item != null ? String(mon.item) : (sourceMon?.item || '');
       let sublabel = '';
       if (activeSet.has(index)) sublabel += ` · ${lang('전투 중', 'Active')}`;
       else if (fainted) sublabel += ` · ${lang('기절', 'Fainted')}`;
@@ -6680,6 +6737,10 @@ function buildPhaserPartyWindowModel(battle, player) {
         level: Number.isFinite(mon.level) ? mon.level : null,
         gender: mon.gender || '',
         statusEffect: mon.status || '',
+        abilityLabel: abilityName ? displayAbilityName(abilityName) : '',
+        itemLabel: itemName ? displayItemName(itemName) : '',
+        typeLabels,
+        moveLabels,
         fainted: Boolean(fainted),
         iconUrl: iconPath(resolveBattleRenderSpriteId(mon), Boolean(mon.shiny)),
         disabled: inputLocked || !canSwitchTo,
@@ -7303,6 +7364,7 @@ async function bootstrap() {
   await initializeShowdownLocalStatus();
   buildAssetDex();
   await loadMoveNames();
+  await preloadMoveLocaleEffects();
   await rehydrateTeams();
   buildStaticLists();
   wireEditorEvents();

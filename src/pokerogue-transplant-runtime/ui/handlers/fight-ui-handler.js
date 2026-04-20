@@ -4,6 +4,7 @@ import { Button } from '../facade/input-facade.js';
 import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
+import { MoveInfoOverlay } from '../containers/move-info-overlay.js';
 
 // Move stat display: normalize missing/zero values to '---' (matches PokeRogue power/accuracy < 0 → '---')
 function formatMoveStatValue(raw) {
@@ -19,6 +20,46 @@ function ppRatioToColor(ratio) {
   if (ratio <= 0.25)     return { color: '#d64b00', shadow: '#69402a' };
   if (ratio <= 0.5)      return { color: '#ccbe00', shadow: '#6e672c' };
   return                        { color: '#f8f8f8', shadow: '#6b5a73' };
+}
+
+// Aux menu default tuning knobs (left-top gimmick/back window in fight mode)
+const AUX_MENU_DEFAULT = Object.freeze({
+  x: 0,
+  y: -84,
+  minWidth: 40,
+  maxWidth: 80,
+  rowHeight: 10,
+  textLeft: 3,
+  textTop: 3,
+  sideInset: 3,
+  topPadding: 3,
+  bottomPadding: 3,
+  textStyle: 'MOVE_INFO_CONTENT',
+  textScale: 1,
+});
+
+function numberOr(raw, fallback) {
+  return Number.isFinite(Number(raw)) ? Number(raw) : fallback;
+}
+
+function getAuxMenuConfig() {
+  const tune = (typeof window !== 'undefined' && window.PKB_FIGHT_AUX_TUNE && typeof window.PKB_FIGHT_AUX_TUNE === 'object')
+    ? window.PKB_FIGHT_AUX_TUNE
+    : {};
+  return {
+    x: numberOr(tune.x, AUX_MENU_DEFAULT.x),
+    y: numberOr(tune.y, AUX_MENU_DEFAULT.y),
+    minWidth: numberOr(tune.minWidth, AUX_MENU_DEFAULT.minWidth),
+    maxWidth: numberOr(tune.maxWidth, AUX_MENU_DEFAULT.maxWidth),
+    rowHeight: numberOr(tune.rowHeight, AUX_MENU_DEFAULT.rowHeight),
+    textLeft: numberOr(tune.textLeft, AUX_MENU_DEFAULT.textLeft),
+    textTop: numberOr(tune.textTop, AUX_MENU_DEFAULT.textTop),
+    sideInset: numberOr(tune.sideInset, AUX_MENU_DEFAULT.sideInset),
+    topPadding: numberOr(tune.topPadding, AUX_MENU_DEFAULT.topPadding),
+    bottomPadding: numberOr(tune.bottomPadding, AUX_MENU_DEFAULT.bottomPadding),
+    textStyle: String(tune.textStyle || AUX_MENU_DEFAULT.textStyle),
+    textScale: numberOr(tune.textScale, AUX_MENU_DEFAULT.textScale),
+  };
 }
 
 export class FightUiHandler extends UiHandler {
@@ -39,14 +80,20 @@ export class FightUiHandler extends UiHandler {
     this.powerText = null;
     this.accuracyLabel = null;
     this.accuracyText = null;
-    this.toggleButtons = [];
-    this.footerButtons = [];
+    this.auxMenuContainer = null;
+    this.auxMenuBg = null;
+    this.auxEntries = [];
+    this.auxEntryModel = [];
+    this.activeToggles = [];
+    this.activeFooterActions = [];
     this.fieldIndex = 0;
     this.cursor2 = 0;
     this.focusRegion = 'moves';
     this.toggleCursor = 0;
     this.footerCursor = 0;
     this.infoVisible = false;
+    this.moveInfoOverlay = null;
+    this.auxMenuConfig = getAuxMenuConfig();
   }
 
   setup() {
@@ -81,11 +128,11 @@ export class FightUiHandler extends UiHandler {
     //   row4 y=-10: accuracyLabel(250) + accuracyText(308)
     // 원본 scale: typeIcon=0.8 (fight-ui-handler.ts:269), moveCategoryIcon=1.0 (line 272)
     this.typeIcon = env.textureExists(scene, env.UI_ASSETS.typesAtlas.key, 'unknown')
-      ? scene.add.image(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setOrigin(0, 0).setScale(0.8).setVisible(false)
-      : addTextObject(this.ui, 263, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0).setVisible(false);
+      ? scene.add.sprite(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setScale(0.8).setVisible(false)
+      : addTextObject(this.ui, 263, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0.5, 0.5).setVisible(false);
     this.moveCategoryIcon = env.textureExists(scene, env.UI_ASSETS.categoriesAtlas.key, 'status')
-      ? scene.add.image(295, -36, env.UI_ASSETS.categoriesAtlas.key, 'status').setOrigin(0, 0).setScale(1.0).setVisible(false)
-      : addTextObject(this.ui, 295, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0).setVisible(false);
+      ? scene.add.sprite(295, -36, env.UI_ASSETS.categoriesAtlas.key, 'status').setScale(1.0).setVisible(false)
+      : addTextObject(this.ui, 295, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0.5, 0.5).setVisible(false);
     this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
     this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
     this.powerLabel = addTextObject(this.ui, 250, -18, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
@@ -104,34 +151,49 @@ export class FightUiHandler extends UiHandler {
     ]);
     this.container.add(this.moveInfoContainer);
 
-    // Toggle buttons: fit within right panel (x=241–317, y=-48 to -36)
-    // 3 per row, width=24px, spacing=26px — covers Tera/Z/Mega/Ultra/Dmax
-    this.toggleButtons = Array.from({ length: 5 }, () => {
-      const bg = addWindow(this.ui, 0, 0, 24, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 0);
-      const icon = env.textureExists(scene, env.UI_ASSETS.teraAtlas.key, 'unknown')
-        ? scene.add.sprite(0, 0, env.UI_ASSETS.teraAtlas.key, 'unknown').setOrigin(0.5, 0.5).setScale(0.35)
-        : null;
-      const label = addTextObject(this.ui, 12, 6, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5);
-      const hit = scene.add.rectangle(0, 0, 24, 12, 0xffffff, 0.001).setOrigin(0, 0);
-      const button = scene.add.container(0, 0, icon ? [bg, icon, label, hit] : [bg, label, hit]).setVisible(false);
-      this.container.add(button);
-      return { button, bg, icon, label, hit };
+    this.moveInfoOverlay = new MoveInfoOverlay(this.ui, {
+      delayVisibility: true,
+      onSide: true,
+      right: true,
+      x: 0,
+      y: -MoveInfoOverlay.getHeight(true),
+      width: env.LOGICAL_WIDTH + 4,
+      hideEffectBox: true,
+      hideBg: true,
     });
+    this.container.add(this.moveInfoOverlay.container);
 
-    // Footer buttons anchored to y=0 (absolute 180), origin(0,1) → bg extends upward 12px.
-    // Back (index 0): right panel bottom, x=241, width=79 (full right panel width 240–319)
-    // Switch (index 1): left panel, x=1, width=40 (hidden in single battle)
-    const footerDefs = [
-      { x: 241, w: 79 },
-      { x: 1,   w: 40 },
-    ];
-    this.footerButtons = footerDefs.map(({ x, w }) => {
-      const bg = addWindow(this.ui, x, 0, w, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 1).setVisible(false);
-      const label = addTextObject(this.ui, x + Math.floor(w / 2), -6, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5).setVisible(false);
-      const hit = scene.add.rectangle(x, 0, w, 12, 0xffffff, 0.001).setOrigin(0, 1).setVisible(false);
-      this.container.add([bg, label, hit]);
-      return { bg, label, hit };
+    // Left-top auxiliary action window: gimmicks + back in a vertical list.
+    this.auxMenuConfig = getAuxMenuConfig();
+    this.auxMenuContainer = scene.add.container(this.auxMenuConfig.x, this.auxMenuConfig.y).setName('fight-aux-menu').setVisible(false);
+    this.auxMenuBg = addWindow(
+      this.ui,
+      0,
+      0,
+      this.auxMenuConfig.minWidth,
+      this.auxMenuConfig.rowHeight + this.auxMenuConfig.topPadding + this.auxMenuConfig.bottomPadding
+    ).setOrigin(0, 0);
+    this.auxMenuContainer.add(this.auxMenuBg);
+    this.auxEntries = Array.from({ length: 6 }, () => {
+      const label = addTextObject(this.ui, this.auxMenuConfig.textLeft, this.auxMenuConfig.textTop, '', this.auxMenuConfig.textStyle)
+        .setOrigin(0, 0)
+        .setVisible(false);
+      // addTextObject already applies base pixel-text scale; keep it and multiply from that baseline.
+      label._pkbBaseScaleX = Number(label.scaleX || 1);
+      label._pkbBaseScaleY = Number(label.scaleY || 1);
+      label.setScale(label._pkbBaseScaleX * this.auxMenuConfig.textScale, label._pkbBaseScaleY * this.auxMenuConfig.textScale);
+      const hit = scene.add.rectangle(
+        this.auxMenuConfig.sideInset,
+        this.auxMenuConfig.topPadding,
+        this.auxMenuConfig.minWidth - this.auxMenuConfig.sideInset * 2,
+        this.auxMenuConfig.rowHeight,
+        0xffffff,
+        0.001
+      ).setOrigin(0, 0).setVisible(false);
+      this.auxMenuContainer.add([hit, label]);
+      return { label, hit };
     });
+    this.container.add(this.auxMenuContainer);
 
     this.clear();
   }
@@ -235,20 +297,15 @@ export class FightUiHandler extends UiHandler {
     const showCursor = this.focusRegion === 'moves' && !this.infoVisible;
     this.cursorObj.setPosition(cursorPos.x, cursorPos.y).setVisible(showCursor);
 
-    this.toggleButtons.forEach((entry, index) => {
-      const toggle = this.getToggles()[index] || null;
-      if (!toggle) return;
-      const isFocused = this.focusRegion === 'toggles' && this.toggleCursor === index;
-      entry.button.setScale(isFocused ? 1.05 : 1);
-      entry.bg.setAlpha(isFocused ? 1 : (toggle.active ? 1 : 0.82));
-    });
-
-    this.footerButtons.forEach((entry, index) => {
-      const action = this.getFooterActions()[index] || null;
-      if (!action) return;
-      const isFocused = this.focusRegion === 'footer' && this.footerCursor === index;
-      entry.bg.setScale(isFocused ? 1.05 : 1);
-      entry.bg.setAlpha(action.disabled ? 0.6 : (isFocused ? 1 : 0.85));
+    const focusedAuxIndex = this.getFocusedAuxIndex();
+    this.auxEntries.forEach((entry, index) => {
+      const model = this.auxEntryModel[index];
+      if (!model) return;
+      const isFocused = focusedAuxIndex === index;
+      const color = model.disabled
+        ? (isFocused ? '#cbd5e1' : '#94a3b8')
+        : (isFocused ? '#fff6b0' : '#f8fbff');
+      entry.label.setColor(color);
     });
   }
 
@@ -289,6 +346,7 @@ export class FightUiHandler extends UiHandler {
         ease: 'Sine.easeInOut',
       });
     }
+    this.moveInfoOverlay?.toggleInfo?.(this.infoVisible);
     return true;
   }
 
@@ -297,7 +355,10 @@ export class FightUiHandler extends UiHandler {
     const hasMove = Boolean(detail && detail.name);
     this.moveInfoContainer.iterate(o => o.setVisible?.(hasMove));
 
-    if (!hasMove) return;
+    if (!hasMove) {
+      this.moveInfoOverlay?.clear?.();
+      return;
+    }
 
     if (this.typeIcon.setTexture) {
       const typesKey = this.ui.uiLanguage === 'ko' && this.env.textureExists(this.scene, this.env.UI_ASSETS.typesKoAtlas.key, detail.type)
@@ -336,57 +397,87 @@ export class FightUiHandler extends UiHandler {
     this.accuracyLabel?.setText(isKo ? '명중률' : 'Accuracy');
     this.powerText?.setText(formatMoveStatValue(detail.powerLabel));
     this.accuracyText?.setText(formatMoveStatValue(detail.accuracyLabel));
+    this.moveInfoOverlay?.show?.(detail);
   }
 
   updateToggles(toggles = []) {
-    // Right panel x=241–317, buttons 24px wide with 2px gap (26px stride)
-    // 3 buttons per row: row0 y=-48, row1 y=-34 (above type icon row at y=-36)
-    const baseX = 241;
-    const stride = 26;
-    const perRow = 3;
-    this.toggleButtons.forEach((entry, index) => {
-      const toggle = toggles[index] || null;
-      entry.button.setVisible(Boolean(toggle));
-      if (!toggle) return;
-      const col = index % perRow;
-      const row = Math.floor(index / perRow);
-      // row 0 → y=-46 (absolute 134, just inside fight window top at 132)
-      entry.button.setPosition(baseX + col * stride, -46 - row * 14);
-      entry.label.setText(toggle.label || '');
-      entry.label.setColor(toggle.disabled ? '#94a3b8' : '#f8fbff');
-      entry.bg.setAlpha(toggle.active ? 1 : 0.82);
-      if (entry.icon) {
-        const isTera = toggle.kind === 'tera' && this.env.textureExists(this.scene, this.env.UI_ASSETS.teraAtlas.key, toggle.type || 'unknown');
-        entry.icon.setVisible(isTera);
-        if (isTera) entry.icon.setTexture(this.env.UI_ASSETS.teraAtlas.key, toggle.type || 'unknown');
-        entry.icon.setPosition(5, 6);
-        entry.label.setPosition(isTera ? 14 : 12, 6);
-        entry.label.setOrigin(isTera ? 0 : 0.5, 0.5);
-      }
-      entry.hit.removeAllListeners();
-      if (!toggle.disabled && toggle.action) {
-        this.env.setInteractiveTarget(entry.hit, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(toggle.action); });
-      }
-    });
+    this.activeToggles = Array.isArray(toggles) ? toggles : [];
+    this.renderAuxMenu();
   }
 
   updateFooterActions(actions = []) {
-    // Positions are fixed from setup(): Back at x=241 (right panel), Switch at x=1 (left panel)
-    this.footerButtons.forEach((entry, index) => {
-      const action = actions[index] || null;
-      const visible = Boolean(action);
-      entry.bg.setVisible(visible);
-      entry.label.setVisible(visible);
-      entry.hit.setVisible(visible);
-      if (!visible) return;
-      entry.label.setText(action.label || '');
-      entry.label.setColor(action.disabled ? '#94a3b8' : '#f8fbff');
-      entry.bg.setAlpha(action.disabled ? 0.6 : 1);
+    this.activeFooterActions = Array.isArray(actions) ? actions : [];
+    this.renderAuxMenu();
+  }
+
+  getFocusedAuxIndex() {
+    if (this.focusRegion === 'toggles') {
+      return this.toggleCursor < this.activeToggles.length ? this.toggleCursor : -1;
+    }
+    if (this.focusRegion === 'footer') {
+      const backCount = this.activeFooterActions[0] ? 1 : 0;
+      return backCount && this.footerCursor === 0 ? this.activeToggles.length : -1;
+    }
+    return -1;
+  }
+
+  renderAuxMenu() {
+    this.auxMenuConfig = getAuxMenuConfig();
+    this.auxMenuContainer?.setPosition(this.auxMenuConfig.x, this.auxMenuConfig.y);
+
+    const backAction = this.activeFooterActions[0] || null;
+    this.auxEntryModel = [...this.activeToggles, ...(backAction ? [backAction] : [])].slice(0, this.auxEntries.length);
+    const count = this.auxEntryModel.length;
+    this.auxMenuContainer?.setVisible(count > 0);
+    if (!count) return;
+
+    let panelWidth = this.auxMenuConfig.minWidth;
+
+    this.auxEntries.forEach((entry, index) => {
+      const model = this.auxEntryModel[index] || null;
+      if (!model) return;
+      const baseScaleX = Number(entry.label._pkbBaseScaleX || entry.label.scaleX || 1);
+      const baseScaleY = Number(entry.label._pkbBaseScaleY || entry.label.scaleY || 1);
+      entry.label.setScale(baseScaleX * this.auxMenuConfig.textScale, baseScaleY * this.auxMenuConfig.textScale);
+      entry.label.setText(model.label || '');
+      panelWidth = Math.max(
+        panelWidth,
+        Math.ceil(entry.label.displayWidth || 0) + this.auxMenuConfig.textLeft + this.auxMenuConfig.sideInset + 4
+      );
+    });
+
+    panelWidth = Math.min(panelWidth, this.auxMenuConfig.maxWidth);
+    const panelHeight = Math.max(
+      this.auxMenuConfig.rowHeight + this.auxMenuConfig.topPadding + this.auxMenuConfig.bottomPadding,
+      count * this.auxMenuConfig.rowHeight + this.auxMenuConfig.topPadding + this.auxMenuConfig.bottomPadding
+    );
+    this.auxMenuBg.setSize?.(panelWidth, panelHeight);
+    this.auxMenuBg.setDisplaySize?.(panelWidth, panelHeight);
+    this.auxMenuBg.width = panelWidth;
+    this.auxMenuBg.height = panelHeight;
+
+    this.auxEntries.forEach((entry, index) => {
+      const model = this.auxEntryModel[index] || null;
+      entry.label.setVisible(Boolean(model));
+      entry.hit.setVisible(Boolean(model));
+      if (!model) return;
+
+      const rowY = this.auxMenuConfig.topPadding + index * this.auxMenuConfig.rowHeight;
+      entry.label.setPosition(this.auxMenuConfig.textLeft, rowY + this.auxMenuConfig.textTop);
+      entry.label.setText(model.label || '');
+      entry.label.setColor(model.disabled ? '#94a3b8' : '#f8fbff');
+      entry.hit
+        .setPosition(this.auxMenuConfig.sideInset, rowY)
+        .setSize(panelWidth - this.auxMenuConfig.sideInset * 2, this.auxMenuConfig.rowHeight);
       entry.hit.removeAllListeners();
-      if (!action.disabled && action.action) {
-        this.env.setInteractiveTarget(entry.hit, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(action.action); });
+      if (!model.disabled && model.action) {
+        this.env.setInteractiveTarget(entry.hit, () => {
+          this.getUi().playSelect();
+          this.globalScene.dispatchAction(model.action);
+        });
       }
     });
+    this.applyFocusVisuals();
   }
 
   clear() {
@@ -398,5 +489,10 @@ export class FightUiHandler extends UiHandler {
     if (this.cursorObj) this.cursorObj.setVisible(false);
     // 원본 clear(): setInfoVis(false) — moveInfoContainer 전체 숨김 (fight-ui-handler.ts:408-409)
     this.moveInfoContainer?.iterate(o => o.setVisible?.(false));
+    this.moveInfoOverlay?.clear?.();
+    this.activeToggles = [];
+    this.activeFooterActions = [];
+    this.auxEntryModel = [];
+    this.auxMenuContainer?.setVisible(false);
   }
 }

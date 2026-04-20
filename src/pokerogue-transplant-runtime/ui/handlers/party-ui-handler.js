@@ -7,9 +7,15 @@ import { addWindow } from '../helpers/ui-theme.js';
 
 // HP overlay (party_slot_hp_overlay) frame width is 80px
 const HP_FILL_WIDTH = 80;
+const GENDER_SYMBOL = Object.freeze({ M: '♂', F: '♀' });
+const PARTY_OPTION_MAX = 3;
 
 // Cache of icon keys: 'loaded' | 'loading'
 const iconTextureCache = new Map();
+
+function t(ui, ko, en) {
+  return ui?.uiLanguage === 'ko' ? ko : en;
+}
 
 /**
  * Dynamically load a pokemon icon into the Phaser texture cache, then call cb().
@@ -56,6 +62,9 @@ class PartySlot {
     this.iconPending = false;      // true while async icon load is in flight
     this.levelText = null;
     this.statusSprite = null;
+    this.selected = false;
+    this.transfer = false;
+    this.fainted = false;
 
     if (this.isActive) {
       this.mainFrame = 'party_slot_main';
@@ -80,9 +89,9 @@ class PartySlot {
       // Main slot layout (bgObj: 110×49, origin 0,0)
       this.pb         = scene.add.image(4, 4, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(4, 4, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
-      this.label      = addTextObject(this.ui, 24, 3, '', 'WINDOW').setOrigin(0, 0);
-      this.levelText  = addTextObject(this.ui, 24, 15, '', 'PARTY').setOrigin(0, 0);
-      this.sublabel   = addTextObject(this.ui, 52, 16, '', 'PARTY').setOrigin(0, 0);
+      this.label      = addTextObject(this.ui, 24, 10, '', 'PARTY').setOrigin(0, 0);
+      this.levelText  = addTextObject(this.ui, 32, 22, '', 'PARTY').setOrigin(0, 0);
+      this.sublabel   = addTextObject(this.ui, 76, 22, '', 'PARTY').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(8, 31, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(24, 33, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
       this.hpLabel    = env.textureExists(scene, env.UI_ASSETS.partySlotOverlayHp?.key)
@@ -94,7 +103,7 @@ class PartySlot {
       // Bench slot layout (bgObj: 175×24, origin 0,0)
       this.pb         = scene.add.image(2, 12, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(2, 12, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
-      this.label      = addTextObject(this.ui, 21, 3, '', 'PARTY_NAME').setOrigin(0, 0);
+      this.label      = addTextObject(this.ui, 21, 3, '', 'PARTY').setOrigin(0, 0);
       this.levelText  = addTextObject(this.ui, 21, 12, '', 'PARTY').setOrigin(0, 0);
       this.sublabel   = addTextObject(this.ui, 50, 12, '', 'PARTY').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(72, 6, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
@@ -127,19 +136,58 @@ class PartySlot {
     return this.row;
   }
 
+  _resolveSlotFrame() {
+    const { textureExists, UI_ASSETS } = this.env;
+    const atlasKey = this.isActive ? UI_ASSETS.partySlotMainAtlas.key : UI_ASSETS.partySlotAtlas.key;
+    const base = this.mainFrame;
+    const has = frame => textureExists(this.scene, atlasKey, frame);
+
+    if (this.transfer) {
+      const swapSel = `${base}_swap_sel`;
+      const swap = `${base}_swap`;
+      if (this.selected && has(swapSel)) return swapSel;
+      if (has(swap)) return swap;
+    }
+
+    if (this.fainted) {
+      const fntSel = `${base}_fnt_sel`;
+      const fnt = `${base}_fnt`;
+      if (this.selected && has(fntSel)) return fntSel;
+      if (has(fnt)) return fnt;
+    }
+
+    if (this.selected && has(`${base}_sel`)) return `${base}_sel`;
+    return base;
+  }
+
+  _applySelectionFrame() {
+    const { UI_ASSETS } = this.env;
+    const atlasKey = this.isActive ? UI_ASSETS.partySlotMainAtlas.key : UI_ASSETS.partySlotAtlas.key;
+    this.bgObj.setTexture(atlasKey, this._resolveSlotFrame());
+    this.pb.setTexture(UI_ASSETS.partyPbAtlas.key, this.selected ? 'party_pb_sel' : 'party_pb');
+  }
+
+  setSelected(selected) {
+    const next = Boolean(selected);
+    if (this.selected === next) return;
+    this.selected = next;
+    this._applySelectionFrame();
+  }
+
+  setTransfer(transfer) {
+    const next = Boolean(transfer);
+    if (this.transfer === next) return;
+    this.transfer = next;
+    this._applySelectionFrame();
+  }
+
   update(option = null) {
     const { textureExists, UI_ASSETS, clamp, setHorizontalCrop } = this.env;
     this.row.setVisible(Boolean(option));
     if (!option) return;
 
-    const selected = Boolean(option.active);
-    const fainted  = Boolean(option.fainted);
-    const atlasKey = this.isActive ? UI_ASSETS.partySlotMainAtlas.key : UI_ASSETS.partySlotAtlas.key;
-    const frame = fainted
-      ? (selected ? this.selFntFrame : this.fntFrame)
-      : (selected ? this.selFrame   : this.mainFrame);
-    this.bgObj.setTexture(atlasKey, frame);
-    this.pb.setTexture(UI_ASSETS.partyPbAtlas.key, selected ? 'party_pb_sel' : 'party_pb');
+    this.fainted = Boolean(option.fainted);
+    this._applySelectionFrame();
 
     this.label.setText(option.label || '');
 
@@ -148,7 +196,8 @@ class PartySlot {
     this.levelText.setText(lvStr);
 
     // Sublabel (HP + status text)
-    this.sublabel.setText(option.sublabel || '');
+    const gender = GENDER_SYMBOL[option.gender] || '';
+    this.sublabel.setText([gender, option.sublabel || ''].filter(Boolean).join(' '));
 
     // Status sprite
     const STATUS_FRAME = { brn: 'burn', par: 'paralysis', psn: 'poison', tox: 'toxic', slp: 'sleep', frz: 'freeze' };
@@ -192,8 +241,11 @@ class PartySlot {
     }
 
     this.hit.removeAllListeners();
-    if (!option.disabled && option.action) {
-      this.env.setInteractiveTarget(this.hit, () => { this.handler.getUi().playSelect(); this.handler.globalScene.dispatchAction(option.action); });
+    if (option) {
+      this.env.setInteractiveTarget(this.hit, () => {
+        if (this.handler.openPartyOptions(this.index)) this.handler.getUi().playSelect();
+        else this.handler.getUi().playError();
+      });
     }
   }
 
@@ -245,8 +297,41 @@ export class PartyUiHandler extends UiHandler {
     this.cancelPb = null;
     this.cancelLabel = null;
     this.cancelZone = null;
+    this.optionsContainer = null;
+    this.optionsBg = null;
+    this.optionsCursorObj = null;
+    this.optionsItems = [];
+    this.optionsMode = false;
+    this.optionsCursor = 0;
+    this.optionsTargetCursor = null;
+    this.infoContainer = null;
+    this.infoBg = null;
+    this.infoBody = null;
+    this.infoHint = null;
+    this.infoVisible = false;
     this.slots = [];
     this.fieldIndex = 0;
+  }
+
+  setCancelSelected(selected) {
+    const isSelected = Boolean(selected);
+    if (this.cancelBg?.setTexture && this.env.textureExists(this.scene, this.env.UI_ASSETS.partyCancelAtlas.key, isSelected ? 'party_cancel_sel' : 'party_cancel')) {
+      this.cancelBg.setTexture(this.env.UI_ASSETS.partyCancelAtlas.key, isSelected ? 'party_cancel_sel' : 'party_cancel');
+    }
+    if (this.cancelPb?.setTexture && this.env.textureExists(this.scene, this.env.UI_ASSETS.partyPbAtlas.key, isSelected ? 'party_pb_sel' : 'party_pb')) {
+      this.cancelPb.setTexture(this.env.UI_ASSETS.partyPbAtlas.key, isSelected ? 'party_pb_sel' : 'party_pb');
+    }
+  }
+
+  applyCursorSelection(previousCursor, nextCursor) {
+    if (Number.isInteger(previousCursor)) {
+      if (previousCursor < 6) this.slots[previousCursor]?.setSelected(false);
+      if (previousCursor === 6) this.setCancelSelected(false);
+    }
+    if (Number.isInteger(nextCursor)) {
+      if (nextCursor < 6) this.slots[nextCursor]?.setSelected(true);
+      if (nextCursor === 6) this.setCancelSelected(true);
+    }
   }
 
   setup() {
@@ -273,9 +358,25 @@ export class PartyUiHandler extends UiHandler {
     this.cancelPb = env.textureExists(scene, env.UI_ASSETS.partyPbAtlas.key, 'party_pb')
       ? scene.add.image(274, -16, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0.5, 0.5)
       : null;
-    this.cancelLabel = addTextObject(this.ui, 281, -23, 'Cancel', 'WINDOW').setOrigin(0, 0);
+    this.cancelLabel = addTextObject(this.ui, 281, -23, t(this.ui, '취소', 'Cancel'), 'PARTY').setOrigin(0, 0);
     // Zone covers the cancel bg area: x=291, y=-24 (top), w=52, h=16
     this.cancelZone = scene.add.rectangle(291, -24, 52, 16, 0xffffff, 0.001).setOrigin(0, 0);
+
+    this.optionsContainer = scene.add.container(env.LOGICAL_WIDTH - 1, -1).setVisible(false).setName('party-options');
+    this.optionsBg = addWindow(this.ui, 0, 0, 128, 40).setOrigin(1, 1).setVisible(false);
+    this.optionsCursorObj = env.textureExists(scene, env.UI_ASSETS.menuSel.key)
+      ? scene.add.image(0, 0, env.UI_ASSETS.menuSel.key).setOrigin(0, 0).setVisible(false)
+      : addTextObject(this.ui, 0, 0, '▶', 'WINDOW_BATTLE_COMMAND').setOrigin(0, 0).setVisible(false);
+    this.optionsContainer.add([this.optionsBg, this.optionsCursorObj]);
+
+    this.infoContainer = scene.add.container(65, -173).setVisible(false).setName('party-info-popup');
+    this.infoBg = addWindow(this.ui, 0, 0, 194, 118).setOrigin(0, 0);
+    this.infoBody = addTextObject(this.ui, 8, 8, '', 'PARTY', {
+      wordWrap: { width: 178, useAdvancedWrap: true },
+      lineSpacing: 1,
+    }).setOrigin(0, 0);
+    this.infoHint = addTextObject(this.ui, 8, 106, '', 'PARTY').setOrigin(0, 0);
+    this.infoContainer.add([this.infoBg, this.infoBody, this.infoHint]);
 
     // slotYs: index 0 = main slot, index 1-5 = bench
     // -149 is integer (was -148.5) to avoid sub-pixel text blur
@@ -292,6 +393,8 @@ export class PartyUiHandler extends UiHandler {
       this.cancelZone,
       ...(this.cancelPb ? [this.cancelPb] : []),
       ...this.slots.map(slot => slot.setup()),
+      this.optionsContainer,
+      this.infoContainer,
     ]);
     this.clear();
   }
@@ -300,6 +403,8 @@ export class PartyUiHandler extends UiHandler {
     const state = args || this.globalScene.getPartyInputModel();
     super.show(state);
     this.partyContainer.setVisible(true);
+    this.closePartyOptions();
+    this.closePartyInfo();
 
     // partyModeActive 플래그: ui.js renderModel()이 DOM 스프라이트를 다시 켜는 것을 차단
     this.ui.partyModeActive = true;
@@ -318,6 +423,7 @@ export class PartyUiHandler extends UiHandler {
     this.slots.forEach((slot, index) => {
       const option = this.globalScene.getPartyOptions()[index] || null;
       slot.update(option);
+      slot.setSelected(false);
     });
     const footerAction = this.getFooterAction();
     const cancelVisible = Boolean(footerAction);
@@ -330,7 +436,8 @@ export class PartyUiHandler extends UiHandler {
     if (footerAction && !footerAction.disabled && footerAction.action) {
       this.env.setInteractiveTarget(this.cancelZone, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(footerAction.action); });
     }
-    const selection = this.globalScene.getPartySelectionState(this.getCursor());
+    this.setCancelSelected(false);
+    const selection = this.globalScene.getPartySelectionState(0);
     this.setCursor(selection.cursor, true);
     return true;
   }
@@ -347,11 +454,197 @@ export class PartyUiHandler extends UiHandler {
     return (this.getInputModel().footerActions || [])[0] || null;
   }
 
+  getPartyOptionMenuItems(slotIndex) {
+    const option = this.getPartyOptions()[slotIndex] || null;
+    if (!option) return [];
+    const items = [];
+    if (!option.disabled && option.action) {
+      items.push({
+        label: t(this.ui, '교체한다', 'Switch'),
+        execute: () => this.globalScene.dispatchAction(option.action),
+      });
+    }
+    items.push({
+      label: t(this.ui, '정보를 확인한다', 'Check Info'),
+      execute: () => this.showPartyInfo(slotIndex),
+    });
+    if (this.getFooterAction()) {
+      items.push({
+        label: t(this.ui, '취소', 'Cancel'),
+        execute: () => {},
+      });
+    }
+    return items.slice(0, PARTY_OPTION_MAX);
+  }
+
+  openPartyOptions(slotIndex) {
+    if (this.infoVisible) return false;
+    if (!Number.isInteger(slotIndex) || slotIndex < 0 || slotIndex >= 6) return false;
+    const menuItems = this.getPartyOptionMenuItems(slotIndex);
+    if (!menuItems.length) return false;
+
+    this.setCursor(slotIndex, true);
+    this.closePartyOptions();
+    this.optionsItems = menuItems;
+    this.optionsMode = true;
+    this.optionsCursor = 0;
+    this.optionsTargetCursor = slotIndex;
+
+    const panelWidth = 128;
+    const rowHeight = 16;
+    const panelHeight = Math.max(16, menuItems.length * rowHeight + 4);
+    this.optionsBg.setSize?.(panelWidth, panelHeight);
+    this.optionsBg.width = panelWidth;
+    this.optionsBg.height = panelHeight;
+    this.optionsBg.setVisible(true);
+    this.optionsContainer.setVisible(true);
+    this.optionsCursorObj.setVisible(true);
+
+    this.optionsItems.forEach((item, index) => {
+      const rowY = -panelHeight + 2 + index * rowHeight;
+      const label = addTextObject(this.ui, -102, rowY, item.label || '', 'WINDOW').setOrigin(0, 0);
+      const hit = this.scene.add.rectangle(-108, rowY - 1, panelWidth - 12, rowHeight, 0xffffff, 0.001).setOrigin(0, 0);
+      this.optionsContainer.add([hit, label]);
+      this.env.setInteractiveTarget(hit, () => {
+        this.optionsCursor = index;
+        this.refreshOptionsCursorVisual();
+        this.confirmOptionSelection();
+      });
+      item.labelObj = label;
+      item.hitObj = hit;
+    });
+    this.optionsContainer.bringToTop?.(this.optionsCursorObj);
+
+    this.refreshOptionsCursorVisual();
+    return true;
+  }
+
+  closePartyOptions() {
+    this.optionsMode = false;
+    this.optionsCursor = 0;
+    this.optionsTargetCursor = null;
+    this.optionsItems.forEach(item => {
+      item.labelObj?.destroy?.();
+      item.hitObj?.destroy?.();
+    });
+    this.optionsItems = [];
+    this.optionsCursorObj?.setVisible(false);
+    this.optionsBg?.setVisible(false);
+    this.optionsContainer?.setVisible(false);
+  }
+
+  closePartyInfo() {
+    this.infoVisible = false;
+    this.infoContainer?.setVisible(false);
+    if (this.infoBody) this.infoBody.setText('');
+    if (this.infoHint) this.infoHint.setText('');
+  }
+
+  processInfoInput(button) {
+    if (!this.infoVisible) return false;
+    if (button === Button.ACTION || button === Button.CANCEL) {
+      this.closePartyInfo();
+      this.getUi().playSelect();
+      return true;
+    }
+    if (button === Button.UP || button === Button.DOWN || button === Button.LEFT || button === Button.RIGHT) {
+      return true;
+    }
+    return false;
+  }
+
+  refreshOptionsCursorVisual() {
+    if (!this.optionsMode || !this.optionsItems.length) return;
+    const panelHeight = Number(this.optionsBg?.height || 0);
+    const rowHeight = 16;
+    const rowY = -panelHeight + 2 + this.optionsCursor * rowHeight;
+    this.optionsCursorObj?.setPosition(-114, rowY + 1).setVisible(true);
+    this.optionsItems.forEach((item, index) => {
+      item.labelObj?.setColor(index === this.optionsCursor ? '#fff6b0' : '#f8f8f8');
+    });
+  }
+
+  confirmOptionSelection() {
+    if (!this.optionsMode) return false;
+    const option = this.optionsItems[this.optionsCursor] || null;
+    if (!option) return false;
+    option.execute?.();
+    this.closePartyOptions();
+    this.getUi().playSelect();
+    return true;
+  }
+
+  processOptionsInput(button) {
+    if (!this.optionsMode) return false;
+    const count = this.optionsItems.length;
+    if (!count) {
+      this.closePartyOptions();
+      return false;
+    }
+    if (button === Button.CANCEL) {
+      this.closePartyOptions();
+      this.getUi().playSelect();
+      return true;
+    }
+    if (button === Button.UP || button === Button.DOWN) {
+      const delta = button === Button.UP ? -1 : 1;
+      this.optionsCursor = (this.optionsCursor + delta + count) % count;
+      this.refreshOptionsCursorVisual();
+      this.getUi().playSelect();
+      return true;
+    }
+    if (button === Button.ACTION) {
+      return this.confirmOptionSelection();
+    }
+    if (button === Button.LEFT || button === Button.RIGHT) {
+      return true;
+    }
+    return false;
+  }
+
+  showPartyInfo(slotIndex) {
+    const option = this.getPartyOptions()[slotIndex] || null;
+    if (!option) return;
+    const levelLabel = option.level != null ? `Lv.${option.level}` : '';
+    const statusMap = {
+      brn: t(this.ui, '화상', 'Burn'),
+      par: t(this.ui, '마비', 'Paralysis'),
+      psn: t(this.ui, '중독', 'Poison'),
+      tox: t(this.ui, '맹독', 'Badly Poisoned'),
+      slp: t(this.ui, '잠듦', 'Sleep'),
+      frz: t(this.ui, '얼음', 'Freeze'),
+    };
+    const statusLabel = statusMap[String(option.statusEffect || '').toLowerCase()]
+      || (option.fainted ? t(this.ui, '기절', 'Fainted') : t(this.ui, '정상', 'Healthy'));
+    const typeLabel = Array.isArray(option.typeLabels) && option.typeLabels.length
+      ? option.typeLabels.join(' / ')
+      : t(this.ui, '알 수 없음', 'Unknown');
+    const moveLabel = Array.isArray(option.moveLabels) && option.moveLabels.length
+      ? option.moveLabels.join(', ')
+      : t(this.ui, '기술 없음', 'No moves');
+    const detail = [
+      [option.label || '', levelLabel].filter(Boolean).join('  '),
+      `${t(this.ui, 'HP', 'HP')} ${option.hpLabel || '--/--'}`,
+      `${t(this.ui, '상태', 'Status')} ${statusLabel}`,
+      `${t(this.ui, '타입', 'Type')} ${typeLabel}`,
+      `${t(this.ui, '특성', 'Ability')} ${option.abilityLabel || t(this.ui, '없음', 'None')}`,
+      `${t(this.ui, '도구', 'Item')} ${option.itemLabel || t(this.ui, '없음', 'None')}`,
+      `${t(this.ui, '기술', 'Moves')} ${moveLabel}`,
+    ].join('\n');
+    this.infoBody?.setText(detail);
+    this.infoHint?.setText(t(this.ui, 'A/B 닫기', 'A/B Close'));
+    this.infoVisible = true;
+    this.infoContainer?.setVisible(true);
+    this.container?.bringToTop?.(this.infoContainer);
+  }
+
   setCursor(index, force = false) {
+    const previousCursor = this.getCursor();
     const selection = this.globalScene.getPartySelectionState(index);
     const nextIndex = selection.cursor;
-    const changed = force ? true : super.setCursor(nextIndex);
+    const changed = force ? previousCursor !== nextIndex : super.setCursor(nextIndex);
     if (force) this.cursor = nextIndex;
+    this.applyCursorSelection(previousCursor, nextIndex);
     const cursorPos = this.getCursorPosition(nextIndex);
     this.cursorObj.setVisible(Boolean(cursorPos));
     if (cursorPos) this.cursorObj.setPosition(cursorPos.x, cursorPos.y);
@@ -365,30 +658,63 @@ export class PartyUiHandler extends UiHandler {
   }
 
   processInput(button) {
-    const result = this.globalScene.resolvePartyInput(this.getCursor(), button);
-    let success = false;
+    if (this.processInfoInput(button)) return true;
+    if (this.processOptionsInput(button)) return true;
 
-    if (result.changed) {
-      success = this.setCursor(result.cursor);
-    }
-    if (result.action) {
-      this.globalScene.dispatchAction(result.action);
-      success = true;
+    if (button === Button.ACTION) {
+      const cursor = this.getCursor();
+      if (cursor === 6) {
+        const cancelAction = this.getFooterAction();
+        if (cancelAction && !cancelAction.disabled && cancelAction.action) {
+          this.globalScene.dispatchAction(cancelAction.action);
+          this.getUi().playSelect();
+          return true;
+        }
+        this.getUi().playError();
+        return false;
+      }
+      if (cursor < 6) {
+        const opened = this.openPartyOptions(cursor);
+        if (opened) this.getUi().playSelect();
+        else this.getUi().playError();
+        return opened;
+      }
+      return false;
     }
 
-    if (success) this.getUi().playSelect();
-    return success;
+    if (button === Button.CANCEL) {
+      const cancelAction = this.getFooterAction();
+      if (cancelAction && !cancelAction.disabled && cancelAction.action) {
+        this.globalScene.dispatchAction(cancelAction.action);
+        this.getUi().playSelect();
+        return true;
+      }
+      return false;
+    }
+
+    if (button === Button.UP || button === Button.DOWN || button === Button.LEFT || button === Button.RIGHT) {
+      const nextCursor = this.globalScene.movePartySelection(this.getCursor(), button);
+      const changed = this.setCursor(nextCursor);
+      if (changed) this.getUi().playSelect();
+      return changed;
+    }
+
+    return false;
   }
 
   clear() {
     super.clear();
+    this.closePartyOptions();
+    this.closePartyInfo();
     this.partyContainer?.setVisible(false);
     if (this.cursorObj) this.cursorObj.setVisible(false);
 
     // Clean up icon animation timers
     this.slots.forEach(s => {
       if (s.iconAnimTimer) { s.iconAnimTimer.remove(); s.iconAnimTimer = null; }
+      s.setSelected(false);
     });
+    this.setCancelSelected(false);
 
     // partyModeActive 해제: DOM 스프라이트 visibility 복원 허용
     this.ui.partyModeActive = false;
