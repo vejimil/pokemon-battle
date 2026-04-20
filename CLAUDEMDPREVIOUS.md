@@ -1,3 +1,13 @@
+# Pokemon Battle 완료 이력 아카이브 (CLAUDE)
+
+Last updated: 2026-04-20  
+Target: `/workspaces/pokemon-battle`
+
+이 문서는 `CLAUDE.md`에서 이관한 완료 이력(작업 로그/버그픽스/검증 기록)을 보관한다.  
+현재 운영 상태와 활성 우선순위는 `CLAUDE.md`를 기준으로 확인한다.
+
+---
+
 ### ✅ BA-1. 배틀 메시지 순차 표시 — 완료 (2026-04-13)
 ### ✅ BA-2. 울음소리(Cry) 연결 — 완료 (2026-04-13)
 ### ✅ BA-3. 어빌리티 바 + 날씨/지형 연출 — 완료 (2026-04-13)
@@ -507,3 +517,59 @@
 6. **폰트 사전 로딩 크기 수정** (`controller.js`): 8px → 48px (`TEXT_RENDER_SCALE×8`) 로 브라우저 캐시 정합성 개선
 7. **EXP 바 geometry mask 이식** (`player-battle-info.js`): `expMaskRect` geometry mask 방식으로 전환 — PokeRogue 원본과 동일한 `scene.make.graphics()` + `createGeometryMask()` 패턴, `_applyExpMask(width)` 메서드 추가
 8. **배틀 전체화면 오버레이 구현 ✅** (`app.js`, `index.html`, `styles.css`): `enterBattleFullscreen()` / `exitBattleFullscreen()` 함수, `battle-fullscreen` CSS 클래스(`position:fixed; inset:0`), `← 빌더로` 버튼 및 ESC 키 지원 — **정상 동작 확인**
+
+---
+
+## ✅ 2026-04-19 ~ 2026-04-20 이관 완료 로그
+
+### ✅ BA-25. 다이맥스 구현 + 후속 안정화 (2026-04-19)
+- `showdown-engine.cjs`
+  - `-start/-end ... Dynamax`를 `dynamax_start/end` 이벤트로 구조화
+  - 다이맥스 동반 `-heal [silent]`를 일반 heal 이벤트에서 분리
+- `timeline.js`
+  - `dynamax_start/end`를 메시지 → 연출 → info patch 순서로 처리
+- `battle-shell-scene.js`
+  - `setBattlerDynamaxState`, `playDynamaxStart/End`, max 스케일 경로 정리
+- `app.js`
+  - `dynamaxed/gigantamaxed` 상태 전파 및 gmax 연계 보정
+- 후속 안정화:
+  - Max/G-Max 기술명/애니 fallback 정리
+  - 거다이맥스 가능 종 자동 강제
+  - 즉시 KO 턴에서 테라/다이맥스 시각 상태 유지 보정
+
+### ✅ BA-23. 기술/날씨/필드 연출 완성 + 후속 보강 (2026-04-19)
+- `battle-anim-player.js`
+  - `focus=SCREEN` 정합, timed BG(add/update), USER/TARGET/no-graphic 경로 보강
+  - 배열형 anim variant/oppAnim 규칙 처리
+- `timeline.js`
+  - weather/terrain/common 연출 연결, terrain 정규화, 동턴 중복 weather_tick 스킵
+- `battle-shell-scene.js`
+  - terrain persistent BG 관리 및 시점별 variant 전달
+- `showdown-engine.cjs`
+  - `-fieldstart/-fieldend` effect 파싱 보정
+
+### ✅ BA-28. 한/영 명칭 분리 1차 + 아이템/스프라이트 보강 (2026-04-20)
+- 로컬라이즈:
+  - `src/i18n-ko-locales.js` 신규 생성
+  - `return102`/`frustration102` 정규화
+  - `ability_show` 메시지/ability bar 이름 로컬라이즈
+- 감사:
+  - `scripts/audit-missing-sprites.mjs` / `reports/missing-sprite-audit.json`
+  - `scripts/audit-item-sprites.mjs` / `reports/item-sprite-audit.json`
+- 아이템 아이콘 경로 최적화:
+  - `src/pokerogue-assets.js`를 manifest 인덱스 우선 매칭으로 전환
+  - `assets/pokerogue/items/manifest.json` 신규 생성
+  - `assets/manifest.json` 동기화
+- 마감 보정:
+  - `Loaded Dice` → `속임수 주사위`
+  - ZA 신규 메가스톤 영문 누출 시 `<종족명>나이트` fallback(예: `Emboarite`)
+
+### ✅ 검증
+- `node --check src/app.js`
+- `node --check src/battle-presentation/timeline.js`
+- `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+- `node --check src/i18n-ko-locales.js`
+- `node --check src/pokerogue-assets.js`
+- `npm run verify:ba20`
+- `npm run verify:stage22`
+- `npm run verify:passb`

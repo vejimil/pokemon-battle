@@ -1,6 +1,6 @@
 # PKB Battle Presentation 완료 이력 아카이브
 
-Last updated: 2026-04-17  
+Last updated: 2026-04-20
 Target: `/workspaces/pokemon-battle`
 
 이 문서는 완료된 작업(마일스톤/BA)을 보관하는 아카이브다.  
@@ -76,3 +76,51 @@ Target: `/workspaces/pokemon-battle`
 
 - 현재 진행/할 일: `plan.md`
 - 프로젝트/아키텍처/정책: `CLAUDE.md`
+
+---
+
+## 5) 2026-04-19 ~ 2026-04-20 완료 BA 이력 (신규 이관)
+
+### 2026-04-19
+- `BA-25` 다이맥스 구현 완료
+  - `-start/-end ... Dynamax` 이벤트 구조화
+  - timeline에서 시작/종료 연출 + info patch 연결
+  - 씬 스케일/상태(`dynamaxed`, `gigantamaxed`) 동기화
+- `BA-25` 후속 안정화
+  - 버튼/요청 해석 보정, Max/G-Max 표시/연출 fallback
+  - 거다이맥스 가능 종 자동 강제 경로 정리
+  - 즉시 KO 턴 테라/폼 시각 상태 유지 보정
+- `BA-23` 기술/날씨/필드 연출 완성 및 후속 보강
+  - `focus=SCREEN` 좌표계 정합
+  - weather/terrain common 연출 연결
+  - timed BG/add-update, USER/TARGET, no-graphic 애니 처리 복원
+  - terrain 지속 배경/배열형 anim variant/oppAnim 규칙 반영
+
+### 2026-04-20
+- `BA-28` 한/영 명칭 분리 1차 완료
+  - `src/i18n-ko-locales.js` 생성(locale 기반 species/moves/abilities 추출)
+  - `return102`/`frustration102` 정규화
+  - `ability_show` 메시지/바 로컬라이즈 연결
+- 스프라이트/아이템 감사
+  - `scripts/audit-missing-sprites.mjs`, `reports/missing-sprite-audit.json`
+  - `scripts/audit-item-sprites.mjs`, `reports/item-sprite-audit.json`
+- 도구 스프라이트 보강
+  - standard 9 + future 2 반영 확인
+  - 아이콘 해석을 manifest 인덱스 우선으로 전환(`src/pokerogue-assets.js`)
+  - `assets/pokerogue/items/manifest.json` 신규 생성, `assets/manifest.json` 동기화
+- 아이템 한글화 마감 보정
+  - `Loaded Dice` → `속임수 주사위`
+  - ZA 신규 메가스톤 영문 누출 시 `<종족명>나이트` fallback 표시(예: `Emboarite`)
+
+---
+
+## 6) 2026-04-19 ~ 2026-04-20 검증 요약
+
+- `node --check src/app.js` PASS
+- `node --check src/battle-presentation/timeline.js` PASS
+- `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` PASS
+- `node --check src/i18n-ko-locales.js` PASS
+- `node --check src/pokerogue-assets.js` PASS
+- `npm run verify:ba20` PASS
+- `npm run verify:stage22` PASS
+- `npm run verify:passb` PASS
