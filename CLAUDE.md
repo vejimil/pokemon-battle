@@ -62,6 +62,7 @@ assets/pokerogue/items/
 - Pikachu cap/cosplay 폼 전용 번호 에셋 매핑 상향(`PIKACHU_2`, `PIKACHU_8`~`PIKACHU_15`)
 - 아이템 manifest 자동화/검증 스크립트 추가(`build:item-manifests`, `verify:item-manifests`)
 - 기본 검증 묶음 추가(`verify:core`)
+- 에셋 잔여 정리 작업은 임시 보류(기능 안정화/HUD/통신 확장 우선)
 
 상세 완료 로그는 `CLAUDEMDPREVIOUS.md` 2026-04-19~20 섹션 참조.
 
@@ -69,14 +70,27 @@ assets/pokerogue/items/
 
 ## 4) 활성 우선순위
 
-1. 스프라이트 품질 보강 2차 (잔여)
-- fallback으로 해소한 폼 중 전용 번호 에셋 매핑 검증/상향
-- 우선: Totem/사이즈/진품 폼, Pikachu starter/female 표시 정책
+1. 배틀 연출 안정화
+- 메가 샹델라/테라파고스 최종폼 크기: 원본 에셋 vs 런타임 스케일 원인 분리
+- 대형 포켓몬(메가/다이맥스/특수폼) 기술 시작 좌표 상단 치우침 원인 분석/정합
+- faint 이후/날씨 연출 등 시점 불일치 스프라이트 재노출 버그 제거
 
-2. manifest/검증 파이프라인 문서화 및 CI 연계
-- 로컬 기본 루틴은 `verify:core`로 고정
-- CI 도입 시 `verify:core`를 기본 게이트로 연결
-- 에셋 추가 시 `build:item-manifests` 절차 문서화
+2. HUD 확정
+- 정보창 이름 비트맵 폰트 적용(깨짐 방지)
+- 성별 표시
+- 기술 상세(type/power/accuracy) 가독성 개선(원본 자산/스타일 우선)
+- 파티 교체 메시지 locale 연결 + 텍스트 박스 내 레이아웃 보정
+- 빌더 UX: 종족값 표시, EV/IV 다자리 입력/길게누르기 입력 개선
+
+3. 통신 플레이 확장
+- 방 생성/참가 -> 양측 빌더 -> 준비 완료 -> 배틀 시작 흐름
+- 팀 수 선택 범위 확장(`3~6`)
+- 도전 시작 문구부터 배틀 종료까지 실전 루프 연결
+- 모바일 가로 HUD(터치/십자키+ABXY) 대응
+
+4. manifest/검증 파이프라인 문서화 및 CI 연계
+- 로컬 기본 루틴은 `verify:core`
+- CI 도입 시 `verify:core`를 게이트로 연결
 
 ---
 
@@ -86,6 +100,8 @@ assets/pokerogue/items/
 - 타임라인 재생 중 `message-only` 잠금 유지
 - 이벤트 순서 `move -> hp -> faint/switch` 보존
 - 테라스탈/다이맥스 경로 상호 훼손 금지
+- 원인 재현/로그 없는 추측성 수정 금지(분석 -> 패치 -> 회귀 검증 순서 고정)
+- 변경은 최소 침습 원칙 유지, 기존 기능 퇴행 금지
 - 기존 사용자 수정사항 임의 되돌리기 금지
 
 ---

@@ -27,6 +27,8 @@ Target: `/workspaces/pokemon-battle`
 - 스프라이트 품질 보강 2차(부분) 완료:
   - Pikachu cap/cosplay 폼을 공용 fallback(`PIKACHU`)에서 전용 번호 에셋으로 상향
   - (`PIKACHU_2`, `PIKACHU_8`~`PIKACHU_15`)
+- 에셋 잔여 작업 상태:
+  - 추가 에셋 정리/재매핑 작업은 우선순위에서 임시 보류
 - 아이템 manifest 자동화 1차 완료:
   - `scripts/build-item-manifests.mjs` 추가(인덱스 자동 생성/동기화)
   - `scripts/verify-item-manifests.mjs` 추가(drift 검증)
@@ -41,29 +43,51 @@ Target: `/workspaces/pokemon-battle`
 
 ## 1) 다음 할 일 (우선순위)
 
-1. 스프라이트 품질 보강 2차 (잔여)
-- 목표: fallback으로 해소한 폼 중 전용 에셋이 있는 케이스 정확 매핑
-- 우선 대상:
-  - Totem/사이즈/진품 폼 중 전용 번호 에셋 확인 가능 케이스
-  - Pikachu `Starter`/성별(`PIKACHU_female`) 표시 정책 점검
+1. 배틀 연출 안정화 (원인 분석 우선)
+- 메가 샹델라/테라파고스 최종폼 크기 검증
+  - 원본 에셋 자체 크기 이슈인지, 런타임 스케일/오프셋 적용 이슈인지 분리 진단
+  - 런타임 스케일 문제면 원본 크기 기준으로 복원
+  - 원본 에셋 자체가 큰 경우는 근거 기록 후 보류
+- 대형 포켓몬 기술 연출 시작 좌표 상단 치우침 수정
+  - 다이맥스/메가/특수 대형 폼 포함 공통 규칙으로 시작점 정합
+  - `battle-anim-player` 좌표계/anchor/metrics 적용 경로 추적 후 수정
+- 전투 흐름 불일치 가시성 버그 정리
+  - faint 이후/날씨 연출 중 재노출 등 “보이면 안 되는 시점” 전수 점검
+  - 이벤트 순서(`move -> hp -> faint/switch`)와 scene 표시 상태를 강제 동기화
 
-2. manifest/검증 파이프라인 문서화 및 CI 이식
-- 현재 로컬 묶음(`verify:core`)은 구축 완료
-- CI가 도입될 경우 `verify:core`를 기본 게이트로 연결
-- drift 발생 시 수정 절차(`build:item-manifests`)를 작업 가이드에 고정
+2. HUD 확정
+- 포켓몬 정보창 이름 렌더링 안정화
+  - 비트맵 폰트 적용으로 글자 깨짐 방지
+- 성별 표시 추가
+- 기술 상세 패널 가독성 개선
+  - 타입/위력/명중 텍스트 렌더링을 원본 자산/스타일 기준으로 정합
+- 파티 교체 메시지 locale 연결 + 텍스트 박스 내 레이아웃 고정
+- 빌더 편의성 개선
+  - 종족값 표시
+  - EV/IV 입력 UX 개선(다자리 연속 입력, 252 즉시 입력, 화살표 길게 누르기)
 
-3. 회귀 검증 패키지 운영
-- 기본 실행: `npm run verify:core`
-- 필요 시 단건 실행:
-  - `npm run verify:ba20`
-  - `npm run verify:stage22`
-  - `npm run verify:passb`
+3. 통신 플레이 확장
+- 방 생성/참가 및 양측 빌더 동기화
+- 양측 준비 완료 후 실전 배틀 진입
+- 팀 수 선택 확장(`3~6`)
+- “도전 문구 -> 배틀 종료”까지 실전 흐름 연결
+- 모바일 대응
+  - 가로 터치 HUD
+  - 십자키 + ABXY UI 옵션
+
+4. manifest/검증 파이프라인 문서화 및 CI 이식
+- 로컬 기본 실행은 `npm run verify:core`
+- CI 도입 시 `verify:core`를 기본 게이트로 연결
+- drift 발생 시 `build:item-manifests` 절차 문서화
 
 ---
 
 ## 2) 작업 원칙 (유지)
 
 - 수정 전 원본 코드 선독/정합 이식
+- 원인 재현/로그 근거 없이 추측성 수정 금지
+- 문제별 최소 침습 패치 후 즉시 회귀 검증(`verify:core` + 관련 단건) 수행
+- 기존 기능(테라스탈/다이맥스/폼체인지/입력잠금) 훼손 금지
 - 배틀 연출 완성 전 UI 폴리시(UI-P1~P5) 착수 금지
 - 단계 완료 직후 `plan.md`, `CLAUDE.md` 동기화
 - 완료 이력은 `planprevious.md`, `CLAUDEMDPREVIOUS.md` 누적
@@ -74,6 +98,6 @@ Target: `/workspaces/pokemon-battle`
 
 - 먼저 읽기: `CLAUDE.md` -> `plan.md` -> `planprevious.md`
 - 즉시 착수 권장 순서:
-  1. Totem/사이즈/진품 폼 전용 에셋 재매핑 감사
-  2. `verify:core` 운영 가이드 정리(로컬/향후 CI)
-  3. 에셋 추가 시 manifest 재생성(`build:item-manifests`) 절차 고정
+  1. 메가 샹델라/테라파고스 최종폼 크기 및 대형 폼 기술 시작점 이슈 재현
+  2. faint/날씨 재노출 가시성 버그 이벤트 흐름 단위 분석
+  3. HUD 텍스트/폰트/입력 UX 확정 패치
