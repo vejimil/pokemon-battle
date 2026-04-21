@@ -89,9 +89,9 @@ class PartySlot {
       // Main slot layout (bgObj: 110×49, origin 0,0)
       this.pb         = scene.add.image(4, 4, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0, 0);
       this.iconHolder = scene.add.rectangle(4, 4, 18, 18, 0xffffff, 0.001).setOrigin(0, 0);
-      this.label      = addTextObject(this.ui, 24, 10, '', 'PARTY').setOrigin(0, 0);
-      this.levelText  = addTextObject(this.ui, 32, 22, '', 'PARTY').setOrigin(0, 0);
-      this.sublabel   = addTextObject(this.ui, 76, 22, '', 'PARTY').setOrigin(0, 0);
+      this.label      = addTextObject(this.ui, 24, 8, '', 'PARTY').setOrigin(0, 0);
+      this.levelText  = addTextObject(this.ui, 24, 18, '', 'PARTY').setOrigin(0, 0);
+      this.sublabel   = addTextObject(this.ui, 52, 19, '', 'PARTY').setOrigin(0, 0);
       this.hpBarBase  = scene.add.image(8, 31, env.UI_ASSETS.partySlotHpBar.key).setOrigin(0, 0);
       this.hpBarFill  = scene.add.image(24, 33, env.UI_ASSETS.partySlotHpOverlayAtlas.key, 'high').setOrigin(0, 0);
       this.hpLabel    = env.textureExists(scene, env.UI_ASSETS.partySlotOverlayHp?.key)
