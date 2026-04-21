@@ -232,6 +232,46 @@ class OnlineRoomService {
     };
   }
 
+  forfeitBattle({roomId = '', token = ''} = {}) {
+    const room = this.getRoomOrThrow(roomId);
+    const side = this.resolveSideByToken(room, token);
+    if (!room.battle?.started || !room.battle?.snapshot) {
+      const error = new Error('Battle has not started yet.');
+      error.statusCode = 409;
+      throw error;
+    }
+    if (room.battle.snapshot?.winner) {
+      return {
+        side,
+        winner: String(room.battle.snapshot.winner || ''),
+        state: this.serialize(room),
+      };
+    }
+
+    const winnerSide = side === 'p1' ? 'p2' : 'p1';
+    const winnerName = room.players[winnerSide]?.name || (winnerSide === 'p2' ? 'Player 2' : 'Player 1');
+    const loserName = room.players[side]?.name || (side === 'p2' ? 'Player 2' : 'Player 1');
+    const prevSnapshot = room.battle.snapshot || {};
+    const nextLog = Array.isArray(prevSnapshot.log) ? [...prevSnapshot.log] : [];
+    nextLog.unshift({
+      text: `${loserName} 항복. ${winnerName} 승리.`,
+      rawText: `${loserName} surrendered. ${winnerName} wins.`,
+      tone: 'accent',
+    });
+    room.battle.snapshot = {
+      ...prevSnapshot,
+      winner: winnerName,
+      log: nextLog,
+    };
+    room.battle.pendingChoices = {p1: '', p2: ''};
+    this.bump(room, 'battle-forfeit');
+    return {
+      side,
+      winner: winnerName,
+      state: this.serialize(room),
+    };
+  }
+
   async getState({roomId = '', since = 0, waitMs = 0} = {}) {
     const room = this.getRoomOrThrow(roomId);
     const normalizedSince = Number.isFinite(Number(since)) ? Number(since) : 0;

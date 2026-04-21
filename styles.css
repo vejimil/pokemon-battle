@@ -664,6 +664,12 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   gap: 8px;
   margin: 4px 0 10px;
 }
+body.hide-builder-helper-notes .editor-helper-stack,
+body.hide-builder-helper-notes #species-status,
+body.hide-builder-helper-notes #editor-ability-note,
+body.hide-builder-helper-notes #editor-ability-effect {
+  display: none !important;
+}
 .helper-note {
   padding: 0.7rem 0.85rem;
   border-radius: 12px;
@@ -742,6 +748,9 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   border: 1px solid rgba(251, 191, 36, 0.24);
   color: #fcd34d;
   white-space: pre-wrap;
+}
+body.hide-builder-warning-box .warning-box {
+  display: none !important;
 }
 
 .sprite-shell {

@@ -54,32 +54,36 @@
           <section id="online-room-panel" class="runtime-mode-card">
             <div class="runtime-mode-header">
               <strong class="turn-chip ready">Online Room</strong>
-              <span id="online-room-code" class="small-note">Room - · Me P1</span>
+              <span id="online-room-code" class="small-note">Room - · Me -</span>
             </div>
             <div class="name-row" style="margin-top:8px;">
               <label>
-                <span>이름 / Name</span>
+                <span>이름</span>
                 <input id="online-room-name" type="text" maxlength="24" placeholder="Player" />
               </label>
-              <label>
-                <span>방 코드 / Room</span>
-                <input id="online-room-id" type="text" maxlength="8" placeholder="ABC123" />
-              </label>
             </div>
-            <div class="inline-actions" style="margin-top:8px;">
-              <button id="online-create-room-btn" class="ghost-btn" type="button">방 만들기</button>
-              <button id="online-join-room-btn" class="ghost-btn" type="button">방 참가</button>
-              <button id="online-sync-builder-btn" class="ghost-btn" type="button">팀 동기화</button>
+            <div id="online-room-actions" hidden>
+              <div class="inline-actions" style="margin-top:8px;">
+                <button id="online-create-room-btn" class="ghost-btn" type="button">방 만들기</button>
+                <button id="online-open-join-btn" class="ghost-btn" type="button">방 참가</button>
+              </div>
+              <div id="online-join-fields" hidden>
+                <div class="name-row" style="margin-top:8px;">
+                  <label>
+                    <span>방 코드</span>
+                    <input id="online-room-id" type="text" maxlength="8" placeholder="ABC123" />
+                  </label>
+                </div>
+                <div class="inline-actions" style="margin-top:8px;">
+                  <button id="online-join-room-btn" class="ghost-btn" type="button">코드로 참가</button>
+                </div>
+              </div>
             </div>
-            <div class="inline-actions" style="margin-top:8px;">
-              <button id="online-ready-btn" class="ghost-btn" type="button">준비 완료</button>
-              <button id="online-start-battle-btn" class="primary-btn" type="button">온라인 배틀 시작</button>
-            </div>
-            <div id="online-room-status" class="helper-note runtime-mode-detail" style="margin-top:8px;">방을 생성하거나 참가하세요. / Create or join a room.</div>
+            <div id="online-room-status" class="helper-note runtime-mode-detail" style="margin-top:8px;">이름을 입력하세요.</div>
           </section>
         </section>
 
-        <section class="panel setup-panel">
+        <section id="setup-panel" class="panel setup-panel">
           <div class="panel-header">
             <h2 data-i18n="setup_title">설정</h2>
             <div class="inline-actions">
@@ -114,11 +118,11 @@
                 <p id="team-size-note">각 플레이어는 포켓몬 3마리를 만든다.</p>
               </div>
               <div class="roster-columns">
-                <div>
+                <div id="roster-col-p1">
                   <h4 id="roster-p1-name">Player 1</h4>
                   <div id="roster-p1" class="roster-list"></div>
                 </div>
-                <div>
+                <div id="roster-col-p2">
                   <h4 id="roster-p2-name">Player 2</h4>
                   <div id="roster-p2" class="roster-list"></div>
                 </div>
@@ -131,7 +135,6 @@
                   <h3 id="editor-title">포켓몬 편집기</h3>
                 </div>
                 <div class="inline-actions">
-                  <button id="copy-prev-btn" class="ghost-btn" type="button" data-i18n="copy_prev_btn">이전 슬롯 복사</button>
                   <button id="randomize-slot-btn" class="ghost-btn" type="button" data-i18n="randomize_slot_btn">랜덤 슬롯 생성</button>
                 </div>
               </div>
@@ -210,7 +213,7 @@
                     <label class="check-pill"><input id="shiny-checkbox" type="checkbox" /> <span data-i18n="shiny_label">색이 다른 포켓몬</span></label>
                   </div>
 
-                  <div class="editor-helper-stack">
+                  <div class="editor-helper-stack" hidden>
                     <div id="species-status" class="helper-note" data-i18n="species_status_default">포켓몬을 선택하면 배틀 데이터를 불러옵니다.</div>
                     <div id="editor-ability-note" class="helper-note" data-i18n="ability_note_default">포켓몬을 선택하면 특성 목록이 표시됩니다.</div>
                     <div id="editor-ability-effect" class="helper-note" data-i18n="item_note_default">지닌 도구가 없습니다.</div>
@@ -248,12 +251,12 @@
               </div>
 
               <div id="builder-errors" class="error-box hidden"></div>
-              <div id="builder-warnings" class="warning-box hidden"></div>
+              <div id="builder-warnings" class="warning-box hidden" hidden></div>
 
               <div class="builder-footer">
                 <div id="validation-summary" class="validation-summary" data-i18n="validation_summary_default">두 팀을 모두 완성하면 배틀을 시작할 수 있습니다.</div>
                 <div class="inline-actions">
-                  <button id="export-teams-btn" class="ghost-btn" type="button" data-i18n="export_teams_btn">팀 내보내기</button>
+                  <button id="online-ready-btn" class="ghost-btn" type="button">준비 완료</button>
                   <button id="start-battle-btn" class="primary-btn" type="button" disabled data-i18n="start_battle_btn">배틀 시작</button>
                 </div>
               </div>
@@ -266,13 +269,11 @@
             <h2 data-i18n="battle_title">배틀</h2>
             <div class="inline-actions">
               <span id="battle-runtime-chip" class="turn-chip wait">런타임</span>
-              <button id="back-to-builder-btn" class="ghost-btn" type="button" data-i18n="back_to_builder_btn">빌더로 돌아가기</button>
-              <button id="restart-battle-btn" class="ghost-btn" type="button" data-i18n="restart_battle_btn">배틀 재시작</button>
             </div>
           </div>
 
           <div id="battle-phaser-root" class="pkbattle-phaser-root" hidden>
-            <button id="battle-exit-fullscreen-btn" class="battle-exit-fullscreen-btn" type="button" hidden>← 빌더로</button>
+            <button id="battle-exit-fullscreen-btn" class="battle-exit-fullscreen-btn" type="button" hidden>전체화면 종료</button>
             <div id="battle-phaser-status" class="pkbattle-phaser-status" hidden></div>
             <div class="pkbattle-phaser-split">
               <section class="pkbattle-phaser-view" aria-label="Player 1 battle view">

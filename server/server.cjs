@@ -241,6 +241,18 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    const roomForfeitMatch = /^\/api\/rooms\/([^/]+)\/forfeit$/i.exec(pathname);
+    if (req.method === 'POST' && roomForfeitMatch) {
+      const roomId = roomForfeitMatch[1];
+      const body = await readJson(req);
+      const result = onlineRooms.forfeitBattle({
+        roomId,
+        token: body.token,
+      });
+      sendJson(res, 200, {ok: true, ...result});
+      return;
+    }
+
     serveStatic(req, res);
   } catch (error) {
     const statusCode = error.statusCode || 500;

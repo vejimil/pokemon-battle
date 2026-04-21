@@ -105,4 +105,17 @@ export async function submitOnlineRoomChoice({roomId = '', token = '', choice = 
   };
 }
 
+export async function forfeitOnlineRoomBattle({roomId = '', token = ''} = {}) {
+  const normalizedRoomId = normalizeRoomId(roomId);
+  const data = await requestJson(`/api/rooms/${encodeURIComponent(normalizedRoomId)}/forfeit`, {
+    method: 'POST',
+    body: JSON.stringify({token}),
+  });
+  return {
+    side: String(data.side || ''),
+    winner: String(data.winner || ''),
+    state: data.state || null,
+  };
+}
+
 export {normalizeRoomId};
