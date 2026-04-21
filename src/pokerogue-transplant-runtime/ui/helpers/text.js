@@ -25,8 +25,9 @@ const TEXT_STYLE = Object.freeze({
     padding: { bottom: 6 },
     color: '#f8f8f8',
     shadowColor: '#6b5a73',
-    shadowX: 3,
-    shadowY: 3,
+    // PokeRogue TextStyle.BATTLE_INFO
+    shadowX: 3.5,
+    shadowY: 3.5,
   },
 
   BATTLE_INFO_NAME: {
@@ -122,12 +123,10 @@ const TEXT_STYLE = Object.freeze({
 
 export function addTextObject(ui, x, y, text = '', styleKey = 'WINDOW', options = {}) {
   const style = TEXT_STYLE[styleKey] || TEXT_STYLE.WINDOW;
-  const usePartyLikeKoreanFont = ui?.uiLanguage === 'ko'
-    && (styleKey === 'MOVE_INFO_CONTENT' || styleKey === 'BATTLE_INFO' || styleKey === 'BATTLE_INFO_NAME');
 
   const mergedOptions = {
     ...options,
-    fontFamily: options.fontFamily || (usePartyLikeKoreanFont ? 'pkmnems' : style.fontFamily),
+    fontFamily: options.fontFamily || style.fontFamily,
     padding: options.padding || style.padding,
   };
 

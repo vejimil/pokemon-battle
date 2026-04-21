@@ -100,11 +100,10 @@ export class MoveInfoOverlay {
 
     const ppLabel = addTextObject(this.ui, 12, EFF_HEIGHT - 25, 'PP', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5);
     this.ppText = addTextObject(this.ui, 70, EFF_HEIGHT - 25, '--', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5);
+    // 정확도 행을 제거해도 원본의 PP/POWER 줄 간격(y=-25, -17)은 유지한다.
     const powerLabel = addTextObject(this.ui, 12, EFF_HEIGHT - 17, this.ui.uiLanguage === 'ko' ? '위력' : 'Power', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5);
     this.powerText = addTextObject(this.ui, 70, EFF_HEIGHT - 17, '---', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5);
-    const accLabel = addTextObject(this.ui, 12, EFF_HEIGHT - 9, this.ui.uiLanguage === 'ko' ? '명중률' : 'Accuracy', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5);
-    this.accuracyText = addTextObject(this.ui, 70, EFF_HEIGHT - 9, '---', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5);
-    this.val.add([ppLabel, this.ppText, powerLabel, this.powerText, accLabel, this.accuracyText]);
+    this.val.add([ppLabel, this.ppText, powerLabel, this.powerText]);
 
     if (normalized.hideEffectBox) this.val.setVisible(false);
     if (normalized.hideBg) this.descBg.setVisible(false);
@@ -137,7 +136,6 @@ export class MoveInfoOverlay {
 
     this.ppText.setText(parseMoveValue(detail.ppLabel || detail.pp));
     this.powerText.setText(parseMoveValue(detail.powerLabel || detail.power));
-    this.accuracyText.setText(parseMoveValue(detail.accuracyLabel || detail.accuracy));
 
     if (this.descScroll) {
       this.descScroll.remove();

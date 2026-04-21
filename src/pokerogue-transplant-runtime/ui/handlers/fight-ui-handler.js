@@ -39,8 +39,6 @@ export class FightUiHandler extends UiHandler {
     this.ppText = null;
     this.powerLabel = null;
     this.powerText = null;
-    this.accuracyLabel = null;
-    this.accuracyText = null;
     this.auxMenuContainer = null;
     this.auxMenuBg = null;
     this.auxEntries = [];
@@ -90,7 +88,7 @@ export class FightUiHandler extends UiHandler {
     //   row1 y=-36: typeIcon(263) + moveCategoryIcon(295)
     //   row2 y=-26: ppLabel(250) + ppText(308)
     //   row3 y=-18: powerLabel(250) + powerText(308)
-    //   row4 y=-10: accuracyLabel(250) + accuracyText(308)
+    // 정확도 행은 제거했지만, 남은 2개 행은 원본 y 간격을 유지해 텍스트가 눌려 보이지 않게 한다.
     // 원본 scale: typeIcon=0.8 (fight-ui-handler.ts:269), moveCategoryIcon=1.0 (line 272)
     this.typeIcon = env.textureExists(scene, env.UI_ASSETS.typesAtlas.key, 'unknown')
       ? scene.add.sprite(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setScale(0.8).setVisible(false)
@@ -102,8 +100,6 @@ export class FightUiHandler extends UiHandler {
     this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
     this.powerLabel = addTextObject(this.ui, 250, -18, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
     this.powerText = addTextObject(this.ui, 308, -18, '---', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
-    this.accuracyLabel = addTextObject(this.ui, 250, -10, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
-    this.accuracyText = addTextObject(this.ui, 308, -10, '---', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
     this.moveInfoContainer.add([
       this.typeIcon,
       this.moveCategoryIcon,
@@ -111,8 +107,6 @@ export class FightUiHandler extends UiHandler {
       this.ppText,
       this.powerLabel,
       this.powerText,
-      this.accuracyLabel,
-      this.accuracyText,
     ]);
     this.container.add(this.moveInfoContainer);
 
@@ -359,12 +353,10 @@ export class FightUiHandler extends UiHandler {
     const ppColors = ppRatioToColor(detail.ppRatio ?? null);
     this.ppText.setColor(ppColors.color).setShadowColor(ppColors.shadow);
 
-    // POWER / ACCURACY — labels localized per ui language (ko: 위력/명중률, en: Power/Accuracy)
+    // POWER label localized by ui language (ko: 위력, en: Power)
     const isKo = this.ui.uiLanguage === 'ko';
     this.powerLabel?.setText(isKo ? '위력' : 'Power');
-    this.accuracyLabel?.setText(isKo ? '명중률' : 'Accuracy');
     this.powerText?.setText(formatMoveStatValue(detail.powerLabel));
-    this.accuracyText?.setText(formatMoveStatValue(detail.accuracyLabel));
     this.moveInfoOverlay?.show?.(detail);
   }
 
