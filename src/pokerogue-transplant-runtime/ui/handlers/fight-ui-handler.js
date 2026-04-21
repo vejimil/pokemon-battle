@@ -4,6 +4,7 @@ import { Button } from '../facade/input-facade.js';
 import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
+import { getAuxMenuConfig, getMoveInfoPanelConfig } from '../helpers/fight-layout-tune.js';
 import { MoveInfoOverlay } from '../containers/move-info-overlay.js';
 
 // Move stat display: normalize missing/zero values to '---' (matches PokeRogue power/accuracy < 0 → '---')
@@ -20,46 +21,6 @@ function ppRatioToColor(ratio) {
   if (ratio <= 0.25)     return { color: '#d64b00', shadow: '#69402a' };
   if (ratio <= 0.5)      return { color: '#ccbe00', shadow: '#6e672c' };
   return                        { color: '#f8f8f8', shadow: '#6b5a73' };
-}
-
-// Aux menu default tuning knobs (left-top gimmick/back window in fight mode)
-const AUX_MENU_DEFAULT = Object.freeze({
-  x: 0,
-  y: -84,
-  minWidth: 40,
-  maxWidth: 80,
-  rowHeight: 10,
-  textLeft: 3,
-  textTop: 3,
-  sideInset: 3,
-  topPadding: 3,
-  bottomPadding: 3,
-  textStyle: 'MOVE_INFO_CONTENT',
-  textScale: 1,
-});
-
-function numberOr(raw, fallback) {
-  return Number.isFinite(Number(raw)) ? Number(raw) : fallback;
-}
-
-function getAuxMenuConfig() {
-  const tune = (typeof window !== 'undefined' && window.PKB_FIGHT_AUX_TUNE && typeof window.PKB_FIGHT_AUX_TUNE === 'object')
-    ? window.PKB_FIGHT_AUX_TUNE
-    : {};
-  return {
-    x: numberOr(tune.x, AUX_MENU_DEFAULT.x),
-    y: numberOr(tune.y, AUX_MENU_DEFAULT.y),
-    minWidth: numberOr(tune.minWidth, AUX_MENU_DEFAULT.minWidth),
-    maxWidth: numberOr(tune.maxWidth, AUX_MENU_DEFAULT.maxWidth),
-    rowHeight: numberOr(tune.rowHeight, AUX_MENU_DEFAULT.rowHeight),
-    textLeft: numberOr(tune.textLeft, AUX_MENU_DEFAULT.textLeft),
-    textTop: numberOr(tune.textTop, AUX_MENU_DEFAULT.textTop),
-    sideInset: numberOr(tune.sideInset, AUX_MENU_DEFAULT.sideInset),
-    topPadding: numberOr(tune.topPadding, AUX_MENU_DEFAULT.topPadding),
-    bottomPadding: numberOr(tune.bottomPadding, AUX_MENU_DEFAULT.bottomPadding),
-    textStyle: String(tune.textStyle || AUX_MENU_DEFAULT.textStyle),
-    textScale: numberOr(tune.textScale, AUX_MENU_DEFAULT.textScale),
-  };
 }
 
 export class FightUiHandler extends UiHandler {
@@ -93,6 +54,7 @@ export class FightUiHandler extends UiHandler {
     this.footerCursor = 0;
     this.infoVisible = false;
     this.moveInfoOverlay = null;
+    this.moveInfoPanelConfig = getMoveInfoPanelConfig();
     this.auxMenuConfig = getAuxMenuConfig();
   }
 
@@ -120,7 +82,10 @@ export class FightUiHandler extends UiHandler {
       return { x, y, hit, label };
     });
 
-    this.moveInfoContainer = scene.add.container(1, 0).setName('move-info');
+    this.moveInfoPanelConfig = getMoveInfoPanelConfig();
+    this.moveInfoContainer = scene
+      .add.container(1 + this.moveInfoPanelConfig.xOffset, this.moveInfoPanelConfig.yOffset)
+      .setName('move-info');
     // PokeRogue 원본 fight UI 오른쪽 패널 레이아웃 (scaledCanvas.width=320 기준):
     //   row1 y=-36: typeIcon(263) + moveCategoryIcon(295)
     //   row2 y=-26: ppLabel(250) + ppText(308)
@@ -175,9 +140,10 @@ export class FightUiHandler extends UiHandler {
     ).setOrigin(0, 0);
     this.auxMenuContainer.add(this.auxMenuBg);
     this.auxEntries = Array.from({ length: 6 }, () => {
-      const label = addTextObject(this.ui, this.auxMenuConfig.textLeft, this.auxMenuConfig.textTop, '', this.auxMenuConfig.textStyle)
-        .setOrigin(0, 0)
+      const label = addTextObject(this.ui, 0, 0, '', this.auxMenuConfig.textStyle)
+        .setOrigin(0.5, 0.5)
         .setVisible(false);
+      label.setAlign?.('center');
       // addTextObject already applies base pixel-text scale; keep it and multiply from that baseline.
       label._pkbBaseScaleX = Number(label.scaleX || 1);
       label._pkbBaseScaleY = Number(label.scaleY || 1);
@@ -224,6 +190,8 @@ export class FightUiHandler extends UiHandler {
   show(args = null) {
     const state = args || this.getInputModel();
     super.show(state);
+    this.moveInfoPanelConfig = getMoveInfoPanelConfig();
+    this.moveInfoContainer?.setPosition(1 + this.moveInfoPanelConfig.xOffset, this.moveInfoPanelConfig.yOffset);
     this.fieldIndex = Number(state.fieldIndex || 0);
     const battleMessage = this.ui.getMessageHandler();
     battleMessage.bg.setVisible(false);
@@ -442,7 +410,7 @@ export class FightUiHandler extends UiHandler {
       entry.label.setText(model.label || '');
       panelWidth = Math.max(
         panelWidth,
-        Math.ceil(entry.label.displayWidth || 0) + this.auxMenuConfig.textLeft + this.auxMenuConfig.sideInset + 4
+        Math.ceil(entry.label.displayWidth || 0) + this.auxMenuConfig.sideInset * 2 + Math.abs(this.auxMenuConfig.textOffsetX) * 2 + 6
       );
     });
 
@@ -463,7 +431,9 @@ export class FightUiHandler extends UiHandler {
       if (!model) return;
 
       const rowY = this.auxMenuConfig.topPadding + index * this.auxMenuConfig.rowHeight;
-      entry.label.setPosition(this.auxMenuConfig.textLeft, rowY + this.auxMenuConfig.textTop);
+      const labelX = panelWidth / 2 + this.auxMenuConfig.textOffsetX;
+      const labelY = rowY + this.auxMenuConfig.rowHeight / 2 + this.auxMenuConfig.textOffsetY;
+      entry.label.setPosition(labelX, labelY);
       entry.label.setText(model.label || '');
       entry.label.setColor(model.disabled ? '#94a3b8' : '#f8fbff');
       entry.hit

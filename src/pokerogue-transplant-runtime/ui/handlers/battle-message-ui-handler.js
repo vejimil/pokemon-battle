@@ -2,6 +2,7 @@ import { UiMode } from '../ui-mode.js';
 import { MessageUiHandler } from './message-ui-handler.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
+import { getMoveInfoPanelConfig } from '../helpers/fight-layout-tune.js';
 
 // Permanent stat labels (PokeRogue order: HP, ATK, DEF, SPATK, SPDEF, SPD)
 const STAT_LABELS = ['HP', 'Atk', 'Def', 'SpA', 'SpD', 'Spe'];
@@ -12,6 +13,8 @@ export class BattleMessageUiHandler extends MessageUiHandler {
     this.bg = null;
     this.commandWindow = null;
     this.movesWindowContainer = null;
+    this.moveDetailsWindow = null;
+    this.moveInfoPanelConfig = getMoveInfoPanelConfig();
     this.nameBoxContainer = null;
     this.nameBox = null;
     this.nameText = null;
@@ -43,10 +46,11 @@ export class BattleMessageUiHandler extends MessageUiHandler {
     const movesWindow = scene.add.nineslice(0, 0, env.UI_ASSETS.window.key, undefined, 243, 48, 8, 8, 8, 8)
       .setOrigin(0, 1)
       .setName('moves-window');
-    const moveDetailsWindow = scene.add.nineslice(240, 0, env.UI_ASSETS.window.key, undefined, 80, 48, 8, 8, 8, 8)
+    this.moveInfoPanelConfig = getMoveInfoPanelConfig();
+    this.moveDetailsWindow = scene.add.nineslice(240 + this.moveInfoPanelConfig.xOffset, this.moveInfoPanelConfig.yOffset, env.UI_ASSETS.window.key, undefined, 80, 48, 8, 8, 8, 8)
       .setOrigin(0, 1)
       .setName('move-details-window');
-    this.movesWindowContainer.add([movesWindow, moveDetailsWindow]);
+    this.movesWindowContainer.add([movesWindow, this.moveDetailsWindow]);
 
     const messageContainer = scene.add.container(12, -39).setName('message-container');
     // 원본 TextStyle.MESSAGE: fontSize=96px → scale 1/6 → 16px logical
@@ -100,6 +104,8 @@ export class BattleMessageUiHandler extends MessageUiHandler {
 
   show(args = {}) {
     super.show(args);
+    this.moveInfoPanelConfig = getMoveInfoPanelConfig();
+    this.moveDetailsWindow?.setPosition(240 + this.moveInfoPanelConfig.xOffset, this.moveInfoPanelConfig.yOffset);
     this.bg.setVisible(true);
     this.commandWindow.setVisible(false);
     this.movesWindowContainer.setVisible(false);
