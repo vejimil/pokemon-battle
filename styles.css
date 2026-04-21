@@ -3275,6 +3275,14 @@ body.hide-builder-warning-box .warning-box {
   gap: 14px;
 }
 
+.pkbattle-phaser-root.single-view .pkbattle-phaser-split {
+  display: block;
+}
+
+.pkbattle-phaser-root.single-view .pkbattle-phaser-view + .pkbattle-phaser-view {
+  display: none;
+}
+
 .pkbattle-phaser-view {
   display: grid;
   gap: 8px;

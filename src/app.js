@@ -1951,17 +1951,64 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   if (snapshot) {
     const logHead = String(snapshot.log?.[0]?.rawText || snapshot.log?.[0]?.text || '');
     const signature = `${snapshot.id || ''}|${snapshot.turn || 0}|${snapshot.winner || ''}|${logHead}`;
-    const revisionForSnapshot = Number(state.online.lastSnapshotRevision || -1);
-    if (signature !== state.online.lastSnapshotSig || revisionForSnapshot !== nextRevision) {
+    const snapshotChanged = signature !== state.online.lastSnapshotSig || !state.battle;
+    if (snapshotChanged) {
+      const previousBattle = state.battle;
+      const initialNames = {};
+      const initialSlotInfo = collectTimelineInitialSlotInfo(previousBattle);
+      if (previousBattle?.players) {
+        previousBattle.players.forEach((side, index) => {
+          const sideId = index === 1 ? 'p2' : 'p1';
+          (side.active || []).forEach((teamIdx, slot) => {
+            const mon = side.team?.[teamIdx];
+            if (mon) initialNames[`${sideId}_${slot}`] = mon.species || mon.formSpecies || '';
+          });
+        });
+      }
+
       state.online.lastSnapshotSig = signature;
       state.online.lastSnapshotRevision = nextRevision;
       state.online.lastSnapshotTurn = Number(snapshot.turn || 0);
       state.online.submittedChoiceTurnBySide = {p1: -1, p2: -1};
       state.online.lastSubmittedChoiceBySide = {p1: '', p2: ''};
-      state.battle = adoptEngineBattleSnapshot(snapshot);
+      const adoptedBattle = adoptEngineBattleSnapshot(snapshot);
+      state.battle = adoptedBattle;
       ensureOnlineSelectedPlayer();
       if (els.battlePanel) els.battlePanel.classList.remove('hidden');
-      renderBattle();
+      resetBattleUiModesFromRequests(state.battle);
+
+      const shouldPlayTimeline = Boolean(
+        FLAGS.battlePresentationV2
+        && Array.isArray(adoptedBattle?.events)
+        && adoptedBattle.events.length
+      );
+      if (shouldPlayTimeline) {
+        try {
+          const initialBattleSnapshot = !previousBattle || String(previousBattle.id || '') !== String(adoptedBattle.id || '');
+          if (initialBattleSnapshot) {
+            await syncPhaserBattleRenderer(adoptedBattle);
+          }
+          await playTimelineAcrossActiveViews(adoptedBattle.events, {
+            onComplete: () => {
+              resetBattleUiModesFromRequests(state.battle);
+              clearTimelineSpriteOverrides();
+              renderBattle();
+            },
+            initialNames,
+            initialSlotInfo,
+            preHideSwitchInSides: initialBattleSnapshot,
+          });
+        } catch (error) {
+          console.warn('[OnlineBattle] timeline play failed:', error);
+          clearTimelineSpriteOverrides();
+          renderBattle();
+        }
+      } else {
+        clearTimelineSpriteOverrides();
+        renderBattle();
+      }
+    } else {
+      state.online.lastSnapshotRevision = nextRevision;
     }
   }
 
@@ -6467,6 +6514,17 @@ function getDefaultBattleUiModeForPlayer(player, battle = state.battle) {
   return 'command';
 }
 
+function resetBattleUiModesFromRequests(battle = state.battle) {
+  const ui = getBattleUiState(battle);
+  if (!ui || !battle) return;
+  ui.modeByPlayer = {
+    0: getDefaultBattleUiModeForPlayer(0, battle),
+    1: getDefaultBattleUiModeForPlayer(1, battle),
+  };
+  ui.moveDetailByPlayer = {0: {}, 1: {}};
+  ui.passPrompt = '';
+}
+
 function getBattleDisplayMode(player, battle = state.battle) {
   const ui = getBattleUiState(battle);
   const mode = ui?.modeByPlayer?.[player] || getDefaultBattleUiModeForPlayer(player, battle);
@@ -6500,8 +6558,16 @@ function syncBattleUiState(battle = state.battle) {
     const defaultMode = getDefaultBattleUiModeForPlayer(player, battle);
     const request = getEngineRequestForPlayer(player, battle);
     const current = ui.modeByPlayer[player] || defaultMode;
+    const sideId = getEngineSideId(player);
+    const localSubmittedThisTurn = isOnlineRoomJoined()
+      && state.online?.side === sideId
+      && state.online?.submittedChoiceTurnBySide?.[sideId] === Number(battle.turn || 0);
     if (battle.winner || !request || request.wait || request.teamPreview) {
       ui.modeByPlayer[player] = 'message';
+      return;
+    }
+    if (current === 'message' && isEngineActionableRequest(request) && !isPlayerReady(player) && !localSubmittedThisTurn) {
+      ui.modeByPlayer[player] = defaultMode;
       return;
     }
     if (ui.inputLocked && ['command', 'fight', 'party', 'target'].includes(current)) {
@@ -7704,6 +7770,7 @@ async function syncPhaserBattleRenderer(battle) {
     els.battlePanel.classList.remove('is-phaser-active');
     exitBattleFullscreen();
     if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = true;
+    if (els.battlePhaserRoot) els.battlePhaserRoot.classList.remove('single-view');
     hidePhaserBattleRenderers();
     return false;
   }
@@ -7718,6 +7785,7 @@ async function syncPhaserBattleRenderer(battle) {
 
   try {
     if (dualView) {
+      if (els.battlePhaserRoot) els.battlePhaserRoot.classList.remove('single-view');
       exitBattleFullscreen();
       if (!getPhaserBattleRenderer(0) && els.battlePhaserMountP1) {
         phaserBattleRenderers[0] = createPhaserBattleController({ mount: els.battlePhaserMountP1 });
@@ -7738,6 +7806,7 @@ async function syncPhaserBattleRenderer(battle) {
       if (els.battlePhaserRoot) els.battlePhaserRoot.hidden = false;
       if (els.battlePhaserStatus) els.battlePhaserStatus.hidden = true;
     } else {
+      if (els.battlePhaserRoot) els.battlePhaserRoot.classList.add('single-view');
       if (!getPhaserBattleRenderer(0) && els.battlePhaserMountP1) {
         phaserBattleRenderers[0] = createPhaserBattleController({ mount: els.battlePhaserMountP1, statusEl: els.battlePhaserStatus });
       }
