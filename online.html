@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PKB — 포켓몬 배틀 빌더</title>
+    <title>PKB — 온라인 포켓몬 배틀</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%2230%22 fill=%22%23ef4444%22/%3E%3Cpath d=%22M2 32h60%22 stroke=%22%23ffffff%22 stroke-width=%226%22/%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%2210%22 fill=%22%23ffffff%22 stroke=%22%23111827%22 stroke-width=%224%22/%3E%3Ccircle cx=%2232%22 cy=%2232%22 r=%224%22 fill=%22%23111827%22/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -11,7 +11,7 @@
     <div class="page-shell">
       <header class="hero">
         <div>
-          <p class="eyebrow" data-i18n="hero_eyebrow">2인 배틀</p>
+          <p class="eyebrow" data-i18n="hero_eyebrow_online">온라인 2인 배틀</p>
           <h1>PKB</h1>
         </div>
         <div class="hero-meta">
@@ -51,6 +51,32 @@
             <div id="runtime-mode-detail" class="helper-note runtime-mode-detail">—</div>
             
           </div>
+          <section id="online-room-panel" class="runtime-mode-card">
+            <div class="runtime-mode-header">
+              <strong class="turn-chip ready">Online Room</strong>
+              <span id="online-room-code" class="small-note">Room - · Me P1</span>
+            </div>
+            <div class="name-row" style="margin-top:8px;">
+              <label>
+                <span>이름 / Name</span>
+                <input id="online-room-name" type="text" maxlength="24" placeholder="Player" />
+              </label>
+              <label>
+                <span>방 코드 / Room</span>
+                <input id="online-room-id" type="text" maxlength="8" placeholder="ABC123" />
+              </label>
+            </div>
+            <div class="inline-actions" style="margin-top:8px;">
+              <button id="online-create-room-btn" class="ghost-btn" type="button">방 만들기</button>
+              <button id="online-join-room-btn" class="ghost-btn" type="button">방 참가</button>
+              <button id="online-sync-builder-btn" class="ghost-btn" type="button">팀 동기화</button>
+            </div>
+            <div class="inline-actions" style="margin-top:8px;">
+              <button id="online-ready-btn" class="ghost-btn" type="button">준비 완료</button>
+              <button id="online-start-battle-btn" class="primary-btn" type="button">온라인 배틀 시작</button>
+            </div>
+            <div id="online-room-status" class="helper-note runtime-mode-detail" style="margin-top:8px;">방을 생성하거나 참가하세요. / Create or join a room.</div>
+          </section>
         </section>
 
         <section class="panel setup-panel">
@@ -352,7 +378,7 @@
     </div>
 
     <script id="pkb-server-context">window.__PKB_SERVER_CONTEXT__ = {bundledNodeServer: false, engineApiOrigin: "", engineProbeMode: "static-preview-or-file"};</script>
-    <script id="pkb-app-profile">window.__PKB_APP_PROFILE__ = 'local';</script>
+    <script id="pkb-app-profile">window.__PKB_APP_PROFILE__ = 'online';</script>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>

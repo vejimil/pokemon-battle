@@ -2,7 +2,8 @@ import {LOCAL_NATURES, LOCAL_NATURE_ORDER, LOCAL_TYPE_IDS, LOCAL_TYPES, LOCAL_TY
 import {KO_NAME_MAPS} from './i18n-ko-data.js';
 import {OFFICIAL_KO_SPECIES, OFFICIAL_KO_ITEMS} from './i18n-ko-official.js';
 import {OFFICIAL_KO_LOCALE_NAMES} from './i18n-ko-locales.js';
-import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdownLocalSinglesChoices, isShowdownLocalBattle} from './engine/showdown-local-bridge.js';
+import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdownLocalSinglesChoices, isShowdownLocalBattle, serializeChoiceForShowdown} from './engine/showdown-local-bridge.js';
+import {createOnlineRoom, joinOnlineRoom, fetchOnlineRoomState, syncOnlineRoomBuilder, setOnlineRoomReady, startOnlineRoomBattle, submitOnlineRoomChoice, normalizeRoomId} from './engine/showdown-online-room-bridge.js';
 import {Aliases} from './data/aliases.js';
 import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
 import {resolveItemIconUrl, applyPokerogueAtlasFrameToElement, POKEROGUE_ASSET_PATHS} from './pokerogue-assets.js';
@@ -14,7 +15,15 @@ import {createBattleLocaleManager} from './battle-i18n/locale-manager.js';
 import {SHOWDOWN_TARGET_HINTS, statOrder, statLabels, statusNames, commonItems, VALIDATION_PROFILES, BUILDER_ALLOWED_NONSTANDARD, NONSTANDARD_REASON_LABELS, ASSET_BASE_SPECIES_ALIASES, BUILDER_BATTLE_ONLY_FORM_SUFFIXES, ENGINE_AUTHORITATIVE_SINGLES_FORMAT, OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES, targetHints, MOVE_FLAG_LABELS, VOLATILE_STATUS_LABELS, SIDE_CONDITION_LABELS, WEATHER_LABELS, TERRAIN_LABELS, SPECIAL_ITEM_LINKED_FORM_OVERRIDES, SPECIAL_MOVE_LINKED_FORM_OVERRIDES, FORM_ASSET_OVERRIDES, EXPLICIT_ONLY_FORM_FAMILIES, MAX_MOVE_NAMES, GENERIC_Z_MOVE_NAMES, DYNAMAX_BANNED_SPECIES, TERA_LOW_POWER_EXEMPT_MOVES, PROTECT_MOVE_IDS, SCREEN_MOVE_IDS, CHOICE_ITEM_IDS, STRUGGLE_MOVE, MEGA_FORM_MOVE_REPLACEMENTS} from './battle-constants.js';
 import {setDex, getDex, moveNameCache, CURRENT_OFFICIAL_ITEM_ID_SET, CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET, isAllowedNonstandard, isDexSupported, extractSecondaryAilment, extractSecondaryBoosts, formatTargetFromDex, isFutureMegaSpeciesData, applyFutureMegaSpeciesMetadataPatches, resolveProjectMegaAbilityName, applyProjectMegaAbilityRulesToDex, fetchJson, pathExists, loadManifest, detectAssetBases, loadDataProvider, loadMoveNames, getSpeciesData, getMoveData, getItemData} from './dex-data.js';
 
-const STORAGE_KEY = 'pkb-static-state-v3';
+const APP_PROFILE = (() => {
+  const explicit = String(window.__PKB_APP_PROFILE__ || '').trim().toLowerCase();
+  if (explicit === 'online' || explicit === 'local') return explicit;
+  const pathname = String(window.location?.pathname || '').toLowerCase();
+  if (pathname.endsWith('/online.html') || pathname === '/online.html') return 'online';
+  return 'local';
+})();
+window.__PKB_APP_PROFILE__ = APP_PROFILE;
+const STORAGE_KEY = APP_PROFILE === 'online' ? 'pkb-static-state-v3-online' : 'pkb-static-state-v3-local';
 
 const BATTLE_BGM_TRACKS = ['battle_aether_boss','battle_aether_grunt','battle_alola_champion','battle_alola_elite','battle_aqua_magma_boss','battle_aqua_magma_grunt','battle_bb_elite','battle_champion_alder','battle_champion_geeta','battle_champion_iris','battle_champion_kieran','battle_champion_kukui','battle_champion_nemona','battle_colress','battle_final','battle_final_encounter','battle_flare_boss','battle_flare_grunt','battle_galactic_admin','battle_galactic_boss','battle_galactic_grunt','battle_galar_champion','battle_galar_elite','battle_galar_gym','battle_hoenn_champion_g5','battle_hoenn_champion_g6','battle_hoenn_elite','battle_hoenn_gym','battle_jacinthe','battle_johto_champion','battle_johto_gym','battle_kalos_champion','battle_kalos_elite','battle_kalos_gym','battle_kanto_champion','battle_kanto_gym','battle_legendary_arceus','battle_legendary_birds_galar','battle_legendary_calyrex','battle_legendary_deoxys','battle_legendary_dia_pal','battle_legendary_dusk_dawn','battle_legendary_entei','battle_legendary_eternatus_p1','battle_legendary_eternatus_p2','battle_legendary_giratina','battle_legendary_glas_spec','battle_legendary_gro_kyo','battle_legendary_ho_oh','battle_legendary_kanto','battle_legendary_kor_mir','battle_legendary_kyurem','battle_legendary_lake_trio','battle_legendary_loyal_three','battle_legendary_lugia','battle_legendary_mew','battle_legendary_ogerpon','battle_legendary_origin_forme','battle_legendary_pecharunt','battle_legendary_raikou','battle_legendary_rayquaza','battle_legendary_regis_g5','battle_legendary_regis_g6','battle_legendary_res_zek','battle_legendary_riders','battle_legendary_ruinous','battle_legendary_sinnoh','battle_legendary_sol_lun','battle_legendary_suicune','battle_legendary_tapu','battle_legendary_terapagos','battle_legendary_ub','battle_legendary_ultra_nec','battle_legendary_unova','battle_legendary_xern_yvel','battle_legendary_zac_zam','battle_macro_boss','battle_macro_grunt','battle_mustard','battle_oleana','battle_paldea_elite','battle_paldea_gym','battle_plasma_boss','battle_plasma_grunt','battle_rival','battle_rival_2','battle_rival_3','battle_rival_3_afd','battle_rocket_boss','battle_rocket_grunt','battle_rogue_mega','battle_sinnoh_champion','battle_sinnoh_gym','battle_skull_admin','battle_skull_boss','battle_skull_grunt','battle_star_admin','battle_star_boss','battle_star_grunt','battle_trainer','battle_trainer_afd','battle_unova_elite','battle_unova_gym','battle_wild','battle_wild_strong'];
 
@@ -22,7 +31,7 @@ const BATTLE_BGM_TRACKS = ['battle_aether_boss','battle_aether_grunt','battle_al
 // Exposed on window so the browser console can toggle them: window.FLAGS.battlePresentationV2 = true
 const FLAGS = window.FLAGS = {
   battlePresentationV2: true,  // timeline executor (Sprint 2b: on by default)
-  battleDualViewV1: true,      // split UI: top=P1, bottom=P2 (no pass-device perspective switching)
+  battleDualViewV1: APP_PROFILE !== 'online',      // split UI: top=P1, bottom=P2 (no pass-device perspective switching)
   battleAudioV1: false,        // audio manager SE routing
   battleLocaleV1: true,        // namespace-based battle messages
   battleMsgActionTagsV1: false, // @d/@s message tag parser
@@ -33,6 +42,11 @@ const natureOrder = LOCAL_NATURE_ORDER;
 const natures = LOCAL_NATURES;
 
 const typeChart = LOCAL_TYPE_CHART;
+const ONLINE_ROOM_POLL_WAIT_MS = 20000;
+
+function isOnlineProfile() {
+  return APP_PROFILE === 'online';
+}
 
 const imageInfoCache = new Map();
 let fallbackMetricsPromise = null;
@@ -1197,6 +1211,27 @@ const state = {
   },
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
   showdownLocal: {available: false, checked: false, skipped: false, bundledNodeServer: false, engineApiOrigin: '', probeMode: 'uninitialized'},
+  online: {
+    enabled: isOnlineProfile(),
+    roomId: '',
+    token: '',
+    side: '',
+    revision: 0,
+    connected: false,
+    syncingBuilder: false,
+    polling: false,
+    pollTimer: null,
+    lastError: '',
+    lastSnapshotSig: '',
+    lastSnapshotRevision: -1,
+    lastSnapshotTurn: -1,
+    submittedChoiceTurnBySide: {p1: -1, p2: -1},
+    lastSubmittedChoiceBySide: {p1: '', p2: ''},
+    ready: {p1: false, p2: false},
+    players: {p1: 'Player 1', p2: 'Player 2'},
+    lastBuilderRevision: 0,
+    battleStarted: false,
+  },
 };
 
 const MOVE_LOCALE_EFFECTS = {ko: new Map(), en: new Map()};
@@ -1634,6 +1669,383 @@ function buildShowdownStatusNote() {
   return lang('준비 중', 'Preparing');
 }
 
+function getOnlineLocalPlayerIndex() {
+  return state.online?.side === 'p2' ? 1 : 0;
+}
+
+function isOnlineRoomJoined() {
+  return Boolean(isOnlineProfile() && state.online?.roomId && state.online?.token);
+}
+
+function getOnlineLockedPlayerIndex() {
+  if (!isOnlineRoomJoined()) return null;
+  return state.online?.side === 'p2' ? 1 : 0;
+}
+
+function canEditPlayerInCurrentProfile(player) {
+  const lockedPlayer = getOnlineLockedPlayerIndex();
+  if (!Number.isInteger(lockedPlayer)) return true;
+  return Number(player) === lockedPlayer;
+}
+
+function ensureOnlineSelectedPlayer() {
+  const lockedPlayer = getOnlineLockedPlayerIndex();
+  if (!Number.isInteger(lockedPlayer)) return;
+  if (state.selected.player !== lockedPlayer) state.selected.player = lockedPlayer;
+  if (!Number.isInteger(state.selected.slot) || state.selected.slot < 0 || state.selected.slot >= state.teamSize) {
+    state.selected.slot = 0;
+  }
+}
+
+function renderOnlineRoomPanel() {
+  if (!els.onlineRoomPanel) return;
+  const enabled = isOnlineProfile();
+  els.onlineRoomPanel.hidden = !enabled;
+  if (!enabled) return;
+
+  const joined = isOnlineRoomJoined();
+  const localSide = state.online.side || 'p1';
+  const localSideReady = joined ? Boolean(state.online.ready?.[localSide]) : false;
+  const everyoneReady = Boolean(state.online.ready?.p1 && state.online.ready?.p2);
+  const roomLabel = state.online.roomId || '-';
+
+  if (els.onlineRoomCode) {
+    const me = localSide === 'p2' ? 'P2' : 'P1';
+    els.onlineRoomCode.textContent = `Room ${roomLabel} · Me ${me}`;
+  }
+  if (els.onlineRoomIdInput && joined && !els.onlineRoomIdInput.value.trim()) {
+    els.onlineRoomIdInput.value = state.online.roomId;
+  }
+  if (els.onlineRoomNameInput && joined && !els.onlineRoomNameInput.value.trim()) {
+    const player = getOnlineLocalPlayerIndex();
+    const fallback = player === 1 ? 'Player 2' : 'Player 1';
+    els.onlineRoomNameInput.value = state.playerNames?.[player] || fallback;
+  }
+  if (els.onlineSyncBuilderBtn) els.onlineSyncBuilderBtn.disabled = !joined || state.online.syncingBuilder;
+  if (els.onlineReadyBtn) {
+    els.onlineReadyBtn.disabled = !joined;
+    els.onlineReadyBtn.textContent = localSideReady ? '준비 취소 / Unready' : '준비 완료 / Ready';
+  }
+  if (els.onlineStartBattleBtn) {
+    els.onlineStartBattleBtn.disabled = !joined || !everyoneReady;
+  }
+
+  if (els.onlineRoomStatus) {
+    const lines = [];
+    if (!joined) {
+      lines.push('방을 생성하거나 참가하세요. / Create or join a room.');
+    } else {
+      const p1Name = state.online.players?.p1 || 'Player 1';
+      const p2Name = state.online.players?.p2 || 'Player 2';
+      lines.push(`P1 ${p1Name} ${state.online.ready?.p1 ? '✅' : '⌛'} · P2 ${p2Name} ${state.online.ready?.p2 ? '✅' : '⌛'}`);
+      if (state.online.connected) lines.push('연결 정상 / Connected');
+      else if (state.online.lastError) lines.push(`연결 문제 / Connection issue: ${state.online.lastError}`);
+      if (state.online.battleStarted) lines.push('배틀 진행 중 / Battle running');
+    }
+    els.onlineRoomStatus.textContent = lines.join(' · ');
+  }
+}
+
+function buildOnlineLocalBuilderPayload() {
+  const player = getOnlineLocalPlayerIndex();
+  const name = state.playerNames?.[player] || (player === 1 ? 'Player 2' : 'Player 1');
+  const team = (state.teams?.[player] || []).map(mon => ({...mon, data: null}));
+  return {name, team};
+}
+
+function shouldApplyOnlineBuilderState(roomState = null) {
+  const eventName = String(roomState?.lastEvent || '');
+  return eventName === 'room-created' || eventName === 'room-joined' || eventName === 'builder-sync';
+}
+
+async function applyOnlineBuilderFromRoomState(roomState, {preserveLocal = true} = {}) {
+  if (!roomState?.builder) return;
+  const p1 = roomState.builder.p1 || {name: 'Player 1', team: []};
+  const p2 = roomState.builder.p2 || {name: 'Player 2', team: []};
+  state.mode = 'singles';
+  rebuildTeamSize();
+  const remoteNames = [p1.name || 'Player 1', p2.name || 'Player 2'];
+  const remoteTeams = [0, 1].map(player => Array.from({length: state.teamSize}, (_, slot) => {
+    const sourceMon = (player === 0 ? p1.team : p2.team)?.[slot] || {};
+    return Object.assign(createEmptyMon(), sourceMon);
+  }));
+  const localPlayer = getOnlineLockedPlayerIndex();
+  const keepLocal = Boolean(preserveLocal && Number.isInteger(localPlayer));
+  let nextNames = remoteNames;
+  let nextTeams = remoteTeams;
+  if (keepLocal) {
+    const localFallbackName = localPlayer === 1 ? 'Player 2' : 'Player 1';
+    const opponentPlayer = localPlayer === 0 ? 1 : 0;
+    const localCurrentName = state.playerNames?.[localPlayer] || remoteNames[localPlayer] || localFallbackName;
+    const localCurrentTeam = Array.isArray(state.teams?.[localPlayer]) ? state.teams[localPlayer] : [];
+    nextNames = [...remoteNames];
+    nextTeams = [...remoteTeams];
+    nextNames[localPlayer] = localCurrentName;
+    nextTeams[localPlayer] = Array.from({length: state.teamSize}, (_, slot) =>
+      Object.assign(createEmptyMon(), localCurrentTeam[slot] || {})
+    );
+    nextNames[opponentPlayer] = remoteNames[opponentPlayer] || state.playerNames?.[opponentPlayer] || (opponentPlayer === 1 ? 'Player 2' : 'Player 1');
+  }
+  state.playerNames = nextNames;
+  state.teams = [0, 1].map(player => Array.from({length: state.teamSize}, (_, slot) => (
+    Object.assign(createEmptyMon(), nextTeams[player]?.[slot] || {})
+  )));
+  ensureOnlineSelectedPlayer();
+  await rehydrateTeams();
+  renderAll();
+}
+
+function clearOnlineRoomPolling() {
+  if (state.online.pollTimer) {
+    clearTimeout(state.online.pollTimer);
+    state.online.pollTimer = null;
+  }
+}
+
+function scheduleOnlineRoomPoll(delayMs = 0) {
+  clearOnlineRoomPolling();
+  if (!isOnlineRoomJoined()) return;
+  state.online.pollTimer = setTimeout(() => {
+    pollOnlineRoomStateOnce().catch(error => {
+      console.error('Online room poll failed.', error);
+    });
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {}) {
+  if (!roomState || !isOnlineProfile()) return;
+
+  const previousRevision = Number(state.online.revision || 0);
+  const nextRevision = Number(roomState.revision || state.online.revision || 0);
+  const revisionChanged = nextRevision !== previousRevision;
+  state.online.revision = nextRevision;
+  state.online.players = {
+    p1: roomState.players?.p1?.name || state.online.players?.p1 || 'Player 1',
+    p2: roomState.players?.p2?.name || state.online.players?.p2 || 'Player 2',
+  };
+  state.online.ready = {
+    p1: Boolean(roomState.ready?.p1),
+    p2: Boolean(roomState.ready?.p2),
+  };
+  state.online.battleStarted = Boolean(roomState.battle?.started);
+
+  if (applyBuilder && revisionChanged && shouldApplyOnlineBuilderState(roomState)) {
+    state.online.lastBuilderRevision = nextRevision;
+    await applyOnlineBuilderFromRoomState(roomState, {preserveLocal: true});
+  }
+
+  const snapshot = roomState.battle?.snapshot || null;
+  if (snapshot) {
+    const logHead = String(snapshot.log?.[0]?.rawText || snapshot.log?.[0]?.text || '');
+    const signature = `${snapshot.id || ''}|${snapshot.turn || 0}|${snapshot.winner || ''}|${logHead}`;
+    const revisionForSnapshot = Number(state.online.lastSnapshotRevision || -1);
+    if (signature !== state.online.lastSnapshotSig || revisionForSnapshot !== nextRevision) {
+      state.online.lastSnapshotSig = signature;
+      state.online.lastSnapshotRevision = nextRevision;
+      state.online.lastSnapshotTurn = Number(snapshot.turn || 0);
+      state.online.submittedChoiceTurnBySide = {p1: -1, p2: -1};
+      state.online.lastSubmittedChoiceBySide = {p1: '', p2: ''};
+      state.battle = adoptEngineBattleSnapshot(snapshot);
+      ensureOnlineSelectedPlayer();
+      if (els.battlePanel) els.battlePanel.classList.remove('hidden');
+      renderBattle();
+    }
+  }
+
+  renderOnlineRoomPanel();
+  syncRuntimeModeUi();
+}
+
+async function pollOnlineRoomStateOnce() {
+  if (!isOnlineRoomJoined() || state.online.polling) return;
+  state.online.polling = true;
+  try {
+    const response = await fetchOnlineRoomState({
+      roomId: state.online.roomId,
+      since: state.online.revision || 0,
+      waitMs: ONLINE_ROOM_POLL_WAIT_MS,
+    });
+    state.online.connected = true;
+    state.online.lastError = '';
+    await applyOnlineRoomState(response.state, {applyBuilder: true});
+  } catch (error) {
+    state.online.connected = false;
+    state.online.lastError = error?.message || String(error);
+    renderOnlineRoomPanel();
+  } finally {
+    state.online.polling = false;
+    scheduleOnlineRoomPoll(state.online.connected ? 0 : 1500);
+  }
+}
+
+async function submitOnlineChoiceIfPossible(player, battle = state.battle) {
+  if (!isOnlineRoomJoined() || !isShowdownLocalBattle(battle)) return;
+  const sideId = getEngineSideId(player);
+  if (state.online.side && sideId !== state.online.side) return;
+  const request = getEngineRequestForPlayer(player, battle);
+  if (!isEngineActionableRequest(request)) return;
+  const activeIndex = getEngineActionSlots(player, battle)[0];
+  if (!Number.isInteger(activeIndex)) return;
+  const choice = getEngineDraftChoice(player, activeIndex, battle);
+  if (!choice?.kind) return;
+
+  let serialized = '';
+  try {
+    serialized = serializeChoiceForShowdown(choice, request);
+  } catch (error) {
+    console.warn('Failed to serialize online choice.', error);
+    return;
+  }
+
+  const currentTurn = Number(battle.turn || 0);
+  if (state.online.submittedChoiceTurnBySide[sideId] === currentTurn
+    && state.online.lastSubmittedChoiceBySide[sideId] === serialized) {
+    return;
+  }
+
+  state.online.submittedChoiceTurnBySide[sideId] = currentTurn;
+  state.online.lastSubmittedChoiceBySide[sideId] = serialized;
+
+  try {
+    const response = await submitOnlineRoomChoice({
+      roomId: state.online.roomId,
+      token: state.online.token,
+      choice: serialized,
+    });
+    await applyOnlineRoomState(response.state, {applyBuilder: false});
+  } catch (error) {
+    state.online.connected = false;
+    state.online.lastError = error?.message || String(error);
+    renderOnlineRoomPanel();
+  }
+}
+
+async function createOnlineRoomFlow() {
+  const player = getOnlineLocalPlayerIndex();
+  const fallbackName = player === 1 ? 'Player 2' : 'Player 1';
+  const name = els.onlineRoomNameInput?.value?.trim() || state.playerNames?.[player] || fallbackName;
+  const result = await createOnlineRoom({
+    name,
+    builder: buildOnlineLocalBuilderPayload(),
+  });
+  state.online.roomId = normalizeRoomId(result.roomId);
+  state.online.side = result.side || 'p1';
+  state.online.token = result.token || '';
+  state.online.revision = 0;
+  state.online.lastSnapshotSig = '';
+  state.online.lastSnapshotRevision = -1;
+  state.online.connected = true;
+  state.online.lastError = '';
+  if (els.onlineRoomIdInput) els.onlineRoomIdInput.value = state.online.roomId;
+  await applyOnlineRoomState(result.state, {applyBuilder: true});
+  saveState();
+  scheduleOnlineRoomPoll(0);
+}
+
+async function joinOnlineRoomFlow() {
+  const roomId = normalizeRoomId(els.onlineRoomIdInput?.value || state.online.roomId || '');
+  if (!roomId) throw new Error('Room ID is empty.');
+  const player = getOnlineLocalPlayerIndex();
+  const fallbackName = player === 1 ? 'Player 2' : 'Player 1';
+  const name = els.onlineRoomNameInput?.value?.trim() || state.playerNames?.[player] || fallbackName;
+  const result = await joinOnlineRoom({
+    roomId,
+    name,
+    builder: buildOnlineLocalBuilderPayload(),
+  });
+  state.online.roomId = normalizeRoomId(result.roomId);
+  state.online.side = result.side || 'p2';
+  state.online.token = result.token || '';
+  state.online.revision = 0;
+  state.online.lastSnapshotSig = '';
+  state.online.lastSnapshotRevision = -1;
+  state.online.connected = true;
+  state.online.lastError = '';
+  if (els.onlineRoomIdInput) els.onlineRoomIdInput.value = state.online.roomId;
+  await applyOnlineRoomState(result.state, {applyBuilder: true});
+  saveState();
+  scheduleOnlineRoomPoll(0);
+}
+
+async function syncOnlineBuilderFlow() {
+  if (!isOnlineRoomJoined()) throw new Error('Room is not joined.');
+  state.online.syncingBuilder = true;
+  renderOnlineRoomPanel();
+  try {
+    const response = await syncOnlineRoomBuilder({
+      roomId: state.online.roomId,
+      token: state.online.token,
+      builder: buildOnlineLocalBuilderPayload(),
+    });
+    await applyOnlineRoomState(response.state, {applyBuilder: true});
+  } finally {
+    state.online.syncingBuilder = false;
+    renderOnlineRoomPanel();
+  }
+}
+
+async function toggleOnlineReadyFlow() {
+  if (!isOnlineRoomJoined()) throw new Error('Room is not joined.');
+  const localSide = state.online.side || 'p1';
+  const nextReady = !Boolean(state.online.ready?.[localSide]);
+  const response = await setOnlineRoomReady({
+    roomId: state.online.roomId,
+    token: state.online.token,
+    ready: nextReady,
+  });
+  await applyOnlineRoomState(response.state, {applyBuilder: false});
+}
+
+async function startOnlineBattleFlow() {
+  if (!isOnlineRoomJoined()) throw new Error('Room is not joined.');
+  const response = await startOnlineRoomBattle({
+    roomId: state.online.roomId,
+    token: state.online.token,
+  });
+  await applyOnlineRoomState(response.state, {applyBuilder: false});
+}
+
+function wireOnlineRoomEvents() {
+  if (!isOnlineProfile()) return;
+  els.onlineCreateRoomBtn?.addEventListener('click', () => {
+    createOnlineRoomFlow().catch(error => {
+      state.online.connected = false;
+      state.online.lastError = error?.message || String(error);
+      renderOnlineRoomPanel();
+    });
+  });
+  els.onlineJoinRoomBtn?.addEventListener('click', () => {
+    joinOnlineRoomFlow().catch(error => {
+      state.online.connected = false;
+      state.online.lastError = error?.message || String(error);
+      renderOnlineRoomPanel();
+    });
+  });
+  els.onlineSyncBuilderBtn?.addEventListener('click', () => {
+    syncOnlineBuilderFlow().catch(error => {
+      state.online.connected = false;
+      state.online.lastError = error?.message || String(error);
+      state.online.syncingBuilder = false;
+      renderOnlineRoomPanel();
+    });
+  });
+  els.onlineReadyBtn?.addEventListener('click', () => {
+    toggleOnlineReadyFlow().catch(error => {
+      state.online.connected = false;
+      state.online.lastError = error?.message || String(error);
+      renderOnlineRoomPanel();
+    });
+  });
+  els.onlineStartBattleBtn?.addEventListener('click', () => {
+    startOnlineBattleFlow().catch(error => {
+      state.online.connected = false;
+      state.online.lastError = error?.message || String(error);
+      renderOnlineRoomPanel();
+    });
+  });
+  renderOnlineRoomPanel();
+}
+
 function getEngineAuthoritativeSinglesRuntimeDescriptor() {
   return {
     id: 'engine-authoritative-singles',
@@ -1645,6 +2057,31 @@ function getEngineAuthoritativeSinglesRuntimeDescriptor() {
     startAllowed: true,
     startBlockedReason: '',
     startMessage: lang('배틀 시작!', 'Battle started!'),
+  };
+}
+
+function getOnlineRoomRuntimeDescriptor() {
+  const joined = isOnlineRoomJoined();
+  const bothReady = Boolean(state.online.ready?.p1 && state.online.ready?.p2);
+  const connected = Boolean(state.online.connected);
+  const roomId = state.online.roomId || '';
+  const detail = !joined
+    ? lang('온라인 방을 먼저 생성/참가하세요.', 'Create or join an online room first.')
+    : !bothReady
+      ? lang('양쪽 플레이어가 모두 Ready 상태여야 시작할 수 있습니다.', 'Both players must be ready before the battle can start.')
+      : !connected
+        ? lang('방 연결 상태를 확인한 뒤 다시 시도하세요.', 'Check room connectivity before starting.')
+        : lang('온라인 싱글 룸이 준비되었습니다.', 'Online singles room is ready.');
+  return {
+    id: 'online-room-singles',
+    title: lang('온라인 싱글', 'Online Singles'),
+    badge: joined ? (bothReady ? lang('준비 완료', 'Ready') : lang('대기 중', 'Waiting')) : lang('방 필요', 'Room required'),
+    badgeTone: joined ? (bothReady ? 'ready' : 'warning') : 'wait',
+    heroLabel: roomId ? `${lang('온라인', 'Online')} · ${roomId}` : lang('온라인', 'Online'),
+    detail,
+    startAllowed: Boolean(joined && bothReady && connected),
+    startBlockedReason: detail,
+    startMessage: lang('온라인 배틀 시작!', 'Online battle started!'),
   };
 }
 
@@ -1678,6 +2115,9 @@ function getBlockedDoublesRuntimeDescriptor() {
 }
 
 function getSelectedBattleRuntimeDescriptor() {
+  if (isOnlineProfile()) {
+    return getOnlineRoomRuntimeDescriptor();
+  }
   if (state.mode === 'singles') {
     return state.showdownLocal?.available
       ? getEngineAuthoritativeSinglesRuntimeDescriptor()
@@ -1695,7 +2135,7 @@ function applyBattleRuntimeInfo(battle, descriptor) {
     badgeTone: descriptor.badgeTone,
     heroLabel: descriptor.heroLabel,
     detail: descriptor.detail,
-    engineAuthoritative: descriptor.id === 'engine-authoritative-singles',
+    engineAuthoritative: descriptor.id === 'engine-authoritative-singles' || descriptor.id === 'online-room-singles',
     availability: descriptor.startAllowed ? 'available' : 'blocked',
   };
   battle.sourceOfTruth = battle.runtimeInfo.engineAuthoritative ? 'engine' : 'blocked-no-runtime';
@@ -1705,6 +2145,7 @@ function applyBattleRuntimeInfo(battle, descriptor) {
 function getDisplayedRuntimeDescriptor() {
   const runtimeId = state.battle?.runtimeInfo?.id || '';
   if (runtimeId === 'engine-authoritative-singles') return getEngineAuthoritativeSinglesRuntimeDescriptor();
+  if (runtimeId === 'online-room-singles') return getOnlineRoomRuntimeDescriptor();
   if (runtimeId === 'blocked-singles-awaiting-engine') return getBlockedSinglesRuntimeDescriptor();
   if (runtimeId === 'blocked-doubles-awaiting-engine') return getBlockedDoublesRuntimeDescriptor();
   return getSelectedBattleRuntimeDescriptor();
@@ -1769,6 +2210,7 @@ const UI_STRINGS = Object.freeze({
   ko: {
     title: 'PKB — 포켓몬 배틀 빌더',
     hero_eyebrow: '2인 배틀',
+    hero_eyebrow_online: '온라인 2인 배틀',
     lang_label: '언어',
     meta_mode: '배틀 모드',
     meta_engine: '엔진',
@@ -1836,6 +2278,7 @@ const UI_STRINGS = Object.freeze({
   en: {
     title: 'PKB — Pokémon Battle Builder',
     hero_eyebrow: '2-player battle',
+    hero_eyebrow_online: 'Online 2-player battle',
     lang_label: 'Language',
     meta_mode: 'Battle mode',
     meta_engine: 'Engine',
@@ -3047,6 +3490,12 @@ function saveState() {
     language: state.language,
     playerNames: state.playerNames,
     teams: state.teams.map(team => team.map(mon => ({...mon, data: null}))),
+    online: isOnlineProfile() ? {
+      roomId: state.online.roomId || '',
+      token: state.online.token || '',
+      side: state.online.side || '',
+      revision: Number(state.online.revision || 0),
+    } : undefined,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
 }
@@ -3060,6 +3509,14 @@ function loadSavedState() {
     state.language = parsed.language === 'en' ? 'en' : 'ko';
     state.teamSize = state.mode === 'doubles' ? 4 : 3;
     state.playerNames = Array.isArray(parsed.playerNames) ? parsed.playerNames.slice(0,2).map(v => v || 'Player') : ['Player 1','Player 2'];
+    if (isOnlineProfile()) {
+      const online = parsed.online && typeof parsed.online === 'object' ? parsed.online : {};
+      state.online.roomId = normalizeRoomId(online.roomId || '');
+      state.online.token = String(online.token || '');
+      state.online.side = online.side === 'p2' ? 'p2' : (online.side === 'p1' ? 'p1' : '');
+      state.online.revision = Number(online.revision || 0);
+      state.mode = 'singles';
+    }
     rebuildTeamSize();
     if (Array.isArray(parsed.teams)) {
       state.teams = [0,1].map(player => Array.from({length: state.teamSize}, (_, slot) => {
@@ -3734,6 +4191,16 @@ function bindElements() {
     runtimeModeBadge: document.getElementById('runtime-mode-badge'),
     runtimeModeTitle: document.getElementById('runtime-mode-title'),
     runtimeModeDetail: document.getElementById('runtime-mode-detail'),
+    onlineRoomPanel: document.getElementById('online-room-panel'),
+    onlineRoomNameInput: document.getElementById('online-room-name'),
+    onlineRoomIdInput: document.getElementById('online-room-id'),
+    onlineCreateRoomBtn: document.getElementById('online-create-room-btn'),
+    onlineJoinRoomBtn: document.getElementById('online-join-room-btn'),
+    onlineSyncBuilderBtn: document.getElementById('online-sync-builder-btn'),
+    onlineReadyBtn: document.getElementById('online-ready-btn'),
+    onlineStartBattleBtn: document.getElementById('online-start-battle-btn'),
+    onlineRoomStatus: document.getElementById('online-room-status'),
+    onlineRoomCode: document.getElementById('online-room-code'),
     modeSinglesBtn: document.getElementById('mode-singles-btn'),
     modeDoublesBtn: document.getElementById('mode-doubles-btn'),
     validationProfileSelect: document.getElementById('validation-profile-select'),
@@ -3956,22 +4423,62 @@ function createStatInputs(gridEl, prefix, values, onChange) {
   return { defaultVal };
 }
 function getSelectedMon() {
+  ensureOnlineSelectedPlayer();
   return state.teams[state.selected.player][state.selected.slot];
 }
-function syncPlayerNames() {
-  state.playerNames = [els.player1Name.value.trim() || 'Player 1', els.player2Name.value.trim() || 'Player 2'];
+function syncPlayerNames({persist = true} = {}) {
+  const fallbackNames = ['Player 1', 'Player 2'];
+  const inputNames = [
+    els.player1Name?.value?.trim() || '',
+    els.player2Name?.value?.trim() || '',
+  ];
+  const lockedPlayer = getOnlineLockedPlayerIndex();
+  if (Number.isInteger(lockedPlayer)) {
+    const opponentPlayer = lockedPlayer === 0 ? 1 : 0;
+    const opponentSideId = opponentPlayer === 0 ? 'p1' : 'p2';
+    const nextNames = [...(Array.isArray(state.playerNames) ? state.playerNames : fallbackNames)];
+    nextNames[lockedPlayer] = inputNames[lockedPlayer] || nextNames[lockedPlayer] || fallbackNames[lockedPlayer];
+    nextNames[opponentPlayer] = state.online.players?.[opponentSideId] || nextNames[opponentPlayer] || fallbackNames[opponentPlayer];
+    state.playerNames = nextNames;
+  } else {
+    state.playerNames = [
+      inputNames[0] || state.playerNames?.[0] || fallbackNames[0],
+      inputNames[1] || state.playerNames?.[1] || fallbackNames[1],
+    ];
+  }
   if (els.rosterP1Name) els.rosterP1Name.textContent = state.playerNames[0];
   if (els.rosterP2Name) els.rosterP2Name.textContent = state.playerNames[1];
-  saveState();
+  if (persist) saveState();
+}
+function applyOnlineEditorOwnershipUi() {
+  const lockedPlayer = getOnlineLockedPlayerIndex();
+  const locked = Number.isInteger(lockedPlayer);
+  const applyLock = (input, player, fallbackLabel) => {
+    if (!input) return;
+    const disabled = locked && lockedPlayer !== player;
+    input.disabled = disabled;
+    input.title = disabled
+      ? lang('상대 이름은 온라인 방 상태에서 자동 동기화됩니다.', 'The opponent name is synced from the online room state.')
+      : '';
+    if (!input.value.trim()) {
+      input.value = state.playerNames?.[player] || fallbackLabel;
+    }
+  };
+  applyLock(els.player1Name, 0, 'Player 1');
+  applyLock(els.player2Name, 1, 'Player 2');
 }
 function renderRoster() {
+  ensureOnlineSelectedPlayer();
   [els.rosterP1, els.rosterP2].forEach((container, player) => {
     container.innerHTML = '';
+    const canEditPlayer = canEditPlayerInCurrentProfile(player);
     state.teams[player].forEach((mon, slot) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = `slot-btn ${state.selected.player === player && state.selected.slot === slot ? 'active' : ''}`;
+      button.disabled = !canEditPlayer;
       button.addEventListener('click', () => {
+        if (!canEditPlayer) return;
         state.selected = {player, slot};
         renderAll();
       });
@@ -4362,6 +4869,7 @@ function wireEditorEvents() {
     saveState();
   });
   els.modeDoublesBtn.addEventListener('click', () => {
+    if (isOnlineProfile()) return;
     state.mode = 'doubles';
     rebuildTeamSize();
     renderAll();
@@ -4537,6 +5045,23 @@ function wireEditorEvents() {
     state.mode = 'singles';
     state.validationProfile = 'open';
     state.playerNames = ['Player 1','Player 2'];
+    if (isOnlineProfile()) {
+      clearOnlineRoomPolling();
+      state.online.roomId = '';
+      state.online.token = '';
+      state.online.side = '';
+      state.online.revision = 0;
+      state.online.connected = false;
+      state.online.lastError = '';
+      state.online.lastSnapshotSig = '';
+      state.online.lastSnapshotRevision = -1;
+      state.online.battleStarted = false;
+      state.online.ready = {p1: false, p2: false};
+      state.online.players = {p1: 'Player 1', p2: 'Player 2'};
+      state.online.lastBuilderRevision = 0;
+      state.online.submittedChoiceTurnBySide = {p1: -1, p2: -1};
+      state.online.lastSubmittedChoiceBySide = {p1: '', p2: ''};
+    }
     els.player1Name.value = 'Player 1';
     els.player2Name.value = 'Player 2';
     rebuildTeamSize();
@@ -4720,6 +5245,25 @@ async function startBattle() {
     );
     renderAll();
     return;
+  }
+
+  if (isOnlineProfile()) {
+    try {
+      await startOnlineBattleFlow();
+      showRuntime(runtime.startMessage, 'ready', runtime.detail);
+      return;
+    } catch (error) {
+      console.error('Online room battle start failed.', error);
+      state.online.connected = false;
+      state.online.lastError = error?.message || String(error);
+      renderOnlineRoomPanel();
+      showRuntime(
+        lang('온라인 배틀 시작에 실패했습니다.', 'Failed to start the online battle.'),
+        'warning'
+      );
+      renderAll();
+      return;
+    }
   }
 
   if (runtime.id !== 'engine-authoritative-singles') {
@@ -5388,7 +5932,11 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
             kind: 'switch',
             switchTo: index,
           }, battle);
+          handleBattleChoiceCommitted(player, battle);
           renderBattle();
+          submitOnlineChoiceIfPossible(player, battle).catch(error => {
+            console.warn('Online choice submit failed.', error);
+          });
         });
         switchWrap.appendChild(btn);
       });
@@ -5600,7 +6148,11 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
           const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle);
           if (!nextChoice) return;
           setEnginePendingChoice(player, activeIndex, nextChoice, battle);
+          handleBattleChoiceCommitted(player, battle);
           renderBattle();
+          submitOnlineChoiceIfPossible(player, battle).catch(error => {
+            console.warn('Online choice submit failed.', error);
+          });
         });
       }
       moveButtons.appendChild(btn);
@@ -5621,7 +6173,11 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
             kind: 'switch',
             switchTo: index,
           }, battle);
+          handleBattleChoiceCommitted(player, battle);
           renderBattle();
+          submitOnlineChoiceIfPossible(player, battle).catch(error => {
+            console.warn('Online choice submit failed.', error);
+          });
         });
         switchWrap.appendChild(btn);
       });
@@ -5734,9 +6290,16 @@ function getBattleDisplayMode(player, battle = state.battle) {
 function syncBattleUiState(battle = state.battle) {
   const ui = getBattleUiState(battle);
   if (!ui || !battle) return ui;
+  const onlineLockedPerspective = isOnlineProfile() && isOnlineRoomJoined() && (state.online.side === 'p1' || state.online.side === 'p2');
+  if (onlineLockedPerspective) {
+    ui.perspective = getOnlineLocalPlayerIndex();
+    ui.passPrompt = '';
+  }
   const dualView = FLAGS.battleDualViewV1 === true;
   const actionablePlayers = isShowdownLocalBattle(battle) ? getEnginePlayersNeedingAction(battle) : [];
-  if (!dualView) {
+  if (onlineLockedPerspective) {
+    // Keep perspective pinned to this client's assigned side in online rooms.
+  } else if (!dualView) {
     if (actionablePlayers.length && !actionablePlayers.includes(ui.perspective)) {
       ui.perspective = actionablePlayers[0];
     } else if (!actionablePlayers.length) {
@@ -5847,10 +6410,15 @@ function handleBattleChoiceCommitted(player, battle = state.battle) {
 function renderBattlePerspectiveTabs(battle) {
   const ui = getBattleUiState(battle);
   if (!ui) return;
+  const lockedPerspective = isOnlineProfile() && isOnlineRoomJoined() && (state.online.side === 'p1' || state.online.side === 'p2');
   els.battlePerspectiveP1Btn?.classList.toggle('active', ui.perspective === 0);
   els.battlePerspectiveP2Btn?.classList.toggle('active', ui.perspective === 1);
   if (els.battlePerspectiveP1Btn) els.battlePerspectiveP1Btn.textContent = battle.players?.[0]?.name || 'P1';
   if (els.battlePerspectiveP2Btn) els.battlePerspectiveP2Btn.textContent = battle.players?.[1]?.name || 'P2';
+  if (els.battlePerspectiveP1Btn) els.battlePerspectiveP1Btn.disabled = lockedPerspective;
+  if (els.battlePerspectiveP2Btn) els.battlePerspectiveP2Btn.disabled = lockedPerspective;
+  if (els.battlePerspectiveP1Btn) els.battlePerspectiveP1Btn.hidden = lockedPerspective;
+  if (els.battlePerspectiveP2Btn) els.battlePerspectiveP2Btn.hidden = lockedPerspective;
   if (els.battlePerspectiveBanner) {
     const chip = isShowdownLocalBattle(battle) ? getEngineTurnChipState(ui.perspective, battle) : {text: ''};
     const playerLabel = battle.players?.[ui.perspective]?.name || `P${ui.perspective + 1}`;
@@ -6798,6 +7366,7 @@ function resolveSpriteUrlForBattleSide(sideIndex, perspective, mon, isRenderable
 function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
   const ui = syncBattleUiState(battle);
   const useForcedPerspective = Number.isInteger(forcedPerspective);
+  const lockedPerspective = isOnlineProfile() && isOnlineRoomJoined() && (state.online.side === 'p1' || state.online.side === 'p2');
   const perspective = useForcedPerspective
     ? clamp(Number(forcedPerspective), 0, 1)
     : (ui?.perspective ?? 0);
@@ -6825,12 +7394,14 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
     turn: battle.turn,
     perspective,
     language: state.language || 'ko',
-    perspectiveOptions: FLAGS.battleDualViewV1 && useForcedPerspective
+    perspectiveOptions: lockedPerspective
+      ? []
+      : (FLAGS.battleDualViewV1 && useForcedPerspective
       ? []
       : [
         {label: battle.players?.[0]?.name || 'P1', active: perspective === 0, action: {type: 'perspective', player: 0}},
         {label: battle.players?.[1]?.name || 'P2', active: perspective === 1, action: {type: 'perspective', player: 1}},
-      ],
+      ]),
     turnChip: `${lang('턴', 'Turn')} ${battle.turn}`,
     bannerText: (FLAGS.battleDualViewV1 && useForcedPerspective)
       ? `${battle.players?.[perspective]?.name || `P${perspective + 1}`} · ${bannerChip.text || lang('배틀 화면', 'Battle screen')}`
@@ -6867,9 +7438,11 @@ function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
   if (!battle || !action) return;
   const ui = getBattleUiState(battle);
   const player = Number.isInteger(playerOverride) ? clamp(Number(playerOverride), 0, 1) : (ui?.perspective ?? 0);
+  const lockedPerspective = isOnlineProfile() && isOnlineRoomJoined() && (state.online.side === 'p1' || state.online.side === 'p2');
   if (isBattleInputLocked(battle) && action.type !== 'perspective') return;
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   if (action.type === 'perspective') {
+    if (lockedPerspective) return;
     if (FLAGS.battleDualViewV1 && Number.isInteger(playerOverride)) return;
     setBattlePerspective(action.player);
     return;
@@ -6897,6 +7470,9 @@ function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
     setEnginePendingChoice(player, activeIndex, nextChoice, battle);
     handleBattleChoiceCommitted(player, battle);
     renderBattle();
+    submitOnlineChoiceIfPossible(player, battle).catch(error => {
+      console.warn('Online choice submit failed.', error);
+    });
     return;
   }
   if (action.type === 'switch') {
@@ -6904,6 +7480,9 @@ function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
     setEnginePendingChoice(player, activeIndex, {...createEmptyBattleChoice(), kind: 'switch', switchTo: action.switchTo}, battle);
     handleBattleChoiceCommitted(player, battle);
     renderBattle();
+    submitOnlineChoiceIfPossible(player, battle).catch(error => {
+      console.warn('Online choice submit failed.', error);
+    });
   }
 }
 
@@ -7014,9 +7593,12 @@ function renderBattle() {
     console.error('Battle renderer sync failed.', error);
   });
 
-  const allSet = isShowdownLocalBattle(battle)
-    ? canAutoResolveEngineTurn(battle)
-    : [0, 1].every(player => isPlayerReady(player));
+  const localAutoResolveEnabled = !(isOnlineProfile() && isOnlineRoomJoined());
+  const allSet = localAutoResolveEnabled
+    ? (isShowdownLocalBattle(battle)
+      ? canAutoResolveEngineTurn(battle)
+      : [0, 1].every(player => isPlayerReady(player)))
+    : false;
   if (allSet && !battle.winner && !battle.resolvingTurn && !isBattleInputLocked(battle)) resolveTurn();
 }
 
@@ -7333,12 +7915,15 @@ function renderAll() {
   syncLanguageControls();
   els.modeSinglesBtn.classList.toggle('active', state.mode === 'singles');
   els.modeDoublesBtn.classList.toggle('active', state.mode === 'doubles');
+  if (isOnlineProfile() && els.modeDoublesBtn) els.modeDoublesBtn.disabled = true;
   renderValidationProfileNote();
   els.player1Name.value = state.playerNames[0];
   els.player2Name.value = state.playerNames[1];
-  syncPlayerNames();
+  applyOnlineEditorOwnershipUi();
+  syncPlayerNames({persist: false});
   renderRoster();
   renderEditor();
+  renderOnlineRoomPanel();
   syncRuntimeModeUi();
   renderValidation();
   if (state.battle) renderBattle();
@@ -7356,6 +7941,10 @@ async function bootstrap() {
   if (assetPaths.pokemon) state.assetBase.pokemon = assetPaths.pokemon;
   if (assetPaths.items) state.assetBase.items = assetPaths.items;
   loadSavedState();
+  if (isOnlineProfile()) {
+    state.mode = 'singles';
+    rebuildTeamSize();
+  }
   const {source: dexSource, version: dexVersion} = await loadDataProvider();
   state.dex = getDex();
   state.dexSource = dexSource;
@@ -7369,7 +7958,11 @@ async function bootstrap() {
   buildStaticLists();
   wireEditorEvents();
   wireBattleEvents();
+  wireOnlineRoomEvents();
   renderAll();
+  if (isOnlineProfile() && isOnlineRoomJoined()) {
+    scheduleOnlineRoomPoll(0);
+  }
   state.runtimeReady = true;
   showRuntime(lang('로딩완료!', 'Loaded!'), 'ready');
   syncRuntimeModeUi();

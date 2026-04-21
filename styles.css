@@ -419,7 +419,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 .runtime-status.warning { color: var(--warn); }
 .runtime-notes { display: none; }
 .runtime-mode-card {
-  display: none;
+  display: block;
 }
 .runtime-mode-header {
   display: flex;

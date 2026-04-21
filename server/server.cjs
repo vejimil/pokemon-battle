@@ -2,9 +2,11 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const {ShowdownEngineService} = require('./showdown-engine.cjs');
+const {OnlineRoomService} = require('./online-room-service.cjs');
 
 const rootDir = path.resolve(__dirname, '..');
 const engine = new ShowdownEngineService();
+const onlineRooms = new OnlineRoomService(engine);
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4173;
 
 const mimeTypes = {
@@ -88,16 +90,22 @@ function serveStatic(req, res) {
       'Content-Type': mimeTypes[ext] || 'application/octet-stream',
       'Cache-Control': ext === '.html' ? 'no-store' : 'public, max-age=0',
     };
-    if (ext === '.html' && path.basename(resolved).toLowerCase() === 'index.html') {
+    if (ext === '.html' && ['index.html', 'online.html'].includes(path.basename(resolved).toLowerCase())) {
       fs.readFile(resolved, 'utf8', (readError, html) => {
         if (readError) {
           res.writeHead(500, {'Content-Type': 'text/plain; charset=utf-8'});
-          res.end('Failed to load index.html');
+          res.end('Failed to load HTML file');
           return;
         }
-        const injected = html.replace(
+        const baseName = path.basename(resolved).toLowerCase();
+        const appProfile = baseName === 'online.html' ? 'online' : 'local';
+        const withContext = html.replace(
           'window.__PKB_SERVER_CONTEXT__ = {bundledNodeServer: false, engineApiOrigin: "", engineProbeMode: "static-preview-or-file"};',
           `window.__PKB_SERVER_CONTEXT__ = {bundledNodeServer: true, engineApiOrigin: ${JSON.stringify(`http://localhost:${PORT}`)}, engineProbeMode: "bundled-node-server"};`
+        );
+        const injected = withContext.replace(
+          /window\.__PKB_APP_PROFILE__\s*=\s*'[^']*';/g,
+          `window.__PKB_APP_PROFILE__ = '${appProfile}';`
         );
         res.writeHead(200, headers);
         res.end(injected);
@@ -121,9 +129,19 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    const pathname = req.url.split('?')[0];
+    const requestUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const pathname = requestUrl.pathname;
     if (req.method === 'GET' && pathname === '/api/engine/status') {
       sendJson(res, 200, engine.status());
+      return;
+    }
+
+    if (req.method === 'GET' && pathname === '/api/online/status') {
+      sendJson(res, 200, {
+        available: true,
+        roomSupport: true,
+        modeSupport: ['online-room-singles'],
+      });
       return;
     }
 
@@ -138,6 +156,88 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const snapshot = await engine.chooseSingles(body.battleId, body.choices || {});
       sendJson(res, 200, {ok: true, snapshot});
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/rooms/create') {
+      const body = await readJson(req);
+      const result = onlineRooms.createRoom({
+        name: body.name,
+        builder: body.builder,
+      });
+      sendJson(res, 200, {ok: true, ...result});
+      return;
+    }
+
+    if (req.method === 'POST' && pathname === '/api/rooms/join') {
+      const body = await readJson(req);
+      const result = onlineRooms.joinRoom({
+        roomId: body.roomId,
+        name: body.name,
+        builder: body.builder,
+      });
+      sendJson(res, 200, {ok: true, ...result});
+      return;
+    }
+
+    const roomStateMatch = /^\/api\/rooms\/([^/]+)\/state$/i.exec(pathname);
+    if (req.method === 'GET' && roomStateMatch) {
+      const roomId = roomStateMatch[1];
+      const since = Number(requestUrl.searchParams.get('since') || 0);
+      const waitMs = Number(requestUrl.searchParams.get('waitMs') || 0);
+      const result = await onlineRooms.getState({roomId, since, waitMs});
+      sendJson(res, 200, {ok: true, ...result});
+      return;
+    }
+
+    const roomSyncBuilderMatch = /^\/api\/rooms\/([^/]+)\/sync-builder$/i.exec(pathname);
+    if (req.method === 'POST' && roomSyncBuilderMatch) {
+      const roomId = roomSyncBuilderMatch[1];
+      const body = await readJson(req);
+      const result = onlineRooms.syncBuilder({
+        roomId,
+        token: body.token,
+        builder: body.builder,
+      });
+      sendJson(res, 200, {ok: true, ...result});
+      return;
+    }
+
+    const roomSetReadyMatch = /^\/api\/rooms\/([^/]+)\/set-ready$/i.exec(pathname);
+    if (req.method === 'POST' && roomSetReadyMatch) {
+      const roomId = roomSetReadyMatch[1];
+      const body = await readJson(req);
+      const result = onlineRooms.setReady({
+        roomId,
+        token: body.token,
+        ready: body.ready,
+      });
+      sendJson(res, 200, {ok: true, ...result});
+      return;
+    }
+
+    const roomStartBattleMatch = /^\/api\/rooms\/([^/]+)\/start-battle$/i.exec(pathname);
+    if (req.method === 'POST' && roomStartBattleMatch) {
+      const roomId = roomStartBattleMatch[1];
+      const body = await readJson(req);
+      const result = await onlineRooms.startBattle({
+        roomId,
+        token: body.token,
+      });
+      sendJson(res, 200, {ok: true, ...result});
+      return;
+    }
+
+    const roomSubmitChoiceMatch = /^\/api\/rooms\/([^/]+)\/submit-choice$/i.exec(pathname);
+    if (req.method === 'POST' && roomSubmitChoiceMatch) {
+      const roomId = roomSubmitChoiceMatch[1];
+      const body = await readJson(req);
+      const result = await onlineRooms.submitChoice({
+        roomId,
+        token: body.token,
+        choice: body.choice,
+      });
+      sendJson(res, 200, {ok: true, ...result});
       return;
     }
 
