@@ -226,6 +226,22 @@ const Z_MOVE_TINT_BY_TYPE = {
   fairy: 0xffb0dd,
 };
 
+const PROTECT_BLOCK_EFFECT_IDS = new Set([
+  'protect',
+  'detect',
+  'kingsshield',
+  'spikyshield',
+  'banefulbunker',
+  'obstruct',
+  'silktrap',
+  'burningbulwark',
+  'maxguard',
+  'matblock',
+  'quickguard',
+  'wideguard',
+  'craftyshield',
+]);
+
 const EVENT_GAP_SHORT_MS = 140;
 const EVENT_GAP_MEDIUM_MS = 200;
 
@@ -595,6 +611,100 @@ export class BattleTimelineExecutor {
 
   _zMoveTint(typeId = '') {
     return Z_MOVE_TINT_BY_TYPE[toId(typeId)] || 0xffffff;
+  }
+
+  _sameSideSlot(a = null, b = null) {
+    if (!a || !b) return false;
+    const aSide = a.side;
+    const bSide = b.side;
+    const aSlot = Number.isInteger(a.slot) ? a.slot : 0;
+    const bSlot = Number.isInteger(b.slot) ? b.slot : 0;
+    return Boolean(aSide && bSide && aSide === bSide && aSlot === bSlot);
+  }
+
+  _isProtectLikeEffect(effectId = '') {
+    return PROTECT_BLOCK_EFFECT_IDS.has(toId(effectId));
+  }
+
+  _scanMoveOutcome(events = [], index = 0, moveEvent = {}) {
+    const actorRef = moveEvent?.actor ? {
+      side: moveEvent.actor.side,
+      slot: Number.isInteger(moveEvent.actor.slot) ? moveEvent.actor.slot : 0,
+    } : null;
+    const targetRef = moveEvent?.target?.side ? {
+      side: moveEvent.target.side,
+      slot: Number.isInteger(moveEvent.target.slot) ? moveEvent.target.slot : 0,
+    } : null;
+    const result = {
+      skipAnimation: false,
+      blocked: false,
+      miss: false,
+      immune: false,
+      failed: false,
+    };
+    if (!actorRef || !Array.isArray(events) || index < 0) return result;
+    const end = Math.min(events.length, index + 10);
+    for (let cursor = index + 1; cursor < end; cursor += 1) {
+      const next = events[cursor];
+      if (!next) continue;
+      if (
+        next.type === 'move_use'
+        || next.type === 'switch_in'
+        || next.type === 'turn_start'
+        || next.type === 'turn_end'
+        || next.type === 'battle_end'
+        || next.type === 'callback_event'
+      ) {
+        break;
+      }
+      if (next.type === 'miss') {
+        const missActor = next.actor || next.target;
+        if (!this._sameSideSlot(missActor, actorRef)) continue;
+        result.miss = true;
+        result.skipAnimation = true;
+        break;
+      }
+      if (next.type === 'immune') {
+        if (targetRef && next.target && !this._sameSideSlot(next.target, targetRef)) continue;
+        result.immune = true;
+        result.skipAnimation = true;
+        break;
+      }
+      if (next.type === 'move_fail') {
+        if (next.actor && !this._sameSideSlot(next.actor, actorRef)) continue;
+        result.failed = true;
+        result.skipAnimation = true;
+        break;
+      }
+      if (next.type === 'effect_activate' || next.type === 'single_turn_effect') {
+        const effectId = toId(next.effectId || next.effect || '');
+        if (!this._isProtectLikeEffect(effectId)) continue;
+        if (targetRef && next.target && !this._sameSideSlot(next.target, targetRef)) continue;
+        result.blocked = true;
+        result.skipAnimation = true;
+        break;
+      }
+    }
+    return result;
+  }
+
+  _effectActivateMessage(ev = {}, kind = 'activate') {
+    const effectId = toId(ev.effectId || ev.effect || '');
+    if (!this._isProtectLikeEffect(effectId)) return '';
+    const targetName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
+    const targetNameWithAffix = this._pokemonNameWithAffix(targetName, ev.target?.side);
+    const localeKey = kind === 'single_turn' ? 'protectedOnAdd' : 'protectedLapse';
+    const fallback = this._isEnglishLocale()
+      ? `${targetNameWithAffix} protected itself!`
+      : kind === 'single_turn'
+        ? `${targetNameWithAffix}은(는)\n방어 태세에 들어갔다!`
+        : `${targetNameWithAffix}은(는)\n공격으로부터 몸을 지켰다!`;
+    return this._t(
+      'battler-tags',
+      localeKey,
+      { pokemonNameWithAffix: targetNameWithAffix },
+      fallback,
+    );
   }
 
   /** Get the tracked species name for a side+slot, localized for display. */
@@ -1064,6 +1174,7 @@ export class BattleTimelineExecutor {
         const actorNameWithAffix = this._pokemonNameWithAffix(actorName, ev.actor?.side);
         const moveName = this._localizeMoveName(ev.move || '') || ev.move || '';
         const animationMoveName = String(ev.animationMove || ev.baseMove || ev.move || '').trim();
+        const moveOutcome = this._scanMoveOutcome(context?.events, Number(context?.index) || 0, ev);
         const animationScale = Number.isFinite(Number(ev.animationScale))
           ? Math.max(0.25, Math.min(4, Number(ev.animationScale)))
           : (ev?.zMove ? 1.0 : 1);
@@ -1074,6 +1185,11 @@ export class BattleTimelineExecutor {
           { pokemonNameWithAffix: actorNameWithAffix, moveName },
           `${actorName}의 ${moveName}!`,
         ));
+        if (moveOutcome.skipAnimation) {
+          // Keep a short beat between move line and outcome message when animation is skipped.
+          await this._delay(160);
+          break;
+        }
         const scene = this._scene();
         if (scene?.playMoveAnim) {
           // BA-10: play visual animation (includes timed sound events internally).
@@ -1353,6 +1469,11 @@ export class BattleTimelineExecutor {
           : `${boostNameWithAffix}의 ${boostStatLabel}이${amount >= 2 ? ' 크게 올랐다!' : ' 올랐다!'}`;
         await this._showMsg(this._t('battle', boostKey, { pokemonNameWithAffix: boostNameWithAffix, stats: boostStatLabel }, boostFallback), { minMs: 500 });
         this._playAudio('se/stat_up');
+        await this._scene()?.playStatStageEffect?.(ev.target?.side, {
+          rising: true,
+          stat: boostStatId,
+          amount,
+        });
         break;
       }
 
@@ -1373,18 +1494,23 @@ export class BattleTimelineExecutor {
           : `${unboostNameWithAffix}의 ${unboostStatLabel}이${uamount >= 2 ? ' 크게 내려갔다!' : ' 내려갔다!'}`;
         await this._showMsg(this._t('battle', unboostKey, { pokemonNameWithAffix: unboostNameWithAffix, stats: unboostStatLabel }, unboostFallback), { minMs: 500 });
         this._playAudio('se/stat_down');
+        await this._scene()?.playStatStageEffect?.(ev.target?.side, {
+          rising: false,
+          stat: unboostStatId,
+          amount: uamount,
+        });
         break;
       }
 
       // ── BA-4: Miss ───────────────────────────────────────────────────────
       case 'miss': {
-        // In Showdown protocol, miss/−miss stores the ATTACKER as ev.target (field is misnamed).
-        const missName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
-        const missNameWithAffix = this._pokemonNameWithAffix(missName, ev.target?.side);
+        const missTarget = ev.target || ev.actor || null;
+        const missName = this._slotName(missTarget?.side, missTarget?.slot ?? 0);
+        const missNameWithAffix = this._pokemonNameWithAffix(missName, missTarget?.side);
         // BA-22: locale-key for EN; Korean fallback
         const missFallback = this._isEnglishLocale()
-          ? `${missNameWithAffix}'s attack missed!`
-          : `${missNameWithAffix}의 공격이 빗나갔다!`;
+          ? `${missNameWithAffix} was not hit!`
+          : `${missNameWithAffix}에게는 맞지 않았다!`;
         await this._showMsg(this._t('battle', 'attackMissed', { pokemonNameWithAffix: missNameWithAffix }, missFallback), { minMs: 460 });
         break;
       }
@@ -1563,18 +1689,38 @@ export class BattleTimelineExecutor {
 
       // ── 5-C: Battle end ─────────────────────────────────────────────────
       case 'battle_end': {
-        // ev.winner is the Showdown player name of the winner.
-        if (ev.winner) {
-          await this._showMsg(`${ev.winner} 승리!`, { minMs: 1300 });
+        const winnerText = String(ev.winner || '').trim();
+        if (winnerText && !/^\d+$/.test(winnerText)) {
+          const winFallback = this._isEnglishLocale()
+            ? `${winnerText} wins!`
+            : `${winnerText} 승리!`;
+          await this._showMsg(
+            this._t('battle', 'winnerMessage', { winner: winnerText }, winFallback),
+            { minMs: 1300 },
+          );
           this._playAudio('se/level_up');
+        }
+        break;
+      }
+
+      case 'effect_activate': {
+        const msg = this._effectActivateMessage(ev, 'activate');
+        if (msg) {
+          await this._showMsg(msg, { minMs: 480 });
+        }
+        break;
+      }
+
+      case 'single_turn_effect': {
+        const msg = this._effectActivateMessage(ev, 'single_turn');
+        if (msg) {
+          await this._showMsg(msg, { minMs: 480 });
         }
         break;
       }
 
       // ── no-op events ──────────────────────────────────────────────────────
       case 'turn_end':
-      case 'effect_activate':
-      case 'single_turn_effect':
       case 'engine_error':
         break;
 

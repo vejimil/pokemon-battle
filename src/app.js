@@ -43,6 +43,21 @@ const natures = LOCAL_NATURES;
 
 const typeChart = LOCAL_TYPE_CHART;
 const ONLINE_ROOM_POLL_WAIT_MS = 20000;
+const ONLINE_TEAM_SIZE_DEFAULT = 3;
+const ONLINE_TEAM_SIZE_MIN = 1;
+const ONLINE_TEAM_SIZE_MAX = 6;
+const ONLINE_BATTLE_RETURN_DELAY_MS = 3000;
+const MOBILE_INPUT_REPEAT_MS = 120;
+const MOBILE_BUTTON_ATLAS_FRAMES = Object.freeze({
+  up: 'UP.png',
+  down: 'DOWN.png',
+  left: 'LEFT.png',
+  right: 'RIGHT.png',
+  action: 'XB_Letter_A_OL.png',
+  cancel: 'XB_Letter_B_OL.png',
+  info: 'XB_Letter_X_OL.png',
+  menu: 'START.png',
+});
 // UI quick-tuning object (editable in browser console):
 // window.PKB_UI_TUNING.online.showRoomCodeOnlyOnJoin = true/false
 // window.PKB_UI_TUNING.online.hideOpponentRosterUntilLocalReady = true/false
@@ -68,6 +83,12 @@ const UI_TUNING = (() => {
 
 function isOnlineProfile() {
   return APP_PROFILE === 'online';
+}
+
+function normalizeOnlineTeamSize(value, fallback = ONLINE_TEAM_SIZE_DEFAULT) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return clamp(Math.trunc(parsed), ONLINE_TEAM_SIZE_MIN, ONLINE_TEAM_SIZE_MAX);
 }
 
 const imageInfoCache = new Map();
@@ -1235,6 +1256,7 @@ const state = {
   showdownLocal: {available: false, checked: false, skipped: false, bundledNodeServer: false, engineApiOrigin: '', probeMode: 'uninitialized'},
   online: {
     enabled: isOnlineProfile(),
+    teamSize: ONLINE_TEAM_SIZE_DEFAULT,
     roomId: '',
     token: '',
     side: '',
@@ -1255,6 +1277,8 @@ const state = {
     players: {p1: 'Player 1', p2: 'Player 2'},
     lastBuilderRevision: 0,
     battleStarted: false,
+    returningToBuilder: false,
+    returnToBuilderTimer: null,
   },
 };
 
@@ -1264,9 +1288,10 @@ const MOVE_LOCALE_LOAD_PROMISES = {ko: null, en: null};
 const els = {};
 let pickerReturnFocusEl = null;
 const phaserBattleRenderers = { 0: null, 1: null };
+const mobileInputRepeatTimers = new Map();
 const battleLocaleManager = createBattleLocaleManager({
   language: 'ko',
-  namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag', 'status-effect', 'pokemon-info'],
+  namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag', 'battler-tags', 'status-effect', 'pokemon-info'],
 });
 
 function getPhaserBattleRenderer(player = 0) {
@@ -1712,7 +1737,12 @@ function hasOnlineBothPlayersJoined() {
 
 function isOnlineBuilderUnlocked() {
   if (!isOnlineProfile()) return true;
-  return Boolean(isOnlineRoomJoined() && hasOnlineBothPlayersJoined());
+  return Boolean(isOnlineRoomJoined());
+}
+
+function isOnlineBattleInProgress() {
+  if (!isOnlineProfile()) return false;
+  return Boolean(state.online?.battleStarted || state.online?.returningToBuilder);
 }
 
 function isOnlineLocalReady() {
@@ -1761,6 +1791,7 @@ function renderOnlineRoomPanel() {
   const localSideReady = joined ? Boolean(state.online.ready?.[localSide]) : false;
   const bothPlayersJoined = hasOnlineBothPlayersJoined();
   const roomLabel = state.online.roomId || '-';
+  const onlineTeamSize = normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
 
   if (els.onlineRoomCode) {
     const me = joined ? (localSide === 'p2' ? 'P2' : 'P1') : '-';
@@ -1775,6 +1806,10 @@ function renderOnlineRoomPanel() {
     const player = getOnlineLocalPlayerIndex();
     const fallback = player === 1 ? 'Player 2' : 'Player 1';
     els.onlineRoomNameInput.value = state.playerNames?.[player] || fallback;
+  }
+  if (els.onlineRoomTeamSizeSelect) {
+    els.onlineRoomTeamSizeSelect.value = String(onlineTeamSize);
+    els.onlineRoomTeamSizeSelect.disabled = joined;
   }
   const hasName = Boolean(els.onlineRoomNameInput?.value?.trim());
   const roomInputValue = normalizeRoomId(els.onlineRoomIdInput?.value || '');
@@ -1831,7 +1866,7 @@ function renderOnlineRoomPanel() {
           : lang('이름을 입력하면 방 만들기/참가 버튼이 열립니다.', 'Enter your name to unlock room actions.')
       );
     } else if (!bothPlayersJoined) {
-      lines.push(lang('상대 플레이어 참가 대기 중입니다. 2명이 모이면 빌더가 열립니다.', 'Waiting for the second player. The builder opens when both players are in.'));
+      lines.push(lang('상대 플레이어 참가 대기 중입니다.', 'Waiting for the second player.'));
       const p1Name = state.online.players?.p1 || 'Player 1';
       lines.push(ko ? `P1 ${p1Name} ✅ · P2 대기 ⌛` : `P1 ${p1Name} ✅ · P2 Waiting ⌛`);
     } else {
@@ -1841,6 +1876,7 @@ function renderOnlineRoomPanel() {
       if (state.online.connected) lines.push(lang('연결 정상', 'Connected'));
       else if (state.online.lastError) lines.push(lang(`연결 문제: ${state.online.lastError}`, `Connection issue: ${state.online.lastError}`));
       if (state.online.battleStarted) lines.push(lang('배틀 진행 중', 'Battle running'));
+      if (state.online.returningToBuilder) lines.push(lang('배틀 종료 · 잠시 후 빌더로 복귀', 'Battle finished · Returning to builder shortly'));
     }
     els.onlineRoomStatus.textContent = lines.join(' · ');
   }
@@ -1902,6 +1938,36 @@ function clearOnlineRoomPolling() {
   }
 }
 
+function clearOnlineBattleReturnTimer() {
+  if (state.online.returnToBuilderTimer) {
+    clearTimeout(state.online.returnToBuilderTimer);
+    state.online.returnToBuilderTimer = null;
+  }
+  state.online.returningToBuilder = false;
+}
+
+function scheduleOnlineBattleReturnToBuilder() {
+  if (!isOnlineProfile()) return;
+  clearOnlineBattleReturnTimer();
+  state.online.returningToBuilder = true;
+  showRuntime(
+    lang('배틀 종료! 3초 후 빌더로 돌아갑니다.', 'Battle finished! Returning to builder in 3 seconds.'),
+    'ready'
+  );
+  renderAll();
+  state.online.returnToBuilderTimer = setTimeout(() => {
+    state.online.returnToBuilderTimer = null;
+    state.online.returningToBuilder = false;
+    state.online.battleStarted = false;
+    state.battle = null;
+    clearTimelineSpriteOverrides();
+    resetBattlePresentationState();
+    getPrimaryBattleScene()?.audio?.stopBgm?.();
+    if (els.battlePanel) els.battlePanel.classList.add('hidden');
+    renderAll();
+  }, ONLINE_BATTLE_RETURN_DELAY_MS);
+}
+
 function scheduleOnlineRoomPoll(delayMs = 0) {
   clearOnlineRoomPolling();
   if (!isOnlineRoomJoined()) return;
@@ -1920,11 +1986,25 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
     p1: Boolean(state.online.ready?.p1),
     p2: Boolean(state.online.ready?.p2),
   };
+  const previousBattleStarted = Boolean(state.online.battleStarted);
+  const previousTeamSize = Number(state.teamSize || ONLINE_TEAM_SIZE_DEFAULT);
   const previousRevision = Number(state.online.revision || 0);
   const nextRevision = Number(roomState.revision || state.online.revision || 0);
   const revisionChanged = nextRevision !== previousRevision;
   const p1Joined = Boolean(roomState.players?.p1?.joined);
   const p2Joined = Boolean(roomState.players?.p2?.joined);
+  const snapshot = roomState.battle?.snapshot || null;
+  const nextOnlineTeamSize = normalizeOnlineTeamSize(
+    roomState.settings?.teamSize,
+    state.online?.teamSize || ONLINE_TEAM_SIZE_DEFAULT
+  );
+
+  state.online.teamSize = nextOnlineTeamSize;
+  state.mode = 'singles';
+  if (state.teamSize !== nextOnlineTeamSize) {
+    rebuildTeamSize();
+  }
+
   state.online.revision = nextRevision;
   state.online.joined = {p1: p1Joined, p2: p2Joined};
   if (isOnlineRoomJoined()) state.online.joinInputOpen = false;
@@ -1940,14 +2020,13 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
     p1: Boolean(roomState.ready?.p1),
     p2: Boolean(roomState.ready?.p2),
   };
-  state.online.battleStarted = Boolean(roomState.battle?.started);
+  state.online.battleStarted = Boolean(roomState.battle?.started && !snapshot?.winner);
 
   if (applyBuilder && revisionChanged && shouldApplyOnlineBuilderState(roomState)) {
     state.online.lastBuilderRevision = nextRevision;
     await applyOnlineBuilderFromRoomState(roomState, {preserveLocal: true});
   }
 
-  const snapshot = roomState.battle?.snapshot || null;
   if (snapshot) {
     const logHead = String(snapshot.log?.[0]?.rawText || snapshot.log?.[0]?.text || '');
     const signature = `${snapshot.id || ''}|${snapshot.turn || 0}|${snapshot.winner || ''}|${logHead}`;
@@ -1976,6 +2055,11 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
       ensureOnlineSelectedPlayer();
       if (els.battlePanel) els.battlePanel.classList.remove('hidden');
       resetBattleUiModesFromRequests(state.battle);
+      const initialBattleSnapshot = !previousBattle || String(previousBattle.id || '') !== String(adoptedBattle.id || '');
+      if (initialBattleSnapshot) {
+        await syncPhaserBattleRenderer(adoptedBattle);
+        getPrimaryBattleScene()?.audio?.playRandomBattleBgm?.(BATTLE_BGM_TRACKS).catch(() => {});
+      }
 
       const shouldPlayTimeline = Boolean(
         FLAGS.battlePresentationV2
@@ -1984,10 +2068,6 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
       );
       if (shouldPlayTimeline) {
         try {
-          const initialBattleSnapshot = !previousBattle || String(previousBattle.id || '') !== String(adoptedBattle.id || '');
-          if (initialBattleSnapshot) {
-            await syncPhaserBattleRenderer(adoptedBattle);
-          }
           await playTimelineAcrossActiveViews(adoptedBattle.events, {
             onComplete: () => {
               resetBattleUiModesFromRequests(state.battle);
@@ -2012,17 +2092,29 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
     }
   }
 
+  if (snapshot?.winner) {
+    if (!state.online.returningToBuilder || !state.online.returnToBuilderTimer) {
+      scheduleOnlineBattleReturnToBuilder();
+    }
+  } else if (state.online.returningToBuilder || state.online.returnToBuilderTimer) {
+    clearOnlineBattleReturnTimer();
+  }
+
   const builderUnlockChanged = previousBuilderUnlocked !== isOnlineBuilderUnlocked();
+  const battleStartedChanged = previousBattleStarted !== Boolean(state.online.battleStarted);
+  const teamSizeChanged = previousTeamSize !== Number(state.teamSize || previousTeamSize);
   const readyChanged = previousReady.p1 !== Boolean(state.online.ready?.p1)
     || previousReady.p2 !== Boolean(state.online.ready?.p2);
 
-  if (!applyBuilder && builderUnlockChanged) {
+  const requiresLayoutRefresh = builderUnlockChanged || battleStartedChanged || teamSizeChanged;
+  if (requiresLayoutRefresh) {
     renderAll();
-    return;
+    if (applyBuilder) return;
+  } else {
+    renderOnlineRoomPanel();
+    syncRuntimeModeUi();
   }
-  renderOnlineRoomPanel();
-  syncRuntimeModeUi();
-  if (!applyBuilder && isOnlineBuilderUnlocked() && (builderUnlockChanged || readyChanged)) {
+  if (!applyBuilder && isOnlineBuilderUnlocked() && !isOnlineBattleInProgress() && (builderUnlockChanged || readyChanged || teamSizeChanged)) {
     await renderValidation();
   }
 }
@@ -2107,8 +2199,6 @@ function applyLocalBattleForfeit(player, battle = state.battle) {
 
 async function requestBattleForfeit(player, battle = state.battle) {
   if (!battle || battle.winner) return;
-  const confirmed = window.confirm(lang('항복하겠습니까?', 'Do you want to surrender?'));
-  if (!confirmed) return;
   if (isOnlineProfile() && isOnlineRoomJoined()) {
     try {
       const response = await forfeitOnlineRoomBattle({
@@ -2139,10 +2229,12 @@ function resolveOnlineRoomNameForActions() {
 
 async function createOnlineRoomFlow() {
   const name = resolveOnlineRoomNameForActions();
+  clearOnlineBattleReturnTimer();
   state.playerNames[0] = name;
   const result = await createOnlineRoom({
     name,
     builder: buildOnlineLocalBuilderPayload(0),
+    teamSize: normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT),
   });
   state.online.roomId = normalizeRoomId(result.roomId);
   state.online.side = result.side || 'p1';
@@ -2163,11 +2255,13 @@ async function joinOnlineRoomFlow() {
   const roomId = normalizeRoomId(els.onlineRoomIdInput?.value || state.online.roomId || '');
   if (!roomId) throw new Error(lang('방 코드를 입력하세요.', 'Room ID is empty.'));
   const name = resolveOnlineRoomNameForActions();
+  clearOnlineBattleReturnTimer();
   state.playerNames[1] = name;
   const result = await joinOnlineRoom({
     roomId,
     name,
     builder: buildOnlineLocalBuilderPayload(1),
+    teamSize: normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT),
   });
   state.online.roomId = normalizeRoomId(result.roomId);
   state.online.side = result.side || 'p2';
@@ -2219,6 +2313,7 @@ async function toggleOnlineReadyFlow() {
 
 async function startOnlineBattleFlow() {
   if (!isOnlineRoomJoined()) throw new Error('Room is not joined.');
+  clearOnlineBattleReturnTimer();
   const response = await startOnlineRoomBattle({
     roomId: state.online.roomId,
     token: state.online.token,
@@ -2228,6 +2323,14 @@ async function startOnlineBattleFlow() {
 
 function wireOnlineRoomEvents() {
   if (!isOnlineProfile()) return;
+  els.onlineRoomTeamSizeSelect?.addEventListener('change', () => {
+    if (isOnlineRoomJoined()) return;
+    const nextSize = normalizeOnlineTeamSize(els.onlineRoomTeamSizeSelect.value, state.online?.teamSize || ONLINE_TEAM_SIZE_DEFAULT);
+    state.online.teamSize = nextSize;
+    rebuildTeamSize();
+    renderAll();
+    saveState();
+  });
   els.onlineRoomNameInput?.addEventListener('input', () => {
     if (!els.onlineRoomNameInput.value.trim()) state.online.joinInputOpen = false;
     renderOnlineRoomPanel();
@@ -2300,11 +2403,14 @@ function getOnlineRoomRuntimeDescriptor() {
   const bothPlayersJoined = hasOnlineBothPlayersJoined();
   const bothReady = Boolean(state.online.ready?.p1 && state.online.ready?.p2);
   const connected = Boolean(state.online.connected);
+  const battleActive = isOnlineBattleInProgress();
   const roomId = state.online.roomId || '';
   const detail = !joined
     ? lang('온라인 방을 먼저 생성/참가하세요.', 'Create or join an online room first.')
     : !bothPlayersJoined
-      ? lang('두 번째 플레이어가 참가하면 빌더와 준비 버튼이 열립니다.', 'The builder and ready button unlock once the second player joins.')
+      ? lang('두 번째 플레이어가 참가하면 준비 버튼이 열립니다.', 'The ready button unlocks once the second player joins.')
+      : battleActive
+      ? lang('배틀이 진행 중입니다.', 'Battle is running.')
       : !bothReady
       ? lang('양쪽 플레이어가 모두 Ready 상태여야 시작할 수 있습니다.', 'Both players must be ready before the battle can start.')
       : !connected
@@ -2317,6 +2423,8 @@ function getOnlineRoomRuntimeDescriptor() {
       ? lang('방 필요', 'Room required')
       : !bothPlayersJoined
         ? lang('인원 대기', 'Waiting player')
+        : battleActive
+          ? lang('배틀 중', 'In battle')
         : bothReady
           ? lang('준비 완료', 'Ready')
           : lang('대기 중', 'Waiting'),
@@ -2324,10 +2432,12 @@ function getOnlineRoomRuntimeDescriptor() {
       ? 'wait'
       : !bothPlayersJoined
         ? 'wait'
+        : battleActive
+          ? 'warning'
         : (bothReady ? 'ready' : 'warning'),
     heroLabel: roomId ? `${lang('온라인', 'Online')} · ${roomId}` : lang('온라인', 'Online'),
     detail,
-    startAllowed: Boolean(joined && bothPlayersJoined && bothReady && connected),
+    startAllowed: Boolean(joined && bothPlayersJoined && bothReady && connected && !battleActive),
     startBlockedReason: detail,
     startMessage: lang('온라인 배틀 시작!', 'Online battle started!'),
   };
@@ -2469,6 +2579,7 @@ const UI_STRINGS = Object.freeze({
     setup_title: '설정',
     mode_singles: '싱글',
     mode_doubles: '더블',
+    online_team_size_label: '배틀 마리 수',
     player1_name_label: '플레이어 1 이름',
     player2_name_label: '플레이어 2 이름',
     validation_profile_label: '검증 프로필',
@@ -2537,6 +2648,7 @@ const UI_STRINGS = Object.freeze({
     setup_title: 'Setup',
     mode_singles: 'Singles',
     mode_doubles: 'Doubles',
+    online_team_size_label: 'Battle team size',
     player1_name_label: 'Player 1 name',
     player2_name_label: 'Player 2 name',
     validation_profile_label: 'Validation profile',
@@ -3646,8 +3758,16 @@ function resetTeams() {
   state.teams = [0,1].map(() => Array.from({length: state.teamSize}, () => createEmptyMon()));
   state.selected = {player: 0, slot: 0};
 }
+
+function getConfiguredTeamSize() {
+  if (isOnlineProfile()) {
+    return normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
+  }
+  return state.mode === 'singles' ? 3 : 4;
+}
+
 function rebuildTeamSize() {
-  state.teamSize = state.mode === 'singles' ? 3 : 4;
+  state.teamSize = getConfiguredTeamSize();
   state.teams = [0,1].map(p => {
     const prev = state.teams[p] || [];
     return Array.from({length: state.teamSize}, (_, i) => prev[i] ? prev[i] : createEmptyMon());
@@ -3743,6 +3863,7 @@ function saveState() {
       token: state.online.token || '',
       side: state.online.side || '',
       revision: Number(state.online.revision || 0),
+      teamSize: normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT),
     } : undefined,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
@@ -3755,13 +3876,13 @@ function loadSavedState() {
     state.mode = parsed.mode === 'doubles' ? 'doubles' : 'singles';
     state.validationProfile = VALIDATION_PROFILES[parsed.validationProfile] ? parsed.validationProfile : 'open';
     state.language = parsed.language === 'en' ? 'en' : 'ko';
-    state.teamSize = state.mode === 'doubles' ? 4 : 3;
     state.playerNames = Array.isArray(parsed.playerNames) ? parsed.playerNames.slice(0,2).map(v => v || 'Player') : ['Player 1','Player 2'];
     if (isOnlineProfile()) {
       const online = parsed.online && typeof parsed.online === 'object' ? parsed.online : {};
       state.online.roomId = normalizeRoomId(online.roomId || '');
       state.online.token = String(online.token || '');
       state.online.side = online.side === 'p2' ? 'p2' : (online.side === 'p1' ? 'p1' : '');
+      state.online.teamSize = normalizeOnlineTeamSize(online.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
       state.online.joined = {p1: false, p2: false};
       state.online.joinInputOpen = false;
       state.online.revision = Number(online.revision || 0);
@@ -4361,7 +4482,7 @@ async function getFallbackMetrics() {
   fallbackMetricsPromise = loadPokemonMetrics().catch(() => null);
   return fallbackMetricsPromise;
 }
-async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=false, size='large'}) {
+async function renderAnimatedSprite(container, {spriteId, spriteUrl = '', facing='front', shiny=false, size='large'}) {
   clearSpriteAnimation(container);
   container.innerHTML = '';
   container.className = `sprite-shell ${size}`;
@@ -4370,12 +4491,12 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
   container.dataset.spriteId = spriteId || '';
   container.dataset.spriteFacing = facing || 'front';
   container.dataset.spriteShiny = shiny ? '1' : '0';
-  if (!spriteId) {
+  const url = String(spriteUrl || '').trim() || (spriteId ? spritePath(spriteId, facing, shiny) : '');
+  if (!url) {
     delete container.dataset.spriteSrc;
     container.textContent = '—';
     return;
   }
-  const url = spritePath(spriteId, facing, shiny);
   container.dataset.spriteSrc = url;
   try {
     const [info, metricsMap] = await Promise.all([
@@ -4383,7 +4504,7 @@ async function renderAnimatedSprite(container, {spriteId, facing='front', shiny=
       getFallbackMetrics(),
     ]);
     if (container._spriteRenderToken !== renderToken) return;
-    const metrics = getMetricsForSprite(spriteId, metricsMap);
+    const metrics = spriteId ? getMetricsForSprite(spriteId, metricsMap) : null;
     const isFront = facing !== 'back';
     const defaultScale = isFront ? DBK_DEFAULTS.frontScale : DBK_DEFAULTS.backScale;
     const metricScale = isFront ? metrics?.frontScale : metrics?.backScale;
@@ -4454,6 +4575,7 @@ function bindElements() {
     onlineStartBattleBtn: document.getElementById('online-start-battle-btn'),
     onlineRoomStatus: document.getElementById('online-room-status'),
     onlineRoomCode: document.getElementById('online-room-code'),
+    onlineRoomTeamSizeSelect: document.getElementById('online-room-team-size'),
     setupPanel: document.getElementById('setup-panel') || document.querySelector('.setup-panel'),
     modeSinglesBtn: document.getElementById('mode-singles-btn'),
     modeDoublesBtn: document.getElementById('mode-doubles-btn'),
@@ -4519,6 +4641,8 @@ function bindElements() {
     battleTrayP2: document.getElementById('battle-tray-p2'),
     battleAbilityFlyout: document.getElementById('battle-ability-flyout'),
     battleBottom: document.getElementById('battle-bottom'),
+    mobileControls: document.getElementById('mobile-controls'),
+    mobileControlButtons: Array.from(document.querySelectorAll('[data-mobile-btn]')),
     battleMessageWindow: document.getElementById('battle-message-window'),
     battleStateWindow: document.getElementById('battle-state-window'),
     battleDebugSummary: document.getElementById('battle-debug-summary'),
@@ -4774,7 +4898,7 @@ function renderRoster() {
     ? `각 플레이어는 포켓몬 ${state.teamSize}마리를 만든다.`
     : `Each player builds ${state.teamSize} Pokémon.`;
   els.heroModeLabel.textContent = state.mode === 'singles'
-    ? lang('싱글 · 3마리', 'Singles · 3 Pokémon')
+    ? (state.language === 'ko' ? `싱글 · ${state.teamSize}마리` : `Singles · ${state.teamSize} Pokémon`)
     : lang('더블 · 4마리', 'Doubles · 4 Pokémon');
 }
 function implementedAbilityNote(name) {
@@ -5275,9 +5399,11 @@ function wireEditorEvents() {
     state.playerNames = ['Player 1','Player 2'];
     if (isOnlineProfile()) {
       clearOnlineRoomPolling();
+      clearOnlineBattleReturnTimer();
       state.online.roomId = '';
       state.online.token = '';
       state.online.side = '';
+      state.online.teamSize = ONLINE_TEAM_SIZE_DEFAULT;
       state.online.joined = {p1: false, p2: false};
       state.online.joinInputOpen = false;
       state.online.revision = 0;
@@ -5288,6 +5414,8 @@ function wireEditorEvents() {
       state.online.lastSnapshotSig = '';
       state.online.lastSnapshotRevision = -1;
       state.online.battleStarted = false;
+      state.online.returningToBuilder = false;
+      state.online.returnToBuilderTimer = null;
       state.online.ready = {p1: false, p2: false};
       state.online.players = {p1: 'Player 1', p2: 'Player 2'};
       state.online.lastBuilderRevision = 0;
@@ -5295,6 +5423,7 @@ function wireEditorEvents() {
       state.online.lastSubmittedChoiceBySide = {p1: '', p2: ''};
       if (els.onlineRoomNameInput) els.onlineRoomNameInput.value = '';
       if (els.onlineRoomIdInput) els.onlineRoomIdInput.value = '';
+      if (els.onlineRoomTeamSizeSelect) els.onlineRoomTeamSizeSelect.value = String(ONLINE_TEAM_SIZE_DEFAULT);
     }
     els.player1Name.value = 'Player 1';
     els.player2Name.value = 'Player 2';
@@ -5558,19 +5687,19 @@ function addLog(text, tone = '') {
 function describeHazards(side) {
   if (!side?.hazards) return lang('없음', 'None');
   const parts = [];
-  if (side.hazards.stealthRock) parts.push('Stealth Rock');
-  if (side.hazards.spikes) parts.push(`Spikes ${side.hazards.spikes}`);
-  if (side.hazards.toxicSpikes) parts.push(`Toxic Spikes ${side.hazards.toxicSpikes}`);
-  if (side.hazards.stickyWeb) parts.push('Sticky Web');
+  if (side.hazards.stealthRock) parts.push(lang('스텔스록', 'Stealth Rock'));
+  if (side.hazards.spikes) parts.push(lang(`압정뿌리기 ${side.hazards.spikes}`, `Spikes ${side.hazards.spikes}`));
+  if (side.hazards.toxicSpikes) parts.push(lang(`독압정 ${side.hazards.toxicSpikes}`, `Toxic Spikes ${side.hazards.toxicSpikes}`));
+  if (side.hazards.stickyWeb) parts.push(lang('끈적끈적네트', 'Sticky Web'));
   return parts.length ? parts.join(', ') : lang('없음', 'None');
 }
 function describeSideConditions(side) {
   if (!side?.sideConditions) return lang('없음', 'None');
   const parts = [];
-  if (side.sideConditions.reflectTurns > 0) parts.push(`Reflect ${side.sideConditions.reflectTurns}`);
-  if (side.sideConditions.lightScreenTurns > 0) parts.push(`Light Screen ${side.sideConditions.lightScreenTurns}`);
-  if (side.sideConditions.auroraVeilTurns > 0) parts.push(`Aurora Veil ${side.sideConditions.auroraVeilTurns}`);
-  if (side.sideConditions.tailwindTurns > 0) parts.push(`Tailwind ${side.sideConditions.tailwindTurns}`);
+  if (side.sideConditions.reflectTurns > 0) parts.push(lang(`리플렉터 ${side.sideConditions.reflectTurns}`, `Reflect ${side.sideConditions.reflectTurns}`));
+  if (side.sideConditions.lightScreenTurns > 0) parts.push(lang(`빛의장막 ${side.sideConditions.lightScreenTurns}`, `Light Screen ${side.sideConditions.lightScreenTurns}`));
+  if (side.sideConditions.auroraVeilTurns > 0) parts.push(lang(`오로라베일 ${side.sideConditions.auroraVeilTurns}`, `Aurora Veil ${side.sideConditions.auroraVeilTurns}`));
+  if (side.sideConditions.tailwindTurns > 0) parts.push(lang(`순풍 ${side.sideConditions.tailwindTurns}`, `Tailwind ${side.sideConditions.tailwindTurns}`));
   return parts.length ? parts.join(', ') : lang('없음', 'None');
 }
 function getSideForPlayer(player) {
@@ -6687,6 +6816,17 @@ function renderBattleMessagesWindow(battle, player) {
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
   const pokemonName = displayBattleSpeciesName(activeMon);
+  const winnerName = String(battle?.winner || '').trim();
+  if (winnerName) {
+    const winnerText = /^\d+$/.test(winnerName)
+      ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
+      : lang(`${winnerName} 승리!`, `${winnerName} wins!`);
+    els.battleMessageWindow.innerHTML = `
+      <div class="pkbattle-message-stack">
+        <div class="pkbattle-message-primary">${winnerText}</div>
+      </div>`;
+    return;
+  }
   const promptText = battle.winner
     ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
     : !request
@@ -7318,6 +7458,16 @@ function buildBattleMessageModel(battle, player) {
   const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
   const pokemonName = displayBattleSpeciesName(activeMon);
+  const winnerName = String(battle?.winner || '').trim();
+  if (winnerName) {
+    return {
+      primary: /^\d+$/.test(winnerName)
+        ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
+        : lang(`${winnerName} 승리!`, `${winnerName} wins!`),
+      secondary: '',
+      showPrompt: false,
+    };
+  }
   const promptText = battle.winner
     ? lang('배틀이 종료되었습니다.', 'The battle has ended.')
     : !request
@@ -7610,12 +7760,41 @@ function buildPhaserMessageWindowModel(battle, player) {
   };
 }
 
+function resolveBattleSpritePresentation(mon, facing = 'front') {
+  if (!mon) return {hidden: true, url: '', spriteId: ''};
+  const volatile = mon.volatile && typeof mon.volatile === 'object' ? mon.volatile : {};
+  const semiInvulnerableVolatiles = ['dig', 'dive', 'fly', 'bounce', 'phantomforce', 'shadowforce', 'skydrop', 'freefall'];
+  if (semiInvulnerableVolatiles.some(key => Boolean(volatile[key]))) {
+    return {hidden: true, url: '', spriteId: ''};
+  }
+  if (Number(mon.hp || 0) <= 0 || mon.fainted) {
+    return {hidden: true, url: '', spriteId: ''};
+  }
+  const hasSubstitute = Boolean(volatile.substitute || Number(volatile.substituteHp || 0) > 0);
+  if (hasSubstitute) {
+    return {
+      hidden: false,
+      url: facing === 'back'
+        ? './assets/system/pokemon/substitute_back.png'
+        : './assets/system/pokemon/substitute.png',
+      spriteId: '',
+    };
+  }
+  const spriteId = resolveBattleRenderSpriteId(mon);
+  return {
+    hidden: !spriteId,
+    url: spriteId ? spritePath(spriteId, facing, Boolean(mon.shiny)) : '',
+    spriteId: spriteId || '',
+  };
+}
+
 function resolveSpriteUrlForBattleSide(sideIndex, perspective, mon, isRenderable) {
   const sideId = sideIndex === 1 ? 'p2' : 'p1';
   const facing = sideIndex === perspective ? 'back' : 'front';
   if (isRenderable && mon) {
-    const spriteId = resolveBattleRenderSpriteId(mon);
-    if (spriteId) return spritePath(spriteId, facing, Boolean(mon.shiny));
+    const presentation = resolveBattleSpritePresentation(mon, facing);
+    if (!presentation.hidden && presentation.url) return presentation.url;
+    if (presentation.hidden) return '';
   }
   const override = getTimelineSpriteOverride(sideId);
   if (override?.spriteId) return spritePath(override.spriteId, facing, Boolean(override.shiny));
@@ -7751,6 +7930,96 @@ function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
   }
 }
 
+function getActiveBattleInputScene() {
+  if (!state.battle) return null;
+  if (FLAGS.battleDualViewV1) {
+    const perspective = clamp(Number(getBattleUiState(state.battle)?.perspective || 0), 0, 1);
+    return getPhaserBattleRenderer(perspective)?.scene
+      ?? getPrimaryBattleScene()
+      ?? null;
+  }
+  return getPrimaryBattleScene();
+}
+
+function dispatchMobileBattleInput(button, {pressed = true} = {}) {
+  const scene = getActiveBattleInputScene();
+  if (!scene?.processVirtualButton) return false;
+  return Boolean(scene.processVirtualButton(button, {pressed}));
+}
+
+function stopMobileInputRepeat(button) {
+  const key = String(button || '').trim();
+  const timer = mobileInputRepeatTimers.get(key);
+  if (timer) clearInterval(timer);
+  mobileInputRepeatTimers.delete(key);
+}
+
+function startMobileInputRepeat(button) {
+  const key = String(button || '').trim();
+  if (!key || mobileInputRepeatTimers.has(key)) return;
+  const timer = setInterval(() => {
+    if (!dispatchMobileBattleInput(key, {pressed: true})) {
+      stopMobileInputRepeat(key);
+    }
+  }, MOBILE_INPUT_REPEAT_MS);
+  mobileInputRepeatTimers.set(key, timer);
+}
+
+function renderMobileControlIcons() {
+  if (!Array.isArray(els.mobileControlButtons) || !els.mobileControlButtons.length) return;
+  els.mobileControlButtons.forEach(button => {
+    const key = String(button?.dataset?.mobileBtn || '').trim();
+    const frame = MOBILE_BUTTON_ATLAS_FRAMES[key];
+    if (!frame) return;
+    const icon = button.querySelector('.mobile-btn-icon');
+    if (!icon) return;
+    applyPokerogueAtlasFrameToElement(icon, 'xbox', frame, {width: 18, height: 18}).catch(() => {});
+  });
+}
+
+function renderMobileControls() {
+  if (!els.mobileControls) return;
+  const coarsePointer = Boolean(window.matchMedia?.('(pointer: coarse)')?.matches || 'ontouchstart' in window);
+  const show = Boolean(coarsePointer && state.battle && !els.battlePanel?.classList.contains('hidden'));
+  els.mobileControls.hidden = !show;
+  if (show) return;
+  mobileInputRepeatTimers.forEach((_timer, key) => stopMobileInputRepeat(key));
+  dispatchMobileBattleInput('info', {pressed: false});
+}
+
+function wireMobileControlEvents() {
+  if (!Array.isArray(els.mobileControlButtons) || !els.mobileControlButtons.length) return;
+  renderMobileControlIcons();
+  const repeatingButtons = new Set(['up', 'down', 'left', 'right']);
+  els.mobileControlButtons.forEach(button => {
+    const buttonKey = String(button?.dataset?.mobileBtn || '').trim();
+    if (!buttonKey) return;
+    const handlePress = event => {
+      event.preventDefault();
+      button.classList.add('is-pressed');
+      if (buttonKey === 'info') {
+        dispatchMobileBattleInput(buttonKey, {pressed: true});
+        return;
+      }
+      dispatchMobileBattleInput(buttonKey, {pressed: true});
+      if (repeatingButtons.has(buttonKey)) {
+        stopMobileInputRepeat(buttonKey);
+        startMobileInputRepeat(buttonKey);
+      }
+    };
+    const handleRelease = event => {
+      event.preventDefault();
+      button.classList.remove('is-pressed');
+      if (repeatingButtons.has(buttonKey)) stopMobileInputRepeat(buttonKey);
+      if (buttonKey === 'info') dispatchMobileBattleInput(buttonKey, {pressed: false});
+    };
+    button.addEventListener('pointerdown', handlePress, {passive: false});
+    button.addEventListener('pointerup', handleRelease, {passive: false});
+    button.addEventListener('pointercancel', handleRelease, {passive: false});
+    button.addEventListener('pointerleave', handleRelease, {passive: false});
+  });
+}
+
 function enterBattleFullscreen() {
   if (!els.battlePhaserRoot) return;
   els.battlePhaserRoot.classList.add('battle-fullscreen');
@@ -7860,6 +8129,7 @@ function renderBattle() {
   }).catch(error => {
     console.error('Battle renderer sync failed.', error);
   });
+  renderMobileControls();
 
   const localAutoResolveEnabled = !(isOnlineProfile() && isOnlineRoomJoined());
   const allSet = localAutoResolveEnabled
@@ -7886,7 +8156,14 @@ function renderSideSprites(player, container, facing) {
       shell.appendChild(badge);
     }
     container.appendChild(shell);
-    renderAnimatedSprite(holder, {spriteId: resolveBattleRenderSpriteId(mon), facing, shiny: mon.shiny, size: 'large'});
+    const presentation = resolveBattleSpritePresentation(mon, facing);
+    renderAnimatedSprite(holder, {
+      spriteId: presentation.spriteId,
+      spriteUrl: presentation.url,
+      facing,
+      shiny: mon.shiny,
+      size: 'large',
+    });
   });
 }
 function renderBattleTeam(player, container) {
@@ -8173,7 +8450,9 @@ function renderAll() {
   els.modeDoublesBtn.classList.toggle('active', state.mode === 'doubles');
   if (isOnlineProfile() && els.modeDoublesBtn) els.modeDoublesBtn.disabled = true;
 
-  const showSetupPanel = !isOnlineProfile() || isOnlineBuilderUnlocked();
+  const showSetupPanel = !isOnlineProfile()
+    ? true
+    : (isOnlineBuilderUnlocked() && !isOnlineBattleInProgress());
   if (els.setupPanel) els.setupPanel.hidden = !showSetupPanel;
 
   if (showSetupPanel) {
@@ -8190,6 +8469,8 @@ function renderAll() {
   renderOnlineRoomPanel();
   syncRuntimeModeUi();
   if (state.battle) renderBattle();
+  else if (els.battlePanel) els.battlePanel.classList.add('hidden');
+  renderMobileControls();
   syncRuntimeModeUi();
 }
 
@@ -8235,6 +8516,7 @@ async function bootstrap() {
   wireEditorEvents();
   wireBattleEvents();
   wireOnlineRoomEvents();
+  wireMobileControlEvents();
   renderAll();
   if (isOnlineProfile() && isOnlineRoomJoined()) {
     scheduleOnlineRoomPoll(0);

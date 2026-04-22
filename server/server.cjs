@@ -164,6 +164,7 @@ const server = http.createServer(async (req, res) => {
       const result = onlineRooms.createRoom({
         name: body.name,
         builder: body.builder,
+        teamSize: body.teamSize,
       });
       sendJson(res, 200, {ok: true, ...result});
       return;
@@ -175,6 +176,7 @@ const server = http.createServer(async (req, res) => {
         roomId: body.roomId,
         name: body.name,
         builder: body.builder,
+        teamSize: body.teamSize,
       });
       sendJson(res, 200, {ok: true, ...result});
       return;

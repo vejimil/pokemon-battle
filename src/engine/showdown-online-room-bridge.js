@@ -17,10 +17,10 @@ async function requestJson(url, options = {}) {
   return data;
 }
 
-export async function createOnlineRoom({name = '', builder = null} = {}) {
+export async function createOnlineRoom({name = '', builder = null, teamSize = null} = {}) {
   const data = await requestJson('/api/rooms/create', {
     method: 'POST',
-    body: JSON.stringify({name, builder}),
+    body: JSON.stringify({name, builder, teamSize}),
   });
   return {
     roomId: normalizeRoomId(data.roomId),
@@ -30,10 +30,10 @@ export async function createOnlineRoom({name = '', builder = null} = {}) {
   };
 }
 
-export async function joinOnlineRoom({roomId = '', name = '', builder = null} = {}) {
+export async function joinOnlineRoom({roomId = '', name = '', builder = null, teamSize = null} = {}) {
   const data = await requestJson('/api/rooms/join', {
     method: 'POST',
-    body: JSON.stringify({roomId: normalizeRoomId(roomId), name, builder}),
+    body: JSON.stringify({roomId: normalizeRoomId(roomId), name, builder, teamSize}),
   });
   return {
     roomId: normalizeRoomId(data.roomId),

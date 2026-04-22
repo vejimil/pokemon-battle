@@ -781,6 +781,17 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (handled) event.preventDefault();
     }
 
+    processVirtualButton(button, { pressed = true } = {}) {
+      if (!this.isBootstrapped || !this.ui || this.controller?.mount?.hidden) return false;
+      const normalized = String(button || '').toLowerCase().trim();
+      if (!normalized) return false;
+      if (normalized === 'info') {
+        return this.ui.processInfoButton(Boolean(pressed));
+      }
+      if (!pressed) return false;
+      return this.ui.processInput(normalized);
+    }
+
     layoutSafely() {
       try { this.layout(); } catch (error) { this.controller?.notifySceneError?.(error); throw error; }
     }
@@ -1681,6 +1692,69 @@ export function createBattleShellSceneClass(Phaser, env) {
         variantIndex,
         oppAnim: isOppAnim,
       });
+    }
+
+    async playStatStageEffect(side, options = {}) {
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active || !spr.visible) return;
+      const atlasKey = env.UI_ASSETS.effectBattleStats?.key;
+      if (!atlasKey) return;
+      if (!textureExists(this, atlasKey)) return;
+
+      const rising = options?.rising !== false;
+      const statId = String(options?.stat || '').toLowerCase().trim();
+      const frameByStat = Object.freeze({
+        atk: 'atk',
+        def: 'def',
+        spa: 'spatk',
+        spd: 'spdef',
+        spe: 'spd',
+        acc: 'acc',
+        eva: 'eva',
+      });
+      const frame = frameByStat[statId] || 'mix';
+      if (!textureExists(this, atlasKey, frame)) return;
+
+      const tileWidth = Math.max(44, Math.round(spr.displayWidth * 1.22));
+      const tileHeight = Math.max(60, Math.round(spr.displayHeight * 1.56));
+      const statSprite = this.add.tileSprite(spr.x, spr.y, tileWidth, tileHeight, atlasKey, frame)
+        .setOrigin(0.5, 1)
+        .setDepth((spr.depth || 7) + 1.2)
+        .setAlpha(0)
+        .setScale(1.5);
+
+      let mask = null;
+      try {
+        mask = spr.createBitmapMask();
+        if (mask) statSprite.setMask(mask);
+      } catch (_error) {}
+
+      const riseDistance = Math.max(72, Math.round(spr.displayHeight * 0.84));
+      const endY = spr.y + (rising ? -riseDistance : riseDistance);
+      await Promise.all([
+        this._runTween({
+          targets: statSprite,
+          duration: 240,
+          ease: 'Sine.easeOut',
+          alpha: 0.84,
+        }).then(() => this._runTween({
+          targets: statSprite,
+          delay: 1000,
+          duration: 240,
+          ease: 'Sine.easeIn',
+          alpha: 0,
+        })),
+        this._runTween({
+          targets: statSprite,
+          duration: 1500,
+          ease: 'Sine.easeInOut',
+          y: endY,
+        }),
+      ]);
+
+      try { statSprite.destroy(); } catch (_error) {}
+      try { mask?.destroy?.(); } catch (_error) {}
     }
   };
 }

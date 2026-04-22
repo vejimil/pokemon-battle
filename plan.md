@@ -83,7 +83,7 @@ Status: **분석 완료, 구현 대기**
 
 ## 3) 항목별 구현 계획 (파일 단위)
 
-### O-1) 빌더 표시 조건 재정의
+### O-1) 빌더 표시 조건 재정의 (완료)
 - 목표 동작
   - 온라인에서 빌더는 "방에 참가된 상태" + "배틀 진행 중 아님"일 때만 표시.
   - 배틀 진행 중에는 빌더 숨김.
@@ -94,7 +94,7 @@ Status: **분석 완료, 구현 대기**
   - `state.online.battleStarted` + `snapshot.winner`를 함께 판단하는 helper 추가.
   - `renderAll()`, `renderOnlineRoomPanel()`의 안내 문구/버튼 활성 조건 동기화.
 
-### O-2) 항복 즉시 종료
+### O-2) 항복 즉시 종료 (개선 필요)
 - 목표 동작
   - 항복 버튼 1회 입력 즉시 종료 플로우 진입.
   - 해석 확정: `도망친다(Run)` 선택 후 `항복`을 누르면 즉시 종료 전환으로 처리.
@@ -105,7 +105,7 @@ Status: **분석 완료, 구현 대기**
   - 온라인은 API 응답 즉시 종료 UI 반영(폴링 대기 제거).
   - 서버는 forfeit 시점에 종료 상태 플래그를 명확히 반영(아래 O-3과 연동).
 
-### O-3) 종료 메시지 후 자동 빌더 복귀
+### O-3) 종료 메시지 후 자동 빌더 복귀 (개선 필요)
 - 목표 동작
   - 종료 메시지 표시 -> `3초` 지연 -> 빌더 복귀.
 - 수정 예정
@@ -116,7 +116,7 @@ Status: **분석 완료, 구현 대기**
   - 복귀 시 battle panel 비표시, setup panel 재표시, 온라인 룸 상태 유지.
   - BGM 정리(stop) 포함.
 
-### O-4) 방 생성 시 1~6 팀수 설정
+### O-4) 방 생성 시 1~6 팀수 설정 (완료)
 - 목표 동작
   - 온라인 룸 단위로 teamSize(1~6) 설정 가능.
 - 수정 예정
@@ -127,7 +127,7 @@ Status: **분석 완료, 구현 대기**
   - `rebuildTeamSize()`를 모드 고정값 대신 설정값 기반으로 분리(온라인 경로 우선).
   - Hero/노트 문구는 마리수 고정 표기를 제거하는 방향을 우선 적용(예: `싱글`/`Singles`), 팀 수는 설정 UI/노트에서만 명시.
 
-### O-5) BGM 미출력 수정
+### O-5) BGM 미출력 수정 (완료)
 - 목표 동작
   - 온라인 전투 시작 시 로컬과 동일하게 BGM 재생.
 - 수정 예정
@@ -137,7 +137,7 @@ Status: **분석 완료, 구현 대기**
   - 오디오 컨텍스트 suspended 대응(resume 시도) 추가.
   - 중복 재생 방지(이미 BGM 실행 중이면 재시작하지 않음).
 
-### O-6) 모바일 하단 조작키 추가 (xbox atlas 사용)
+### O-6) 모바일 하단 조작키 추가 (xbox atlas 사용) (개선 필요)
 - 목표 동작
   - 모바일에서 하단 D-pad + ABXY 버튼으로 UI 네비게이션 가능.
 - 수정 예정
@@ -150,7 +150,7 @@ Status: **분석 완료, 구현 대기**
 
 ---
 
-### B-1) 방어/막힘 메시지 출력
+### B-1) 방어/막힘 메시지 출력 (개선 필요)
 - 목표 동작
   - Protect 등으로 막힌 경우 명확한 메시지 출력.
 - 수정 예정
@@ -160,7 +160,7 @@ Status: **분석 완료, 구현 대기**
   - effect id(`move: Protect` 등) 정규화 후 메시지 매핑.
   - 필요 시 locale namespace에 `battler-tags` 로드 추가.
 
-### B-2) miss/immune/fail 시 기술 연출 제거
+### B-2) miss/immune/fail 시 기술 연출 제거 (개선 필)
 - 목표 동작
   - 해당 케이스는 move animation 스킵, 결과 메시지만 출력.
   - 단, `A의 기술명!` 문구와 결과 문구 사이에는 짧은 지연(리듬감 유지)을 둔다.
@@ -171,7 +171,7 @@ Status: **분석 완료, 구현 대기**
   - miss/immune/move_fail/protect-block이면 `playMoveAnim` 생략.
   - animation 생략 시에도 `move_use` 메시지 후 최소 hold 시간(예: 280~420ms) 유지.
 
-### B-3) miss 문구 주체 수정
+### B-3) miss 문구 주체 수정 (완료)
 - 목표 동작
   - "A가 B를 공격했지만 B에게 맞지 않았다"로 대상 기준 문구 노출.
 - 수정 예정
@@ -180,7 +180,7 @@ Status: **분석 완료, 구현 대기**
   - miss 이벤트 파싱에 actor/target 분리 저장.
   - 타임라인에서 target 우선으로 `attackMissed` 변수 구성.
 
-### B-4) 기절 후 교체 시 영어 정보바 제거
+### B-4) 기절 후 교체 시 영어 정보바 제거 (완료)
 - 목표 동작
   - 한국어 UI에서 상단 상태바/관련 정보는 한국어 중심으로만 표기.
 - 수정 예정
@@ -189,7 +189,7 @@ Status: **분석 완료, 구현 대기**
   - `describeHazards`/`describeSideConditions`를 `lang()` 기반 라벨로 변경.
   - 강제교체 시점에서 필드 상태 문자열의 영어 직접 토큰 제거.
 
-### B-5) 종료 시 불필요 줄 제거
+### B-5) 종료 시 불필요 줄 제거 (완료)
 - 목표 동작
   - 종료 화면에서 승패 요약만 표시, 불필요한 마지막 기절/영문 줄 미노출.
 - 수정 예정
@@ -198,7 +198,7 @@ Status: **분석 완료, 구현 대기**
   - `battle.winner` 상태에서는 메시지 창이 `battle.log` 우선 노출하지 않도록 변경.
   - `battle_end` 문구를 locale/안전 fallback으로 정리(숫자/빈 winner 방어).
 
-### B-6) 반잠수/대타 등 스프라이트 상태 반영
+### B-6) 반잠수/대타 등 스프라이트 상태 반영 (개선 필요)
 - 목표 동작
   - Dig/Fly/Free Fall 등은 비가시 처리, Substitute는 대체 sprite 처리.
 - 수정 예정
@@ -208,7 +208,7 @@ Status: **분석 완료, 구현 대기**
   - `resolveSpriteUrlForBattleSide` 및 timeline visual resolver에 동일 규칙 적용.
   - Substitute는 `assets/system/pokemon/substitute(_back).png` 우선 적용.
 
-### B-7) 능력 상승/하강 스프라이트 VFX
+### B-7) 능력 상승/하강 스프라이트 VFX (개선 필요)
 - 목표 동작
   - boost/unboost 메시지+SE 외에 sprite 상승/하강 시각 효과 추가.
   - 확인사항: `battle_stats` 에셋은 `assets/pokerogue/ui/effects`가 아니라 `assets/pokerogue/effects/battle_stats.(json|png)`에 존재함.

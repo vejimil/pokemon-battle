@@ -2,6 +2,13 @@ const {randomUUID} = require('crypto');
 
 const DEFAULT_FORMAT_ID = 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
 const DEFAULT_ROOM_TTL_MS = 12 * 60 * 60 * 1000;
+const DEFAULT_TEAM_SIZE = 3;
+
+function sanitizeTeamSize(value, fallback = DEFAULT_TEAM_SIZE) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(6, Math.trunc(parsed)));
+}
 
 function toId(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
@@ -50,7 +57,7 @@ class OnlineRoomService {
     this.rooms = new Map();
   }
 
-  createRoom({name = '', builder = null} = {}) {
+  createRoom({name = '', builder = null, teamSize = DEFAULT_TEAM_SIZE} = {}) {
     this.cleanupExpiredRooms();
     const roomId = this.generateRoomId();
     const p1Token = randomUUID();
@@ -66,6 +73,9 @@ class OnlineRoomService {
       players: {
         p1: {name: p1Name, token: p1Token, joinedAt: now},
         p2: null,
+      },
+      settings: {
+        teamSize: sanitizeTeamSize(teamSize, DEFAULT_TEAM_SIZE),
       },
       builder: {
         p1: cloneBuilderPayload(builder, p1Name),
@@ -90,8 +100,17 @@ class OnlineRoomService {
     };
   }
 
-  joinRoom({roomId = '', name = '', builder = null} = {}) {
+  joinRoom({roomId = '', name = '', builder = null, teamSize = null} = {}) {
     const room = this.getRoomOrThrow(roomId);
+    if (!room.settings || typeof room.settings !== 'object') {
+      room.settings = {
+        teamSize: sanitizeTeamSize(teamSize, DEFAULT_TEAM_SIZE),
+      };
+    } else if (!Number.isInteger(room.settings.teamSize)) {
+      room.settings.teamSize = sanitizeTeamSize(teamSize, DEFAULT_TEAM_SIZE);
+    } else {
+      room.settings.teamSize = sanitizeTeamSize(room.settings.teamSize, DEFAULT_TEAM_SIZE);
+    }
     if (room.players.p2) {
       const error = new Error('Room is already full.');
       error.statusCode = 409;
@@ -140,6 +159,7 @@ class OnlineRoomService {
   async startBattle({roomId = '', token = ''} = {}) {
     const room = this.getRoomOrThrow(roomId);
     this.resolveSideByToken(room, token);
+    const teamSize = sanitizeTeamSize(room.settings?.teamSize, DEFAULT_TEAM_SIZE);
 
     if (!room.players.p1 || !room.players.p2) {
       const error = new Error('Both players must join before starting a battle.');
@@ -158,11 +178,11 @@ class OnlineRoomService {
       players: [
         {
           name: sanitizeName(room.builder.p1?.name || room.players.p1?.name || 'Player 1', 'Player 1'),
-          team: Array.isArray(room.builder.p1?.team) ? room.builder.p1.team : [],
+          team: Array.isArray(room.builder.p1?.team) ? room.builder.p1.team.slice(0, teamSize) : [],
         },
         {
           name: sanitizeName(room.builder.p2?.name || room.players.p2?.name || 'Player 2', 'Player 2'),
-          team: Array.isArray(room.builder.p2?.team) ? room.builder.p2.team : [],
+          team: Array.isArray(room.builder.p2?.team) ? room.builder.p2.team.slice(0, teamSize) : [],
         },
       ],
     };
@@ -215,6 +235,7 @@ class OnlineRoomService {
       };
       const nextSnapshot = await this.engine.chooseSingles(room.battle.sessionId, choices);
       room.battle.snapshot = nextSnapshot;
+      room.battle.started = !Boolean(nextSnapshot?.winner);
       room.battle.pendingChoices = {p1: '', p2: ''};
       this.bump(room, 'turn-resolved');
       return {
@@ -263,6 +284,7 @@ class OnlineRoomService {
       winner: winnerName,
       log: nextLog,
     };
+    room.battle.started = false;
     room.battle.pendingChoices = {p1: '', p2: ''};
     this.bump(room, 'battle-forfeit');
     return {
@@ -370,6 +392,9 @@ class OnlineRoomService {
         p1: room.players.p1 ? {name: room.players.p1.name, joined: true} : {name: '', joined: false},
         p2: room.players.p2 ? {name: room.players.p2.name, joined: true} : {name: '', joined: false},
       },
+      settings: {
+        teamSize: sanitizeTeamSize(room.settings?.teamSize, DEFAULT_TEAM_SIZE),
+      },
       builder: {
         p1: cloneBuilderPayload(room.builder.p1, room.players.p1?.name || 'Player 1'),
         p2: cloneBuilderPayload(room.builder.p2, room.players.p2?.name || 'Player 2'),
@@ -379,7 +404,7 @@ class OnlineRoomService {
         p2: Boolean(room.ready.p2),
       },
       battle: {
-        started: Boolean(room.battle?.started),
+        started: Boolean(room.battle?.started && !room.battle?.snapshot?.winner),
         actionableSides: getActionableSides(room.battle?.snapshot || null),
         pendingChoices: {
           p1: Boolean(room.battle?.pendingChoices?.p1),

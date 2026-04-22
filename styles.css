@@ -3394,3 +3394,75 @@ body.hide-builder-warning-box .warning-box {
 .battle-fullscreen .battle-exit-fullscreen-btn {
   display: block;
 }
+
+.mobile-controls {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  z-index: 9102;
+  padding: 0 12px;
+  pointer-events: none;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.mobile-controls-dpad,
+.mobile-controls-actions {
+  display: grid;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.mobile-controls-dpad {
+  grid-template-columns: repeat(3, 44px);
+  grid-template-areas:
+    ". up ."
+    "left down right";
+}
+
+.mobile-btn-up { grid-area: up; }
+.mobile-btn-left { grid-area: left; }
+.mobile-btn-down { grid-area: down; }
+.mobile-btn-right { grid-area: right; }
+
+.mobile-controls-actions {
+  grid-template-columns: repeat(2, 44px);
+}
+
+.mobile-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.24);
+  background: rgba(5, 10, 20, 0.82);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(0,0,0,0.28);
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-btn.is-pressed,
+.mobile-btn:active {
+  transform: translateY(1px) scale(0.98);
+  background: rgba(35, 54, 96, 0.9);
+}
+
+.mobile-btn-icon {
+  width: 18px;
+  height: 18px;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+@media (max-width: 920px) and (pointer: coarse) {
+  .mobile-controls {
+    display: flex;
+  }
+}

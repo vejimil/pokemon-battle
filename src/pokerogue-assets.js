@@ -2,6 +2,7 @@ const POKEROGUE_ASSET_PATHS = Object.freeze({
   currentItems: ['./assets/items'],
   pokerogueItems: ['./assets/pokerogue/items', './assets/pokerogue/images/items'],
   ui: ['./assets/pokerogue/ui', './assets/pokerogue/ui/misc', './assets/pokerogue/images/ui', './assets/pokerogue/images/ui/misc'],
+  buttons: ['./assets/pokerogue/buttons'],
   effects: ['./assets/pokerogue/effects', './assets/pokerogue/images/effects'],
   arenas: ['./assets/pokerogue/arenas', './assets/pokerogue/images/arenas'],
   animData: ['./assets/pokerogue/anim-data', './assets/pokerogue/battle-anims', './assets/pokerogue/images/battle-anims', './assets/pokerogue/images/battle_anims'],
@@ -153,6 +154,32 @@ async function fetchJson(url) {
 
 function normalizeAtlasData(data, atlasUrl) {
   if (!data) return null;
+  if (Array.isArray(data.frames)) {
+    const frames = {};
+    for (const frameData of data.frames) {
+      const filename = String(frameData?.filename || '').trim();
+      if (!filename) continue;
+      const frame = frameData?.frame || frameData;
+      const normalized = {
+        x: Number(frame?.x || 0),
+        y: Number(frame?.y || 0),
+        w: Number(frame?.w || 0),
+        h: Number(frame?.h || 0),
+      };
+      frames[filename] = normalized;
+      const stem = filename.replace(/\.[a-z0-9]+$/i, '');
+      if (stem && !frames[stem]) frames[stem] = normalized;
+    }
+    return {
+      image: data?.meta?.image || '',
+      size: {
+        w: Number(data?.meta?.size?.w || 0),
+        h: Number(data?.meta?.size?.h || 0),
+      },
+      frames,
+      atlasUrl,
+    };
+  }
   if (data.frames && !Array.isArray(data.frames)) {
     const frames = Object.fromEntries(Object.entries(data.frames).map(([name, frameData]) => {
       const frame = frameData?.frame || frameData;
@@ -200,7 +227,8 @@ async function loadAtlas(atlasName = '') {
   if (!clean) return null;
   if (ATLAS_CACHE.has(clean)) return ATLAS_CACHE.get(clean);
   const promise = (async () => {
-    for (const base of POKEROGUE_ASSET_PATHS.ui) {
+    const atlasBases = unique([...POKEROGUE_ASSET_PATHS.ui, ...POKEROGUE_ASSET_PATHS.buttons]);
+    for (const base of atlasBases) {
       const atlasUrl = `${base}/${clean}.json`;
       const data = await fetchJson(atlasUrl);
       const normalized = normalizeAtlasData(data, atlasUrl);

@@ -501,6 +501,16 @@ function parseDetailsSpeciesForEvent(token) {
   return String(token || '').split(',')[0].trim();
 }
 
+function normalizeProtocolEffectId(raw = '') {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  const normalized = text
+    .replace(/^\[from\]\s*/i, '')
+    .replace(/^(?:move|ability|item)\s*:\s*/i, '')
+    .trim();
+  return toId(normalized);
+}
+
 function parseFromTagForEvent(parts = [], startIndex = 4) {
   const fromTag = parts
     .slice(startIndex)
@@ -789,25 +799,62 @@ function normalizeEventsFromLine(line, ctx) {
       // Move failed (e.g. Protect already used, no valid target, etc.)
       // parts[2] may be empty (field-level fail) or an ident (pokemon-level fail)
       const id = parts[2] ? parseIdentForEvent(parts[2]) : null;
-      return [{type: 'move_fail', turn: ctx.turn, seq: ctx.seq++, actor: id ? {side: id.side, slot: id.slot} : null, reason: parts[3] || ''}];
+      return [{
+        type: 'move_fail',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        actor: id ? {side: id.side, slot: id.slot} : null,
+        reason: parts[3] || '',
+        reasonId: normalizeProtocolEffectId(parts[3] || ''),
+      }];
     }
 
     case '-activate': {
       const id = parseIdentForEvent(parts[2]);
-      return [{type: 'effect_activate', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, effect: parts[3] || ''}];
+      const effect = parts[3] || '';
+      return [{
+        type: 'effect_activate',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        target: {side: id.side, slot: id.slot},
+        effect,
+        effectId: normalizeProtocolEffectId(effect),
+      }];
     }
     case '-singleturn': {
       const id = parseIdentForEvent(parts[2]);
-      return [{type: 'single_turn_effect', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, effect: parts[3] || ''}];
+      const effect = parts[3] || '';
+      return [{
+        type: 'single_turn_effect',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        target: {side: id.side, slot: id.slot},
+        effect,
+        effectId: normalizeProtocolEffectId(effect),
+      }];
     }
 
     case 'miss': {
-      const id = parseIdentForEvent(parts[2]);
-      return [{type: 'miss', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}}];
+      const actor = parseIdentForEvent(parts[2]);
+      const target = parts[3] ? parseIdentForEvent(parts[3]) : null;
+      return [{
+        type: 'miss',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        actor: {side: actor.side, slot: actor.slot},
+        target: target ? {side: target.side, slot: target.slot} : null,
+      }];
     }
     case '-miss': {
-      const id = parseIdentForEvent(parts[2]);
-      return [{type: 'miss', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}}];
+      const actor = parseIdentForEvent(parts[2]);
+      const target = parts[3] ? parseIdentForEvent(parts[3]) : null;
+      return [{
+        type: 'miss',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        actor: {side: actor.side, slot: actor.slot},
+        target: target ? {side: target.side, slot: target.slot} : null,
+      }];
     }
     case 'cant': {
       const id = parseIdentForEvent(parts[2]);

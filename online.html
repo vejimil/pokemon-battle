@@ -62,6 +62,19 @@
                 <input id="online-room-name" type="text" maxlength="24" placeholder="Player" />
               </label>
             </div>
+            <div class="name-row" style="margin-top:8px;">
+              <label>
+                <span data-i18n="online_team_size_label">배틀 마리 수</span>
+                <select id="online-room-team-size">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3" selected>3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                </select>
+              </label>
+            </div>
             <div id="online-room-actions" hidden>
               <div class="inline-actions" style="margin-top:8px;">
                 <button id="online-create-room-btn" class="ghost-btn" type="button">방 만들기</button>
@@ -327,6 +340,20 @@
               <div id="battle-message-window" class="pkbattle-window pkbattle-message-window" aria-live="polite"></div>
               <div id="battle-state-window" class="pkbattle-window pkbattle-state-window" aria-live="polite"></div>
             </section>
+            <div id="mobile-controls" class="mobile-controls" hidden>
+              <div class="mobile-controls-dpad">
+                <button type="button" class="mobile-btn mobile-btn-up" data-mobile-btn="up"><span class="mobile-btn-icon" aria-hidden="true"></span></button>
+                <button type="button" class="mobile-btn mobile-btn-left" data-mobile-btn="left"><span class="mobile-btn-icon" aria-hidden="true"></span></button>
+                <button type="button" class="mobile-btn mobile-btn-down" data-mobile-btn="down"><span class="mobile-btn-icon" aria-hidden="true"></span></button>
+                <button type="button" class="mobile-btn mobile-btn-right" data-mobile-btn="right"><span class="mobile-btn-icon" aria-hidden="true"></span></button>
+              </div>
+              <div class="mobile-controls-actions">
+                <button type="button" class="mobile-btn" data-mobile-btn="action"><span class="mobile-btn-icon" aria-hidden="true"></span></button>
+                <button type="button" class="mobile-btn" data-mobile-btn="cancel"><span class="mobile-btn-icon" aria-hidden="true"></span></button>
+                <button type="button" class="mobile-btn" data-mobile-btn="info"><span class="mobile-btn-icon" aria-hidden="true"></span></button>
+                <button type="button" class="mobile-btn" data-mobile-btn="menu"><span class="mobile-btn-icon" aria-hidden="true"></span></button>
+              </div>
+            </div>
 
             <details class="pkbattle-debug">
               <summary>Debug</summary>

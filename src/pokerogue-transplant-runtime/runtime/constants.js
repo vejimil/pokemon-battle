@@ -58,6 +58,7 @@ export const UI_ASSETS = Object.freeze({
   iconOwned: { key: 'pkb-ui-icon-owned', url: './assets/pokerogue/ui/icon_owned.png' },
   abilityBarLeft: { key: 'pkb-ui-ability-bar-left', url: './assets/pokerogue/ui/ability_bar_left.png' },
   abilityBarRight: { key: 'pkb-ui-ability-bar-right', url: './assets/pokerogue/ui/ability_bar_right.png' },
+  effectBattleStats: { key: 'pkb-effect-battle-stats', image: './assets/pokerogue/effects/battle_stats.png', json: './assets/pokerogue/effects/battle_stats.json' },
   effectTera: { key: 'pkb-effect-tera', url: './assets/pokerogue/effects/tera.png' },
   effectTeraSparkle: { key: 'pkb-effect-tera-sparkle', json: './assets/pokerogue/effects/tera_sparkle.json', path: './assets/pokerogue/effects/' },
   arenaBg: { key: 'pkb-arena-bg', url: './assets/pokerogue/arenas/grass_bg.png' },
