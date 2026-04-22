@@ -138,9 +138,12 @@ export class PkbBattleUiAdapter {
     const entries = this.getCommandEntries();
     const teraToggle = this.getTeraToggle();
     const activeCommandIndex = findFlaggedIndex(entries, ['active']);
-    let cursor = Number.isInteger(previousCursor) ? previousCursor : null;
+    const hasExplicitCursor = Number.isInteger(previousCursor);
+    let cursor = hasExplicitCursor ? previousCursor : null;
 
-    if (activeCommandIndex >= 0 && cursor !== Command.TERA) {
+    // Only use `active` as an initial seed. During directional navigation we
+    // must preserve the explicit cursor passed from the UI handler.
+    if (!hasExplicitCursor && activeCommandIndex >= 0 && cursor !== Command.TERA) {
       cursor = activeCommandIndex;
     }
 

@@ -63,6 +63,32 @@ const STAT_LABELS_EN = {
   eva: 'Evasion',
 };
 
+const STAT_ID_ALIASES = Object.freeze({
+  attack: 'atk',
+  atk: 'atk',
+  defense: 'def',
+  def: 'def',
+  specialattack: 'spa',
+  spattack: 'spa',
+  spatk: 'spa',
+  spa: 'spa',
+  specialdefense: 'spd',
+  spdefense: 'spd',
+  spdef: 'spd',
+  spd: 'spd',
+  speed: 'spe',
+  spe: 'spe',
+  accuracy: 'acc',
+  acc: 'acc',
+  evasion: 'eva',
+  eva: 'eva',
+});
+
+function normalizeStatId(raw = '') {
+  const key = toId(raw);
+  return STAT_ID_ALIASES[key] || key;
+}
+
 const WEATHER_LABELS = {
   raindance:     '비가 내리기 시작했다!',
   rain:          '비가 내리기 시작했다!',
@@ -353,6 +379,8 @@ export class BattleTimelineExecutor {
       case 'raw_event':
       case 'engine_error':
       case 'effect_activate':
+      case 'effect_start':
+      case 'effect_end':
       case 'single_turn_effect':
       case 'status_cure':
       case 'callback_event':
@@ -643,6 +671,8 @@ export class BattleTimelineExecutor {
       failed: false,
     };
     if (!actorRef || !Array.isArray(events) || index < 0) return result;
+    const moveId = toId(moveEvent?.move || moveEvent?.animationMove || moveEvent?.baseMove || '');
+    const moveIsProtectLike = this._isProtectLikeEffect(moveId);
     const end = Math.min(events.length, index + 10);
     for (let cursor = index + 1; cursor < end; cursor += 1) {
       const next = events[cursor];
@@ -671,12 +701,16 @@ export class BattleTimelineExecutor {
         break;
       }
       if (next.type === 'move_fail') {
-        if (next.actor && !this._sameSideSlot(next.actor, actorRef)) continue;
+        const failActor = next.actor || null;
+        const actorMatched = failActor ? this._sameSideSlot(failActor, actorRef) : false;
+        const targetMatched = Boolean(failActor && targetRef && this._sameSideSlot(failActor, targetRef));
+        if (failActor && !actorMatched && !targetMatched) continue;
         result.failed = true;
         result.skipAnimation = true;
         break;
       }
       if (next.type === 'effect_activate' || next.type === 'single_turn_effect') {
+        if (moveIsProtectLike) continue;
         const effectId = toId(next.effectId || next.effect || '');
         if (!this._isProtectLikeEffect(effectId)) continue;
         if (targetRef && next.target && !this._sameSideSlot(next.target, targetRef)) continue;
@@ -705,6 +739,13 @@ export class BattleTimelineExecutor {
       { pokemonNameWithAffix: targetNameWithAffix },
       fallback,
     );
+  }
+
+  _substituteSpriteUrlForSide(side) {
+    if (!side) return '';
+    return side === this._playerSide
+      ? './assets/system/pokemon/substitute_back.png'
+      : './assets/system/pokemon/substitute.png';
   }
 
   /** Get the tracked species name for a side+slot, localized for display. */
@@ -1174,6 +1215,11 @@ export class BattleTimelineExecutor {
         const actorNameWithAffix = this._pokemonNameWithAffix(actorName, ev.actor?.side);
         const moveName = this._localizeMoveName(ev.move || '') || ev.move || '';
         const animationMoveName = String(ev.animationMove || ev.baseMove || ev.move || '').trim();
+        const moveId = toId(ev.move || ev.animationMove || ev.baseMove || '');
+        const moveVisual = await this._resolveVisual(ev);
+        const actorSide = ev.actor?.side;
+        const movePresentation = moveVisual?.presentation || {};
+        const yOffset = Number(movePresentation?.spriteYOffset || 0);
         const moveOutcome = this._scanMoveOutcome(context?.events, Number(context?.index) || 0, ev);
         const animationScale = Number.isFinite(Number(ev.animationScale))
           ? Math.max(0.25, Math.min(4, Number(ev.animationScale)))
@@ -1185,9 +1231,23 @@ export class BattleTimelineExecutor {
           { pokemonNameWithAffix: actorNameWithAffix, moveName },
           `${actorName}의 ${moveName}!`,
         ));
+        if (actorSide && !movePresentation?.isSemiInvulnerable) {
+          this._scene()?.setBattlerVisibility?.(actorSide, true, { yOffset });
+        }
         if (moveOutcome.skipAnimation) {
           // Keep a short beat between move line and outcome message when animation is skipped.
-          await this._delay(160);
+          await this._delay(320);
+          if (actorSide && movePresentation?.isSemiInvulnerable) {
+            this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset });
+          }
+          if (actorSide && moveId === 'substitute') {
+            const substituteUrl = this._substituteSpriteUrlForSide(actorSide);
+            if (substituteUrl) {
+              await this._setBattlerSprite(actorSide, substituteUrl, {
+                visible: true,
+              });
+            }
+          }
           break;
         }
         const scene = this._scene();
@@ -1210,6 +1270,17 @@ export class BattleTimelineExecutor {
           // Fallback: SE-only when scene not available.
           await this._playMoveSe(animationMoveName || ev.move);
           await this._delay(280);
+        }
+        if (actorSide && movePresentation?.isSemiInvulnerable) {
+          this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset });
+        }
+        if (actorSide && moveId === 'substitute') {
+          const substituteUrl = this._substituteSpriteUrlForSide(actorSide);
+          if (substituteUrl) {
+            await this._setBattlerSprite(actorSide, substituteUrl, {
+              visible: true,
+            });
+          }
         }
         break;
       }
@@ -1455,11 +1526,11 @@ export class BattleTimelineExecutor {
       case 'boost': {
         const boostName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
         const boostNameWithAffix = this._pokemonNameWithAffix(boostName, ev.target?.side);
-        const boostStatId = toId(ev.stat);
+        const boostStatId = normalizeStatId(ev.stat);
         // BA-22: locale-based stat name; use English map for EN locale
         const boostStatLabel = this._isEnglishLocale()
-          ? (STAT_LABELS_EN[boostStatId] ?? ev.stat)
-          : (STAT_LABELS[boostStatId] ?? ev.stat);
+          ? (STAT_LABELS_EN[boostStatId] ?? STAT_LABELS_EN[toId(ev.stat)] ?? ev.stat)
+          : (STAT_LABELS[boostStatId] ?? STAT_LABELS[toId(ev.stat)] ?? ev.stat);
         const amount = Number(ev.amount) || 1;
         const boostKey = amount >= 3 ? 'statRoseDrastically_one'
           : amount >= 2 ? 'statSharplyRose_one'
@@ -1480,11 +1551,11 @@ export class BattleTimelineExecutor {
       case 'unboost': {
         const unboostName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
         const unboostNameWithAffix = this._pokemonNameWithAffix(unboostName, ev.target?.side);
-        const unboostStatId = toId(ev.stat);
+        const unboostStatId = normalizeStatId(ev.stat);
         // BA-22: locale-based stat name; use English map for EN locale
         const unboostStatLabel = this._isEnglishLocale()
-          ? (STAT_LABELS_EN[unboostStatId] ?? ev.stat)
-          : (STAT_LABELS[unboostStatId] ?? ev.stat);
+          ? (STAT_LABELS_EN[unboostStatId] ?? STAT_LABELS_EN[toId(ev.stat)] ?? ev.stat)
+          : (STAT_LABELS[unboostStatId] ?? STAT_LABELS[toId(ev.stat)] ?? ev.stat);
         const uamount = Number(ev.amount) || 1;
         const unboostKey = uamount >= 3 ? 'statSeverelyFell_one'
           : uamount >= 2 ? 'statHarshlyFell_one'
@@ -1715,6 +1786,53 @@ export class BattleTimelineExecutor {
         const msg = this._effectActivateMessage(ev, 'single_turn');
         if (msg) {
           await this._showMsg(msg, { minMs: 480 });
+        }
+        break;
+      }
+
+      case 'effect_start': {
+        const effectId = toId(ev.effectId || ev.effect || '');
+        if (effectId !== 'substitute') break;
+        const side = ev.target?.side;
+        const slot = ev.target?.slot ?? 0;
+        const substituteName = this._slotName(side, slot);
+        const substituteNameWithAffix = this._pokemonNameWithAffix(substituteName, side);
+        const startMsg = this._isEnglishLocale()
+          ? `${substituteNameWithAffix} put in a substitute!`
+          : `${substituteNameWithAffix}은(는)\n대타출동을 사용했다!`;
+        await this._showMsg(startMsg, { minMs: 520 });
+        const substituteUrl = this._substituteSpriteUrlForSide(side);
+        if (substituteUrl) {
+          await this._setBattlerSprite(side, substituteUrl, {
+            visible: true,
+          });
+        }
+        break;
+      }
+
+      case 'effect_end': {
+        const effectId = toId(ev.effectId || ev.effect || '');
+        if (effectId !== 'substitute') break;
+        const side = ev.target?.side;
+        const slot = ev.target?.slot ?? 0;
+        const substituteName = this._slotName(side, slot);
+        const substituteNameWithAffix = this._pokemonNameWithAffix(substituteName, side);
+        const endMsg = this._isEnglishLocale()
+          ? `${substituteNameWithAffix}'s substitute faded!`
+          : `${substituteNameWithAffix}의\n대타는 사라져버렸다!`;
+        await this._showMsg(endMsg, { minMs: 520 });
+        const visual = await this._resolveVisual(ev);
+        const yOffset = Number(visual?.presentation?.spriteYOffset || 0);
+        if (visual?.spriteUrl && side) {
+          await this._setBattlerSprite(side, visual.spriteUrl, {
+            visible: true,
+            yOffset,
+          });
+        } else if (side) {
+          this._scene()?.setBattlerVisibility?.(side, true, { yOffset: 0 });
+        }
+        if (visual?.infoPatch && visual?.side) {
+          this._applyInfoForSlot(visual.side, visual.slot ?? 0, visual.infoPatch);
         }
         break;
       }

@@ -274,6 +274,17 @@ class OnlineRoomService {
     const loserName = room.players[side]?.name || (side === 'p2' ? 'Player 2' : 'Player 1');
     const prevSnapshot = room.battle.snapshot || {};
     const nextLog = Array.isArray(prevSnapshot.log) ? [...prevSnapshot.log] : [];
+    const previousEvents = Array.isArray(prevSnapshot.events) ? prevSnapshot.events : [];
+    const maxSeq = previousEvents.reduce((current, event) => {
+      const seq = Number(event?.seq);
+      return Number.isFinite(seq) ? Math.max(current, seq) : current;
+    }, 0);
+    const endEvent = {
+      type: 'battle_end',
+      turn: Number(prevSnapshot.turn || 0),
+      seq: maxSeq + 1,
+      winner: winnerName,
+    };
     nextLog.unshift({
       text: `${loserName} 항복. ${winnerName} 승리.`,
       rawText: `${loserName} surrendered. ${winnerName} wins.`,
@@ -283,6 +294,7 @@ class OnlineRoomService {
       ...prevSnapshot,
       winner: winnerName,
       log: nextLog,
+      events: [endEvent],
     };
     room.battle.started = false;
     room.battle.pendingChoices = {p1: '', p2: ''};

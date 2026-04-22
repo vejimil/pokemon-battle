@@ -1,11 +1,11 @@
 # 온라인/배틀 수정사항 분석 및 구현 계획
 
-Last updated: 2026-04-21  
+Last updated: 2026-04-22  
 Target: `/workspaces/pokemon-battle`  
-Status: **분석 완료, 구현 대기**
+Status: **개선 필요 항목 코드 반영 완료, 수동 검증 진행 필요**
 
-이 문서는 사용자 요청 13개 항목(온라인 6 + 배틀 7)에 대한 **현재 코드 동작 분석 + 구현 계획**만 담는다.  
-현재 단계에서는 실제 코드 구현을 하지 않는다.
+이 문서는 사용자 요청 13개 항목(온라인 6 + 배틀 7)에 대한 분석/계획과,  
+2026-04-22 기준 개선 필요 항목 반영 결과를 함께 기록한다.
 
 ---
 
@@ -94,7 +94,7 @@ Status: **분석 완료, 구현 대기**
   - `state.online.battleStarted` + `snapshot.winner`를 함께 판단하는 helper 추가.
   - `renderAll()`, `renderOnlineRoomPanel()`의 안내 문구/버튼 활성 조건 동기화.
 
-### O-2) 항복 즉시 종료 (개선 필요) //항복시 항복한 쪽 화면에서는 즉시 종료되나, 상대쪽에서는 이전 턴 연출이 나왔다가 종료된다. 0-3에 의해 빌더로 돌아가도 간헐적, 반복적으로 해당 연출이 양쪽 화면에서 계속 나온다. 빌더에서 수정하다가도 갑자기 해당 연출이 나온다.
+### O-2) 항복 즉시 종료 (완료) //항복시 항복한 쪽 화면에서는 즉시 종료되나, 상대쪽에서는 이전 턴 연출이 나왔다가 종료된다. 0-3에 의해 빌더로 돌아가도 간헐적, 반복적으로 해당 연출이 양쪽 화면에서 계속 나온다. 빌더에서 수정하다가도 갑자기 해당 연출이 나온다.
 - 목표 동작
   - 항복 버튼 1회 입력 즉시 종료 플로우 진입.
   - 해석 확정: `도망친다(Run)` 선택 후 `항복`을 누르면 즉시 종료 전환으로 처리.
@@ -105,7 +105,7 @@ Status: **분석 완료, 구현 대기**
   - 온라인은 API 응답 즉시 종료 UI 반영(폴링 대기 제거).
   - 서버는 forfeit 시점에 종료 상태 플래그를 명확히 반영(아래 O-3과 연동).
 
-### O-3) 종료 메시지 후 자동 빌더 복귀 (개선 필요) // 위에서 설명
+### O-3) 종료 메시지 후 자동 빌더 복귀 (완료) // 위에서 설명
 - 목표 동작
   - 종료 메시지 표시 -> `3초` 지연 -> 빌더 복귀.
 - 수정 예정
@@ -116,7 +116,7 @@ Status: **분석 완료, 구현 대기**
   - 복귀 시 battle panel 비표시, setup panel 재표시, 온라인 룸 상태 유지.
   - BGM 정리(stop) 포함.
 
-### O-4) 방 생성 시 1~6 팀수 설정 (개선 필요) // 잘 됐는데, 지금처럼 방 만들기 누르기 전에 하지 말고, 방 만들기를 누르면 설정가능하고, 설정하면 방코드랑 방 생성되도록. 그렇게 나오게 해줘. 
+### O-4) 방 생성 시 1~6 팀수 설정 (완료) // 잘 됐는데, 지금처럼 방 만들기 누르기 전에 하지 말고, 방 만들기를 누르면 설정가능하고, 설정하면 방코드랑 방 생성되도록. 그렇게 나오게 해줘. 
 - 목표 동작
   - 온라인 룸 단위로 teamSize(1~6) 설정 가능.
 - 수정 예정
@@ -137,7 +137,7 @@ Status: **분석 완료, 구현 대기**
   - 오디오 컨텍스트 suspended 대응(resume 시도) 추가.
   - 중복 재생 방지(이미 BGM 실행 중이면 재시작하지 않음).
 
-### O-6) 모바일 하단 조작키 추가 (xbox atlas 사용) (개선 필요) // 배틀화면 로딩 중에는 나오나, 정작 로딩 이후에는 나오지 않는다. 그리고 십자 키가 키보드처럼 배치되어 있는데, 게임기처럼 사방면 상하좌우 대칭으로 배치되면 좋겠다.
+### O-6) 모바일 하단 조작키 추가 (xbox atlas 사용) (완료) // 배틀화면 로딩 중에는 나오나, 정작 로딩 이후에는 나오지 않는다. 그리고 십자 키가 키보드처럼 배치되어 있는데, 게임기처럼 사방면 상하좌우 대칭으로 배치되면 좋겠다.
 - 목표 동작
   - 모바일에서 하단 D-pad + ABXY 버튼으로 UI 네비게이션 가능.
 - 수정 예정
@@ -150,7 +150,7 @@ Status: **분석 완료, 구현 대기**
 
 ---
 
-### B-1) 방어/막힘 메시지 출력 (개선 필요) //목표 동작은 달성했으나, 방어류 기술의 연출 자체가 생략되어 버렸다. 방어 기술의 연출은 남겨놓아야 한다.
+### B-1) 방어/막힘 메시지 출력 (완료) //목표 동작은 달성했으나, 방어류 기술의 연출 자체가 생략되어 버렸다. 방어 기술의 연출은 남겨놓아야 한다.
 - 목표 동작
   - Protect 등으로 막힌 경우 명확한 메시지 출력.
 - 수정 예정
@@ -160,7 +160,7 @@ Status: **분석 완료, 구현 대기**
   - effect id(`move: Protect` 등) 정규화 후 메시지 매핑.
   - 필요 시 locale namespace에 `battler-tags` 로드 추가.
 
-### B-2) miss/immune/fail 시 기술 연출 제거 (개선 필요) // 실패시에는 아직 연출이 나오는 듯 하다. 예컨대, 독 상태의 적에게 맹독을 사용하면 실패하는데, 모션이 나온다.
+### B-2) miss/immune/fail 시 기술 연출 제거 (완료) // 실패시에는 아직 연출이 나오는 듯 하다. 예컨대, 독 상태의 적에게 맹독을 사용하면 실패하는데, 모션이 나온다.
 - 목표 동작
   - 해당 케이스는 move animation 스킵, 결과 메시지만 출력.
   - 단, `A의 기술명!` 문구와 결과 문구 사이에는 짧은 지연(리듬감 유지)을 둔다.
@@ -198,7 +198,7 @@ Status: **분석 완료, 구현 대기**
   - `battle.winner` 상태에서는 메시지 창이 `battle.log` 우선 노출하지 않도록 변경.
   - `battle_end` 문구를 locale/안전 fallback으로 정리(숫자/빈 winner 방어).
 
-### B-6) 반잠수/대타 등 스프라이트 상태 반영 (개선 필요) // 기술을 사용한 이후 즉시 스프라이트가 변경돼야한다. 지금은 연출 턴이 끝난 후에 바뀐다. 그리고 대타출동 같은 경우 1) 스프라이트가 아군/적군 모두 30정도 내려가야 할 것 같고, 2) 깨질 때 대타는 사라져버렸다 같은 문구가 나와야 한다.
+### B-6) 반잠수/대타 등 스프라이트 상태 반영 (완료) // 기술을 사용한 이후 즉시 스프라이트가 변경돼야한다. 지금은 연출 턴이 끝난 후에 바뀐다. 그리고 대타출동 같은 경우 1) 스프라이트가 아군/적군 모두 30정도 내려가야 할 것 같고, 2) 깨질 때 대타는 사라져버렸다 같은 문구가 나와야 한다.
 - 목표 동작
   - Dig/Fly/Free Fall 등은 비가시 처리, Substitute는 대체 sprite 처리.
 - 수정 예정
@@ -208,7 +208,7 @@ Status: **분석 완료, 구현 대기**
   - `resolveSpriteUrlForBattleSide` 및 timeline visual resolver에 동일 규칙 적용.
   - Substitute는 `assets/system/pokemon/substitute(_back).png` 우선 적용.
 
-### B-7) 능력 상승/하강 스프라이트 VFX (개선 필요) // 지금은 능력치별로 다르지만, 상승시 atk(빨간색), 하강시 spd(파란색) 에셋을 사용하는 걸로 통일하자. 즉 상승은 능력치 불문 빨간색이 올라가고, 하강은 능력치 불문 파란색이 내려간다. 추가로, 회피율 등은 지금 evasion이렇게 한글 판에서도 영어로 메시지가 나오는데 이를 수정 바람.
+### B-7) 능력 상승/하강 스프라이트 VFX (완료) // 지금은 능력치별로 다르지만, 상승시 atk(빨간색), 하강시 spd(파란색) 에셋을 사용하는 걸로 통일하자. 즉 상승은 능력치 불문 빨간색이 올라가고, 하강은 능력치 불문 파란색이 내려간다. 추가로, 회피율 등은 지금 evasion이렇게 한글 판에서도 영어로 메시지가 나오는데 이를 수정 바람.
 - 목표 동작
   - boost/unboost 메시지+SE 외에 sprite 상승/하강 시각 효과 추가.
   - 확인사항: `battle_stats` 에셋은 `assets/pokerogue/ui/effects`가 아니라 `assets/pokerogue/effects/battle_stats.(json|png)`에 존재함.
@@ -286,3 +286,124 @@ Status: **분석 완료, 구현 대기**
 - 팀수 설정(1~6)은 온라인 싱글 룸 범위에서 적용.
 
 (위 가정으로 구현 진행 가능. 구현 단계에서 충돌되는 요구가 발견되면 즉시 계획에 반영한다.)
+
+---
+
+## 8) 구현 결과 (2026-04-22)
+
+### 온라인
+- 세션 자동복원(디버깅 방해) 차단
+- `src/app.js`의 저장/복원 정책을 변경:
+  - 온라인에서 `roomId/token/side/revision`은 더 이상 localStorage에 저장하지 않음.
+  - `online.html` 재접속 시 온라인 세션은 항상 빈 상태로 시작(자동 재참가/자동 배틀 복원 방지).
+  - 저장 대상은 온라인 비세션 설정값(teamSize) 중심으로 제한.
+
+- O-2/O-3: 항복 후 과거 턴 연출 재재생 문제 수정
+- `server/online-room-service.cjs`의 `forfeitBattle()`에서 종료 시 스냅샷 `events`를 기존 턴 이벤트 재사용 대신 `battle_end` 단일 종료 이벤트로 치환.
+- `src/app.js`의 `applyOnlineRoomState()`에서 스냅샷 채택 조건을 보강:
+  - `state.battle === null`이라는 이유만으로 종료 스냅샷을 매 poll마다 재채택하지 않도록 수정.
+  - 동일 종료 스냅샷 반복 수신 시 타임라인 재생/화면 재점프가 발생하지 않게 처리.
+- 종료 복귀 타이머는 `snapshot.winner`이 있어도 실제 전투 객체(`state.battle`)가 있을 때만 스케줄되도록 제한하여 빌더 복귀 후 반복 타이머 방지.
+
+- O-4: 방 생성 UX를 2단계로 변경
+- `online.html`에 `online-create-config` 블록 추가:
+  - 1단계: `방 만들기` 클릭 시 설정 패널 열기
+  - 2단계: 팀수(1~6) 선택 후 `설정 후 방 만들기`로 실제 방 생성
+- `src/app.js`에 `state.online.createConfigOpen` 상태 추가, Join 입력 UI와 상호 배타 처리.
+- `bindElements()/wireOnlineRoomEvents()/renderOnlineRoomPanel()`을 수정해 버튼 활성 조건, 텍스트, 상태 문구 동기화.
+
+- O-6: 모바일 하단 조작키 표시/배치 수정
+- `styles.css`에서 Phaser 활성 시 `.pkbattle-shell` 전체를 숨기던 규칙을 변경해 `#mobile-controls`는 유지되게 수정.
+- D-pad를 3x3 대칭(상/하/좌/우) 배치로 재구성.
+- `src/app.js`에서 fullscreen 진입/해제 시 `renderMobileControls()`를 즉시 재평가하도록 보강하고, 표시 조건을 fullscreen 상태까지 고려하도록 보강.
+
+### 배틀
+- 스프라이트 복제/잘못된 방향(뒷모습) 노출 추가 안정화
+- 원인:
+  - `timeline move_use`에서 매 기술마다 actor 스프라이트 URL을 강제 재설정하던 경로가
+    교체 기술/스냅샷 시점과 충돌하여 잘못된 몬 또는 방향(front/back)이 조기 반영됨.
+- 조치:
+  - `move_use`에서 일반 스프라이트 URL 강제 교체를 제거.
+  - `move_use`는 가시성(반잠수 on/off)과 대타출동 전용 치환만 처리하도록 축소.
+  - `effect_end(substitute)`에서 visual 해석 실패 시에도 숨김 처리하지 않고 기본 가시화로 안전 처리.
+
+- B-1: Protect 계열 기술의 "사용 연출" 유지
+- `src/battle-presentation/timeline.js`의 move outcome scan에서, 현재 사용 중인 기술 자체가 Protect 계열이면 보호막 블록 이벤트(`effect_activate/single_turn_effect`)를 애니메이션 스킵 근거로 사용하지 않도록 수정.
+
+- B-2: fail 케이스 연출 스킵 보강
+- `move_fail` 판정에서 실패 주체가 공격자가 아닌 대상 슬롯으로 들어오는 프로토콜 케이스(예: 독 상태 대상에게 맹독)도 실패로 인식하도록 스캔 조건 확장.
+- 애니메이션 스킵 시 move 문구 이후 최소 리듬 지연을 320ms로 유지.
+
+- B-6: 반잠수/대타 상태 즉시 반영 + 대타 파괴 문구
+- `server/showdown-engine.cjs`에서 `-start/-end Substitute`를 `effect_start/effect_end` 구조 이벤트로 파싱.
+- `timeline.js`에서:
+  - `effect_start(substitute)` 시 즉시 대타 스프라이트 적용.
+  - `effect_end(substitute)` 시 `"대타는 사라져버렸다"` 메시지 출력 후 원래 스프라이트로 즉시 복귀.
+  - `move_use` 직후 시각 패치 적용(반잠수 상태는 즉시 비가시 처리).
+- `app.js` + `battle-shell-scene.js`에서 대타 스프라이트 y-offset(`+30`) 모델/렌더 파이프라인을 추가 적용.
+
+- B-7: 능력 변화 VFX/메시지 정규화
+- `battle-shell-scene.js`의 `playStatStageEffect()`를 변경:
+  - 상승: `atk` 프레임 고정(빨강)
+  - 하강: `spd` 프레임 고정(파랑)
+- `timeline.js`에서 stat id alias 정규화(`accuracy/evasion/special attack` 등) 추가로 한글 UI에서 영문 stat 노출을 방지.
+
+- B-8: 대타출동 위치 간섭 + 미파괴(체감) 이슈 추가 보정
+- 원인 분석:
+  - `resolveTimelineEventSideSlot()`이 `move_use`를 기본 `target` 기준으로 해석하면서,
+    대타 상태(`spriteYOffset`)가 공격자 쪽 가시성 갱신에 잘못 전이될 수 있었음.
+  - 대타 판정이 `volatile.substitute` 존재 여부까지 포함해 평가되어,
+    `substituteHp`가 0이거나 종료 직전 상태에서도 시각적으로 대타가 유지될 여지가 있었음.
+- 조치:
+  - `src/app.js`:
+    - `resolveTimelineEventSideSlot()`를 이벤트 타입별로 분기하여 `move_use/miss/move_fail`은 `actor` 우선 해석.
+    - 대타 판정을 `Number(volatile.substituteHp) > 0` 기준으로 정규화.
+    - 대타 스프라이트는 수동 yOffset 전달 대신 씬 metrics 경로를 사용하도록 정리.
+  - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`:
+    - `substitute/substitute_back` 전용 metrics(`frontY/backY`, shadow off, anim off) 추가.
+    - 대타 스프라이트도 일반 포켓몬과 동일한 metrics 적용 루트에서 위치 계산.
+  - `src/battle-presentation/timeline.js`:
+    - 대타 스프라이트 교체 시 수동 yOffset 강제 적용 제거(씬 metrics에 위임).
+  - `server/showdown-engine.cjs`:
+    - `mapVolatiles()`에서 `substitute`는 일반 volatile object 복사에서 제외.
+    - `substituteHp`는 `> 0`일 때만 스냅샷에 반영하도록 정규화(`|| 1` 제거).
+
+- B-9: 추가 이슈 대응 (대타출동 잔존 체감 + 모바일 D-pad 미동작)
+- 조치:
+  - `src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js`:
+    - 커맨드 창 커서 로직에서 `active` 플래그를 "초기 시드"로만 사용하도록 수정.
+    - 방향키 입력 시 명시 커서를 보존해 `싸운다/포켓몬/도망친다` D-pad 이동이 실제로 반영되게 수정.
+  - `src/app.js`:
+    - 이전/현재 스냅샷의 `substituteHp` 전이를 비교해 `effect_start/effect_end(substitute)`를 파생 주입하는 보정 로직 추가.
+    - 프로토콜 누락/변형 케이스에서도 대타출동 시작/해제 연출이 스냅샷 상태와 일치하도록 보강.
+  - `server/showdown-engine.cjs`:
+    - `-start/-end` 효과 id 파싱을 `normalizeProtocolEffectId()` 기준으로 통일해 `move: Substitute` 변형 태그도 인식 가능하게 보강.
+
+### 검증
+- 정적 문법 검사:
+  - `node --check src/app.js`
+  - `node --check src/battle-presentation/timeline.js`
+  - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+  - `node --check server/online-room-service.cjs`
+  - `node --check server/showdown-engine.cjs`
+- 회귀 스크립트:
+  - `npm run verify:stage22` 통과 (Overall: PASS)
+  - 대타출동 재현 스크립트(로컬 실행):
+    - 대타 생성 후 강공격 턴에서 `effect_end: substitute` 이벤트 확인
+    - 파괴 후 `volatile.substituteHp` 미존재 확인
+  - 온라인 룸 서비스 재현:
+    - 대타 생성 후 반복 타격에서 `substituteHp` 감소 확인
+    - 파괴 턴에서 `effect_end: substitute` + `substituteHp` 제거 확인
+
+---
+
+## 9) 오늘 추가 정리 (2026-04-22)
+
+- 사용자 피드백 기준으로 B-9까지 반영 완료 상태를 문서화.
+- 모바일 커맨드 창 D-pad 이동 불가 이슈와 대타출동 잔존 체감 이슈의 원인/조치/검증 결과를 최신화.
+
+## 10) 다음 작업 (구현 보류)
+
+- 대타출동 해제 타이밍 연출 정밀화:
+  - **대타출동이 사라지는 순간, 원래 포켓몬 스프라이트로 즉시 교대되도록** 타임라인/씬 교체 타이밍을 동일 tick(프레임) 기준으로 재정렬.
+  - 현재 동작 대비 체감 지연(메시지 표시 후 복귀처럼 보이는 구간) 여부를 수동 테스트 케이스로 분리해 검증 항목에 추가.

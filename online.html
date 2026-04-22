@@ -62,23 +62,29 @@
                 <input id="online-room-name" type="text" maxlength="24" placeholder="Player" />
               </label>
             </div>
-            <div class="name-row" style="margin-top:8px;">
-              <label>
-                <span data-i18n="online_team_size_label">배틀 마리 수</span>
-                <select id="online-room-team-size">
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3" selected>3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                </select>
-              </label>
-            </div>
             <div id="online-room-actions" hidden>
               <div class="inline-actions" style="margin-top:8px;">
                 <button id="online-create-room-btn" class="ghost-btn" type="button">방 만들기</button>
                 <button id="online-open-join-btn" class="ghost-btn" type="button">방 참가</button>
+              </div>
+              <div id="online-create-config" hidden>
+                <div class="name-row" style="margin-top:8px;">
+                  <label>
+                    <span data-i18n="online_team_size_label">배틀 마리 수</span>
+                    <select id="online-room-team-size">
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3" selected>3</option>
+                      <option value="4">4</option>
+                      <option value="5">5</option>
+                      <option value="6">6</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="inline-actions" style="margin-top:8px;">
+                  <button id="online-create-confirm-btn" class="ghost-btn" type="button">설정 후 방 만들기</button>
+                  <button id="online-create-cancel-btn" class="ghost-btn" type="button">취소</button>
+                </div>
               </div>
               <div id="online-join-fields" hidden>
                 <div class="name-row" style="margin-top:8px;">

@@ -610,7 +610,18 @@ function normalizeEventsFromLine(line, ctx) {
 
     case '-start':
     case '-end': {
-      const effectId = toId(parts[3]);
+      const effectId = normalizeProtocolEffectId(parts[3] || '');
+      if (effectId === 'substitute') {
+        const id = parseIdentForEvent(parts[2]);
+        return [{
+          type: tag === '-start' ? 'effect_start' : 'effect_end',
+          turn: ctx.turn,
+          seq: ctx.seq++,
+          target: {side: id.side, slot: id.slot},
+          effect: parts[3] || '',
+          effectId,
+        }];
+      }
       if (effectId !== 'dynamax') {
         return [{type: 'raw_event', turn: ctx.turn, seq: ctx.seq++, tag, raw: line}];
       }
@@ -947,6 +958,7 @@ function normalizeEventsFromLine(line, ctx) {
 function mapVolatiles(volatiles = {}) {
   const out = {};
   for (const [key, value] of Object.entries(volatiles || {})) {
+    if (key === 'substitute') continue;
     if (!value || typeof value !== 'object') {
       out[key] = true;
       continue;
@@ -959,7 +971,12 @@ function mapVolatiles(volatiles = {}) {
     if (value.sourceSlot) out[key].sourceSlot = value.sourceSlot;
   }
   if (volatiles.protect) out.protect = {turns: volatiles.protect.duration || 1};
-  if (volatiles.substitute) out.substituteHp = volatiles.substitute.hp || 1;
+  if (volatiles.substitute) {
+    const substituteHp = Number(volatiles.substitute.hp || 0);
+    if (Number.isFinite(substituteHp) && substituteHp > 0) {
+      out.substituteHp = substituteHp;
+    }
+  }
   if (volatiles.confusion) out.confusionTurns = volatiles.confusion.duration || 1;
   if (volatiles.taunt) out.tauntTurns = volatiles.taunt.duration || 1;
   if (volatiles.encore) out.encoreTurns = volatiles.encore.duration || 1;

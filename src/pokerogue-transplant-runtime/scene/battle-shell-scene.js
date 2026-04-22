@@ -41,6 +41,25 @@ const TERA_TYPE_TINTS = Object.freeze({
   fairy:    0xe888c8,
   stellar:  0xffffff,
 });
+const SUBSTITUTE_SPRITE_METRICS = Object.freeze({
+  frontX: 0,
+  frontY: 30,
+  frontScale: 1,
+  backX: 0,
+  backY: 60,
+  backScale: 1,
+  shadowX: 0,
+  shadowBackY: 0,
+  shadowFrontY: 0,
+  shadowSize: 0,
+  animBack: 0,
+  animFront: 0,
+});
+
+function isSubstituteSpriteId(spriteId = '') {
+  const normalized = String(spriteId || '').trim().toLowerCase();
+  return normalized === 'substitute' || normalized === 'substitute_back';
+}
 
 export function createBattleShellSceneClass(Phaser, env) {
   return class TransplantBattleShellScene extends Phaser.Scene {
@@ -204,6 +223,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         frameTextureKeys: [],
         animMode: 'sheet',
         metricsSnapshot: null,
+        manualYOffset: 0,
         // Shim: party-ui-handler calls mount.dom.setVisible() to hide/show sprites.
         // Shadow follows the same visibility; only shown when a sprite is actually loaded.
         dom: {
@@ -302,14 +322,33 @@ export function createBattleShellSceneClass(Phaser, env) {
       return Number(baseScale || 1) * this._dynamaxScaleMultiplier(mount);
     }
 
+    _normalizeMountYOffset(yOffset = 0) {
+      const normalized = Number(yOffset);
+      if (!Number.isFinite(normalized)) return 0;
+      return Math.round(normalized);
+    }
+
+    _setMountYOffset(mount, yOffset = 0, { apply = true } = {}) {
+      if (!mount) return false;
+      const normalized = this._normalizeMountYOffset(yOffset);
+      if (mount.manualYOffset === normalized) {
+        if (apply && normalized !== 0) this._applyMountMetricsSnapshot(mount);
+        return false;
+      }
+      mount.manualYOffset = normalized;
+      if (apply) this._applyMountMetricsSnapshot(mount);
+      return true;
+    }
+
     _applyMountMetricsSnapshot(mount) {
       const snap = mount?.metricsSnapshot;
       if (!mount?.phaserSprite || !snap) return;
       const baseX = mount.baseX ?? mount.phaserSprite.x;
       const baseY = mount.baseY ?? mount.phaserSprite.y;
       const dmaxYOffset = this._dynamaxBaseYOffset(mount);
+      const manualYOffset = this._normalizeMountYOffset(mount?.manualYOffset || 0);
       const spriteX = baseX + snap.offsetX;
-      const spriteY = baseY + snap.offsetY + dmaxYOffset;
+      const spriteY = baseY + snap.offsetY + dmaxYOffset + manualYOffset;
       mount.phaserSprite
         .setOrigin(0.5, 1)
         .setScale(this._resolveMountScale(mount, snap.sprScale))
@@ -331,7 +370,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         const shadowH = snap.shadowH * scaleMultiplier;
         const shadowBaseline = snap.shadowBaseline * scaleMultiplier;
         const shadowX = baseX + snap.offsetX + snap.shX + SHADOW_GLOBAL_OFFSET.x;
-        const shadowY = baseY + snap.offsetY + snap.shY + SHADOW_GLOBAL_OFFSET.y + dmaxYOffset;
+        const shadowY = baseY + snap.offsetY + snap.shY + SHADOW_GLOBAL_OFFSET.y + dmaxYOffset + manualYOffset;
         const finalShadowY = shadowY - shadowBaseline;
         mount.shadow.setPosition(shadowX, finalShadowY);
         mount.shadow.setSize(shadowW, shadowH);
@@ -343,6 +382,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           offsetX: snap.offsetX,
           offsetY: snap.offsetY,
           dmaxYOffset,
+          manualYOffset,
           shX: snap.shX,
           shY: snap.shY,
           shadowBaseline,
@@ -513,6 +553,13 @@ export function createBattleShellSceneClass(Phaser, env) {
     // Async: returns immediately; sprite appears once the image loads.
     async renderBattlerSprite(mount, spriteModel) {
       const url = spriteModel?.url || '';
+      const hasYOffset = Boolean(
+        spriteModel
+        && Object.prototype.hasOwnProperty.call(spriteModel, 'yOffset')
+      );
+      if (hasYOffset) {
+        this._setMountYOffset(mount, spriteModel?.yOffset, { apply: true });
+      }
       const hasTeraState = Boolean(
         spriteModel
         && (Object.prototype.hasOwnProperty.call(spriteModel, 'teraType')
@@ -592,12 +639,15 @@ export function createBattleShellSceneClass(Phaser, env) {
         // --- Apply PBS metrics (position, scale, shadow, animation speed) ---
         // spriteId is the filename without extension, e.g. "CHARIZARD_1".
         const spriteId = url.split('/').pop().replace(/\.png$/i, '');
-        const metrics  = getMetricsForSprite(spriteId, this.pokemonMetrics);
+        const metrics = isSubstituteSpriteId(spriteId)
+          ? SUBSTITUTE_SPRITE_METRICS
+          : getMetricsForSprite(spriteId, this.pokemonMetrics);
         const isFront  = mount.name === 'enemy';
 
         // Base positions stored by ui.js layout(). Fall back to current position.
         const baseX = mount.baseX ?? mount.phaserSprite.x;
         const baseY = mount.baseY ?? mount.phaserSprite.y;
+        const manualYOffset = this._normalizeMountYOffset(mount?.manualYOffset || 0);
 
         // Sprite offset:
         // - Front sprite: positive pbsY moves sprite DOWN (DBK / RPG Maker y-axis).
@@ -605,7 +655,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         const offsetX = isFront ? (metrics?.frontX ?? 0) : (metrics?.backX ?? 0);
         const offsetY = isFront ? (metrics?.frontY ?? 0) : 0.5 * (metrics?.backY ?? 0);
         const spriteTargetX = baseX + offsetX;
-        const spriteTargetY = baseY + offsetY;
+        const spriteTargetY = baseY + offsetY + manualYOffset;
         const sprScale = isFront
           ? (metrics?.frontScale ?? DBK_DEFAULTS.frontScale)
           : (metrics?.backScale ?? DBK_DEFAULTS.backScale);
@@ -631,7 +681,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         const shX  = metrics?.shadowX ?? 0;
         const shY  = isFront ? (metrics?.shadowFrontY ?? 0) : (metrics?.shadowBackY ?? 0);
         const shadowX = baseX + offsetX + shX;
-        const shadowY = baseY + offsetY + shY;
+        const shadowY = baseY + offsetY + shY + manualYOffset;
         const isPlayerSide = !isFront;
         const rawShadowSize = Number.isFinite(metrics?.shadowSize) ? metrics.shadowSize : 1;
         const showBySide = !isPlayerSide || DBK_DEFAULTS.showPlayerSideShadows;
@@ -669,6 +719,7 @@ export function createBattleShellSceneClass(Phaser, env) {
             baseY,
             offsetX,
             offsetY,
+            manualYOffset,
             shX,
             shY,
             zoomX,
@@ -931,6 +982,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       // Incoming sprite belongs to the next occupant — lift the fainted guard so
       // renderBattlerSprite can stage the new texture normally.
       mount.fainted = false;
+      this._setMountYOffset(mount, 0, { apply: true });
       if (spriteUrl) {
         await this.renderBattlerSprite(mount, { url: spriteUrl });
       }
@@ -956,11 +1008,30 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (spriteUrl) {
         await this.renderBattlerSprite(mount, { url: spriteUrl });
       }
+      if (Object.prototype.hasOwnProperty.call(options || {}, 'yOffset')) {
+        this._setMountYOffset(mount, options.yOffset, { apply: true });
+      }
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active) return;
       const shouldShow = options?.visible !== false;
       spr.setAlpha(1);
       spr.setVisible(shouldShow);
+      if (mount?.shadow) {
+        mount.shadow.setVisible(Boolean(shouldShow && mount.shadowVisibleByMetrics));
+      }
+      this._syncMountTeraFx(mount, 0);
+    }
+
+    setBattlerVisibility(side, visible = true, options = {}) {
+      const mount = this._mountForBattleSide(side);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active) return;
+      if (Object.prototype.hasOwnProperty.call(options || {}, 'yOffset')) {
+        this._setMountYOffset(mount, options.yOffset, { apply: true });
+      }
+      const shouldShow = visible !== false;
+      spr.setVisible(shouldShow);
+      spr.setAlpha(1);
       if (mount?.shadow) {
         mount.shadow.setVisible(Boolean(shouldShow && mount.shadowVisibleByMetrics));
       }
@@ -1703,17 +1774,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (!textureExists(this, atlasKey)) return;
 
       const rising = options?.rising !== false;
-      const statId = String(options?.stat || '').toLowerCase().trim();
-      const frameByStat = Object.freeze({
-        atk: 'atk',
-        def: 'def',
-        spa: 'spatk',
-        spd: 'spdef',
-        spe: 'spd',
-        acc: 'acc',
-        eva: 'eva',
-      });
-      const frame = frameByStat[statId] || 'mix';
+      const frame = rising ? 'atk' : 'spd';
       if (!textureExists(this, atlasKey, frame)) return;
 
       const tileWidth = Math.max(44, Math.round(spr.displayWidth * 1.22));

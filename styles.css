@@ -3261,7 +3261,11 @@ body.hide-builder-warning-box .warning-box {
 
 /* Phaser battle migration */
 .battle-panel.is-phaser-active .pkbattle-shell {
-  display: none;
+  display: grid;
+}
+
+.battle-panel.is-phaser-active .pkbattle-shell > :not(#mobile-controls) {
+  display: none !important;
 }
 
 .pkbattle-phaser-root {
@@ -3418,9 +3422,11 @@ body.hide-builder-warning-box .warning-box {
 
 .mobile-controls-dpad {
   grid-template-columns: repeat(3, 44px);
+  grid-template-rows: repeat(3, 44px);
   grid-template-areas:
     ". up ."
-    "left down right";
+    "left . right"
+    ". down .";
 }
 
 .mobile-btn-up { grid-area: up; }

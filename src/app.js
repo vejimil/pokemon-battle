@@ -1262,6 +1262,7 @@ const state = {
     side: '',
     joined: {p1: false, p2: false},
     joinInputOpen: false,
+    createConfigOpen: false,
     revision: 0,
     connected: false,
     syncingBuilder: false,
@@ -1345,16 +1346,25 @@ function clearTimelineSpriteOverrides() {
 
 function resolveTimelineEventSideSlot(ev) {
   if (!ev) return null;
+  const normalizeSideSlot = (side, slot = 0) => ({
+    side,
+    slot: Number.isInteger(slot) ? slot : 0,
+  });
   if (ev.type === 'switch_in') {
-    return {
-      side: ev.side,
-      slot: Number.isInteger(ev.slot) ? ev.slot : 0,
-    };
+    return normalizeSideSlot(ev.side, ev.slot);
   }
-  return {
-    side: ev?.target?.side,
-    slot: Number.isInteger(ev?.target?.slot) ? ev.target.slot : 0,
-  };
+  // move_use/miss/move_fail visuals should track the acting battler, not target.
+  if (ev.type === 'move_use' || ev.type === 'miss' || ev.type === 'move_fail') {
+    if (ev?.actor?.side) return normalizeSideSlot(ev.actor.side, ev.actor.slot);
+    if (ev?.target?.side) return normalizeSideSlot(ev.target.side, ev.target.slot);
+  }
+  if (ev?.target?.side) {
+    return normalizeSideSlot(ev.target.side, ev.target.slot);
+  }
+  if (ev?.side) {
+    return normalizeSideSlot(ev.side, ev.slot);
+  }
+  return null;
 }
 
 function resolveTimelineEventMon(ev, battle = state.battle, { fallbackSpecies = '' } = {}) {
@@ -1522,13 +1532,96 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
       uiMode: localUiMode,
     })
     : null;
+  const volatile = mon?.volatile && typeof mon.volatile === 'object' ? mon.volatile : {};
+  const hasSubstitute = Number(volatile.substituteHp || 0) > 0;
+  const isSemiInvulnerable = ['dig', 'dive', 'fly', 'bounce', 'phantomforce', 'shadowforce', 'skydrop', 'freefall']
+    .some(key => Boolean(volatile[key]));
   return {
     side,
     slot: sideSlot.slot,
     spriteUrl,
     infoPatch: Object.keys(infoPatch).length ? infoPatch : null,
     formChangePresentation,
+    presentation: {
+      hasSubstitute,
+      isSemiInvulnerable,
+      spriteYOffset: 0,
+    },
   };
+}
+
+function getBattleLikeSubstituteHpForSlot(battleLike, sideId, slot = 0) {
+  const sideIndex = sideId === 'p2' ? 1 : 0;
+  const side = battleLike?.players?.[sideIndex];
+  if (!side) return 0;
+  const activeSlot = Array.isArray(side.active) ? side.active[slot] : null;
+  const mon = Number.isInteger(activeSlot) && activeSlot >= 0 ? side.team?.[activeSlot] : null;
+  return Number(mon?.volatile?.substituteHp || 0);
+}
+
+function hasSubstituteBoundaryEvent(events = [], eventType, sideId, slot = 0) {
+  return events.some(ev => (
+    ev?.type === eventType
+    && toId(ev?.effectId || ev?.effect || '') === 'substitute'
+    && ev?.target?.side === sideId
+    && Number(ev?.target?.slot ?? 0) === Number(slot)
+  ));
+}
+
+// Some protocol variants can miss explicit -start/-end substitute lines.
+// Derive boundary events from snapshot volatile transitions so timeline visuals
+// and messages remain consistent with authoritative snapshot state.
+function injectDerivedSubstituteBoundaryEvents(nextSnapshot = null, previousBattle = null) {
+  if (!nextSnapshot?.players || !previousBattle?.players) return nextSnapshot;
+  const baseEvents = Array.isArray(nextSnapshot.events) ? [...nextSnapshot.events] : [];
+  let maxSeq = baseEvents.reduce((acc, ev) => {
+    const seq = Number(ev?.seq);
+    return Number.isFinite(seq) ? Math.max(acc, seq) : acc;
+  }, 0);
+  let changed = false;
+  const turn = Number(nextSnapshot?.turn || 0);
+
+  ['p1', 'p2'].forEach(sideId => {
+    const sideIndex = sideId === 'p2' ? 1 : 0;
+    const prevSide = previousBattle?.players?.[sideIndex];
+    const nextSide = nextSnapshot?.players?.[sideIndex];
+    const slotCount = Math.max(
+      Array.isArray(prevSide?.active) ? prevSide.active.length : 0,
+      Array.isArray(nextSide?.active) ? nextSide.active.length : 0,
+      1,
+    );
+    for (let slot = 0; slot < slotCount; slot += 1) {
+      const prevHp = getBattleLikeSubstituteHpForSlot(previousBattle, sideId, slot);
+      const nextHp = getBattleLikeSubstituteHpForSlot(nextSnapshot, sideId, slot);
+      if (prevHp <= 0 && nextHp > 0 && !hasSubstituteBoundaryEvent(baseEvents, 'effect_start', sideId, slot)) {
+        baseEvents.push({
+          type: 'effect_start',
+          turn,
+          seq: ++maxSeq,
+          target: { side: sideId, slot },
+          effect: 'Substitute',
+          effectId: 'substitute',
+          derived: true,
+        });
+        changed = true;
+      }
+      if (prevHp > 0 && nextHp <= 0 && !hasSubstituteBoundaryEvent(baseEvents, 'effect_end', sideId, slot)) {
+        baseEvents.push({
+          type: 'effect_end',
+          turn,
+          seq: ++maxSeq,
+          target: { side: sideId, slot },
+          effect: 'Substitute',
+          effectId: 'substitute',
+          derived: true,
+        });
+        changed = true;
+      }
+    }
+  });
+
+  if (changed) nextSnapshot.events = baseEvents;
+  return nextSnapshot;
 }
 
 function collectTimelineInitialSlotInfo(battle = state.battle) {
@@ -1787,6 +1880,7 @@ function renderOnlineRoomPanel() {
 
   const ko = state.language === 'ko';
   const joined = isOnlineRoomJoined();
+  if (joined && state.online.createConfigOpen) state.online.createConfigOpen = false;
   const localSide = state.online.side || 'p1';
   const localSideReady = joined ? Boolean(state.online.ready?.[localSide]) : false;
   const bothPlayersJoined = hasOnlineBothPlayersJoined();
@@ -1817,25 +1911,40 @@ function renderOnlineRoomPanel() {
   const joinInputOpen = UI_TUNING.online.showRoomCodeOnlyOnJoin
     ? Boolean(state.online.joinInputOpen && !joined)
     : Boolean(!joined);
+  const createConfigOpen = Boolean(canCreate && state.online.createConfigOpen && !joinInputOpen);
 
   if (els.onlineRoomActions) {
     els.onlineRoomActions.hidden = !hasName || joined;
+  }
+  if (els.onlineCreateConfig) {
+    els.onlineCreateConfig.hidden = !createConfigOpen;
   }
   if (els.onlineJoinFields) {
     els.onlineJoinFields.hidden = !joinInputOpen;
   }
   if (els.onlineOpenJoinBtn) {
     els.onlineOpenJoinBtn.hidden = !UI_TUNING.online.showRoomCodeOnlyOnJoin;
-    els.onlineOpenJoinBtn.disabled = !canCreate || state.online.syncingBuilder;
+    els.onlineOpenJoinBtn.disabled = !canCreate || state.online.syncingBuilder || createConfigOpen;
     els.onlineOpenJoinBtn.textContent = joinInputOpen
       ? lang('방 참가 닫기', 'Hide Join')
       : lang('방 참가', 'Join Room');
   }
   if (els.onlineCreateRoomBtn) {
     els.onlineCreateRoomBtn.disabled = !canCreate || state.online.syncingBuilder;
+    els.onlineCreateRoomBtn.textContent = createConfigOpen
+      ? lang('설정 닫기', 'Hide Setup')
+      : lang('방 만들기', 'Create Room');
+  }
+  if (els.onlineCreateConfirmBtn) {
+    els.onlineCreateConfirmBtn.disabled = !createConfigOpen || state.online.syncingBuilder;
+    els.onlineCreateConfirmBtn.textContent = lang('설정 후 방 만들기', 'Create with Settings');
+  }
+  if (els.onlineCreateCancelBtn) {
+    els.onlineCreateCancelBtn.disabled = !createConfigOpen || state.online.syncingBuilder;
+    els.onlineCreateCancelBtn.textContent = lang('취소', 'Cancel');
   }
   if (els.onlineJoinRoomBtn) {
-    const canJoinByCode = hasName && !joined && joinInputOpen;
+    const canJoinByCode = hasName && !joined && joinInputOpen && !createConfigOpen;
     els.onlineJoinRoomBtn.disabled = !canJoinByCode || !roomInputValue || state.online.syncingBuilder;
   }
   if (els.onlineSyncBuilderBtn) els.onlineSyncBuilderBtn.disabled = !joined || state.online.syncingBuilder;
@@ -1860,9 +1969,11 @@ function renderOnlineRoomPanel() {
     if (!joined) {
       lines.push(
         hasName
-          ? (joinInputOpen
+          ? (createConfigOpen
+            ? lang('배틀 마리 수를 정한 뒤 방 만들기를 완료하세요.', 'Pick team size, then confirm room creation.')
+            : joinInputOpen
             ? lang('방 코드를 입력한 뒤 참가하세요.', 'Enter the room code and join.')
-            : lang('방을 만들거나 방 참가를 눌러 코드 입력창을 여세요.', 'Create a room or click Join Room to open the code field.'))
+            : lang('방 만들기를 눌러 설정 후 생성하거나, 방 참가를 눌러 코드 입력창을 여세요.', 'Click Create Room to configure and create, or Join Room to open the code field.'))
           : lang('이름을 입력하면 방 만들기/참가 버튼이 열립니다.', 'Enter your name to unlock room actions.')
       );
     } else if (!bothPlayersJoined) {
@@ -1993,7 +2104,9 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   const revisionChanged = nextRevision !== previousRevision;
   const p1Joined = Boolean(roomState.players?.p1?.joined);
   const p2Joined = Boolean(roomState.players?.p2?.joined);
-  const snapshot = roomState.battle?.snapshot || null;
+  const previousBattleRef = state.battle;
+  let snapshot = roomState.battle?.snapshot || null;
+  snapshot = injectDerivedSubstituteBoundaryEvents(snapshot, previousBattleRef);
   const nextOnlineTeamSize = normalizeOnlineTeamSize(
     roomState.settings?.teamSize,
     state.online?.teamSize || ONLINE_TEAM_SIZE_DEFAULT
@@ -2007,7 +2120,10 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
 
   state.online.revision = nextRevision;
   state.online.joined = {p1: p1Joined, p2: p2Joined};
-  if (isOnlineRoomJoined()) state.online.joinInputOpen = false;
+  if (isOnlineRoomJoined()) {
+    state.online.joinInputOpen = false;
+    state.online.createConfigOpen = false;
+  }
   state.online.players = {
     p1: p1Joined
       ? (roomState.players?.p1?.name || state.online.players?.p1 || 'Player 1')
@@ -2030,9 +2146,14 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   if (snapshot) {
     const logHead = String(snapshot.log?.[0]?.rawText || snapshot.log?.[0]?.text || '');
     const signature = `${snapshot.id || ''}|${snapshot.turn || 0}|${snapshot.winner || ''}|${logHead}`;
-    const snapshotChanged = signature !== state.online.lastSnapshotSig || !state.battle;
-    if (snapshotChanged) {
-      const previousBattle = state.battle;
+    const snapshotChanged = signature !== state.online.lastSnapshotSig;
+    const shouldAdoptSnapshot = snapshotChanged && (
+      !snapshot.winner
+      || Boolean(state.battle)
+      || !state.online.lastSnapshotSig
+    );
+    if (shouldAdoptSnapshot) {
+      const previousBattle = previousBattleRef;
       const initialNames = {};
       const initialSlotInfo = collectTimelineInitialSlotInfo(previousBattle);
       if (previousBattle?.players) {
@@ -2088,11 +2209,12 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
         renderBattle();
       }
     } else {
+      if (snapshotChanged) state.online.lastSnapshotSig = signature;
       state.online.lastSnapshotRevision = nextRevision;
     }
   }
 
-  if (snapshot?.winner) {
+  if (snapshot?.winner && state.battle) {
     if (!state.online.returningToBuilder || !state.online.returnToBuilderTimer) {
       scheduleOnlineBattleReturnToBuilder();
     }
@@ -2230,6 +2352,7 @@ function resolveOnlineRoomNameForActions() {
 async function createOnlineRoomFlow() {
   const name = resolveOnlineRoomNameForActions();
   clearOnlineBattleReturnTimer();
+  state.online.createConfigOpen = false;
   state.playerNames[0] = name;
   const result = await createOnlineRoom({
     name,
@@ -2256,6 +2379,7 @@ async function joinOnlineRoomFlow() {
   if (!roomId) throw new Error(lang('방 코드를 입력하세요.', 'Room ID is empty.'));
   const name = resolveOnlineRoomNameForActions();
   clearOnlineBattleReturnTimer();
+  state.online.createConfigOpen = false;
   state.playerNames[1] = name;
   const result = await joinOnlineRoom({
     roomId,
@@ -2332,7 +2456,10 @@ function wireOnlineRoomEvents() {
     saveState();
   });
   els.onlineRoomNameInput?.addEventListener('input', () => {
-    if (!els.onlineRoomNameInput.value.trim()) state.online.joinInputOpen = false;
+    if (!els.onlineRoomNameInput.value.trim()) {
+      state.online.joinInputOpen = false;
+      state.online.createConfigOpen = false;
+    }
     renderOnlineRoomPanel();
   });
   els.onlineRoomIdInput?.addEventListener('input', () => {
@@ -2344,6 +2471,7 @@ function wireOnlineRoomEvents() {
   });
   els.onlineOpenJoinBtn?.addEventListener('click', () => {
     if (isOnlineRoomJoined()) return;
+    state.online.createConfigOpen = false;
     state.online.joinInputOpen = !Boolean(state.online.joinInputOpen);
     renderOnlineRoomPanel();
     if (state.online.joinInputOpen) {
@@ -2353,6 +2481,23 @@ function wireOnlineRoomEvents() {
     }
   });
   els.onlineCreateRoomBtn?.addEventListener('click', () => {
+    if (isOnlineRoomJoined()) return;
+    const name = String(els.onlineRoomNameInput?.value || '').trim();
+    if (!name) {
+      state.online.lastError = lang('이름을 먼저 입력하세요.', 'Enter your name first.');
+      renderOnlineRoomPanel();
+      return;
+    }
+    state.online.joinInputOpen = false;
+    state.online.createConfigOpen = !Boolean(state.online.createConfigOpen);
+    renderOnlineRoomPanel();
+  });
+  els.onlineCreateCancelBtn?.addEventListener('click', () => {
+    if (isOnlineRoomJoined()) return;
+    state.online.createConfigOpen = false;
+    renderOnlineRoomPanel();
+  });
+  els.onlineCreateConfirmBtn?.addEventListener('click', () => {
     createOnlineRoomFlow().catch(error => {
       state.online.connected = false;
       state.online.lastError = error?.message || String(error);
@@ -3859,10 +4004,8 @@ function saveState() {
     playerNames: state.playerNames,
     teams: state.teams.map(team => team.map(mon => ({...mon, data: null}))),
     online: isOnlineProfile() ? {
-      roomId: state.online.roomId || '',
-      token: state.online.token || '',
-      side: state.online.side || '',
-      revision: Number(state.online.revision || 0),
+      // Persist only non-session preferences. Room sessions are intentionally
+      // ephemeral to avoid auto-rejoining stale battles during debugging.
       teamSize: normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT),
     } : undefined,
   };
@@ -3879,13 +4022,15 @@ function loadSavedState() {
     state.playerNames = Array.isArray(parsed.playerNames) ? parsed.playerNames.slice(0,2).map(v => v || 'Player') : ['Player 1','Player 2'];
     if (isOnlineProfile()) {
       const online = parsed.online && typeof parsed.online === 'object' ? parsed.online : {};
-      state.online.roomId = normalizeRoomId(online.roomId || '');
-      state.online.token = String(online.token || '');
-      state.online.side = online.side === 'p2' ? 'p2' : (online.side === 'p1' ? 'p1' : '');
+      // Always start online page from a fresh session.
+      state.online.roomId = '';
+      state.online.token = '';
+      state.online.side = '';
       state.online.teamSize = normalizeOnlineTeamSize(online.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
       state.online.joined = {p1: false, p2: false};
       state.online.joinInputOpen = false;
-      state.online.revision = Number(online.revision || 0);
+      state.online.createConfigOpen = false;
+      state.online.revision = 0;
       state.mode = 'singles';
     }
     rebuildTeamSize();
@@ -4569,6 +4714,9 @@ function bindElements() {
     onlineJoinFields: document.getElementById('online-join-fields'),
     onlineRoomIdInput: document.getElementById('online-room-id'),
     onlineCreateRoomBtn: document.getElementById('online-create-room-btn'),
+    onlineCreateConfig: document.getElementById('online-create-config'),
+    onlineCreateConfirmBtn: document.getElementById('online-create-confirm-btn'),
+    onlineCreateCancelBtn: document.getElementById('online-create-cancel-btn'),
     onlineJoinRoomBtn: document.getElementById('online-join-room-btn'),
     onlineSyncBuilderBtn: document.getElementById('online-sync-builder-btn'),
     onlineReadyBtn: document.getElementById('online-ready-btn'),
@@ -5406,6 +5554,7 @@ function wireEditorEvents() {
       state.online.teamSize = ONLINE_TEAM_SIZE_DEFAULT;
       state.online.joined = {p1: false, p2: false};
       state.online.joinInputOpen = false;
+      state.online.createConfigOpen = false;
       state.online.revision = 0;
       state.online.connected = false;
       state.online.syncingBuilder = false;
@@ -7761,16 +7910,46 @@ function buildPhaserMessageWindowModel(battle, player) {
 }
 
 function resolveBattleSpritePresentation(mon, facing = 'front') {
-  if (!mon) return {hidden: true, url: '', spriteId: ''};
+  if (!mon) {
+    return {
+      hidden: true,
+      url: '',
+      spriteId: '',
+      yOffset: 0,
+      presentation: {
+        hasSubstitute: false,
+        isSemiInvulnerable: false,
+      },
+    };
+  }
   const volatile = mon.volatile && typeof mon.volatile === 'object' ? mon.volatile : {};
   const semiInvulnerableVolatiles = ['dig', 'dive', 'fly', 'bounce', 'phantomforce', 'shadowforce', 'skydrop', 'freefall'];
-  if (semiInvulnerableVolatiles.some(key => Boolean(volatile[key]))) {
-    return {hidden: true, url: '', spriteId: ''};
+  const isSemiInvulnerable = semiInvulnerableVolatiles.some(key => Boolean(volatile[key]));
+  if (isSemiInvulnerable) {
+    return {
+      hidden: true,
+      url: '',
+      spriteId: '',
+      yOffset: 0,
+      presentation: {
+        hasSubstitute: false,
+        isSemiInvulnerable: true,
+      },
+    };
   }
   if (Number(mon.hp || 0) <= 0 || mon.fainted) {
-    return {hidden: true, url: '', spriteId: ''};
+    return {
+      hidden: true,
+      url: '',
+      spriteId: '',
+      yOffset: 0,
+      presentation: {
+        hasSubstitute: false,
+        isSemiInvulnerable: false,
+      },
+    };
   }
-  const hasSubstitute = Boolean(volatile.substitute || Number(volatile.substituteHp || 0) > 0);
+  const hasSubstitute = Number(volatile.substituteHp || 0) > 0;
   if (hasSubstitute) {
     return {
       hidden: false,
@@ -7778,6 +7957,11 @@ function resolveBattleSpritePresentation(mon, facing = 'front') {
         ? './assets/system/pokemon/substitute_back.png'
         : './assets/system/pokemon/substitute.png',
       spriteId: '',
+      yOffset: 0,
+      presentation: {
+        hasSubstitute: true,
+        isSemiInvulnerable: false,
+      },
     };
   }
   const spriteId = resolveBattleRenderSpriteId(mon);
@@ -7785,20 +7969,43 @@ function resolveBattleSpritePresentation(mon, facing = 'front') {
     hidden: !spriteId,
     url: spriteId ? spritePath(spriteId, facing, Boolean(mon.shiny)) : '',
     spriteId: spriteId || '',
+    yOffset: 0,
+    presentation: {
+      hasSubstitute: false,
+      isSemiInvulnerable: false,
+    },
   };
 }
 
-function resolveSpriteUrlForBattleSide(sideIndex, perspective, mon, isRenderable) {
+function resolveSpriteModelForBattleSide(sideIndex, perspective, mon, isRenderable) {
   const sideId = sideIndex === 1 ? 'p2' : 'p1';
   const facing = sideIndex === perspective ? 'back' : 'front';
   if (isRenderable && mon) {
     const presentation = resolveBattleSpritePresentation(mon, facing);
-    if (!presentation.hidden && presentation.url) return presentation.url;
-    if (presentation.hidden) return '';
+    if (!presentation.hidden && presentation.url) {
+      return {
+        url: presentation.url,
+        yOffset: Number(presentation.yOffset || 0),
+      };
+    }
+    if (presentation.hidden) {
+      return {
+        url: '',
+        yOffset: Number(presentation.yOffset || 0),
+      };
+    }
   }
   const override = getTimelineSpriteOverride(sideId);
-  if (override?.spriteId) return spritePath(override.spriteId, facing, Boolean(override.shiny));
-  return '';
+  if (override?.spriteId) {
+    return {
+      url: spritePath(override.spriteId, facing, Boolean(override.shiny)),
+      yOffset: 0,
+    };
+  }
+  return {
+    url: '',
+    yOffset: 0,
+  };
 }
 
 function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
@@ -7828,6 +8035,8 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
     ...rawAbilityBar,
     side: perspective === 0 ? rawAbilityBar.side : (rawAbilityBar.side === 'player' ? 'enemy' : 'player'),
   } : rawAbilityBar;
+  const enemySpriteModel = resolveSpriteModelForBattleSide(enemyPlayer, perspective, enemyMon, enemyRenderable);
+  const playerSpriteModel = resolveSpriteModelForBattleSide(allyPlayer, perspective, playerMon, playerRenderable);
   return {
     turn: battle.turn,
     perspective,
@@ -7849,7 +8058,8 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
     enemyInfo,
     playerInfo,
     enemySprite: {
-      url: resolveSpriteUrlForBattleSide(enemyPlayer, perspective, enemyMon, enemyRenderable),
+      url: enemySpriteModel.url,
+      yOffset: enemySpriteModel.yOffset,
       mount: 'enemy',
       terastallized: Boolean(enemyInfo?.teraType),
       teraType: enemyInfo?.teraType || '',
@@ -7857,7 +8067,8 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
       gigantamaxed: Boolean(enemyMon?.gigantamaxed),
     },
     playerSprite: {
-      url: resolveSpriteUrlForBattleSide(allyPlayer, perspective, playerMon, playerRenderable),
+      url: playerSpriteModel.url,
+      yOffset: playerSpriteModel.yOffset,
       mount: 'player',
       terastallized: Boolean(playerInfo?.teraType),
       teraType: playerInfo?.teraType || '',
@@ -7980,7 +8191,14 @@ function renderMobileControlIcons() {
 function renderMobileControls() {
   if (!els.mobileControls) return;
   const coarsePointer = Boolean(window.matchMedia?.('(pointer: coarse)')?.matches || 'ontouchstart' in window);
-  const show = Boolean(coarsePointer && state.battle && !els.battlePanel?.classList.contains('hidden'));
+  const battleVisible = Boolean(
+    state.battle
+    && (
+      !els.battlePanel?.classList.contains('hidden')
+      || els.battlePhaserRoot?.classList.contains('battle-fullscreen')
+    )
+  );
+  const show = Boolean(coarsePointer && battleVisible);
   els.mobileControls.hidden = !show;
   if (show) return;
   mobileInputRepeatTimers.forEach((_timer, key) => stopMobileInputRepeat(key));
@@ -8025,12 +8243,14 @@ function enterBattleFullscreen() {
   els.battlePhaserRoot.classList.add('battle-fullscreen');
   els.battlePhaserRoot.hidden = false;
   if (els.battleExitFullscreenBtn) els.battleExitFullscreenBtn.hidden = false;
+  renderMobileControls();
 }
 
 function exitBattleFullscreen() {
   if (!els.battlePhaserRoot) return;
   els.battlePhaserRoot.classList.remove('battle-fullscreen');
   if (els.battleExitFullscreenBtn) els.battleExitFullscreenBtn.hidden = true;
+  renderMobileControls();
 }
 
 async function syncPhaserBattleRenderer(battle) {
@@ -8345,6 +8565,7 @@ async function resolveEngineTurn(battle = state.battle) {
       delete moveAnimationHints[hintKey];
     });
   }
+  injectDerivedSubstituteBoundaryEvents(nextSnapshot, battle);
   const adoptedBattle = adoptEngineBattleSnapshot(nextSnapshot);
 
   if (FLAGS.battlePresentationV2 && Array.isArray(adoptedBattle?.events) && adoptedBattle.events.length > 0) {
