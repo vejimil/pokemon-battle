@@ -70,6 +70,7 @@ export const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
   'Meganium-Mega': 'Mega Sol',
   'Emboar-Mega': 'Mold Breaker',
   'Feraligatr-Mega': 'Dragonize',
+  'Starmie-Mega': 'Huge Power',
 });
 export const targetHints = {
   'selected-pokemon': 'single-opponent',

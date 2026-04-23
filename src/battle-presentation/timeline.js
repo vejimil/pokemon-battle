@@ -268,8 +268,8 @@ const PROTECT_BLOCK_EFFECT_IDS = new Set([
   'craftyshield',
 ]);
 
-const EVENT_GAP_SHORT_MS = 90;
-const EVENT_GAP_MEDIUM_MS = 130;
+const EVENT_GAP_SHORT_MS = 120;
+const EVENT_GAP_MEDIUM_MS = 170;
 
 export class BattleTimelineExecutor {
   /**
@@ -366,9 +366,9 @@ export class BattleTimelineExecutor {
     const compact = source.replace(/\s+/g, ' ').trim();
     const charCount = compact.length;
     const lineCount = Math.max(1, source.split(/\n|\$/g).filter(Boolean).length);
-    const punctuationWeight = (compact.match(/[!?…。]/g) || []).length * 45;
-    const raw = (charCount * 21) + (lineCount * 100) + punctuationWeight;
-    const bounded = Math.max(240, Math.min(1250, raw || 0));
+    const punctuationWeight = (compact.match(/[!?…。]/g) || []).length * 60;
+    const raw = (charCount * 25) + (lineCount * 125) + punctuationWeight;
+    const bounded = Math.max(340, Math.min(1800, raw || 0));
     return Math.max(minMs, bounded);
   }
 
@@ -527,6 +527,19 @@ export class BattleTimelineExecutor {
     }
     const trainerName = this._isEnglishLocale() ? 'Opponent' : '상대';
     return this._t('battle', 'trainerGo', { trainerName, pokemonName }, `상대의 ${pokemonName} 등장!`);
+  }
+
+  _switchOutMessage(side, species) {
+    const pokemonName = String(species || '???');
+    if (side === this._playerSide) {
+      return this._isEnglishLocale()
+        ? `Come back, ${pokemonName}!`
+        : `들어와! ${pokemonName}!`;
+    }
+    const trainerName = this._isEnglishLocale() ? 'Opponent' : '상대';
+    return this._isEnglishLocale()
+      ? `${trainerName} withdrew ${pokemonName}!`
+      : `${trainerName}는 ${pokemonName}을(를) 불러들였다!`;
   }
 
   _weatherStartMessage(weatherId, rawWeather) {
@@ -1057,8 +1070,9 @@ export class BattleTimelineExecutor {
     }
     this.running = true;
     try {
-      if (this._isInitialSummonSequence(events)) {
-        await this._showMsg(this._battleIntroMessage(), { minMs: 420 });
+      const isInitialSummonSequence = this._isInitialSummonSequence(events);
+      if (isInitialSummonSequence) {
+        await this._showMsg(this._battleIntroMessage(), { minMs: 620 });
       }
       for (let index = 0; index < events.length; index += 1) {
         const ev = events[index];
@@ -1069,6 +1083,7 @@ export class BattleTimelineExecutor {
           index,
           prevEvent: index > 0 ? events[index - 1] : null,
           nextEvent: index + 1 < events.length ? events[index + 1] : null,
+          isInitialSummonSequence,
         });
         if (!this.running) break;
         const gapMs = this._eventGapMs(ev?.type);
@@ -1109,6 +1124,23 @@ export class BattleTimelineExecutor {
       case 'switch_in': {
         const side = ev.side;
         const slot = ev.slot ?? 0;
+        const previousSpecies = this._slotNameRaw(side, slot);
+        const previousDisplaySpecies = this._localizeMonName(previousSpecies) || previousSpecies;
+        const previousInfo = this._slotInfoFor(side, slot) || null;
+        const shouldShowSwitchOut = Boolean(
+          side === this._playerSide
+          && ev.fromBall
+          && !context?.isInitialSummonSequence
+          && previousSpecies
+          && toId(previousSpecies)
+          && toId(previousSpecies) !== toId(ev.species || '')
+          && !previousInfo?.fainted
+        );
+        if (shouldShowSwitchOut) {
+          await this._showMsg(this._switchOutMessage(side, previousDisplaySpecies), { minMs: 520 });
+          this._scene()?.setBattlerVisibility?.(side, false, { yOffset: 0 });
+          await this._delay(120);
+        }
         // _slotNames always stores the raw English name for downstream event matching
         const species = ev.species || this._slotNameRaw(side, slot) || '???';
         this._slotNames.set(this._slotKey(side, slot), species);
@@ -1135,7 +1167,7 @@ export class BattleTimelineExecutor {
 
         // BA-1: Show switch message
         const label = this._switchInMessage(side, displaySpecies);
-        await this._showMsg(label);
+        await this._showMsg(label, { minMs: 520 });
 
         const scene = this._scene();
         if (visual?.spriteUrl) {
@@ -1261,7 +1293,6 @@ export class BattleTimelineExecutor {
         const actorNameWithAffix = this._pokemonNameWithAffix(actorName, ev.actor?.side);
         const moveName = this._localizeMoveName(ev.move || '') || ev.move || '';
         const animationMoveName = String(ev.animationMove || ev.baseMove || ev.move || '').trim();
-        const moveId = toId(ev.move || ev.animationMove || ev.baseMove || '');
         const moveVisual = await this._resolveVisual(ev);
         const actorSide = ev.actor?.side;
         const movePresentation = moveVisual?.presentation || {};
@@ -1276,7 +1307,7 @@ export class BattleTimelineExecutor {
           'useMove',
           { pokemonNameWithAffix: actorNameWithAffix, moveName },
           `${actorName}의 ${moveName}!`,
-        ));
+        ), { minMs: 420 });
         if (actorSide && !movePresentation?.isSemiInvulnerable) {
           this._scene()?.setBattlerVisibility?.(actorSide, true, { yOffset });
         }
@@ -1285,14 +1316,6 @@ export class BattleTimelineExecutor {
           await this._delay(220);
           if (actorSide && movePresentation?.isSemiInvulnerable) {
             this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset });
-          }
-          if (actorSide && moveId === 'substitute') {
-            const substituteUrl = this._substituteSpriteUrlForSide(actorSide);
-            if (substituteUrl) {
-              await this._setBattlerSprite(actorSide, substituteUrl, {
-                visible: true,
-              });
-            }
           }
           break;
         }
@@ -1319,14 +1342,6 @@ export class BattleTimelineExecutor {
         }
         if (actorSide && movePresentation?.isSemiInvulnerable) {
           this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset });
-        }
-        if (actorSide && moveId === 'substitute') {
-          const substituteUrl = this._substituteSpriteUrlForSide(actorSide);
-          if (substituteUrl) {
-            await this._setBattlerSprite(actorSide, substituteUrl, {
-              visible: true,
-            });
-          }
         }
         break;
       }
@@ -1847,6 +1862,10 @@ export class BattleTimelineExecutor {
           ? `${substituteNameWithAffix} put in a substitute!`
           : `${substituteNameWithAffix}은(는)\n대타출동을 사용했다!`;
         await this._showMsg(startMsg, { minMs: 420 });
+        if (side) {
+          this._scene()?.setBattlerVisibility?.(side, false, { yOffset: 0 });
+          await this._delay(90);
+        }
         const substituteUrl = this._substituteSpriteUrlForSide(side);
         if (substituteUrl) {
           await this._setBattlerSprite(side, substituteUrl, {

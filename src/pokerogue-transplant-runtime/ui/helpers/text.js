@@ -31,13 +31,13 @@ const TEXT_STYLE = Object.freeze({
   },
 
   BATTLE_INFO_NAME: {
-    fontSize: 12,
-    fontFamily: 'emerald',
+    fontSize: 8,
+    fontFamily: 'pkmnems',
     padding: { bottom: 6 },
     color: '#f8f8f8',
     shadowColor: '#6b5a73',
-    shadowX: 4,
-    shadowY: 4,
+    shadowX: 2,
+    shadowY: 2,
   },
 
   MOVE_INFO_CONTENT: {

@@ -11,8 +11,8 @@ const STATUS_FRAME = {
   pkrs: 'pokerus',
 };
 
-// gender symbol
-const GENDER_SYMBOL = { M: '♂', F: '♀' };
+// Gender glyphs use plain letters to avoid platform/font-specific symbol fallback artifacts.
+const GENDER_SYMBOL = { M: 'M', F: 'F', N: 'N' };
 const GENDER_COLOR  = { M: '#40c8f8', F: '#f89890' };
 
 const HP_FILL_WIDTH = 48; // overlay_hp frame width (px)
@@ -111,7 +111,7 @@ export class BattleInfo {
       .setOrigin(1, 0.5).setName(`pbinfo-${this.side}-bg`);
 
     // Name text
-    this.nameText = addTextObject(this.ui, pos.nameTextX, pos.nameTextY, '', 'BATTLE_INFO')
+    this.nameText = addTextObject(this.ui, pos.nameTextX, pos.nameTextY, '', 'BATTLE_INFO_NAME')
       .setOrigin(0, 0).setName(`pbinfo-${this.side}-name`);
 
     // Gender text (♂/♀) — positioned right after name text

@@ -25,6 +25,7 @@ const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
   'Meganium-Mega': 'Mega Sol',
   'Emboar-Mega': 'Mold Breaker',
   'Feraligatr-Mega': 'Dragonize',
+  'Starmie-Mega': 'Huge Power',
 });
 
 const SNAPSHOT_FORM_SPRITE_OVERRIDES = Object.freeze({
@@ -1287,6 +1288,9 @@ class ShowdownLocalSinglesSession {
             ultraSpriteId: ui.ultraSpriteId || '',
             shiny: Boolean((pokemon?.set && typeof pokemon.set.shiny !== 'undefined') ? pokemon.set.shiny : ui.shiny),
             level: pokemon.level,
+            gender: (['M', 'F', 'N'].includes(String(pokemon.gender || pokemon.set?.gender || ui.gender || '').toUpperCase())
+              ? String(pokemon.gender || pokemon.set?.gender || ui.gender || '').toUpperCase()
+              : ''),
             nature: ui.nature || '',
             evs: ui.evs || {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0},
             ivs: ui.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31},

@@ -3375,6 +3375,15 @@ function displayType(typeName) {
 function displayGender(gender) {
   return localizeText(genderLabels[gender ?? ''] || gender || genderLabels['']);
 }
+
+function displayBattleGenderMark(gender = '') {
+  const normalized = String(gender || '').toUpperCase();
+  if (normalized === 'M') return state.language === 'ko' ? '수' : 'M';
+  if (normalized === 'F') return state.language === 'ko' ? '암' : 'F';
+  if (normalized === 'N') return state.language === 'ko' ? '무' : 'N';
+  return '';
+}
+
 function displayStatus(status) {
   return localizeText(statusLabels[status] || statusNames[status] || status);
 }
@@ -4592,6 +4601,7 @@ function createTypePill(type) {
   wrap.className = 'type-pill';
   const label = displayType(type);
   const url = typeIconPath(type, true);
+  let hasIcon = false;
   if (url) {
     const img = document.createElement('img');
     img.src = url;
@@ -4601,15 +4611,26 @@ function createTypePill(type) {
     img.onerror = () => {
       img.remove();
       wrap.classList.add('no-icon');
+      if (!wrap.querySelector('.type-pill-text')) {
+        const fallback = document.createElement('span');
+        fallback.className = 'type-pill-text';
+        fallback.textContent = label;
+        wrap.appendChild(fallback);
+      }
     };
     wrap.appendChild(img);
+    hasIcon = true;
   } else {
     wrap.classList.add('no-icon');
   }
-  const text = document.createElement('span');
-  text.className = 'type-pill-text';
-  text.textContent = label;
-  wrap.appendChild(text);
+  wrap.title = label;
+  wrap.setAttribute('aria-label', label);
+  if (!hasIcon) {
+    const text = document.createElement('span');
+    text.className = 'type-pill-text';
+    text.textContent = label;
+    wrap.appendChild(text);
+  }
   return wrap;
 }
 async function ensureImageInfo(url) {
@@ -7104,6 +7125,7 @@ function renderBattleInfoBox(player, container, mon) {
     return;
   }
   const displayName = displayBattleSpeciesName(mon);
+  const genderMark = displayBattleGenderMark(mon.gender || '');
   const badgeText = getBattleBadgeText(mon);
   const statusHtml = mon.status
     ? `<span class="pkbattle-status-pill">${getStatusIcon(mon.status) ? `<img src="${getStatusIcon(mon.status)}" alt="${mon.status}"/>` : ''}${displayStatus(mon.status)}</span>`
@@ -7114,7 +7136,7 @@ function renderBattleInfoBox(player, container, mon) {
     : 0;
   container.innerHTML = `
     <div class="pkbattle-info-inner">
-      <div class="pkbattle-name-row"><strong>${displayName}</strong><span class="pkbattle-level">${levelLabel}</span></div>
+      <div class="pkbattle-name-row"><strong>${displayName}</strong>${genderMark ? `<span class="pkbattle-gender">${genderMark}</span>` : ''}<span class="pkbattle-level">${levelLabel}</span></div>
       <div class="pkbattle-subrow">
         <span class="pkbattle-subrow-left">${statusHtml}</span>
         <span class="pkbattle-subrow-right"><span class="pkbattle-type-icons"></span></span>

@@ -420,6 +420,11 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 .runtime-notes { display: none; }
 .runtime-mode-card {
   display: block;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
 }
 .runtime-mode-header {
   display: flex;
@@ -429,6 +434,8 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 }
 .runtime-mode-detail {
   margin-top: 10px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 .runtime-check {
   margin-top: 12px;
@@ -1431,7 +1438,7 @@ body.hide-builder-warning-box .warning-box {
 
 .pkbattle-name-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   align-items: baseline;
   font-size: 0.92rem;
@@ -1445,6 +1452,14 @@ body.hide-builder-warning-box .warning-box {
 .pkbattle-level {
   font-size: 0.82rem;
   color: rgba(255,255,255,0.92);
+  margin-left: auto;
+}
+
+.pkbattle-gender {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: rgba(248, 251, 255, 0.86);
+  letter-spacing: 0.04em;
 }
 
 .pkbattle-subrow {
