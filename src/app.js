@@ -1726,6 +1726,10 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
         });
       }
     }
+    const sideNames = {
+      p1: String(state.battle?.players?.[0]?.name || 'Player 1'),
+      p2: String(state.battle?.players?.[1]?.name || 'Player 2'),
+    };
     const executors = configs.map(cfg => new BattleTimelineExecutor({
       onComplete: () => {},
       applySnapshot: () => {},
@@ -1745,6 +1749,7 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
       localizeMonNameWithForm: name => displaySpeciesName(name) || name,
       localizeMoveName: name => displayMoveName(name) || name,
       localizeAbilityName: name => displayAbilityName(name) || name,
+      sideNames,
       ...cfg,
     }));
     await Promise.all(executors.map(executor => executor.play(events)));
@@ -5356,17 +5361,28 @@ async function renderValidation() {
   const runtime = getSelectedBattleRuntimeDescriptor();
   const runtimeBlocked = !runtime.startAllowed;
 
+  const hideBuilderErrorBox = isOnlineProfile();
+
   if (allErrors.length) {
-    els.builderErrors.classList.remove('hidden');
-    els.builderErrors.textContent = allErrors.map(localizeText).join('\n');
+    if (els.builderErrors) {
+      if (hideBuilderErrorBox) {
+        els.builderErrors.classList.add('hidden');
+        els.builderErrors.textContent = '';
+      } else {
+        els.builderErrors.classList.remove('hidden');
+        els.builderErrors.textContent = allErrors.map(localizeText).join('\n');
+      }
+    }
     els.validationSummary.textContent = state.language === 'ko'
       ? `배틀 시작 전 해결할 문제 ${allErrors.length}개가 남아 있습니다.`
       : `${allErrors.length} issue${allErrors.length === 1 ? '' : 's'} remaining before battle can start.`;
     els.startBattleBtn.disabled = true;
     els.startBattleBtn.title = '';
   } else {
-    els.builderErrors.classList.add('hidden');
-    els.builderErrors.textContent = '';
+    if (els.builderErrors) {
+      els.builderErrors.classList.add('hidden');
+      els.builderErrors.textContent = '';
+    }
     if (runtimeBlocked) {
       els.validationSummary.textContent = lang(
         `팀은 유효하지만 현재 모드는 아직 시작할 수 없습니다. ${runtime.startBlockedReason}`,

@@ -268,8 +268,8 @@ const PROTECT_BLOCK_EFFECT_IDS = new Set([
   'craftyshield',
 ]);
 
-const EVENT_GAP_SHORT_MS = 140;
-const EVENT_GAP_MEDIUM_MS = 200;
+const EVENT_GAP_SHORT_MS = 90;
+const EVENT_GAP_MEDIUM_MS = 130;
 
 export class BattleTimelineExecutor {
   /**
@@ -289,6 +289,7 @@ export class BattleTimelineExecutor {
    * @param {function(string): string} [opts.localizeMonNameWithForm] translate English species name → form-aware display name
    * @param {function(string): string} [opts.localizeMoveName] translate English move name → display name
    * @param {function(string): string} [opts.localizeAbilityName] translate English ability name → display name
+   * @param {{p1?: string, p2?: string}} [opts.sideNames] side id → trainer name mapping
    */
   constructor({
     onInputRequired,
@@ -306,6 +307,7 @@ export class BattleTimelineExecutor {
     localizeMonNameWithForm,
     localizeMoveName,
     localizeAbilityName,
+    sideNames,
   } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
     this.onComplete = onComplete ?? (() => {});
@@ -322,6 +324,10 @@ export class BattleTimelineExecutor {
       : this._localizeMonName;
     this._localizeMoveName = typeof localizeMoveName === 'function' ? localizeMoveName : (n => String(n || ''));
     this._localizeAbilityName = typeof localizeAbilityName === 'function' ? localizeAbilityName : (n => String(n || ''));
+    this._sideNames = {
+      p1: String(sideNames?.p1 || 'Player 1'),
+      p2: String(sideNames?.p2 || 'Player 2'),
+    };
     this.running = false;
     // Tracks species name per slot. Key: "${side}_${slot}" e.g. "p1_0", "p2_0".
     // Pre-seeded from initialNames (previous turn's final roster).
@@ -360,9 +366,9 @@ export class BattleTimelineExecutor {
     const compact = source.replace(/\s+/g, ' ').trim();
     const charCount = compact.length;
     const lineCount = Math.max(1, source.split(/\n|\$/g).filter(Boolean).length);
-    const punctuationWeight = (compact.match(/[!?…。]/g) || []).length * 70;
-    const raw = (charCount * 28) + (lineCount * 140) + punctuationWeight;
-    const bounded = Math.max(360, Math.min(2000, raw || 0));
+    const punctuationWeight = (compact.match(/[!?…。]/g) || []).length * 45;
+    const raw = (charCount * 21) + (lineCount * 100) + punctuationWeight;
+    const bounded = Math.max(240, Math.min(1250, raw || 0));
     return Math.max(minMs, bounded);
   }
 
@@ -475,6 +481,43 @@ export class BattleTimelineExecutor {
     if (side === this._playerSide) return pokemonName;
     const fallback = this._isEnglishLocale() ? `Foe ${pokemonName}` : `상대 ${pokemonName}`;
     return this._t('battle', 'foePokemonWithAffix', { pokemonName }, fallback);
+  }
+
+  _sideName(side) {
+    return String(this._sideNames?.[side] || (side === 'p2' ? 'Player 2' : 'Player 1'));
+  }
+
+  _isInitialSummonSequence(events = []) {
+    if (!Array.isArray(events) || events.length === 0) return false;
+    const switchSides = new Set();
+    for (const ev of events) {
+      if (!ev?.type) continue;
+      if (ev.type === 'turn_end') return false;
+      if (ev.type === 'switch_in' && (ev.side === 'p1' || ev.side === 'p2')) {
+        switchSides.add(ev.side);
+        continue;
+      }
+      if (
+        ev.type === 'move_use'
+        || ev.type === 'damage'
+        || ev.type === 'heal'
+        || ev.type === 'faint'
+        || ev.type === 'battle_end'
+        || ev.type === 'callback_event'
+      ) {
+        return false;
+      }
+    }
+    return switchSides.size >= 2;
+  }
+
+  _battleIntroMessage() {
+    const opponentSide = this._playerSide === 'p2' ? 'p1' : 'p2';
+    const trainerName = this._sideName(opponentSide);
+    const fallback = this._isEnglishLocale()
+      ? `${trainerName} wants to battle!`
+      : `${trainerName}이 승부를 걸어왔다!`;
+    return this._t('battle', 'battleStartChallenge', { trainerName }, fallback);
   }
 
   _switchInMessage(side, species) {
@@ -1014,6 +1057,9 @@ export class BattleTimelineExecutor {
     }
     this.running = true;
     try {
+      if (this._isInitialSummonSequence(events)) {
+        await this._showMsg(this._battleIntroMessage(), { minMs: 420 });
+      }
       for (let index = 0; index < events.length; index += 1) {
         const ev = events[index];
         if (!this.running) break;  // fastForward was called
@@ -1236,7 +1282,7 @@ export class BattleTimelineExecutor {
         }
         if (moveOutcome.skipAnimation) {
           // Keep a short beat between move line and outcome message when animation is skipped.
-          await this._delay(320);
+          await this._delay(220);
           if (actorSide && movePresentation?.isSemiInvulnerable) {
             this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset });
           }
@@ -1256,7 +1302,7 @@ export class BattleTimelineExecutor {
           // Safety timeout prevents executor hang if the Promise never resolves
           // (e.g. Phaser delayedCall cancelled on scene reset / loaderror).
           // Max duration: generous upper bound so even long animations always complete.
-          const ANIM_TIMEOUT_MS = 5000;
+          const ANIM_TIMEOUT_MS = 3500;
           const moveAnimOptions = { audioEnabled: this._audioEnabled };
           if (animationScale !== 1) moveAnimOptions.scale = animationScale;
           if (Number.isFinite(animationTint)) moveAnimOptions.tint = animationTint;
@@ -1289,7 +1335,7 @@ export class BattleTimelineExecutor {
       case 'damage': {
         const sourceMessage = this._damageSourceMessage(ev);
         if (sourceMessage) {
-          await this._showMsg(sourceMessage, { minMs: 560 });
+          await this._showMsg(sourceMessage, { minMs: 360 });
         }
         const weatherDamageAnim = this._weatherDamageAnimName(ev?.fromEffectId);
         if (weatherDamageAnim) {
@@ -1316,7 +1362,7 @@ export class BattleTimelineExecutor {
         if (info?.tweenHpTo) {
           await info.tweenHpTo(hpPct, ev.maxHp);
         } else {
-          await this._delay(500);
+          await this._delay(320);
         }
         // Show hit result message after HP tween
         let hitMsg = null;
@@ -1324,7 +1370,7 @@ export class BattleTimelineExecutor {
         else if (ev.hitResult === 'super')       hitMsg = this._t('battle', 'hitResultSuperEffective', {}, '효과는 굉장했다!');
         else if (ev.hitResult === 'not_very')    hitMsg = this._t('battle', 'hitResultNotVeryEffective', {}, '효과는 별로인 것 같다...');
         if (hitMsg) {
-          await this._showMsg(hitMsg, { minMs: 520 });
+          await this._showMsg(hitMsg, { minMs: 340 });
         }
         break;
       }
@@ -1800,7 +1846,7 @@ export class BattleTimelineExecutor {
         const startMsg = this._isEnglishLocale()
           ? `${substituteNameWithAffix} put in a substitute!`
           : `${substituteNameWithAffix}은(는)\n대타출동을 사용했다!`;
-        await this._showMsg(startMsg, { minMs: 520 });
+        await this._showMsg(startMsg, { minMs: 420 });
         const substituteUrl = this._substituteSpriteUrlForSide(side);
         if (substituteUrl) {
           await this._setBattlerSprite(side, substituteUrl, {
@@ -1815,12 +1861,6 @@ export class BattleTimelineExecutor {
         if (effectId !== 'substitute') break;
         const side = ev.target?.side;
         const slot = ev.target?.slot ?? 0;
-        const substituteName = this._slotName(side, slot);
-        const substituteNameWithAffix = this._pokemonNameWithAffix(substituteName, side);
-        const endMsg = this._isEnglishLocale()
-          ? `${substituteNameWithAffix}'s substitute faded!`
-          : `${substituteNameWithAffix}의\n대타는 사라져버렸다!`;
-        await this._showMsg(endMsg, { minMs: 520 });
         const visual = await this._resolveVisual(ev);
         const yOffset = Number(visual?.presentation?.spriteYOffset || 0);
         if (visual?.spriteUrl && side) {
@@ -1834,6 +1874,12 @@ export class BattleTimelineExecutor {
         if (visual?.infoPatch && visual?.side) {
           this._applyInfoForSlot(visual.side, visual.slot ?? 0, visual.infoPatch);
         }
+        const substituteName = this._slotName(side, slot);
+        const substituteNameWithAffix = this._pokemonNameWithAffix(substituteName, side);
+        const endMsg = this._isEnglishLocale()
+          ? `${substituteNameWithAffix}'s substitute faded!`
+          : `${substituteNameWithAffix}의\n대타는 사라져버렸다!`;
+        await this._showMsg(endMsg, { minMs: 420 });
         break;
       }
 

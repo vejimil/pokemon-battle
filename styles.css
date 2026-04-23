@@ -482,7 +482,7 @@ label > span { font-size: 0.9rem; color: var(--muted); }
 .slot-btn {
   text-align: left;
   display: grid;
-  grid-template-columns: 52px 1fr;
+  grid-template-columns: 66px 1fr;
   gap: 10px;
   align-items: center;
 }

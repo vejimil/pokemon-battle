@@ -94,12 +94,12 @@ export class FightUiHandler extends UiHandler {
       ? scene.add.sprite(263, -36, env.UI_ASSETS.typesAtlas.key, 'unknown').setScale(0.8).setVisible(false)
       : addTextObject(this.ui, 263, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0.5, 0.5).setVisible(false);
     this.moveCategoryIcon = env.textureExists(scene, env.UI_ASSETS.categoriesAtlas.key, 'status')
-      ? scene.add.sprite(295, -36, env.UI_ASSETS.categoriesAtlas.key, 'status').setScale(1.0).setVisible(false)
+      ? scene.add.sprite(295, -37, env.UI_ASSETS.categoriesAtlas.key, 'status').setScale(1.0).setVisible(false)
       : addTextObject(this.ui, 295, -36, '', 'MOVE_INFO_CONTENT').setOrigin(0.5, 0.5).setVisible(false);
-    this.ppLabel = addTextObject(this.ui, 250, -26, 'PP', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
-    this.ppText = addTextObject(this.ui, 308, -26, '--/--', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
-    this.powerLabel = addTextObject(this.ui, 250, -18, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
-    this.powerText = addTextObject(this.ui, 308, -18, '---', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
+    this.ppLabel = addTextObject(this.ui, 250, -24, 'PP', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
+    this.ppText = addTextObject(this.ui, 308, -24, '--/--', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
+    this.powerLabel = addTextObject(this.ui, 250, -12, '', 'MOVE_INFO_CONTENT').setOrigin(0, 0.5).setVisible(false);
+    this.powerText = addTextObject(this.ui, 308, -12, '---', 'MOVE_INFO_CONTENT').setOrigin(1, 0.5).setVisible(false);
     this.moveInfoContainer.add([
       this.typeIcon,
       this.moveCategoryIcon,

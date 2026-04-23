@@ -42,13 +42,13 @@ const TEXT_STYLE = Object.freeze({
 
   MOVE_INFO_CONTENT: {
     // Match PokeRogue TextStyle.MOVE_INFO_CONTENT exactly: 56px rendered at 1/6 scale.
-    fontSize: 56 / 6,
-    fontFamily: 'emerald',
+    fontSize: 8,
+    fontFamily: 'pkmnems',
     padding: { bottom: 6 },
     color: '#f8f8f8',
     shadowColor: '#6b5a73',
-    shadowX: 3,
-    shadowY: 3,
+    shadowX: 0,
+    shadowY: 0,
   },
 
   PARTY_NAME: {
