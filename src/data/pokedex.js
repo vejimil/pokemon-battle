@@ -2737,8 +2737,7 @@ export const Pokedex = {
         forme: "Mega",
         types: ["Water", "Psychic"],
         gender: "N",
-        // FIXME: change stats on generation shift
-        baseStats: { hp: 60, atk: 140, def: 105, spa: 130, spd: 105, spe: 120 },
+        baseStats: { hp: 60, atk: 100, def: 105, spa: 130, spd: 105, spe: 120 },
         abilities: { 0: "Huge Power" },
         heightm: 2.3,
         weightkg: 80,

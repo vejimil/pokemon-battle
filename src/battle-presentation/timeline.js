@@ -231,6 +231,15 @@ const WEATHER_DAMAGE_ANIMS = {
   hail: 'common-hail',
 };
 
+const ITEM_SOURCE_NAME_FALLBACK = {
+  leftovers: 'Leftovers',
+  lifeorb: 'Life Orb',
+  blacksludge: 'Black Sludge',
+  shellbell: 'Shell Bell',
+  rockyhelmet: 'Rocky Helmet',
+  stickybarb: 'Sticky Barb',
+};
+
 const Z_MOVE_TINT_BY_TYPE = {
   normal: 0xf5f2d0,
   fire: 0xff9b54,
@@ -341,6 +350,7 @@ export class BattleTimelineExecutor {
     this._activeWeatherId = '';
     this._activeTerrainId = '';
     this._lastWeatherStartTurn = null;
+    this._pendingBattleEndEvent = null;
   }
 
   // ── accessors ─────────────────────────────────────────────────────────────
@@ -390,6 +400,7 @@ export class BattleTimelineExecutor {
       case 'single_turn_effect':
       case 'status_cure':
       case 'callback_event':
+      case 'battle_end':
         return 0;
       case 'switch_in':
       case 'dynamax_start':
@@ -400,7 +411,6 @@ export class BattleTimelineExecutor {
       case 'terastallize':
       case 'faint':
       case 'forme_change':
-      case 'battle_end':
         return EVENT_GAP_MEDIUM_MS;
       default:
         return EVENT_GAP_SHORT_MS;
@@ -687,6 +697,92 @@ export class BattleTimelineExecutor {
           : `${pokemonNameWithAffix}은(는)\n압정뿌리기의 데미지를 입었다!`
         : '';
     return this._t('arena-tag', key, { pokemonNameWithAffix }, fallback);
+  }
+
+  _itemSourceLabel(ev = {}) {
+    const fromSource = String(ev?.fromSource || '').trim();
+    if (/^item\s*:/i.test(fromSource)) {
+      return fromSource.replace(/^item\s*:/i, '').trim();
+    }
+    const itemId = toId(ev?.fromEffectId || '');
+    return ITEM_SOURCE_NAME_FALLBACK[itemId] || itemId;
+  }
+
+  _itemSourceMessage(ev = {}, kind = 'damage') {
+    if (ev?.fromKind !== 'item') return '';
+    const itemId = toId(ev?.fromEffectId || '');
+    if (!itemId) return '';
+    const targetSide = ev?.target?.side;
+    const targetName = this._slotName(targetSide, ev?.target?.slot ?? 0);
+    const pokemonNameWithAffix = this._pokemonNameWithAffix(targetName, targetSide);
+    const itemLabel = this._itemSourceLabel(ev);
+
+    if (kind === 'heal') {
+      if (itemId === 'leftovers') {
+        return this._isEnglishLocale()
+          ? `${pokemonNameWithAffix} restored HP\nusing its Leftovers!`
+          : `${pokemonNameWithAffix}은(는)\n먹다남은음식으로 HP를 회복했다!`;
+      }
+      if (itemId === 'blacksludge') {
+        return this._isEnglishLocale()
+          ? `${pokemonNameWithAffix} restored HP\nwith Black Sludge!`
+          : `${pokemonNameWithAffix}은(는)\n검은진흙으로 HP를 회복했다!`;
+      }
+      if (itemId === 'shellbell') {
+        return this._isEnglishLocale()
+          ? `${pokemonNameWithAffix} restored HP\nwith its Shell Bell!`
+          : `${pokemonNameWithAffix}은(는)\n조개껍질방울로 HP를 회복했다!`;
+      }
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} restored HP\nfrom ${itemLabel}!`
+        : `${pokemonNameWithAffix}은(는)\n${itemLabel} 효과로 HP를 회복했다!`;
+    }
+
+    if (itemId === 'lifeorb') {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} was hurt\nby its Life Orb!`
+        : `${pokemonNameWithAffix}은(는)\n생명의구슬의 반동을 받았다!`;
+    }
+    if (itemId === 'blacksludge') {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} was hurt\nby Black Sludge!`
+        : `${pokemonNameWithAffix}은(는)\n검은진흙 때문에 데미지를 입었다!`;
+    }
+    if (itemId === 'rockyhelmet') {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} was hurt\nby Rocky Helmet!`
+        : `${pokemonNameWithAffix}은(는)\n울퉁불퉁멧에 데미지를 입었다!`;
+    }
+    if (itemId === 'stickybarb') {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} was hurt\nby Sticky Barb!`
+        : `${pokemonNameWithAffix}은(는)\n끈적바늘에 데미지를 입었다!`;
+    }
+    return this._isEnglishLocale()
+      ? `${pokemonNameWithAffix} was hurt\nby ${itemLabel}!`
+      : `${pokemonNameWithAffix}은(는)\n${itemLabel} 때문에 데미지를 입었다!`;
+  }
+
+  _resetFieldVisualStateForBattleEnd() {
+    this._activeWeatherId = '';
+    this._activeTerrainId = '';
+    this._lastWeatherStartTurn = null;
+    this._scene()?.clearPersistentTerrainBackground?.();
+  }
+
+  async _flushPendingBattleEndMessage() {
+    const pending = this._pendingBattleEndEvent;
+    this._pendingBattleEndEvent = null;
+    const winnerText = String(pending?.winner || '').trim();
+    if (!winnerText || /^\d+$/.test(winnerText)) return;
+    const winFallback = this._isEnglishLocale()
+      ? `${winnerText} wins!`
+      : `${winnerText} 승리!`;
+    await this._showMsg(
+      this._t('battle', 'winnerMessage', { winner: winnerText }, winFallback),
+      { minMs: 1300 },
+    );
+    this._playAudio('se/level_up');
   }
 
   _weatherDamageAnimName(effectId = '') {
@@ -1069,6 +1165,7 @@ export class BattleTimelineExecutor {
       return;
     }
     this.running = true;
+    this._pendingBattleEndEvent = null;
     try {
       const isInitialSummonSequence = this._isInitialSummonSequence(events);
       if (isInitialSummonSequence) {
@@ -1091,6 +1188,9 @@ export class BattleTimelineExecutor {
           await this._delay(gapMs);
         }
       }
+      if (this.running) {
+        await this._flushPendingBattleEndMessage();
+      }
     } catch (err) {
       console.warn('[BattleTimeline] event error, fast-forwarding to snapshot:', err);
       this.fastForward();
@@ -1105,6 +1205,7 @@ export class BattleTimelineExecutor {
    */
   fastForward() {
     this.running = false;
+    this._pendingBattleEndEvent = null;
     this._applySnapshot();
   }
 
@@ -1348,7 +1449,7 @@ export class BattleTimelineExecutor {
 
       // ── BA-1: Damage ─────────────────────────────────────────────────────
       case 'damage': {
-        const sourceMessage = this._damageSourceMessage(ev);
+        const sourceMessage = this._damageSourceMessage(ev) || this._itemSourceMessage(ev, 'damage');
         if (sourceMessage) {
           await this._showMsg(sourceMessage, { minMs: 360 });
         }
@@ -1392,6 +1493,10 @@ export class BattleTimelineExecutor {
 
       // ── Heal ─────────────────────────────────────────────────────────────
       case 'heal': {
+        const sourceMessage = this._itemSourceMessage(ev, 'heal');
+        if (sourceMessage) {
+          await this._showMsg(sourceMessage, { minMs: 340 });
+        }
         const healPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
         this._updateSlotInfo(ev.target?.side, ev.target?.slot ?? 0, {
           hp: ev.hpAfter,
@@ -1821,17 +1926,8 @@ export class BattleTimelineExecutor {
 
       // ── 5-C: Battle end ─────────────────────────────────────────────────
       case 'battle_end': {
-        const winnerText = String(ev.winner || '').trim();
-        if (winnerText && !/^\d+$/.test(winnerText)) {
-          const winFallback = this._isEnglishLocale()
-            ? `${winnerText} wins!`
-            : `${winnerText} 승리!`;
-          await this._showMsg(
-            this._t('battle', 'winnerMessage', { winner: winnerText }, winFallback),
-            { minMs: 1300 },
-          );
-          this._playAudio('se/level_up');
-        }
+        this._pendingBattleEndEvent = { ...ev };
+        this._resetFieldVisualStateForBattleEnd();
         break;
       }
 

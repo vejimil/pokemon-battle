@@ -492,6 +492,20 @@ label > span { font-size: 0.9rem; color: var(--muted); }
   grid-template-columns: 66px 1fr;
   gap: 10px;
   align-items: center;
+  transition: border-color 0.14s ease, background 0.14s ease, opacity 0.14s ease, transform 0.14s ease;
+}
+.slot-btn.is-draggable {
+  cursor: grab;
+}
+.slot-btn.dragging {
+  opacity: 0.56;
+  transform: scale(0.985);
+  border-style: dashed;
+  cursor: grabbing;
+}
+.slot-btn.drop-target {
+  border-color: rgba(125, 211, 252, 0.52);
+  background: rgba(125, 211, 252, 0.16);
 }
 .slot-meta {
   display: grid;

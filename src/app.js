@@ -47,6 +47,7 @@ const ONLINE_TEAM_SIZE_DEFAULT = 3;
 const ONLINE_TEAM_SIZE_MIN = 1;
 const ONLINE_TEAM_SIZE_MAX = 6;
 const ONLINE_BATTLE_RETURN_DELAY_MS = 3000;
+const ONLINE_BUILDER_AUTOSYNC_DEBOUNCE_MS = 480;
 const MOBILE_INPUT_REPEAT_MS = 120;
 const MOBILE_BUTTON_ATLAS_FRAMES = Object.freeze({
   up: 'UP.png',
@@ -1277,6 +1278,10 @@ const state = {
     ready: {p1: false, p2: false},
     players: {p1: 'Player 1', p2: 'Player 2'},
     lastBuilderRevision: 0,
+    builderAutoSyncTimer: null,
+    builderAutoSyncQueuedSig: '',
+    builderAutoSyncSyncedSig: '',
+    builderAutoSyncInFlight: false,
     battleStarted: false,
     returningToBuilder: false,
     returnToBuilderTimer: null,
@@ -1290,6 +1295,7 @@ const els = {};
 let pickerReturnFocusEl = null;
 const phaserBattleRenderers = { 0: null, 1: null };
 const mobileInputRepeatTimers = new Map();
+const rosterDragState = {player: -1, slot: -1};
 const battleLocaleManager = createBattleLocaleManager({
   language: 'ko',
   namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag', 'battler-tags', 'status-effect', 'pokemon-info'],
@@ -2005,6 +2011,84 @@ function buildOnlineLocalBuilderPayload(player = getOnlineLocalPlayerIndex()) {
   return {name, team};
 }
 
+function buildOnlineLocalBuilderSignature(player = getOnlineLocalPlayerIndex()) {
+  try {
+    return JSON.stringify(buildOnlineLocalBuilderPayload(player));
+  } catch (_error) {
+    return '';
+  }
+}
+
+function clearOnlineBuilderAutoSyncTimer() {
+  if (state.online.builderAutoSyncTimer) {
+    clearTimeout(state.online.builderAutoSyncTimer);
+    state.online.builderAutoSyncTimer = null;
+  }
+}
+
+function resetOnlineBuilderAutoSyncState() {
+  clearOnlineBuilderAutoSyncTimer();
+  state.online.builderAutoSyncQueuedSig = '';
+  state.online.builderAutoSyncSyncedSig = '';
+  state.online.builderAutoSyncInFlight = false;
+}
+
+function markOnlineBuilderAutoSyncSyncedWithLocal() {
+  const signature = buildOnlineLocalBuilderSignature();
+  state.online.builderAutoSyncQueuedSig = signature;
+  state.online.builderAutoSyncSyncedSig = signature;
+}
+
+function isOnlineBuilderAutoSyncEligible() {
+  if (!isOnlineProfile() || !isOnlineRoomJoined()) return false;
+  if (isOnlineBattleInProgress()) return false;
+  const side = state.online.side;
+  if (side !== 'p1' && side !== 'p2') return false;
+  if (state.online.syncingBuilder) return false;
+  if (Boolean(state.online.ready?.[side])) return false;
+  return true;
+}
+
+async function flushOnlineBuilderAutoSync() {
+  clearOnlineBuilderAutoSyncTimer();
+  if (!isOnlineBuilderAutoSyncEligible() || state.online.builderAutoSyncInFlight) return;
+  const queuedSig = state.online.builderAutoSyncQueuedSig || buildOnlineLocalBuilderSignature();
+  if (!queuedSig || queuedSig === state.online.builderAutoSyncSyncedSig) return;
+  state.online.builderAutoSyncInFlight = true;
+  try {
+    await syncOnlineBuilderFlow({applyBuilderState: false});
+    markOnlineBuilderAutoSyncSyncedWithLocal();
+  } catch (error) {
+    state.online.connected = false;
+    state.online.lastError = error?.message || String(error);
+    renderOnlineRoomPanel();
+  } finally {
+    state.online.builderAutoSyncInFlight = false;
+    const latestSig = buildOnlineLocalBuilderSignature();
+    if (isOnlineBuilderAutoSyncEligible() && latestSig && latestSig !== state.online.builderAutoSyncSyncedSig) {
+      state.online.builderAutoSyncQueuedSig = latestSig;
+      state.online.builderAutoSyncTimer = setTimeout(() => {
+        flushOnlineBuilderAutoSync().catch(() => {});
+      }, ONLINE_BUILDER_AUTOSYNC_DEBOUNCE_MS);
+    }
+  }
+}
+
+function scheduleOnlineBuilderAutoSync() {
+  const signature = buildOnlineLocalBuilderSignature();
+  if (signature) state.online.builderAutoSyncQueuedSig = signature;
+  if (!isOnlineBuilderAutoSyncEligible()) {
+    clearOnlineBuilderAutoSyncTimer();
+    return;
+  }
+  if (!signature) return;
+  if (signature === state.online.builderAutoSyncSyncedSig || state.online.builderAutoSyncInFlight) return;
+  clearOnlineBuilderAutoSyncTimer();
+  state.online.builderAutoSyncTimer = setTimeout(() => {
+    flushOnlineBuilderAutoSync().catch(() => {});
+  }, ONLINE_BUILDER_AUTOSYNC_DEBOUNCE_MS);
+}
+
 function shouldApplyOnlineBuilderState(roomState = null) {
   const eventName = String(roomState?.lastEvent || '');
   return eventName === 'room-created' || eventName === 'room-joined' || eventName === 'builder-sync';
@@ -2065,6 +2149,7 @@ function clearOnlineBattleReturnTimer() {
 function scheduleOnlineBattleReturnToBuilder() {
   if (!isOnlineProfile()) return;
   clearOnlineBattleReturnTimer();
+  clearOnlineBuilderAutoSyncTimer();
   state.online.returningToBuilder = true;
   showRuntime(
     lang('배틀 종료! 3초 후 빌더로 돌아갑니다.', 'Battle finished! Returning to builder in 3 seconds.'),
@@ -2226,6 +2311,14 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   } else if (state.online.returningToBuilder || state.online.returnToBuilderTimer) {
     clearOnlineBattleReturnTimer();
   }
+  if (isOnlineBuilderAutoSyncEligible()) {
+    const queuedSig = String(state.online.builderAutoSyncQueuedSig || '');
+    if (queuedSig && queuedSig !== state.online.builderAutoSyncSyncedSig) {
+      scheduleOnlineBuilderAutoSync();
+    }
+  } else {
+    clearOnlineBuilderAutoSyncTimer();
+  }
 
   const builderUnlockChanged = previousBuilderUnlocked !== isOnlineBuilderUnlocked();
   const battleStartedChanged = previousBattleStarted !== Boolean(state.online.battleStarted);
@@ -2317,6 +2410,8 @@ function applyLocalBattleForfeit(player, battle = state.battle) {
   const loserName = battle.players?.[loserIndex]?.name || `P${loserIndex + 1}`;
   const winnerName = battle.players?.[winnerIndex]?.name || `P${winnerIndex + 1}`;
   battle.winner = winnerName;
+  clearBattleFieldStateForBattleEnd(battle);
+  getPrimaryBattleScene()?.clearPersistentTerrainBackground?.();
   battle.resolvingTurn = false;
   clearEnginePendingChoices(battle);
   const text = lang(`${loserName} 항복. ${winnerName} 승리.`, `${loserName} surrendered. ${winnerName} wins.`);
@@ -2357,6 +2452,7 @@ function resolveOnlineRoomNameForActions() {
 async function createOnlineRoomFlow() {
   const name = resolveOnlineRoomNameForActions();
   clearOnlineBattleReturnTimer();
+  resetOnlineBuilderAutoSyncState();
   state.online.createConfigOpen = false;
   state.playerNames[0] = name;
   const result = await createOnlineRoom({
@@ -2375,6 +2471,7 @@ async function createOnlineRoomFlow() {
   state.online.lastError = '';
   if (els.onlineRoomIdInput) els.onlineRoomIdInput.value = state.online.roomId;
   await applyOnlineRoomState(result.state, {applyBuilder: true});
+  markOnlineBuilderAutoSyncSyncedWithLocal();
   saveState();
   scheduleOnlineRoomPoll(0);
 }
@@ -2384,6 +2481,7 @@ async function joinOnlineRoomFlow() {
   if (!roomId) throw new Error(lang('방 코드를 입력하세요.', 'Room ID is empty.'));
   const name = resolveOnlineRoomNameForActions();
   clearOnlineBattleReturnTimer();
+  resetOnlineBuilderAutoSyncState();
   state.online.createConfigOpen = false;
   state.playerNames[1] = name;
   const result = await joinOnlineRoom({
@@ -2403,12 +2501,14 @@ async function joinOnlineRoomFlow() {
   state.online.lastError = '';
   if (els.onlineRoomIdInput) els.onlineRoomIdInput.value = state.online.roomId;
   await applyOnlineRoomState(result.state, {applyBuilder: true});
+  markOnlineBuilderAutoSyncSyncedWithLocal();
   saveState();
   scheduleOnlineRoomPoll(0);
 }
 
 async function syncOnlineBuilderFlow({applyBuilderState = false} = {}) {
   if (!isOnlineRoomJoined()) throw new Error('Room is not joined.');
+  clearOnlineBuilderAutoSyncTimer();
   state.online.syncingBuilder = true;
   renderOnlineRoomPanel();
   try {
@@ -2418,6 +2518,7 @@ async function syncOnlineBuilderFlow({applyBuilderState = false} = {}) {
       builder: buildOnlineLocalBuilderPayload(),
     });
     await applyOnlineRoomState(response.state, {applyBuilder: Boolean(applyBuilderState)});
+    markOnlineBuilderAutoSyncSyncedWithLocal();
   } finally {
     state.online.syncingBuilder = false;
     renderOnlineRoomPanel();
@@ -2429,6 +2530,7 @@ async function toggleOnlineReadyFlow() {
   if (!hasOnlineBothPlayersJoined()) throw new Error('두 명이 모두 참가해야 준비할 수 있습니다. / Both players must join before getting ready.');
   const localSide = state.online.side || 'p1';
   const nextReady = !Boolean(state.online.ready?.[localSide]);
+  clearOnlineBuilderAutoSyncTimer();
   if (nextReady) {
     await syncOnlineBuilderFlow({applyBuilderState: false});
   }
@@ -2443,6 +2545,7 @@ async function toggleOnlineReadyFlow() {
 async function startOnlineBattleFlow() {
   if (!isOnlineRoomJoined()) throw new Error('Room is not joined.');
   clearOnlineBattleReturnTimer();
+  clearOnlineBuilderAutoSyncTimer();
   const response = await startOnlineRoomBattle({
     roomId: state.online.roomId,
     token: state.online.token,
@@ -4024,6 +4127,9 @@ function saveState() {
     } : undefined,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+  if (isOnlineProfile()) {
+    scheduleOnlineBuilderAutoSync();
+  }
 }
 function loadSavedState() {
   try {
@@ -4045,6 +4151,7 @@ function loadSavedState() {
       state.online.joinInputOpen = false;
       state.online.createConfigOpen = false;
       state.online.revision = 0;
+      resetOnlineBuilderAutoSyncState();
       state.mode = 'singles';
     }
     rebuildTeamSize();
@@ -5021,6 +5128,26 @@ function applyOnlineEditorOwnershipUi() {
   applyLock(els.player1Name, 0, 'Player 1');
   applyLock(els.player2Name, 1, 'Player 2');
 }
+function moveTeamSlot(player, fromSlot, toSlot) {
+  const team = state.teams?.[player];
+  if (!Array.isArray(team) || team.length <= 1) return false;
+  const from = clamp(Number(fromSlot), 0, team.length - 1);
+  const to = clamp(Number(toSlot), 0, team.length - 1);
+  if (from === to) return false;
+  const [picked] = team.splice(from, 1);
+  team.splice(to, 0, picked);
+  if (state.selected.player === player) {
+    const selectedSlot = Number(state.selected.slot);
+    if (selectedSlot === from) {
+      state.selected.slot = to;
+    } else if (from < selectedSlot && selectedSlot <= to) {
+      state.selected.slot = selectedSlot - 1;
+    } else if (to <= selectedSlot && selectedSlot < from) {
+      state.selected.slot = selectedSlot + 1;
+    }
+  }
+  return true;
+}
 function renderRoster() {
   ensureOnlineSelectedPlayer();
   const lockedPlayer = getOnlineLockedPlayerIndex();
@@ -5032,16 +5159,67 @@ function renderRoster() {
     if (!container) return;
     container.innerHTML = '';
     const canEditPlayer = canEditPlayerInCurrentProfile(player);
+    const clearDragClasses = () => {
+      container.querySelectorAll('.slot-btn.dragging, .slot-btn.drop-target')
+        .forEach(node => node.classList.remove('dragging', 'drop-target'));
+    };
     state.teams[player].forEach((mon, slot) => {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = `slot-btn ${state.selected.player === player && state.selected.slot === slot ? 'active' : ''}`;
       button.disabled = !canEditPlayer;
+      button.dataset.player = String(player);
+      button.dataset.slot = String(slot);
       button.addEventListener('click', () => {
         if (!canEditPlayer) return;
         state.selected = {player, slot};
         renderAll();
       });
+      if (canEditPlayer) {
+        button.draggable = true;
+        button.classList.add('is-draggable');
+        button.title = lang('드래그로 슬롯 순서를 바꿀 수 있습니다.', 'Drag to reorder slots.');
+        button.addEventListener('dragstart', event => {
+          rosterDragState.player = player;
+          rosterDragState.slot = slot;
+          clearDragClasses();
+          button.classList.add('dragging');
+          if (event?.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', `${player}:${slot}`);
+          }
+        });
+        button.addEventListener('dragover', event => {
+          if (rosterDragState.player !== player) return;
+          if (rosterDragState.slot < 0 || rosterDragState.slot === slot) return;
+          event.preventDefault();
+          button.classList.add('drop-target');
+          if (event?.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        });
+        button.addEventListener('dragleave', () => {
+          button.classList.remove('drop-target');
+        });
+        button.addEventListener('drop', event => {
+          if (rosterDragState.player !== player) return;
+          const fromSlot = Number(rosterDragState.slot);
+          const toSlot = Number(slot);
+          clearDragClasses();
+          rosterDragState.player = -1;
+          rosterDragState.slot = -1;
+          if (!Number.isInteger(fromSlot) || fromSlot < 0 || fromSlot === toSlot) return;
+          event.preventDefault();
+          const moved = moveTeamSlot(player, fromSlot, toSlot);
+          if (!moved) return;
+          renderAll();
+          saveState();
+          renderValidation();
+        });
+        button.addEventListener('dragend', () => {
+          clearDragClasses();
+          rosterDragState.player = -1;
+          rosterDragState.slot = -1;
+        });
+      }
       const sprite = document.createElement('div');
       button.appendChild(sprite);
       renderAnimatedSprite(sprite, {spriteId: mon.spriteId, facing: 'front', shiny: mon.shiny, size: 'small'});
@@ -5585,6 +5763,7 @@ function wireEditorEvents() {
     if (isOnlineProfile()) {
       clearOnlineRoomPolling();
       clearOnlineBattleReturnTimer();
+      resetOnlineBuilderAutoSyncState();
       state.online.roomId = '';
       state.online.token = '';
       state.online.side = '';
@@ -5772,9 +5951,45 @@ function cloneEngineBattleSnapshot(snapshot) {
     events: Array.isArray(snapshot.events) ? [...snapshot.events] : [],
   };
 }
+function clearSideFieldStateForBattleEnd(side = null) {
+  if (!side || typeof side !== 'object') return;
+  if (side.hazards && typeof side.hazards === 'object') {
+    Object.keys(side.hazards).forEach(key => {
+      const current = side.hazards[key];
+      if (typeof current === 'boolean') side.hazards[key] = false;
+      else if (Number.isFinite(Number(current))) side.hazards[key] = 0;
+      else side.hazards[key] = 0;
+    });
+  }
+  if (side.sideConditions && typeof side.sideConditions === 'object') {
+    Object.keys(side.sideConditions).forEach(key => {
+      const current = side.sideConditions[key];
+      if (typeof current === 'boolean') side.sideConditions[key] = false;
+      else if (Number.isFinite(Number(current))) side.sideConditions[key] = 0;
+      else side.sideConditions[key] = 0;
+    });
+  }
+}
+function clearBattleFieldStateForBattleEnd(battle = null) {
+  if (!battle?.winner) return;
+  battle.weather = '';
+  battle.weatherTurns = 0;
+  battle.terrain = '';
+  battle.terrainTurns = 0;
+  battle.trickRoomTurns = 0;
+  if (Array.isArray(battle.players)) {
+    battle.players.forEach(side => clearSideFieldStateForBattleEnd(side));
+  }
+}
 function adoptEngineBattleSnapshot(snapshot) {
   const battle = ensureBattleUiState(cloneEngineBattleSnapshot(snapshot));
   if (!battle) return null;
+  clearBattleFieldStateForBattleEnd(battle);
+  if (battle.winner) {
+    [0, 1].forEach(player => {
+      try { getPhaserBattleRenderer(player)?.scene?.clearPersistentTerrainBackground?.(); } catch (_error) {}
+    });
+  }
   normalizeBattleSpriteState(battle);
   clearEnginePendingChoices(battle);
   battle.resolvingTurn = false;
