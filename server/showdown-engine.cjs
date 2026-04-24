@@ -22,11 +22,42 @@ const BOOST_LABELS = Object.freeze({
 });
 
 const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
+  'Clefable-Mega': 'Magic Bounce',
+  'Victreebel-Mega': 'Innards Out',
+  'Dragonite-Mega': 'Multiscale',
   'Meganium-Mega': 'Mega Sol',
+  'Skarmory-Mega': 'Stalwart',
+  'Chimecho-Mega': 'Levitate',
+  'Froslass-Mega': 'Snow Warning',
   'Emboar-Mega': 'Mold Breaker',
+  'Excadrill-Mega': 'Piercing Drill',
+  'Chandelure-Mega': 'Infiltrator',
+  'Golurk-Mega': 'Unseen Fist',
+  'Chesnaught-Mega': 'Bulletproof',
+  'Delphox-Mega': 'Levitate',
+  'Greninja-Mega': 'Protean',
   'Feraligatr-Mega': 'Dragonize',
+  'Floette-Mega': 'Fairy Aura',
+  'Meowstic-M-Mega': 'Trace',
+  'Meowstic-F-Mega': 'Trace',
+  'Hawlucha-Mega': 'No Guard',
+  'Crabominable-Mega': 'Iron Fist',
+  'Drampa-Mega': 'Berserk',
+  'Scovillain-Mega': 'Spicy Spray',
+  'Glimmora-Mega': 'Adaptability',
   'Starmie-Mega': 'Huge Power',
 });
+
+const PROTECT_LIKE_VOLATILES = new Set([
+  'protect',
+  'kingsshield',
+  'spikyshield',
+  'banefulbunker',
+  'obstruct',
+  'silktrap',
+  'burningbulwark',
+  'maxguard',
+]);
 
 const SNAPSHOT_FORM_SPRITE_OVERRIDES = Object.freeze({
   'Kyogre-Primal': 'KYOGRE_1',
@@ -80,6 +111,36 @@ const RUNTIME_FUTURE_ABILITY_PATCHES = Object.freeze({
     name: 'Mega Sol',
     rating: 4.5,
     num: 311,
+  },
+  piercingdrill: {
+    isNonstandard: 'Future',
+    onModifyMove(move) {
+      if (!move?.flags?.contact || move.category === 'Status') return;
+      move.breaksProtect = true;
+      move.piercingDrill = true;
+    },
+    onSourceModifyDamage(damage, source, target, move) {
+      if (!move?.piercingDrill || !target?.volatiles) return;
+      const isProtecting = Object.keys(target.volatiles)
+        .some(key => PROTECT_LIKE_VOLATILES.has(String(key || '').toLowerCase()));
+      if (!isProtecting) return;
+      return this.chainModify(0.25);
+    },
+    flags: {},
+    name: 'Piercing Drill',
+    rating: 3.5,
+    num: 313,
+  },
+  spicyspray: {
+    isNonstandard: 'Future',
+    onDamagingHit(damage, target, source, move) {
+      if (!source || source.fainted || !move || move.category === 'Status') return;
+      source.trySetStatus('brn', target);
+    },
+    flags: {},
+    name: 'Spicy Spray',
+    rating: 3.5,
+    num: 314,
   },
 });
 const RUNTIME_FUTURE_MOVE_PATCHES = Object.freeze({

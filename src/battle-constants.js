@@ -67,9 +67,29 @@ export const ASSET_BASE_SPECIES_ALIASES = Object.freeze({
 export const BUILDER_BATTLE_ONLY_FORM_SUFFIXES = new Set(['mega', 'megax', 'megay', 'primal', 'gmax']);
 export const ENGINE_AUTHORITATIVE_SINGLES_FORMAT = 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
 export const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
+  'Clefable-Mega': 'Magic Bounce',
+  'Victreebel-Mega': 'Innards Out',
+  'Dragonite-Mega': 'Multiscale',
   'Meganium-Mega': 'Mega Sol',
+  'Skarmory-Mega': 'Stalwart',
+  'Chimecho-Mega': 'Levitate',
+  'Froslass-Mega': 'Snow Warning',
   'Emboar-Mega': 'Mold Breaker',
+  'Excadrill-Mega': 'Piercing Drill',
+  'Chandelure-Mega': 'Infiltrator',
+  'Golurk-Mega': 'Unseen Fist',
+  'Chesnaught-Mega': 'Bulletproof',
+  'Delphox-Mega': 'Levitate',
+  'Greninja-Mega': 'Protean',
   'Feraligatr-Mega': 'Dragonize',
+  'Floette-Mega': 'Fairy Aura',
+  'Meowstic-M-Mega': 'Trace',
+  'Meowstic-F-Mega': 'Trace',
+  'Hawlucha-Mega': 'No Guard',
+  'Crabominable-Mega': 'Iron Fist',
+  'Drampa-Mega': 'Berserk',
+  'Scovillain-Mega': 'Spicy Spray',
+  'Glimmora-Mega': 'Adaptability',
   'Starmie-Mega': 'Huge Power',
 });
 export const targetHints = {

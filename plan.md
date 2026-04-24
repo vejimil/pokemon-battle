@@ -6,7 +6,7 @@
 ## 10개 수정사항 상태
 | 번호 | 항목 | 상태 | 메모 |
 |---|---|---|---|
-| 0 | ZA 메가진화 포켓몬 특성/종족값 최신화 | 완료 | Starmie-Mega 수치 반영 |
+| 0 | ZA 메가진화 포켓몬 특성/종족값 최신화 | 완료 | Starmie-Mega 수치 + 공개 메가 특성 목록 반영 |
 | 1 | 온라인 대결 준비 취소 후 수정 반영 안됨 | 완료 | 빌더 자동 동기화(debounce) 추가 |
 | 2 | 모바일에서 다이맥스 시 키 입력 문제 | 대기 | 원인 재현/분기 분석 필요 |
 | 3 | 게임 끝날 때 종료 턴 시작 전 승리 메시지 출력 | 완료 | 승리 메시지 표시 시점 지연 처리 |
@@ -23,8 +23,13 @@
 - 분석: `starmiemega`가 `Huge Power` 공개 이후에도 공격 종족값이 구버전 값(140)으로 남아 있었습니다.
 - 해결:
   - `Starmie-Mega` 종족값을 `atk: 100`으로 보정.
+  - 공개된 메가 특성 목록을 재조사해 `OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES`를 확장 적용.
+  - 신규 특성 `Piercing Drill`, `Spicy Spray`는 서버 런타임 특성으로 별도 등록(기존 `Mega Sol`, `Dragonize`와 동일 패턴).
+  - 미공개 항목은 기존 fallback 규칙(기존 유지) 그대로 유지.
 - 수정 파일:
   - `src/data/pokedex.js`
+  - `src/battle-constants.js`
+  - `server/showdown-engine.cjs`
 
 ### 1) 온라인 준비 취소 후 수정 반영 누락
 - 분석: 서버 빌더 동기화가 사실상 `Ready ON` 시점 중심이라, `Unready 후 편집` 상황에서 즉시 반영이 누락될 수 있었습니다.
@@ -80,7 +85,7 @@
   - `node --check src/data/pokedex.js`
 - 회귀 스크립트:
   - `npm run verify:stage22` 실행
-  - 결과: 기존 회귀 항목 중 `Mega Feraligatr runtime effect` 실패 1건으로 전체 FAIL (이번 변경과 직접 연관 없는 기존 실패로 보임)
+  - 결과: **Overall PASS**
 
 ## 남은 작업(2, 6, 7, 9)
 - 2: 모바일 다이맥스 입력 경로 재현 후 `pkb-battle-ui-adapter`와 모바일 입력 디스패치 분기 동시 추적
