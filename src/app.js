@@ -1430,24 +1430,34 @@ function getTimelineExecutorConfigs() {
   return [{ scene: () => getPrimaryBattleScene(), playerSide: perspective === 1 ? 'p2' : 'p1', audioEnabled: true }];
 }
 
-function getTimelineSpriteOverride(side) {
-  const ui = state.battleUi || (state.battleUi = {});
-  ui.timelineSpriteOverrides = ui.timelineSpriteOverrides || {};
-  return ui.timelineSpriteOverrides[side] || null;
+function getTimelineSpriteOverrideKey(side, slot = 0) {
+  const normalizedSide = side === 'p2' ? 'p2' : 'p1';
+  const normalizedSlot = Number(slot) === 1 ? 1 : 0;
+  return `${normalizedSide}_${normalizedSlot}`;
 }
 
-function setTimelineSpriteOverride(side, value) {
-  if (side !== 'p1' && side !== 'p2') return;
+function getTimelineSpriteOverride(side, slot = 0) {
   const ui = state.battleUi || (state.battleUi = {});
   ui.timelineSpriteOverrides = ui.timelineSpriteOverrides || {};
+  const key = getTimelineSpriteOverrideKey(side, slot);
+  return ui.timelineSpriteOverrides[key] || null;
+}
+
+function setTimelineSpriteOverride(side, slotOrValue, valueMaybe = null) {
+  if (side !== 'p1' && side !== 'p2') return;
+  const slot = typeof slotOrValue === 'number' ? slotOrValue : 0;
+  const value = typeof slotOrValue === 'number' ? valueMaybe : slotOrValue;
+  const ui = state.battleUi || (state.battleUi = {});
+  ui.timelineSpriteOverrides = ui.timelineSpriteOverrides || {};
+  const key = getTimelineSpriteOverrideKey(side, slot);
   if (value && value.spriteId) {
-    ui.timelineSpriteOverrides[side] = {
+    ui.timelineSpriteOverrides[key] = {
       spriteId: String(value.spriteId || ''),
       shiny: Boolean(value.shiny),
     };
     return;
   }
-  delete ui.timelineSpriteOverrides[side];
+  delete ui.timelineSpriteOverrides[key];
 }
 
 function clearTimelineSpriteOverrides() {
@@ -1548,10 +1558,10 @@ function resolveTimelineSwitchSpriteOverride(ev, battle = state.battle) {
   return { spriteId, shiny };
 }
 
-function buildTimelineStaticInfoPatch(mon) {
+function buildTimelineStaticInfoPatch(mon, { compact = false } = {}) {
   if (!mon) return null;
   const info = buildBattleInfoModelFromMon(mon);
-  return {
+  const patch = {
     displayName: info.displayName,
     levelLabel: info.levelLabel,
     types: info.types,
@@ -1561,7 +1571,21 @@ function buildTimelineStaticInfoPatch(mon) {
     dynamaxed: Boolean(info.dynamaxed),
     gigantamaxed: Boolean(info.gigantamaxed),
     badges: info.badges,
+    hpLabel: info.hpLabel || '',
+    statusEffect: info.statusEffect || '',
+    statusLabel: info.statusLabel || '',
+    fainted: Boolean(info.fainted),
+    compact: Boolean(compact),
   };
+  const hp = Number(info.hp);
+  const maxHp = Number(info.maxHp);
+  const hpPercent = Number(info.hpPercent);
+  const expPercent = Number(info.expPercent);
+  if (Number.isFinite(hp)) patch.hp = hp;
+  if (Number.isFinite(maxHp)) patch.maxHp = maxHp;
+  if (Number.isFinite(hpPercent)) patch.hpPercent = hpPercent;
+  if (Number.isFinite(expPercent)) patch.expPercent = expPercent;
+  return patch;
 }
 
 function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state.battle, initialNames = {} } = {}) {
@@ -1586,7 +1610,9 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
   // branching we only gate visibility by "currently active" here, then refine using
   // timeline slot state at playback time.
   const isVisible = Boolean(isActive);
-  const infoPatch = buildTimelineStaticInfoPatch(mon) || {};
+  const infoPatch = buildTimelineStaticInfoPatch(mon, {
+    compact: battle?.mode === 'doubles' && side === playerSide,
+  }) || {};
   if (ev.type === 'forme_change') {
     // Forme change name comes from event stream (detailschange) and can differ from
     // the final snapshot (e.g. KO + silent detailschange in the same turn).
@@ -1596,7 +1622,7 @@ function resolveTimelineEventVisualState(ev, { playerSide = 'p1', battle = state
   let shiny = false;
 
   if (ev.type === 'switch_in') {
-    const override = getTimelineSpriteOverride(side);
+    const override = getTimelineSpriteOverride(side, sideSlot.slot);
     spriteId = String(override?.spriteId || '');
     shiny = Boolean(override?.shiny);
   }
@@ -1777,7 +1803,7 @@ function primeTimelineSpriteOverrides(events = [], battle = state.battle) {
     .filter(ev => ev?.type === 'switch_in' && (ev.side === 'p1' || ev.side === 'p2'))
     .forEach(ev => {
       const override = resolveTimelineSwitchSpriteOverride(ev, battle);
-      if (override) setTimelineSpriteOverride(ev.side, override);
+      if (override) setTimelineSpriteOverride(ev.side, ev?.slot ?? 0, override);
     });
 }
 
@@ -1817,44 +1843,56 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
       inputHandled = true;
       onInputRequired(requestType);
     };
-    const switchInSides = [...new Set(
+    const switchInTargets = [...new Set(
       events
         // Mid-turn switch_in preloading can pre-hide/pre-swap battlers too early.
         // Only pre-prepare sides when caller explicitly asks for pre-hide flow
         // (initial battle summon sequence).
         .filter(ev => preHideSwitchInSides && ev?.type === 'switch_in' && ev?.fromBall)
-        .map(ev => ev.side)
-        .filter(side => side === 'p1' || side === 'p2')
+        .map(ev => {
+          const side = ev?.side;
+          const slot = Number(ev?.slot) === 1 ? 1 : 0;
+          return side === 'p1' || side === 'p2' ? `${side}:${slot}` : '';
+        })
+        .filter(Boolean)
     )];
-    if (switchInSides.length) {
+    if (switchInTargets.length) {
       await Promise.all(configs.flatMap(cfg => {
         const scene = cfg.scene?.();
         if (!scene?.prepareSwitchInBattler) return [];
         const perspective = cfg.playerSide === 'p2' ? 1 : 0;
-        return switchInSides.map(async side => {
-          const override = getTimelineSpriteOverride(side);
+        return switchInTargets.map(async targetKey => {
+          const [side, slotRaw] = String(targetKey).split(':');
+          const slot = Number(slotRaw) === 1 ? 1 : 0;
+          const override = getTimelineSpriteOverride(side, slot);
           if (!override?.spriteId) return;
           const sideIndex = side === 'p2' ? 1 : 0;
           const facing = sideIndex === perspective ? 'back' : 'front';
           const spriteUrl = spritePath(override.spriteId, facing, Boolean(override.shiny));
           try {
-            await scene.prepareSwitchInBattler(side, spriteUrl);
+            await scene.prepareSwitchInBattler(side, spriteUrl, { slot });
           } catch (_error) {}
         });
       }));
     }
     if (preHideSwitchInSides) {
-      const switchSides = [...new Set(
+      const switchTargets = [...new Set(
         events
           .filter(ev => ev?.type === 'switch_in' && ev?.fromBall)
-          .map(ev => ev.side)
-          .filter(side => side === 'p1' || side === 'p2')
+          .map(ev => {
+            const side = ev?.side;
+            const slot = Number(ev?.slot) === 1 ? 1 : 0;
+            return side === 'p1' || side === 'p2' ? `${side}:${slot}` : '';
+          })
+          .filter(Boolean)
       )];
       for (const cfg of configs) {
         const scene = cfg.scene?.();
         if (!scene?.concealBattler) continue;
-        switchSides.forEach(side => {
-          try { scene.concealBattler(side); } catch (_error) {}
+        switchTargets.forEach(targetKey => {
+          const [side, slotRaw] = String(targetKey).split(':');
+          const slot = Number(slotRaw) === 1 ? 1 : 0;
+          try { scene.concealBattler(side, slot); } catch (_error) {}
         });
       }
     }
@@ -8340,9 +8378,11 @@ function buildBattleInfoModel(player, battle = state.battle) {
 // Doubles: build a slot-indexed info-model array.  Slot 0 mirrors the legacy
 // single info model; slot 1 is built only when the side has a second active mon.
 function buildBattleInfosBySlot(player, activeMons, battle = state.battle) {
-  const slot0 = buildBattleInfoModelFromMon(activeMons[0] || null, player);
+  const compact = battle?.mode === 'doubles';
+  const compactModel = model => model ? { ...model, compact } : model;
+  const slot0 = compactModel(buildBattleInfoModelFromMon(activeMons[0] || null, player));
   const slot1Mon = activeMons[1] || null;
-  const slot1 = slot1Mon ? buildBattleInfoModelFromMon(slot1Mon, player) : null;
+  const slot1 = slot1Mon ? compactModel(buildBattleInfoModelFromMon(slot1Mon, player)) : null;
   return [slot0, slot1];
 }
 
@@ -8625,7 +8665,7 @@ function resolveBattleSpritePresentation(mon, facing = 'front') {
   };
 }
 
-function resolveSpriteModelForBattleSide(sideIndex, perspective, mon, isRenderable, battle = state.battle) {
+function resolveSpriteModelForBattleSide(sideIndex, perspective, mon, isRenderable, battle = state.battle, slot = 0) {
   const sideId = sideIndex === 1 ? 'p2' : 'p1';
   const facing = sideIndex === perspective ? 'back' : 'front';
   const ui = getBattleUiState(battle);
@@ -8651,7 +8691,7 @@ function resolveSpriteModelForBattleSide(sideIndex, perspective, mon, isRenderab
       };
     }
   }
-  const override = getTimelineSpriteOverride(sideId);
+  const override = getTimelineSpriteOverride(sideId, slot);
   if (override?.spriteId) {
     return {
       url: spritePath(override.spriteId, facing, Boolean(override.shiny)),
@@ -8671,11 +8711,11 @@ function buildSpriteModelsForSide(sideIndex, perspective, activeMons, infoModel,
   const teraType = infoModel?.teraType || '';
   const slot0Mon = activeMons[0] || null;
   const slot0Renderable = Boolean(slot0Mon && Number(slot0Mon.hp || 0) > 0 && !slot0Mon.fainted);
-  const slot0 = resolveSpriteModelForBattleSide(sideIndex, perspective, slot0Mon, slot0Renderable, battle);
+  const slot0 = resolveSpriteModelForBattleSide(sideIndex, perspective, slot0Mon, slot0Renderable, battle, 0);
   const slot1Mon = activeMons[1] || null;
   const slot1Renderable = Boolean(slot1Mon && Number(slot1Mon.hp || 0) > 0 && !slot1Mon.fainted);
   const slot1 = slot1Mon
-    ? resolveSpriteModelForBattleSide(sideIndex, perspective, slot1Mon, slot1Renderable, battle)
+    ? resolveSpriteModelForBattleSide(sideIndex, perspective, slot1Mon, slot1Renderable, battle, 1)
     : { url: '', yOffset: 0 };
   return [
     {

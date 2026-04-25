@@ -205,6 +205,22 @@
      - 이벤트 핸들러 슬롯 전달: `switch_in`, `dynamax_start/end`, `move_use`(actorSlot/targetSlot), `damage`/`heal`(슬롯별 info HP tween), `faint(side, slot)`, `boost`/`unboost`(playStatStageEffect 슬롯), `terastallize`, `forme_change`, `effect_start/end`(substitute) 모두 `slot` 또는 `options.slot`을 명시 전달.
      - `playMoveAnim(actorSide, targetSide, { actorSlot, targetSlot, ... })`로 슬롯-쌍 endpoint 도달.
    - 검증: `node --check` (timeline/ui/adapter/scene/app) 통과. `npm run verify:core` 9/9 PASS.
+   - DB-4 후속 핫픽스 ✅ 완료(2026-04-25):
+     - `src/app.js`: 타임라인 switch-in 스프라이트 오버라이드를 `side` 단위에서 `side+slot` 단위로 분리(`timelineSpriteOverrides["p1_0"|"p1_1"|...]`). 초기 소환 pre-prepare/pre-hide도 슬롯 단위(`prepareSwitchInBattler(...,{slot})`, `concealBattler(side, slot)`)로 변경해 **슬롯 1 스프라이트가 슬롯 0/1에 중복 표시**되던 현상 제거.
+     - `src/app.js`: `buildTimelineStaticInfoPatch()`에 HP/상태/exp 필드를 포함해 switch_in 이벤트 조건값이 일부 누락되더라도 더블 슬롯 패널이 안정적으로 정보 채움.
+     - `src/battle-presentation/timeline.js`: info 패널 선택이 executor 고정 `playerSide`만 보지 않고 현재 scene `model.perspective`를 우선 사용하도록 보강(아군/적군 패널 매핑 안전화).
+     - `src/pokerogue-transplant-runtime/ui/battle-info/player-battle-info.js`: doubles에서 아군 패널도 enemy형 mini 정보창으로 보이도록 `compact` 플래그 기반 mini 렌더 적용(HP 숫자/exp 바 숨김, mini 배경 사용). 후속으로 mini 내부 요소(이름/레벨/HP바/상태/타입 마커/아이콘 앵커) 좌표 관계를 EnemyBattleInfo 기준으로 동일하게 맞춤. HP 숫자 렌더 실패(숫자 atlas 지연/미존재) 시 캐시값 고정 문제와 `hpLabel` 파싱 fallback도 함께 보강.
+     - `src/pokerogue-transplant-runtime/ui/battle-info/player-battle-info.js`: 아군 mini 타입 마커를 정보창 몸체 중심 기준 반대편(X 미러)으로 이동하고, Y 좌표는 기존 compact 값(-15.5/-2.5)을 유지. marker 텍스처 방향은 `setMini()` 내부 `typeIcons` 루프의 `icon.setFlipX(mini)`로 좌우반전.
+     - `src/pokerogue-transplant-runtime/ui/ui.js`: `DOUBLES_INFO_GLOBAL_OFFSET` 상수 추가. 아군/적군 BattleInfo 4개 슬롯 좌표에 공통 가산해, 전역 1회 조정으로 전체 패널 위치를 함께 이동 가능하게 함.
+   - UI 미세조정 포인트(나중에 수동 조정):
+     - 전체 정보창 동시 이동: `src/pokerogue-transplant-runtime/ui/ui.js`의 `DOUBLES_INFO_GLOBAL_OFFSET` (`x`, `y`)
+     - 진영/슬롯별 정보창 위치: `src/pokerogue-transplant-runtime/ui/ui.js`의 `DOUBLES_INFO_POS.enemy/player` (`x`, `slot0Y`, `slot1Y`)
+     - 아군 mini 타입 마커 위치: `src/pokerogue-transplant-runtime/ui/battle-info/player-battle-info.js`의 `PLAYER_COMPACT_TYPE_OFFSETS`
+     - 아군 mini 타입 마커 좌우반전 on/off: `src/pokerogue-transplant-runtime/ui/battle-info/player-battle-info.js` `setMini()` 내 `icon.setFlipX(mini)`
+   - 브라우저 수동 확인 포인트:
+     - 더블 시작 직후(명령 입력 전): 각 진영 슬롯0/슬롯1 스프라이트가 서로 다른 종으로 정상 표기되는지 확인.
+     - 같은 구간에서 아군 정보창: 적군과 동일한 mini 형태(HP 숫자/exp 바 미표시)로 표기되는지 확인.
+     - 첫 커맨드 단계 진입 후에도 슬롯별 스프라이트/정보창 매핑이 유지되는지 확인.
    - **남은 한계(다음 단계)**: 명령(기술/포켓몬 선택) 입력은 슬롯 0만 받는 상태 — DB-5에서 슬롯 0 → 슬롯 1 상태머신 도입.
 5. **DB-5 명령 흐름 슬롯화**: `currentSlotByPlayer` 상태머신, 슬롯 0 → 슬롯 1 명령 결정. 토글 사이드 단일화. UI 빌더가 슬롯별 모델을 발행.
 6. **DB-6 타깃 선택**: target hint 기반 후보 산출 + 타깃 선택 UI 활성화. 무브의 `target.slot`을 choice에 박고 직렬화.

@@ -360,6 +360,15 @@ export class BattleTimelineExecutor {
   /** Returns the BattleMessageUiHandler for direct text updates. */
   get _msg()   { return this._ui?.getMessageHandler?.() ?? null; }
 
+  _currentPlayerSide() {
+    const fallback = this._playerSide === 'p2' ? 'p2' : 'p1';
+    const perspective = Number(this._scene()?.currentModel?.perspective);
+    if (perspective === 0 || perspective === 1) {
+      return perspective === 1 ? 'p2' : 'p1';
+    }
+    return fallback;
+  }
+
   /** Returns the BattleInfo panel for the given Showdown side id ('p1'|'p2'). */
   _infoForSide(side) {
     return this._infoForSideSlot(side, 0);
@@ -374,7 +383,8 @@ export class BattleTimelineExecutor {
     const ui = this._ui;
     if (!ui) return null;
     const idx = Number(slot) === 1 ? 1 : 0;
-    if (side === this._playerSide) {
+    const localPlayerSide = this._currentPlayerSide();
+    if (side === localPlayerSide) {
       const arr = Array.isArray(ui.playerInfos) ? ui.playerInfos : null;
       if (arr) return arr[idx] || arr[0] || null;
       return ui.playerInfo || null;
@@ -505,7 +515,7 @@ export class BattleTimelineExecutor {
 
   _pokemonNameWithAffix(name, side) {
     const pokemonName = String(name || '???');
-    if (side === this._playerSide) return pokemonName;
+    if (side === this._currentPlayerSide()) return pokemonName;
     const fallback = this._isEnglishLocale() ? `Foe ${pokemonName}` : `상대 ${pokemonName}`;
     return this._t('battle', 'foePokemonWithAffix', { pokemonName }, fallback);
   }
@@ -539,7 +549,7 @@ export class BattleTimelineExecutor {
   }
 
   _battleIntroMessage() {
-    const opponentSide = this._playerSide === 'p2' ? 'p1' : 'p2';
+    const opponentSide = this._currentPlayerSide() === 'p2' ? 'p1' : 'p2';
     const trainerName = this._sideName(opponentSide);
     const fallback = this._isEnglishLocale()
       ? `${trainerName} wants to battle!`
@@ -549,7 +559,7 @@ export class BattleTimelineExecutor {
 
   _switchInMessage(side, species) {
     const pokemonName = String(species || '???');
-    if (side === this._playerSide) {
+    if (side === this._currentPlayerSide()) {
       return this._t('battle', 'playerGo', { pokemonName }, `가라! ${pokemonName}!`);
     }
     const trainerName = this._isEnglishLocale() ? 'Opponent' : '상대';
@@ -558,7 +568,7 @@ export class BattleTimelineExecutor {
 
   _switchOutMessage(side, species) {
     const pokemonName = String(species || '???');
-    if (side === this._playerSide) {
+    if (side === this._currentPlayerSide()) {
       return this._isEnglishLocale()
         ? `Come back, ${pokemonName}!`
         : `들어와! ${pokemonName}!`;
@@ -654,7 +664,7 @@ export class BattleTimelineExecutor {
   }
 
   _sideLabel(side) {
-    if (side === this._playerSide) {
+    if (side === this._currentPlayerSide()) {
       return this._isEnglishLocale() ? 'Your' : '우리 편';
     }
     return this._isEnglishLocale() ? 'Foe' : '상대';
@@ -667,7 +677,7 @@ export class BattleTimelineExecutor {
     const prefix = SIDE_EFFECT_KEY_PREFIX[effectId];
     if (prefix) {
       const opKey = kind === 'start' ? 'OnAdd' : 'OnRemove';
-      const sideSuffix = side === this._playerSide ? 'Player' : 'Enemy';
+      const sideSuffix = side === this._currentPlayerSide() ? 'Player' : 'Enemy';
       const candidates = [`${prefix}${opKey}${sideSuffix}`, `${prefix}${opKey}`];
       for (const key of candidates) {
         if (!this._hasLocaleKey('arena-tag', key)) continue;
@@ -957,7 +967,7 @@ export class BattleTimelineExecutor {
 
   _substituteSpriteUrlForSide(side) {
     if (!side) return '';
-    return side === this._playerSide
+    return side === this._currentPlayerSide()
       ? './assets/system/pokemon/substitute_back.png'
       : './assets/system/pokemon/substitute.png';
   }
@@ -1294,7 +1304,7 @@ export class BattleTimelineExecutor {
         const previousDisplaySpecies = this._localizeMonName(previousSpecies) || previousSpecies;
         const previousInfo = this._slotInfoFor(side, slot) || null;
         const shouldShowSwitchOut = Boolean(
-          side === this._playerSide
+          side === this._currentPlayerSide()
           && ev.fromBall
           && !context?.isInitialSummonSequence
           && previousSpecies
@@ -1635,7 +1645,7 @@ export class BattleTimelineExecutor {
           ui.abilityBar.update({
             visible: true,
             text: abilityName,
-            side: ev.side === this._playerSide ? 'player' : 'enemy',
+            side: ev.side === this._currentPlayerSide() ? 'player' : 'enemy',
           });
         }
         await this._showMsg(abilityMsg, { minMs: 1200 });

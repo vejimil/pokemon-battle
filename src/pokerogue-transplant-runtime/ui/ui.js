@@ -13,6 +13,21 @@ import { PlayerBattleInfo } from './battle-info/player-battle-info.js';
 // Temporary value — refined later against PokeRogue measured coordinates (DB-9).
 const DOUBLES_MOUNT_OFFSET_X = 24;
 
+// Global offset applied to every doubles battle info panel (enemy + player).
+// Use this for one-shot coarse movement of all four panels at once.
+const DOUBLES_INFO_GLOBAL_OFFSET = Object.freeze({
+  x: 0,
+  y: 0,
+});
+
+// Doubles BattleInfo anchor positions (logical pixels).
+// Keep these values centralized so visual tuning is a one-line edit.
+const DOUBLES_INFO_POS = Object.freeze({
+  enemy: { x: 140, slot0Y: 39, slot1Y: 22 },
+  // Player mini info now follows enemy-like slot spacing (17px).
+  player: { x: 310, slot0Y: 108, slot1Y: 125 },
+});
+
 export class TransplantBattleUI {
   constructor(scene, controller, env) {
     this.scene = scene;
@@ -236,10 +251,24 @@ export class TransplantBattleUI {
     this.playerTray.container?.setPosition(320, 108);  // PokeRogue: (scaledCanvas.width, -72) in fieldUI
     // Slot 0 BattleInfo at the singles base position; slot 1 stacks vertically
     // above (enemy) / below (player) so two HP bars stay legible side-by-side.
-    this.enemyInfos[0]?.container?.setPosition(140, 39);    // PokeRogue: EnemyBattleInfo(140, -141)
-    this.enemyInfos[1]?.container?.setPosition(140, 22);
-    this.playerInfos[0]?.container?.setPosition(310, 108);  // PokeRogue: PlayerBattleInfo(scaledCanvas.width-10, -72)
-    this.playerInfos[1]?.container?.setPosition(310, 130);
+    const infoOffsetX = DOUBLES_INFO_GLOBAL_OFFSET.x;
+    const infoOffsetY = DOUBLES_INFO_GLOBAL_OFFSET.y;
+    this.enemyInfos[0]?.container?.setPosition(
+      DOUBLES_INFO_POS.enemy.x + infoOffsetX,
+      DOUBLES_INFO_POS.enemy.slot0Y + infoOffsetY
+    );
+    this.enemyInfos[1]?.container?.setPosition(
+      DOUBLES_INFO_POS.enemy.x + infoOffsetX,
+      DOUBLES_INFO_POS.enemy.slot1Y + infoOffsetY
+    );
+    this.playerInfos[0]?.container?.setPosition(
+      DOUBLES_INFO_POS.player.x + infoOffsetX,
+      DOUBLES_INFO_POS.player.slot0Y + infoOffsetY
+    );
+    this.playerInfos[1]?.container?.setPosition(
+      DOUBLES_INFO_POS.player.x + infoOffsetX,
+      DOUBLES_INFO_POS.player.slot1Y + infoOffsetY
+    );
 
     // Slot 0 keeps the singles base coordinates; slot 1 is offset horizontally
     // so the doubles pair appears side-by-side.  Slot 1 mounts stay invisible

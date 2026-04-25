@@ -1,5 +1,42 @@
 import { BattleInfo } from './battle-info.js';
 
+const PLAYER_NORMAL_POS = Object.freeze({
+  nameTextX: -115,
+  nameTextY: -15,
+  levelX: -41,
+  levelY: -10,
+  hpX: -61,
+  hpY: -1,
+  statusX: -115,
+  statusY: -3.5,
+});
+
+// Compact mode should visually mirror EnemyBattleInfo element relationships.
+const PLAYER_COMPACT_POS = Object.freeze({
+  nameTextX: -124,
+  nameTextY: -11,
+  levelX: -50,
+  levelY: -5,
+  hpX: -71,
+  hpY: 4.5,
+  statusX: -124,
+  statusY: 0.5,
+});
+
+const PLAYER_NORMAL_TYPE_OFFSETS = Object.freeze([
+  { x: -139, y: -17 },
+  { x: -139, y: -1 },
+  { x: -154, y: -17 },
+]);
+
+const PLAYER_COMPACT_TYPE_OFFSETS = Object.freeze([
+  // Mirror enemy-like compact marker placement to the opposite side
+  // of the player info body while preserving current Y alignment.
+  { x: -139, y: -15.5 },
+  { x: -139, y: -2.5 },
+  { x: -154, y: -15.5 },
+]);
+
 export class PlayerBattleInfo extends BattleInfo {
   constructor(ui) {
     super(ui, 'player');
@@ -35,6 +72,15 @@ export class PlayerBattleInfo extends BattleInfo {
     }
   }
 
+  getTypeTextureKeys() {
+    if (!this.mini) return super.getTypeTextureKeys();
+    return [
+      this.env.UI_ASSETS.pbinfoEnemyType1.key,
+      this.env.UI_ASSETS.pbinfoEnemyType2.key,
+      this.env.UI_ASSETS.pbinfoEnemyType3.key,
+    ];
+  }
+
   /**
    * Build HP number sprites: digits rendered right-to-left using numbers atlas.
    * Matches PokeRogue's setHpNumbers().
@@ -44,7 +90,7 @@ export class PlayerBattleInfo extends BattleInfo {
     const numbersKey = env.UI_ASSETS.numbersAtlas?.key;
     this.hpNumbersContainer.removeAll(true);
 
-    if (!numbersKey || !env.textureExists(scene, numbersKey)) return;
+    if (!numbersKey || !env.textureExists(scene, numbersKey)) return false;
 
     const hpStr    = String(Math.max(0, hp));
     const maxHpStr = String(maxHp);
@@ -64,6 +110,7 @@ export class PlayerBattleInfo extends BattleInfo {
         scene.add.image(offset++ * -8, 0, numbersKey, hpStr[i]).setOrigin(0, 0.5)
       );
     }
+    return true;
   }
 
   /**
@@ -157,9 +204,12 @@ export class PlayerBattleInfo extends BattleInfo {
    */
   _onHpNumbersUpdate(scaleX, maxHp) {
     const currentHp = Math.max(0, Math.round(scaleX * maxHp));
-    this.setHpNumbers(currentHp, maxHp);
-    // Keep lastHpNum in sync so update() doesn't re-render with stale value
-    this.lastHpNum = currentHp;
+    const rendered = this.setHpNumbers(currentHp, maxHp);
+    // Keep cached values only when glyphs were actually rendered.
+    if (rendered) {
+      this.lastHpNum = currentHp;
+      this.lastMaxHpNum = maxHp;
+    }
   }
 
   update(info = {}) {
@@ -167,14 +217,28 @@ export class PlayerBattleInfo extends BattleInfo {
     super.update(info);
 
     const { env } = this;
+    const compact = Boolean(info.compact);
+    this.setMini(compact, { preservePosition: true });
+
+    if (compact) return;
 
     // HP numbers
-    const hp    = Number(info.hp    ?? 0);
-    const maxHp = Number(info.maxHp ?? 0);
+    let hp = Number(info.hp);
+    let maxHp = Number(info.maxHp);
+    if (!(maxHp > 0)) {
+      const label = String(info.hpLabel || '').trim();
+      const match = /^(\d+)\s*\/\s*(\d+)$/.exec(label);
+      if (match) {
+        hp = Number(match[1]);
+        maxHp = Number(match[2]);
+      }
+    }
     if (maxHp > 0 && (hp !== this.lastHpNum || maxHp !== this.lastMaxHpNum)) {
-      this.setHpNumbers(hp, maxHp);
-      this.lastHpNum    = hp;
-      this.lastMaxHpNum = maxHp;
+      const rendered = this.setHpNumbers(hp, maxHp);
+      if (rendered) {
+        this.lastHpNum    = hp;
+        this.lastMaxHpNum = maxHp;
+      }
     }
 
     // EXP bar tween
@@ -189,20 +253,59 @@ export class PlayerBattleInfo extends BattleInfo {
    * Toggle mini mode (used when battle starts / switches happen).
    * Matches PokeRogue's setMini().
    */
-  setMini(mini) {
+  setMini(mini, options = {}) {
     if (this.mini === mini) return;
     this.mini = mini;
+    const preservePosition = Boolean(options?.preservePosition);
 
     if (this.bg) {
-      const miniKey = this.env.UI_ASSETS.pbinfoPlayerMini?.key;
+      const miniKey = this.env.UI_ASSETS.pbinfoPlayerMini?.key || this.env.UI_ASSETS.pbinfoEnemy?.key;
       this.bg.setTexture(mini && miniKey
         ? miniKey
         : this.env.UI_ASSETS.pbinfoPlayer.key
       );
+      this.bg.setY(mini ? -1 : 0);
     }
 
-    // Shift container Y (PokeRogue: this.y -= 12 * (mini ? 1 : -1))
-    this.container.y += -12 * (mini ? 1 : -1);
+    // Legacy behavior shifts the container Y in mini mode, but doubles uses
+    // explicit layout coordinates from ui.js; keep position stable there.
+    if (!preservePosition) {
+      this.container.y += -12 * (mini ? 1 : -1);
+    }
+
+    const nextPos = mini ? PLAYER_COMPACT_POS : PLAYER_NORMAL_POS;
+    this.pos.nameTextX = nextPos.nameTextX;
+    this.pos.nameTextY = nextPos.nameTextY;
+    this.pos.levelX = nextPos.levelX;
+    this.pos.levelY = nextPos.levelY;
+    this.pos.hpX = nextPos.hpX;
+    this.pos.hpY = nextPos.hpY;
+    this.pos.statusX = nextPos.statusX;
+    this.pos.statusY = nextPos.statusY;
+
+    if (this.nameText) this.nameText.setPosition(this.pos.nameTextX, this.pos.nameTextY);
+    if (this.genderText) this.genderText.setPosition(this.pos.nameTextX, this.pos.nameTextY);
+    if (this.statusSprite) this.statusSprite.setPosition(this.pos.statusX, this.pos.statusY);
+    if (this.hpFill) this.hpFill.setPosition(this.pos.hpX, this.pos.hpY);
+    if (this.hpLabel) this.hpLabel.setPosition(this.pos.hpX - 1, this.pos.hpY - 3);
+    if (this.levelContainer) {
+      const levelLen = String(this.lastLevelStr || '').length;
+      const overflow = Math.max(levelLen - 3, 0);
+      this.levelContainer.setPosition(this.pos.levelX - (8 * overflow), this.pos.levelY);
+    }
+
+    const typeOffsets = mini ? PLAYER_COMPACT_TYPE_OFFSETS : PLAYER_NORMAL_TYPE_OFFSETS;
+    this.typeIcons.forEach((icon, index) => {
+      const offset = typeOffsets[index] || typeOffsets[0];
+      if (!icon) return;
+      icon.setPosition(offset.x, offset.y);
+      // Player compact mode reuses enemy marker textures/placement, so flip
+      // horizontally to keep marker body orientation consistent on player side.
+      icon.setFlipX(mini);
+    });
+
+    // Re-anchor tera/splice/shiny icons to the updated name baseline.
+    this._positionIcons(this.nameText?.displayWidth || 0, this.genderText?.displayWidth || 0);
 
     // Toggle HP numbers and exp bar / label visibility
     if (this.hpNumbersContainer) this.hpNumbersContainer.setVisible(!mini);
