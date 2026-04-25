@@ -9,6 +9,10 @@ import { AbilityBar, BattleTray } from './battle-info/battle-info.js';
 import { EnemyBattleInfo } from './battle-info/enemy-battle-info.js';
 import { PlayerBattleInfo } from './battle-info/player-battle-info.js';
 
+// Horizontal offset (in logical pixels) between slot 0 and slot 1 in doubles.
+// Temporary value — refined later against PokeRogue measured coordinates (DB-9).
+const DOUBLES_MOUNT_OFFSET_X = 24;
+
 export class TransplantBattleUI {
   constructor(scene, controller, env) {
     this.scene = scene;
@@ -21,11 +25,19 @@ export class TransplantBattleUI {
     this.handlers = [];
     this.adapter = new PkbBattleUiAdapter();
     this.rootContainer = scene.add.container(0, 0).setDepth(40).setName('pkb-transplant-ui-root');
-    this.enemyInfo = new EnemyBattleInfo(this);
-    this.playerInfo = new PlayerBattleInfo(this);
+    // Two BattleInfo instances per side support doubles slot 0/1.  Slot 1 stays
+    // hidden (no model emitted) in singles.
+    this.enemyInfos = [new EnemyBattleInfo(this), new EnemyBattleInfo(this)];
+    this.playerInfos = [new PlayerBattleInfo(this), new PlayerBattleInfo(this)];
+    // Aliases for legacy callers that only address slot 0.
+    this.enemyInfo = this.enemyInfos[0];
+    this.playerInfo = this.playerInfos[0];
     this.enemyTray = new BattleTray(this, 'enemy');
     this.playerTray = new BattleTray(this, 'player');
     this.abilityBar = new AbilityBar(this);
+    this.enemySprites = [];
+    this.playerSprites = [];
+    // Aliases for legacy callers that only address slot 0.
     this.enemySprite = null;
     this.playerSprite = null;
     this.overlayActive = false;
@@ -38,14 +50,20 @@ export class TransplantBattleUI {
     this.handlers[UiMode.FIGHT] = new FightUiHandler(this);
     this.handlers[UiMode.PARTY] = new PartyUiHandler(this);
     this.handlers[UiMode.TARGET_SELECT] = new TargetSelectUiHandler(this);
-    this.enemyInfo.setup();
-    this.playerInfo.setup();
+    this.enemyInfos.forEach(info => info.setup());
+    this.playerInfos.forEach(info => info.setup());
     this.enemyTray.setup();
     this.playerTray.setup();
     this.abilityBar.setup();
     Object.values(this.handlers).forEach(handler => handler?.setup?.());
     Object.values(this.handlers).forEach(handler => handler?.container && this.rootContainer.add(handler.container));
-    [this.enemyTray.container, this.playerTray.container, this.enemyInfo.container, this.playerInfo.container, this.abilityBar.container].forEach(node => {
+    [
+      this.enemyTray.container,
+      this.playerTray.container,
+      ...this.enemyInfos.map(info => info?.container),
+      ...this.playerInfos.map(info => info?.container),
+      this.abilityBar.container,
+    ].forEach(node => {
       if (node) this.rootContainer.add(node);
     });
     // Phaser Container renders children in addition order by default (sortChildrenFlag=false).
@@ -54,8 +72,11 @@ export class TransplantBattleUI {
     // Battle info containers need explicit depth below handlers so they don't cover UI panels.
     this.enemyTray.container?.setDepth(42);
     this.playerTray.container?.setDepth(42);
-    this.enemyInfo.container?.setDepth(42);
-    this.playerInfo.container?.setDepth(42);
+    this.enemyInfos.forEach(info => info?.container?.setDepth(42));
+    this.playerInfos.forEach(info => info?.container?.setDepth(42));
+    // Slot 1 stays hidden until a doubles model emits a per-slot info entry.
+    this.enemyInfos[1]?.container?.setVisible(false);
+    this.playerInfos[1]?.container?.setVisible(false);
     this.abilityBar.container?.setDepth(60);
     // COMMAND and TARGET_SELECT have no setDepth call — default 0 would go under battle info.
     this.handlers[UiMode.COMMAND]?.container?.setDepth(50);
@@ -65,8 +86,14 @@ export class TransplantBattleUI {
   }
 
   attachSpriteMounts(spriteMounts = {}) {
-    this.enemySprite = spriteMounts.enemy || null;
-    this.playerSprite = spriteMounts.player || null;
+    const toArray = value => {
+      if (Array.isArray(value)) return value.filter(Boolean);
+      return value ? [value] : [];
+    };
+    this.enemySprites = toArray(spriteMounts.enemy);
+    this.playerSprites = toArray(spriteMounts.player);
+    this.enemySprite = this.enemySprites[0] || null;
+    this.playerSprite = this.playerSprites[0] || null;
   }
 
   getHandler(mode = this.mode) {
@@ -207,26 +234,72 @@ export class TransplantBattleUI {
     // absolute canvas pos / 6 = our logical pos; y = (1080 + localY*6) / 6 = 180 + localY
     this.enemyTray.container?.setPosition(0, 36);      // PokeRogue: (0, -144) in fieldUI
     this.playerTray.container?.setPosition(320, 108);  // PokeRogue: (scaledCanvas.width, -72) in fieldUI
-    this.enemyInfo.container?.setPosition(140, 39);    // PokeRogue: EnemyBattleInfo(140, -141)
-    this.playerInfo.container?.setPosition(310, 108);  // PokeRogue: PlayerBattleInfo(scaledCanvas.width-10, -72)
-    if (this.enemySprite?.phaserSprite) {
-      // Base ground-line positions. PBS metrics in renderBattlerSprite apply per-species offsets on top.
-      this.enemySprite.phaserSprite.setPosition(216, 84);
-      this.enemySprite.baseX = 216;
-      this.enemySprite.baseY = 74;
+    // Slot 0 BattleInfo at the singles base position; slot 1 stacks vertically
+    // above (enemy) / below (player) so two HP bars stay legible side-by-side.
+    this.enemyInfos[0]?.container?.setPosition(140, 39);    // PokeRogue: EnemyBattleInfo(140, -141)
+    this.enemyInfos[1]?.container?.setPosition(140, 22);
+    this.playerInfos[0]?.container?.setPosition(310, 108);  // PokeRogue: PlayerBattleInfo(scaledCanvas.width-10, -72)
+    this.playerInfos[1]?.container?.setPosition(310, 130);
+
+    // Slot 0 keeps the singles base coordinates; slot 1 is offset horizontally
+    // so the doubles pair appears side-by-side.  Slot 1 mounts stay invisible
+    // until renderBattlerSprite stages an actual texture on them.
+    const enemyBaseX = 216;
+    const enemyBaseY = 74;
+    const playerBaseX = 100;
+    const playerBaseY = 143;
+    if (this.enemySprites[0]?.phaserSprite) {
+      this.enemySprites[0].phaserSprite.setPosition(enemyBaseX, enemyBaseY + 10);
+      this.enemySprites[0].baseX = enemyBaseX;
+      this.enemySprites[0].baseY = enemyBaseY;
     }
-    if (this.playerSprite?.phaserSprite) {
-      this.playerSprite.phaserSprite.setPosition(106, 148);
-      this.playerSprite.baseX = 100;
-      this.playerSprite.baseY = 143;
+    if (this.enemySprites[1]?.phaserSprite) {
+      const slot1X = enemyBaseX - DOUBLES_MOUNT_OFFSET_X;
+      this.enemySprites[1].phaserSprite.setPosition(slot1X, enemyBaseY + 10);
+      this.enemySprites[1].baseX = slot1X;
+      this.enemySprites[1].baseY = enemyBaseY;
+    }
+    if (this.playerSprites[0]?.phaserSprite) {
+      this.playerSprites[0].phaserSprite.setPosition(playerBaseX + 6, playerBaseY + 5);
+      this.playerSprites[0].baseX = playerBaseX;
+      this.playerSprites[0].baseY = playerBaseY;
+    }
+    if (this.playerSprites[1]?.phaserSprite) {
+      const slot1X = playerBaseX + DOUBLES_MOUNT_OFFSET_X;
+      this.playerSprites[1].phaserSprite.setPosition(slot1X + 6, playerBaseY + 5);
+      this.playerSprites[1].baseX = slot1X;
+      this.playerSprites[1].baseY = playerBaseY;
     }
   }
 
   renderModel(model = {}) {
     this.adapter.setModel(model);
     this.uiLanguage = model.language || 'ko';
-    this.enemyInfo.update(this.adapter.getEnemyInfo());
-    this.playerInfo.update(this.adapter.getPlayerInfo());
+    // Slot 0 always renders with the legacy single key (singles + doubles).
+    // Slot 1 only renders when a doubles model emits an enemyInfos/playerInfos array;
+    // otherwise we hide slot 1 explicitly to clear any stale state.
+    const enemyInfoModels = this.adapter.getInfoModelsBySlot('enemy');
+    const playerInfoModels = this.adapter.getInfoModelsBySlot('player');
+    this.enemyInfos.forEach((info, slot) => {
+      if (!info) return;
+      const slotModel = enemyInfoModels[slot];
+      if (slotModel) {
+        info.container?.setVisible?.(true);
+        info.update(slotModel);
+      } else {
+        info.container?.setVisible?.(false);
+      }
+    });
+    this.playerInfos.forEach((info, slot) => {
+      if (!info) return;
+      const slotModel = playerInfoModels[slot];
+      if (slotModel) {
+        info.container?.setVisible?.(true);
+        info.update(slotModel);
+      } else {
+        info.container?.setVisible?.(false);
+      }
+    });
     this.enemyTray.update(this.adapter.getEnemyTray());
     this.playerTray.update(this.adapter.getPlayerTray());
     this.abilityBar.update(this.adapter.getAbilityBar());
@@ -234,15 +307,22 @@ export class TransplantBattleUI {
     const messageState = this.adapter.getMessageState();
     this.getMessageHandler().render(messageState);
 
-    if (this.enemySprite) {
-      // renderBattlerToPhaser is async; skips reload if URL unchanged (url === currentUrl).
-      // party-ui-handler hides the sprite via mount.dom.setVisible(false) shim — that call
-      // happens synchronously and persists because reload is skipped on same URL.
-      this.env.renderBattlerToPhaser(this.enemySprite, this.adapter.getSpriteModel('enemy'));
-    }
-    if (this.playerSprite) {
-      this.env.renderBattlerToPhaser(this.playerSprite, this.adapter.getSpriteModel('player'));
-    }
+    // renderBattlerToPhaser is async; skips reload if URL unchanged (url === currentUrl).
+    // party-ui-handler hides the sprite via mount.dom.setVisible(false) shim — that call
+    // happens synchronously and persists because reload is skipped on same URL.
+    const enemyModels = this.adapter.getSpriteModelsBySlot('enemy');
+    const playerModels = this.adapter.getSpriteModelsBySlot('player');
+    this.enemySprites.forEach((mount, slot) => {
+      if (!mount) return;
+      const slotModel = enemyModels[slot];
+      // No slot-specific model emitted (singles, or unused doubles slot) → clear.
+      this.env.renderBattlerToPhaser(mount, slotModel || { url: '' });
+    });
+    this.playerSprites.forEach((mount, slot) => {
+      if (!mount) return;
+      const slotModel = playerModels[slot];
+      this.env.renderBattlerToPhaser(mount, slotModel || { url: '' });
+    });
 
     const nextMode = this.adapter.getMode();
     // Always fetch fresh args from adapter (bypasses stale modeArgs cache).

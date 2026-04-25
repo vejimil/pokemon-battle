@@ -660,6 +660,18 @@ export class PkbBattleUiAdapter {
     return this.model.playerInfo || {};
   }
 
+  // Returns a slot-indexed array of BattleInfo models for the given side.
+  // Doubles emits `enemyInfos`/`playerInfos` arrays; singles emits only the
+  // legacy single key, which is mapped to slot 0.
+  getInfoModelsBySlot(side) {
+    const arrayKey = side === 'enemy' ? 'enemyInfos' : 'playerInfos';
+    const singleKey = side === 'enemy' ? 'enemyInfo' : 'playerInfo';
+    const arr = Array.isArray(this.model[arrayKey]) ? this.model[arrayKey] : null;
+    if (arr && arr.length) return arr;
+    const single = this.model[singleKey];
+    return single ? [single] : [];
+  }
+
   getEnemyTray() {
     return this.model.enemyTray || [];
   }
@@ -674,6 +686,18 @@ export class PkbBattleUiAdapter {
 
   getSpriteModel(side) {
     return side === 'enemy' ? (this.model.enemySprite || {}) : (this.model.playerSprite || {});
+  }
+
+  // Returns a slot-indexed array of sprite models for the given side.
+  // Doubles emits `enemySprites`/`playerSprites` arrays; singles emits only
+  // the legacy single-sprite key, which is mapped to slot 0.
+  getSpriteModelsBySlot(side) {
+    const arrayKey = side === 'enemy' ? 'enemySprites' : 'playerSprites';
+    const singleKey = side === 'enemy' ? 'enemySprite' : 'playerSprite';
+    const arr = Array.isArray(this.model[arrayKey]) ? this.model[arrayKey] : null;
+    if (arr && arr.length) return arr;
+    const single = this.model[singleKey];
+    return single ? [single] : [];
   }
 
   getPerspectiveOptions() {

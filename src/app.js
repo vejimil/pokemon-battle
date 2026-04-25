@@ -8337,6 +8337,15 @@ function buildBattleInfoModel(player, battle = state.battle) {
   return buildBattleInfoModelFromMon(mon, player);
 }
 
+// Doubles: build a slot-indexed info-model array.  Slot 0 mirrors the legacy
+// single info model; slot 1 is built only when the side has a second active mon.
+function buildBattleInfosBySlot(player, activeMons, battle = state.battle) {
+  const slot0 = buildBattleInfoModelFromMon(activeMons[0] || null, player);
+  const slot1Mon = activeMons[1] || null;
+  const slot1 = slot1Mon ? buildBattleInfoModelFromMon(slot1Mon, player) : null;
+  return [slot0, slot1];
+}
+
 function buildBattleTrayModel(player, battle = state.battle) {
   const side = battle?.players?.[player];
   const activeSet = new Set(getBattleActiveIndices(player, battle));
@@ -8655,6 +8664,45 @@ function resolveSpriteModelForBattleSide(sideIndex, perspective, mon, isRenderab
   };
 }
 
+// Doubles: emit a per-slot array of sprite models.  Slot 0 mirrors the legacy
+// single-sprite key; slot 1 is built only when there is a second active mon.
+// `mountTag` is 'enemy' | 'player' (which mount the model targets).
+function buildSpriteModelsForSide(sideIndex, perspective, activeMons, infoModel, battle, mountTag) {
+  const teraType = infoModel?.teraType || '';
+  const slot0Mon = activeMons[0] || null;
+  const slot0Renderable = Boolean(slot0Mon && Number(slot0Mon.hp || 0) > 0 && !slot0Mon.fainted);
+  const slot0 = resolveSpriteModelForBattleSide(sideIndex, perspective, slot0Mon, slot0Renderable, battle);
+  const slot1Mon = activeMons[1] || null;
+  const slot1Renderable = Boolean(slot1Mon && Number(slot1Mon.hp || 0) > 0 && !slot1Mon.fainted);
+  const slot1 = slot1Mon
+    ? resolveSpriteModelForBattleSide(sideIndex, perspective, slot1Mon, slot1Renderable, battle)
+    : { url: '', yOffset: 0 };
+  return [
+    {
+      url: slot0.url,
+      yOffset: slot0.yOffset,
+      mount: mountTag,
+      slot: 0,
+      // Slot 0 carries the side-level tera flag (single-source-of-truth in DB-3).
+      // DB-4 will refine per-slot tera/dynamax info.
+      terastallized: Boolean(teraType),
+      teraType,
+      dynamaxed: Boolean(slot0Mon?.dynamaxed),
+      gigantamaxed: Boolean(slot0Mon?.gigantamaxed),
+    },
+    {
+      url: slot1.url,
+      yOffset: slot1.yOffset,
+      mount: mountTag,
+      slot: 1,
+      terastallized: false,
+      teraType: '',
+      dynamaxed: Boolean(slot1Mon?.dynamaxed),
+      gigantamaxed: Boolean(slot1Mon?.gigantamaxed),
+    },
+  ];
+}
+
 function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
   const ui = syncBattleUiState(battle);
   const useForcedPerspective = Number.isInteger(forcedPerspective);
@@ -8673,8 +8721,10 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
   else if (mode === 'target') stateWindow = buildPhaserTargetWindowModel(battle, perspective);
   const enemyInfo = buildBattleInfoModel(enemyPlayer, battle);
   const playerInfo = buildBattleInfoModel(allyPlayer, battle);
-  const enemyMon = getActiveMons(enemyPlayer, battle)[0] || null;
-  const playerMon = getActiveMons(allyPlayer, battle)[0] || null;
+  const enemyActive = getActiveMons(enemyPlayer, battle);
+  const playerActive = getActiveMons(allyPlayer, battle);
+  const enemyMon = enemyActive[0] || null;
+  const playerMon = playerActive[0] || null;
   const enemyRenderable = Boolean(enemyMon && Number(enemyMon.hp || 0) > 0 && !enemyMon.fainted);
   const playerRenderable = Boolean(playerMon && Number(playerMon.hp || 0) > 0 && !playerMon.fainted);
   const rawAbilityBar = updateBattleAbilityBarState(battle);
@@ -8684,6 +8734,19 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
   } : rawAbilityBar;
   const enemySpriteModel = resolveSpriteModelForBattleSide(enemyPlayer, perspective, enemyMon, enemyRenderable, battle);
   const playerSpriteModel = resolveSpriteModelForBattleSide(allyPlayer, perspective, playerMon, playerRenderable, battle);
+  const isDoubles = battle?.mode === 'doubles';
+  const enemySpritesBySlot = isDoubles
+    ? buildSpriteModelsForSide(enemyPlayer, perspective, enemyActive, enemyInfo, battle, 'enemy')
+    : null;
+  const playerSpritesBySlot = isDoubles
+    ? buildSpriteModelsForSide(allyPlayer, perspective, playerActive, playerInfo, battle, 'player')
+    : null;
+  const enemyInfosBySlot = isDoubles
+    ? buildBattleInfosBySlot(enemyPlayer, enemyActive, battle)
+    : null;
+  const playerInfosBySlot = isDoubles
+    ? buildBattleInfosBySlot(allyPlayer, playerActive, battle)
+    : null;
   return {
     turn: battle.turn,
     perspective,
@@ -8722,6 +8785,15 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
       dynamaxed: Boolean(playerMon?.dynamaxed),
       gigantamaxed: Boolean(playerMon?.gigantamaxed),
     },
+    // Doubles only: per-slot sprite models. ui.js renderModel falls back to the
+    // legacy single keys above when this array is absent (singles).  In doubles
+    // both slots are emitted; slot 0 mirrors `enemySprite`/`playerSprite`.
+    ...(enemySpritesBySlot ? { enemySprites: enemySpritesBySlot } : {}),
+    ...(playerSpritesBySlot ? { playerSprites: playerSpritesBySlot } : {}),
+    // Doubles only: per-slot BattleInfo models.  Slot 1 is null when the side
+    // has only one active mon (slot 1 panel hides automatically).
+    ...(enemyInfosBySlot ? { enemyInfos: enemyInfosBySlot } : {}),
+    ...(playerInfosBySlot ? { playerInfos: playerInfosBySlot } : {}),
     enemyTray: buildBattleTrayModel(enemyPlayer, battle),
     playerTray: buildBattleTrayModel(allyPlayer, battle),
     abilityBar,

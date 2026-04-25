@@ -10,7 +10,7 @@
 ## 현재 작업 목록
 | 번호 | 항목 | 상태 | 메모 |
 |---|---|---|---|
-| 9 | 더블배틀 구현 | 진행 중(DB-1, DB-2 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-3(듀얼 마운트/렌더). |
+| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-4 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-5(명령 흐름 슬롯화). |
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 
 ## 15번 필수 분석 포인트(보류)
@@ -185,8 +185,27 @@
    - `src/app.js`: `buildShowdownBattlePayload()`가 `state.mode` 기반으로 mode/formatid 산출. `startEngineAuthoritativeSinglesBattle()`이 doubles 디스크립터도 적용. `adoptEngineBattleSnapshot()`이 snapshot.mode에 따라 디스크립터 선택. `startBattle()` 게이트가 두 id 모두 허용. **DB-1 doubles 디스크립터를 `startAllowed: true`로 전환**.
    - 스모크 테스트: `node -e` 직접 호출로 doubles 시작 시 `p1/p2.active = [0,1]`, `request.active.length = 2`, `engine = 'showdown-local-doubles'` 확인. 싱글 경로(`active = [0]`) 회귀 없음. `npm run verify:core` 통과.
    - **남은 한계(다음 단계 의존)**: 씬은 슬롯 0만 렌더, UI 빌더는 슬롯 0만 입력 받으므로 더블 시작은 가능하나 첫 턴 진행은 DB-3+/DB-7 이후에야 정상.
-3. **DB-3 듀얼 마운트/렌더**: 씬에 슬롯별 마운트 배열 도입, ui.js layout 좌표 분리. 첫 턴 두 마리 각각 정상 표시. 메시지/필드 연출은 기존 single-pair endpoint로 임시 유지.
-4. **DB-4 타임라인 슬롯 분기**: `_infoForSideSlot`/슬롯별 mount 호출. 두 슬롯 각각 HP/상태/연출 정상.
+3. **DB-3 듀얼 마운트/렌더** ✅ 완료(2026-04-25):
+   - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`: `enemySprites = [m0, m1]`/`playerSprites = [m0, m1]` 배열 도입(슬롯별 `createSpriteMount('enemy'|'player', slot)` 호출, 슬롯 1은 depth +0.05). 호환 alias `this.enemySprite = this.enemySprites[0]` 유지. `_mountForBattleSideSlot(side, slot=0)`/`_mountsForBattleSide(side)`/`_allBattlerMounts()` 추가; 기존 `_mountForBattleSide`는 slot 0로 위임. `_emitTeraSparkles`/`_refreshBattlerSpritesForMetrics`/`update`/`layoutSafely`/`shutdown`이 모든 마운트 순회로 일반화.
+   - `setBattlerSprite`/`Visibility`/`Terastallized`/`DynamaxState`/`playFormChange`/`playQuietFormChange`/`playTerastallize`/`playDynamaxStart`/`playDynamaxEnd`/`switchInBattler`/`playStatStageEffect`/`prepareSwitchInBattler`는 `options.slot`(0|1)을 읽어 슬롯 mount 선택. `faintBattler`/`concealBattler`는 `(side, slot=0)` 시그니처로 옵셔널 슬롯 추가. 기존 호출부는 `slot=0` 디폴트로 무영향.
+   - `_resolveAnimEndpoints(userSide, targetSide, options)`/`playMoveAnim(..., options.actorSlot/targetSlot)`/`playFieldAnim(..., options.userSlot/targetSlot)`은 슬롯 옵션을 받지만 미지정 시 슬롯 0 폴백 — DB-3에서는 시각 회귀 0.
+   - `src/pokerogue-transplant-runtime/ui/ui.js`: `attachSpriteMounts`가 단일 mount 또는 배열을 모두 수용. `layout()`이 `enemySprites[0..1]`/`playerSprites[0..1]` 각각의 baseX/baseY를 부여(`DOUBLES_MOUNT_OFFSET_X = 24` 임시값으로 슬롯 1 좌/우 분리). `renderModel()`이 어댑터의 `getSpriteModelsBySlot(side)`로 슬롯별 sprite model을 받아 각 마운트에 `renderBattlerToPhaser` 호출. 싱글 모델은 자동으로 `[enemySprite]`로 래핑되어 슬롯 0만 렌더.
+   - `src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js`: `getSpriteModelsBySlot(side)` 신설(doubles의 `enemySprites`/`playerSprites` 배열 우선, 없으면 싱글 키를 [`single`]로 래핑).
+   - `src/app.js`: `buildPkbPokerogueUiModel`에 `buildSpriteModelsForSide(sideIndex, perspective, activeMons, infoModel, battle, mountTag)` 헬퍼 추가, `battle.mode === 'doubles'`일 때 `enemySprites`/`playerSprites` 슬롯 배열을 모델에 spread. 싱글 경로(기존 `enemySprite`/`playerSprite` 키)는 무변경.
+   - 검증: `node --check`(scene/ui/adapter/app) 모두 통과. `npm run verify:core` 9/9 PASS.
+   - **남은 한계(다음 단계)**: BattleInfo 패널은 슬롯 0만 사용. 타임라인 이벤트/명령 입력/타깃 선택은 슬롯 0 가정 — DB-4/DB-5/DB-6에서 처리.
+4. **DB-4 타임라인 슬롯 분기** ✅ 완료(2026-04-25):
+   - `src/pokerogue-transplant-runtime/ui/ui.js`: `enemyInfos = [info0, info1]`/`playerInfos = [info0, info1]` 두 인스턴스로 확장. setup이 슬롯 1 인스턴스도 setup하고 rootContainer에 추가, depth 42 부여, 초기 상태 hidden. layout()은 슬롯 0 위치는 기존 유지(140,39 / 310,108), 슬롯 1은 (140,22 / 310,130) 임시 배치. `enemyInfo`/`playerInfo` alias는 슬롯 0 가리키도록 유지. `renderModel`이 `adapter.getInfoModelsBySlot('enemy'|'player')` 결과를 슬롯별로 update하고 모델 없는 슬롯은 setVisible(false)로 숨김.
+   - `src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js`: `getInfoModelsBySlot(side)` 신설. 더블의 `enemyInfos`/`playerInfos` 배열 우선; 없으면 싱글 키를 [single]로 래핑.
+   - `src/app.js`: `buildBattleInfosBySlot(player, activeMons, battle)` 헬퍼 추가, `battle.mode === 'doubles'`일 때 `enemyInfos`/`playerInfos` 슬롯 배열을 모델에 spread (slot 1 mon이 없으면 null로 두어 UI가 자동 hide).
+   - `src/battle-presentation/timeline.js`:
+     - `_infoForSideSlot(side, slot=0)` 신설(기존 `_infoForSide`는 `_infoForSideSlot(side, 0)`로 위임). UI의 `playerInfos[slot]`/`enemyInfos[slot]`을 우선, 없으면 단일 인스턴스 폴백.
+     - `_applyInfoForSlot`이 `_infoForSideSlot(side, slot)`로 패널 갱신. `setBattlerTerastallized`/`setBattlerDynamaxState` 호출이 `options.slot`을 함께 넘겨 슬롯 0 가드 제거.
+     - `_setBattlerSprite(side, spriteUrl, options)`은 옵션을 그대로 위임(DB-3.2의 `options.slot` 활용). `_playFormChangePresentation(side, presentation, slot=0)` 시그니처 확장 — 옵션에 slot 동봉.
+     - 이벤트 핸들러 슬롯 전달: `switch_in`, `dynamax_start/end`, `move_use`(actorSlot/targetSlot), `damage`/`heal`(슬롯별 info HP tween), `faint(side, slot)`, `boost`/`unboost`(playStatStageEffect 슬롯), `terastallize`, `forme_change`, `effect_start/end`(substitute) 모두 `slot` 또는 `options.slot`을 명시 전달.
+     - `playMoveAnim(actorSide, targetSide, { actorSlot, targetSlot, ... })`로 슬롯-쌍 endpoint 도달.
+   - 검증: `node --check` (timeline/ui/adapter/scene/app) 통과. `npm run verify:core` 9/9 PASS.
+   - **남은 한계(다음 단계)**: 명령(기술/포켓몬 선택) 입력은 슬롯 0만 받는 상태 — DB-5에서 슬롯 0 → 슬롯 1 상태머신 도입.
 5. **DB-5 명령 흐름 슬롯화**: `currentSlotByPlayer` 상태머신, 슬롯 0 → 슬롯 1 명령 결정. 토글 사이드 단일화. UI 빌더가 슬롯별 모델을 발행.
 6. **DB-6 타깃 선택**: target hint 기반 후보 산출 + 타깃 선택 UI 활성화. 무브의 `target.slot`을 choice에 박고 직렬화.
 7. **DB-7 choice 직렬화/제출**: `serializeChoiceForShowdown`에 target slot/`,` 합본/사이드별 두 슬롯 묶음 추가. 로컬 엔진 첫 턴 정상 해석 확인.

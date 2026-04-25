@@ -88,8 +88,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         try { this.animPlayer?._activeCancel?.(); } catch (_error) {}
         try { this.clearPersistentTerrainBackground?.(); } catch (_error) {}
         try { this._teraSparkleTimer?.remove?.(); this._teraSparkleTimer = null; } catch (_error) {}
-        try { this._destroyMountTeraFx(this.enemySprite); } catch (_error) {}
-        try { this._destroyMountTeraFx(this.playerSprite); } catch (_error) {}
+        try { this._allBattlerMounts().forEach(mount => this._destroyMountTeraFx(mount)); } catch (_error) {}
         try { this._deferredTextureReleaseTimer?.remove?.(); this._deferredTextureReleaseTimer = null; } catch (_error) {}
         this._deferredTextureReleaseKeys?.clear?.();
         this._bgTextureLoadPromises?.clear?.();
@@ -136,12 +135,21 @@ export function createBattleShellSceneClass(Phaser, env) {
         }).catch(() => {});
         this.createArenaLayers();
         this._preloadTerrainBackgroundTextures();
-        this.enemySprite = this.createSpriteMount('enemy');
-        this.playerSprite = this.createSpriteMount('player');
+        this.enemySprites = [
+          this.createSpriteMount('enemy', 0),
+          this.createSpriteMount('enemy', 1),
+        ];
+        this.playerSprites = [
+          this.createSpriteMount('player', 0),
+          this.createSpriteMount('player', 1),
+        ];
+        // Aliases for legacy callers that still address slot 0 directly.
+        this.enemySprite = this.enemySprites[0];
+        this.playerSprite = this.playerSprites[0];
         this.runtimeEnv.audio = this.audio; // expose audio manager to UI handlers
         this.animPlayer = new BattleAnimPlayer(this);  // move visual animation player
         this.ui = new TransplantBattleUI(this, this.controller, this.runtimeEnv);
-        this.ui.attachSpriteMounts({ enemy: this.enemySprite, player: this.playerSprite });
+        this.ui.attachSpriteMounts({ enemy: this.enemySprites, player: this.playerSprites });
         this.ui.setup();
         if (textureExists(this, env.UI_ASSETS.promptAtlas.key, '1') && !this.anims.exists('pkb-ui-prompt-arrow')) {
           this.anims.create({
@@ -193,10 +201,12 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.arenaPlayerBase = this.add.image(ARENA_OFFSETS.player.x, ARENA_OFFSETS.player.y, env.UI_ASSETS.arenaPlayer.key).setOrigin(0, 0).setDepth(5);
     }
 
-    createSpriteMount(name) {
+    createSpriteMount(name, slot = 0) {
       // Use a Phaser Image drawn directly on the canvas so it scales correctly with
       // INTEGER_SCALE mode. No DOM elements — eliminates all coordinate-system mismatches.
-      const depth = name === 'enemy' ? 6 : 7; // above arena bases (4,5), below UI (42+)
+      const baseDepth = name === 'enemy' ? 6 : 7; // above arena bases (4,5), below UI (42+)
+      // Slot 1 sits a hair above slot 0 so doubles z-ordering is deterministic.
+      const depth = baseDepth + (slot === 1 ? 0.05 : 0);
 
       // Ellipse shadow drawn just below the sprite (depth - 1 so it stays behind sprite).
       const shadow = this.add.ellipse(0, 0, 1, 1, 0x000000, 0.35)
@@ -210,6 +220,7 @@ export function createBattleShellSceneClass(Phaser, env) {
 
       const mount = {
         name,
+        slot,
         phaserSprite: img,
         shadow,
         shadowVisibleByMetrics: false,
@@ -470,7 +481,8 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     setBattlerDynamaxState(side, options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       if (!mount) return;
       this._setMountDynamaxState(mount, {
         dynamaxed: options?.dynamaxed === true,
@@ -527,7 +539,8 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     setBattlerTerastallized(side, options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       if (!mount) return;
       const teraType = String(options?.teraType || '').toLowerCase();
       const active = options?.terastallized === true || !!teraType;
@@ -561,7 +574,7 @@ export function createBattleShellSceneClass(Phaser, env) {
     _emitTeraSparkles() {
       if (!this.isBootstrapped) return;
       if (!this.anims.exists('pkb-effect-tera-sparkle')) return;
-      const mounts = [this.enemySprite, this.playerSprite];
+      const mounts = this._allBattlerMounts();
       for (const mount of mounts) {
         if (!mount?.terastallized) continue;
         const spr = mount?.phaserSprite;
@@ -588,7 +601,7 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     _refreshBattlerSpritesForMetrics() {
-      const mounts = [this.enemySprite, this.playerSprite];
+      const mounts = this._allBattlerMounts();
       for (const mount of mounts) {
         const url = mount?.currentUrl || '';
         if (!url) continue;
@@ -900,8 +913,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.arenaPlayerBase.setPosition(ARENA_OFFSETS.player.x, ARENA_OFFSETS.player.y);
       this._layoutPersistentTerrainBackground();
       this.ui?.layout?.();
-      this._applyMountMetricsSnapshot(this.enemySprite);
-      this._applyMountMetricsSnapshot(this.playerSprite);
+      this._allBattlerMounts().forEach(mount => this._applyMountMetricsSnapshot(mount));
     }
 
     renderModel(model) {
@@ -910,17 +922,34 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     update(_time, delta = 0) {
-      this._syncMountTeraFx(this.enemySprite, delta);
-      this._syncMountTeraFx(this.playerSprite, delta);
+      this._allBattlerMounts().forEach(mount => this._syncMountTeraFx(mount, delta));
     }
 
     _mountForBattleSide(side) {
+      return this._mountForBattleSideSlot(side, 0);
+    }
+
+    _mountForBattleSideSlot(side, slot = 0) {
+      const mounts = this._mountsForBattleSide(side);
+      if (!mounts) return null;
+      const idx = Number(slot) === 1 ? 1 : 0;
+      return mounts[idx] || mounts[0] || null;
+    }
+
+    _mountsForBattleSide(side) {
       const perspective = Number.isInteger(this.currentModel?.perspective)
         ? clamp(Number(this.currentModel.perspective), 0, 1)
         : 0;
       const sideIndex = side === 'p2' ? 1 : 0;
       const isPlayerViewSide = sideIndex === perspective;
-      return isPlayerViewSide ? this.playerSprite : this.enemySprite;
+      return isPlayerViewSide ? this.playerSprites : this.enemySprites;
+    }
+
+    _allBattlerMounts() {
+      return [
+        ...(Array.isArray(this.enemySprites) ? this.enemySprites : []),
+        ...(Array.isArray(this.playerSprites) ? this.playerSprites : []),
+      ].filter(Boolean);
     }
 
     _terrainBgResourceName(terrainId = '') {
@@ -1037,8 +1066,8 @@ export function createBattleShellSceneClass(Phaser, env) {
       });
     }
 
-    concealBattler(side) {
-      const mount = this._mountForBattleSide(side);
+    concealBattler(side, slot = 0) {
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active) return;
       this.tweens.killTweensOf(spr);
@@ -1048,8 +1077,9 @@ export function createBattleShellSceneClass(Phaser, env) {
       this._syncMountTeraFx(mount, 0);
     }
 
-    async prepareSwitchInBattler(side, spriteUrl = '') {
-      const mount = this._mountForBattleSide(side);
+    async prepareSwitchInBattler(side, spriteUrl = '', options = {}) {
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       if (!mount) return;
       // Incoming sprite belongs to the next occupant — lift the fainted guard so
       // renderBattlerSprite can stage the new texture normally.
@@ -1072,7 +1102,8 @@ export function createBattleShellSceneClass(Phaser, env) {
      * Used by timeline forme_change handling so the sprite swaps before turn end.
      */
     async setBattlerSprite(side, spriteUrl = '', options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       if (!mount) return;
       // Staging a new sprite (form change / switch-in) implies the slot has a
       // live occupant again — clear the fainted guard so render can set visible.
@@ -1095,7 +1126,8 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     setBattlerVisibility(side, visible = true, options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active) return;
       if (Object.prototype.hasOwnProperty.call(options || {}, 'yOffset')) {
@@ -1111,7 +1143,8 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     async playQuietFormChange(side, options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active || !spr.visible) return;
 
@@ -1191,7 +1224,8 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     async playTerastallize(side, options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active || !spr.visible) return;
 
@@ -1332,7 +1366,8 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     async playDynamaxStart(side, options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!mount || !spr || !spr.active || !spr.visible) {
         this._setMountDynamaxState(mount, {
@@ -1439,7 +1474,8 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     async playDynamaxEnd(side, options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!mount || !spr || !spr.active || !spr.visible) {
         this._setMountDynamaxState(mount, { dynamaxed: false, gigantamaxed: false });
@@ -1513,7 +1549,8 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     async playFormChange(side, options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active || !spr.visible) return;
 
@@ -1625,8 +1662,8 @@ export function createBattleShellSceneClass(Phaser, env) {
      * BA-12: faint visual — slide battler downward, then hide.
      * Ported timing from PokeRogue faint-phase.ts (duration 500, Sine.easeIn).
      */
-    async faintBattler(side) {
-      const mount = this._mountForBattleSide(side);
+    async faintBattler(side, slot = 0) {
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active || !spr.visible) return;
 
@@ -1661,7 +1698,8 @@ export function createBattleShellSceneClass(Phaser, env) {
      */
     async switchInBattler(side, fromBall = true, options = {}) {
       const audioEnabled = options?.audioEnabled !== false;
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active) return;
 
@@ -1758,19 +1796,23 @@ export function createBattleShellSceneClass(Phaser, env) {
       this._syncMountTeraFx(mount, 0);
     }
 
-    _resolveAnimEndpoints(userSide, targetSide) {
+    _resolveAnimEndpoints(userSide, targetSide, options = {}) {
       const normalizedUserSide = userSide === 'p2' ? 'p2' : 'p1';
       const normalizedTargetSide = targetSide === 'p1' || targetSide === 'p2'
         ? targetSide
         : (normalizedUserSide === 'p1' ? 'p2' : 'p1');
-      const userMount = this._mountForBattleSide(normalizedUserSide)
+      const userSlot = Number(options?.userSlot) === 1 ? 1 : 0;
+      const targetSlot = Number(options?.targetSlot) === 1 ? 1 : 0;
+      const userMount = this._mountForBattleSideSlot(normalizedUserSide, userSlot)
+        || this._mountForBattleSideSlot(normalizedUserSide, 0)
         || this._mountForBattleSide('p1')
-        || this.playerMount
-        || this.enemyMount;
-      const targetMount = this._mountForBattleSide(normalizedTargetSide)
+        || this.playerSprite
+        || this.enemySprite;
+      const targetMount = this._mountForBattleSideSlot(normalizedTargetSide, targetSlot)
+        || this._mountForBattleSideSlot(normalizedTargetSide, 0)
         || this._mountForBattleSide('p2')
-        || this.enemyMount
-        || this.playerMount;
+        || this.enemySprite
+        || this.playerSprite;
       const uSpr = userMount?.phaserSprite;
       const tSpr = targetMount?.phaserSprite;
       if (!uSpr || !tSpr) return null;
@@ -1800,7 +1842,10 @@ export function createBattleShellSceneClass(Phaser, env) {
 
     async playFieldAnim(animName, options = {}) {
       if (!this.animPlayer || !animName) return;
-      const endpoints = this._resolveAnimEndpoints('p1', 'p2');
+      const endpoints = this._resolveAnimEndpoints('p1', 'p2', {
+        userSlot: options?.userSlot,
+        targetSlot: options?.targetSlot,
+      });
       if (!endpoints) return;
       await this.animPlayer.play(animName, endpoints.userInfo, endpoints.targetInfo, {
         audioEnabled: options?.audioEnabled !== false,
@@ -1820,7 +1865,10 @@ export function createBattleShellSceneClass(Phaser, env) {
      */
     async playMoveAnim(moveName, actorSide, targetSide, options = {}) {
       if (!this.animPlayer || !moveName) return;
-      const endpoints = this._resolveAnimEndpoints(actorSide, targetSide);
+      const endpoints = this._resolveAnimEndpoints(actorSide, targetSide, {
+        userSlot: options?.actorSlot,
+        targetSlot: options?.targetSlot,
+      });
       if (!endpoints) return;
       const perspective = Number.isInteger(this.currentModel?.perspective)
         ? clamp(Number(this.currentModel.perspective), 0, 1)
@@ -1838,7 +1886,8 @@ export function createBattleShellSceneClass(Phaser, env) {
     }
 
     async playStatStageEffect(side, options = {}) {
-      const mount = this._mountForBattleSide(side);
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
       const spr = mount?.phaserSprite;
       if (!spr || !spr.active || !spr.visible) return;
       const atlasKey = env.UI_ASSETS.effectBattleStats?.key;

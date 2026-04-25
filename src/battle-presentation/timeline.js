@@ -362,9 +362,26 @@ export class BattleTimelineExecutor {
 
   /** Returns the BattleInfo panel for the given Showdown side id ('p1'|'p2'). */
   _infoForSide(side) {
+    return this._infoForSideSlot(side, 0);
+  }
+
+  /**
+   * Returns the BattleInfo panel for the given Showdown side and slot.
+   * Doubles UI exposes per-slot arrays (`enemyInfos`/`playerInfos`); singles UI
+   * exposes only the legacy single instance, which is mapped to slot 0.
+   */
+  _infoForSideSlot(side, slot = 0) {
     const ui = this._ui;
     if (!ui) return null;
-    return side === this._playerSide ? ui.playerInfo : ui.enemyInfo;
+    const idx = Number(slot) === 1 ? 1 : 0;
+    if (side === this._playerSide) {
+      const arr = Array.isArray(ui.playerInfos) ? ui.playerInfos : null;
+      if (arr) return arr[idx] || arr[0] || null;
+      return ui.playerInfo || null;
+    }
+    const arr = Array.isArray(ui.enemyInfos) ? ui.enemyInfos : null;
+    if (arr) return arr[idx] || arr[0] || null;
+    return ui.enemyInfo || null;
   }
 
   _delay(ms) {
@@ -1017,26 +1034,28 @@ export class BattleTimelineExecutor {
 
   _applyInfoForSlot(side, slot = 0, patch = {}) {
     const nextInfo = this._updateSlotInfo(side, slot, patch);
-    const info = this._infoForSide(side);
+    const info = this._infoForSideSlot(side, slot);
     info?.update?.(nextInfo);
     const hasTeraField = patch && Object.prototype.hasOwnProperty.call(patch, 'teraType');
-    if (hasTeraField && Number(slot) === 0) {
+    if (hasTeraField) {
       const scene = this._scene();
       const teraType = toId(String(patch?.teraType || ''));
       scene?.setBattlerTerastallized?.(side, {
         terastallized: Boolean(teraType),
         teraType,
+        slot,
       });
     }
     const hasDynamaxField = patch && (
       Object.prototype.hasOwnProperty.call(patch, 'dynamaxed')
       || Object.prototype.hasOwnProperty.call(patch, 'gigantamaxed')
     );
-    if (hasDynamaxField && Number(slot) === 0) {
+    if (hasDynamaxField) {
       const scene = this._scene();
       scene?.setBattlerDynamaxState?.(side, {
         dynamaxed: patch?.dynamaxed === true,
         gigantamaxed: patch?.gigantamaxed === true,
+        slot,
       });
     }
     return nextInfo;
@@ -1049,13 +1068,14 @@ export class BattleTimelineExecutor {
     await scene.setBattlerSprite(side, spriteUrl, options);
   }
 
-  async _playFormChangePresentation(side, presentation = null) {
+  async _playFormChangePresentation(side, presentation = null, slot = 0) {
     if (!side || !presentation || presentation.shouldAnimate === false) return;
     const scene = this._scene();
     if (!scene) return;
     const opts = {
       audioEnabled: this._audioEnabled,
       modal: Boolean(presentation.modal),
+      slot,
     };
     if (presentation.kind === 'form' && scene.playFormChange) {
       await scene.playFormChange(side, opts);
@@ -1284,7 +1304,7 @@ export class BattleTimelineExecutor {
         );
         if (shouldShowSwitchOut) {
           await this._showMsg(this._switchOutMessage(side, previousDisplaySpecies), { minMs: 520 });
-          this._scene()?.setBattlerVisibility?.(side, false, { yOffset: 0 });
+          this._scene()?.setBattlerVisibility?.(side, false, { yOffset: 0, slot });
           await this._delay(120);
         }
         // _slotNames always stores the raw English name for downstream event matching
@@ -1319,10 +1339,10 @@ export class BattleTimelineExecutor {
         if (visual?.spriteUrl) {
           // Apply sprite swap at the switch event boundary. Doing this earlier
           // (timeline start) can reveal post-turn state before move/faint events.
-          await this._setBattlerSprite(side, visual.spriteUrl, { visible: !ev.fromBall });
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: !ev.fromBall, slot });
         }
         if (scene?.switchInBattler) {
-          await scene.switchInBattler(side, !!ev.fromBall, { audioEnabled: this._audioEnabled });
+          await scene.switchInBattler(side, !!ev.fromBall, { audioEnabled: this._audioEnabled, slot });
         } else if (ev.fromBall) {
           this._playAudio('se/pb_rel');
           await this._delay(260);
@@ -1350,12 +1370,13 @@ export class BattleTimelineExecutor {
           { minMs: 620 },
         );
         if (visual?.spriteUrl) {
-          await this._setBattlerSprite(side, visual.spriteUrl, { visible: true });
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: true, slot });
         }
         if (scene?.playDynamaxStart) {
           await scene.playDynamaxStart(side, {
             audioEnabled: this._audioEnabled,
             gigantamaxed: Boolean(ev.gigantamaxed),
+            slot,
           });
         } else {
           await this._delay(420);
@@ -1400,12 +1421,13 @@ export class BattleTimelineExecutor {
           await scene.playDynamaxEnd(side, {
             audioEnabled: this._audioEnabled,
             gigantamaxed: Boolean(ev.gigantamaxed),
+            slot,
           });
         } else {
           await this._delay(360);
         }
         if (visual?.spriteUrl) {
-          await this._setBattlerSprite(side, visual.spriteUrl, { visible: true });
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: true, slot });
         }
 
         const endPatch = {
@@ -1435,7 +1457,9 @@ export class BattleTimelineExecutor {
 
       // ── BA-1 + BA-10: Move use (message + visual animation) ─────────────
       case 'move_use': {
-        const actorName = this._slotName(ev.actor?.side, ev.actor?.slot ?? 0);
+        const actorSlot = ev.actor?.slot ?? 0;
+        const targetSlot = ev.target?.slot ?? 0;
+        const actorName = this._slotName(ev.actor?.side, actorSlot);
         const actorNameWithAffix = this._pokemonNameWithAffix(actorName, ev.actor?.side);
         const moveName = this._localizeMoveName(ev.move || '') || ev.move || '';
         const animationMoveName = String(ev.animationMove || ev.baseMove || ev.move || '').trim();
@@ -1455,13 +1479,13 @@ export class BattleTimelineExecutor {
           `${actorName}의 ${moveName}!`,
         ), { minMs: 420 });
         if (actorSide && !movePresentation?.isSemiInvulnerable) {
-          this._scene()?.setBattlerVisibility?.(actorSide, true, { yOffset });
+          this._scene()?.setBattlerVisibility?.(actorSide, true, { yOffset, slot: actorSlot });
         }
         if (moveOutcome.skipAnimation) {
           // Keep a short beat between move line and outcome message when animation is skipped.
           await this._delay(220);
           if (actorSide && movePresentation?.isSemiInvulnerable) {
-            this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset });
+            this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset, slot: actorSlot });
           }
           break;
         }
@@ -1478,6 +1502,8 @@ export class BattleTimelineExecutor {
           await Promise.race([
             scene.playMoveAnim(animationMoveName, ev.actor?.side, ev.target?.side, {
               ...moveAnimOptions,
+              actorSlot,
+              targetSlot,
             }),
             new Promise(resolve => setTimeout(resolve, ANIM_TIMEOUT_MS)),
           ]);
@@ -1487,7 +1513,7 @@ export class BattleTimelineExecutor {
           await this._delay(280);
         }
         if (actorSide && movePresentation?.isSemiInvulnerable) {
-          this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset });
+          this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset, slot: actorSlot });
         }
         break;
       }
@@ -1519,7 +1545,7 @@ export class BattleTimelineExecutor {
           } : {}),
           fainted: ev.hpAfter <= 0 || ev.status === 'fnt',
         });
-        const info = this._infoForSide(ev.target?.side);
+        const info = this._infoForSideSlot(ev.target?.side, ev.target?.slot ?? 0);
         if (info?.tweenHpTo) {
           await info.tweenHpTo(hpPct, ev.maxHp);
         } else {
@@ -1558,7 +1584,7 @@ export class BattleTimelineExecutor {
           } : {}),
           fainted: ev.hpAfter <= 0 || ev.status === 'fnt',
         });
-        const healInfo = this._infoForSide(ev.target?.side);
+        const healInfo = this._infoForSideSlot(ev.target?.side, ev.target?.slot ?? 0);
         if (healInfo?.tweenHpTo) {
           await healInfo.tweenHpTo(healPct, ev.maxHp);
         } else {
@@ -1590,7 +1616,7 @@ export class BattleTimelineExecutor {
         this._playAudio('se/faint');
         const scene = this._scene();
         if (scene?.faintBattler) {
-          await scene.faintBattler(ev.side);
+          await scene.faintBattler(ev.side, ev.slot ?? 0);
         } else {
           await this._delay(500);
         }
@@ -1755,6 +1781,7 @@ export class BattleTimelineExecutor {
           rising: true,
           stat: boostStatId,
           amount,
+          slot: ev.target?.slot ?? 0,
         });
         break;
       }
@@ -1780,6 +1807,7 @@ export class BattleTimelineExecutor {
           rising: false,
           stat: unboostStatId,
           amount: uamount,
+          slot: ev.target?.slot ?? 0,
         });
         break;
       }
@@ -1847,12 +1875,12 @@ export class BattleTimelineExecutor {
         if (visual?.spriteUrl) {
           // Load/swap the special tera-linked form before the animation so the
           // frame at animation end is already the final form (no base-form pause).
-          await this._setBattlerSprite(side, visual.spriteUrl, { visible: true });
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: true, slot });
         }
 
         const scene = this._scene();
         if (scene?.playTerastallize) {
-          await scene.playTerastallize(side, { audioEnabled: this._audioEnabled });
+          await scene.playTerastallize(side, { audioEnabled: this._audioEnabled, slot });
         } else {
           await this._delay(520);
         }
@@ -1925,7 +1953,7 @@ export class BattleTimelineExecutor {
         );
         if (visual?.spriteUrl) {
           const shouldShowSprite = teraLinkedForm ? true : (formPresentation.isVisible !== false);
-          await this._setBattlerSprite(side, visual.spriteUrl, { visible: shouldShowSprite });
+          await this._setBattlerSprite(side, visual.spriteUrl, { visible: shouldShowSprite, slot });
         }
         // Always store raw English in _slotNames for downstream event matching
         const rawNextName = toSpecies || String(visual?.infoPatch?.rawName || '').trim();
@@ -1942,7 +1970,7 @@ export class BattleTimelineExecutor {
           });
         }
         if (!teraLinkedForm) {
-          await this._playFormChangePresentation(side, formPresentation);
+          await this._playFormChangePresentation(side, formPresentation, slot);
         }
         // Compare raw English names to reliably detect form changes
         const changed = toSpecies && toId(toSpecies) !== toId(preNameRaw);
@@ -1998,13 +2026,14 @@ export class BattleTimelineExecutor {
           : `${substituteNameWithAffix}은(는)\n대타출동을 사용했다!`;
         await this._showMsg(startMsg, { minMs: 420 });
         if (side) {
-          this._scene()?.setBattlerVisibility?.(side, false, { yOffset: 0 });
+          this._scene()?.setBattlerVisibility?.(side, false, { yOffset: 0, slot });
           await this._delay(90);
         }
         const substituteUrl = this._substituteSpriteUrlForSide(side);
         if (substituteUrl) {
           await this._setBattlerSprite(side, substituteUrl, {
             visible: true,
+            slot,
           });
         }
         break;
@@ -2021,9 +2050,10 @@ export class BattleTimelineExecutor {
           await this._setBattlerSprite(side, visual.spriteUrl, {
             visible: true,
             yOffset,
+            slot,
           });
         } else if (side) {
-          this._scene()?.setBattlerVisibility?.(side, true, { yOffset: 0 });
+          this._scene()?.setBattlerVisibility?.(side, true, { yOffset: 0, slot });
         }
         if (visual?.infoPatch && visual?.side) {
           this._applyInfoForSlot(visual.side, visual.slot ?? 0, visual.infoPatch);
