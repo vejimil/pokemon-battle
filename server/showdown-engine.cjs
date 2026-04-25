@@ -89,27 +89,9 @@ const RUNTIME_FUTURE_ABILITY_PATCHES = Object.freeze({
   },
   megasol: {
     isNonstandard: 'Future',
-    onStart(source) {
-      this.field.setWeather('desolateland');
-    },
-    onAnySetWeather(target, source, weather) {
-      const strongWeathers = ['desolateland', 'primordialsea', 'deltastream'];
-      if (this.field.getWeather().id === 'desolateland' && !strongWeathers.includes(weather.id)) return false;
-    },
-    onEnd(pokemon) {
-      if (this.field.weatherState.source !== pokemon) return;
-      for (const target of this.getAllActive()) {
-        if (target === pokemon) continue;
-        if (target.hasAbility('megasol')) {
-          this.field.weatherState.source = target;
-          return;
-        }
-      }
-      this.field.clearWeather();
-    },
     flags: {},
     name: 'Mega Sol',
-    rating: 4.5,
+    rating: 3,
     num: 311,
   },
   piercingdrill: {
@@ -198,9 +180,13 @@ function patchPokemonEffectiveWeatherForMegaSol() {
   if (futureAbilityRuntimePatched) return;
   const original = Pokemon.prototype.effectiveWeather;
   Pokemon.prototype.effectiveWeather = function patchedEffectiveWeather() {
-    let weather = original.call(this);
-    if (!weather && this?.hasAbility?.('megasol')) weather = 'desolateland';
-    return weather;
+    const weather = original.call(this);
+    if (!this?.hasAbility?.('megasol')) return weather;
+    const battle = this?.battle;
+    // Mega Sol does not set or change field weather.
+    // It only grants "as-if Sunny Day" weather checks while this Pokemon is using a move.
+    if (!battle?.activeMove || battle.activePokemon !== this) return weather;
+    return 'sunnyday';
   };
   futureAbilityRuntimePatched = true;
 }

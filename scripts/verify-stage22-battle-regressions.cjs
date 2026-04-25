@@ -129,13 +129,13 @@ function printBlock(title, checks) {
         megaSpriteId: 'MEGANIUM_1',
       })
     );
-    const {request, snapshot, mon, foe} = await runBattle(meganium, 'move 1 mega', 'move 3');
+    const {request, snapshot, mon, foe} = await runBattle(meganium, 'move 1 mega', 'move 2');
     const checks = [
       printCheck('request exposes canMegaEvo', Boolean(request.canMegaEvo)),
       printCheck('species becomes Meganium-Mega', toId(mon?.species) === 'meganiummega', mon?.species),
       printCheck('ability becomes Mega Sol', toId(mon?.ability) === 'megasol', mon?.ability),
       printCheck('Solar Beam fires immediately after Mega Evolution', (foe?.hp || 0) < (foe?.maxHp || 0), `${foe?.hp}/${foe?.maxHp}`),
-      printCheck('battle weather is harsh sunlight/desolate land', toId(snapshot.weather) === 'desolateland', snapshot.weather),
+      printCheck('Mega Sol does not change battle weather', !toId(snapshot.weather), snapshot.weather || 'none'),
       printCheck('Mega sprite asset exists locally', hasSprite('MEGANIUM_1', 'front') && hasSprite('MEGANIUM_1', 'back')),
     ];
     results.push(printBlock('Mega Meganium runtime effect', checks));
