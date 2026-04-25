@@ -6,13 +6,198 @@
 ## 현재 작업 목록
 | 번호 | 항목 | 상태 | 메모 |
 |---|---|---|---|
-| 9 | 더블배틀 구현 | 대기 | 엔진 페이로드/요청 모델/UI 타깃팅/타임라인 이벤트를 더블 규칙으로 전면 확장 필요 |
-| 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 대기 | 해당 구간 지연의 원인(타임라인 지연, 애니메이션/텍스처 로딩, 렌더 동기화)을 계측 후 분리 해결 필요 |
+| 9 | 더블배틀 구현 | 분석 완료 / 착수 대기 | 아래 §9 단계별 구현 계획 참조. 코드 작업은 별도 지시 시 시작. |
+| 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 
-## 15번 필수 분석 포인트
+## 15번 필수 분석 포인트(보류)
 - 재현 기준: player1 포켓몬 1 출전 후, 기술 피격/필드 설치/필드 연출 종료 직후 전환 구간에서 프레임 드랍 또는 멈춤 체감.
 - 우선 점검 경로:
   - `src/battle-presentation/timeline.js` 지연(`_showMsg` minMs, `_delay`, `Promise.race` timeout) 체인
   - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` 필드/배경 로딩 및 적용 타이밍
   - `src/battle-presentation/battle-anim-player.js` 프레임 루프/cleanup/텍스처 참조 안정성
 - 완료 조건: 메시지 가독성은 유지하면서(과속 금지) 해당 전환 구간의 멈춤 체감을 유의미하게 감소.
+
+---
+
+## §9. 더블배틀 구현 — 분석 및 단계별 계획
+
+작업 일자: 2026-04-25
+대상 모드: `gen9doublescustomgame@@@+pokemontag:past,+pokemontag:future` (단일 포맷, gameType=`doubles`).
+원칙: **싱글 경로 무회귀**. 더블 분기는 (a) 신규 상수/헬퍼/포맷 선택, (b) 슬롯 차원(0/1) 도입, (c) 더블 전용 UI 흐름(타깃 선택, 듀얼 슬롯 렌더, 두 줄 명령 흐름)으로만 수행.
+
+### 9.0 현재 상태 요약(분석 결과)
+
+이미 더블 친화적인 부분:
+- 프로토콜 파서 `parseIdentForEvent`(`server/showdown-engine.cjs:550`)는 `p1a/p1b` → slot 0/1로 정확히 분해. 이벤트 빌더(`normalizeEventsFromLine`)는 모든 이벤트에서 `slot`을 그대로 채움.
+- 스냅샷 `side.active`는 배열, `request.active`도 배열 — `getEngineActionSlots`/`getActionableSides`는 길이에 무관하게 동작 가능.
+- `pruneEnginePendingChoices`/`seedEngineForcedPendingChoices`/`normalizeEnginePendingChoice`/`getEngineDraftChoice` 등 슬롯 단위로 이미 분기됨(`src/app.js`).
+- 타임라인 슬롯 키(`_slotNames`/`_slotInfo`)는 이미 `${side}_${slot}` 키 사용(`src/battle-presentation/timeline.js`).
+- 빌더 모드 토글(싱글/더블) 및 팀 사이즈 4 전환(`getConfiguredTeamSize`)은 이미 구현됨(`src/app.js:4294`, `5887`).
+- `PartyUiHandler`/adapter는 `battlerCount` 인자를 이미 인식하고 있고, `buildPhaserPartyWindowModel`이 `state.mode === 'doubles' ? 2 : 1`로 전달 중(`src/app.js:8424`).
+- 어댑터(`PkbBattleUiAdapter`)와 `TargetSelectUiHandler`가 이미 존재(현재는 자리만 있는 상태).
+- `@pkmn/sim`에 `gen9doublescustomgame` 포맷이 존재(확인됨: `node_modules/@pkmn/sim/build/cjs/sim/tools/exhaustive-runner.js:162`).
+
+핵심 갭(슬롯 0 가정 또는 단일 마운트 가정으로 깨지는 지점):
+1) **엔진/룸/브리지**가 모드 인자를 무시하고 항상 싱글 포맷으로 시작하며, 클라가 보내는 choice 명령이 "슬롯 0 한 개"만 보냄.
+2) **씬 마운트가 side당 1개**(`enemySprite`/`playerSprite`)뿐이며, 좌표/그림자/테라/다맥스 상태가 mount 1개를 가정.
+3) **BattleInfo 패널이 side당 1개**(`enemyInfo`/`playerInfo`)이고, `_infoForSide(side)`는 슬롯을 무시.
+4) **애니메이션 endpoint**(`USER_FOCUS_X` 등)와 `playMoveAnim`/`playFieldAnim`이 단일 user/target 좌표만 계산.
+5) **UI 윈도우 빌더**(`buildPhaserCommandWindowModel`/`...FightWindowModel`/`...MessageWindowModel`)가 `actionSlots[0]`만 사용하고, 두 슬롯을 순차로 드라이브하지 않음.
+6) **타깃 선택 UI**가 “Back만 가능한 placeholder”인 상태(`target-select-ui-handler.js`).
+7) **Showdown choice 직렬화**가 단일 액션 문자열만 반환(`serializeChoiceForShowdown`); 더블은 `,`로 두 슬롯을 묶어야 함.
+8) **온라인 룸 서비스**가 한 번의 submitChoice에서 사이드당 한 문자열만 저장(=한 슬롯). 더블에서는 한 사이드의 두 슬롯 액션을 묶어 한 번에 submit해야 함.
+9) **빌더 사이즈 정책**: 기본 4마리는 게임 룰에 부합하나 6마리 풀팀 옵션이 필요한지 결정 필요(아래 §9.1 정책 참조).
+
+### 9.1 정책 결정(설정/디폴트)
+
+- 더블 배틀 기본 팀 사이즈: 4 (현재 정책 유지). 풀팀(6) 옵션은 별도 토글 도입 검토 후 결정 — 1차 구현은 4 고정으로 한정해 회귀 위험 축소.
+- 더블 포맷 ID(상수 신규):
+  - `ENGINE_AUTHORITATIVE_DOUBLES_FORMAT = 'gen9doublescustomgame@@@+pokemontag:past,+pokemontag:future'`
+- 다이맥스/Z/메가/테라 상호작용은 싱글과 동일 정책 유지 — 다만 한 사이드의 동일 턴에 두 슬롯이 동시에 사용 불가한 자원(다이맥스 1회/사이드, 메가 1회/사이드, 테라 1회/사이드)은 **드래프트 단계의 토글이 사이드 전체에서 한 슬롯에만 켜지도록** 정규화 필요(엔진은 그래도 거절하므로 안전망은 엔진 측).
+- 포지셔닝: PokeRogue 원본은 더블 시 좌/우 슬롯 X-오프셋 + 깊이 분리. 1차 구현은 “좌-안쪽, 우-바깥쪽”의 두 좌표 사전 정의로 시작(원본 좌표 측정 후 적용).
+- 온라인 페이지(`online.html`)는 기존 싱글 강제 유지. 더블은 우선 **로컬(`index.html`) 경로에서만** 활성화. 온라인 더블은 플랜 후반 §9.7에서 분리 진행.
+
+### 9.2 엔진 / 서버 / 브리지 (gameType=doubles 경로 추가)
+
+목표: payload `mode === 'doubles'` 면 `gen9doublescustomgame` 포맷으로 세션 생성 + choice 직렬화/제출이 두 슬롯을 함께 묶어 전달.
+
+- `server/showdown-engine.cjs`:
+  - `ShowdownLocalSinglesSession` 옆에 `ShowdownLocalDoublesSession`을 도입(또는 클래스 일반화 + `mode` 필드). 핵심 차이는 `formatid` 디폴트와 `engineMeta.modeSupport`만이며, BattleStream 자체는 동일 인터페이스.
+  - `snapshot()`이 이미 `side.active`/`request.active` 배열 길이에 의존하지 않으므로 **추가 개조 최소**.
+  - `engineMeta.supportsDoubles = true`로 노출.
+  - `ShowdownEngineService.startSingles`/`chooseSingles`와 대칭으로 `startDoubles`/`chooseDoubles` 추가(또는 `startBattle({mode})`로 통일).
+- `server/server.cjs`:
+  - `/api/battle/start`가 `mode`/`formatid`를 그대로 위임할 수 있도록 분기(현재 항상 `startSingles`).
+  - 신규: `/api/battle/start`에서 `body.mode`로 분기, 또는 `body.formatid`를 신뢰.
+- `server/online-room-service.cjs`:
+  - `room.settings.mode` 필드 추가, `createRoom`/`joinRoom`이 `mode` 인자 수신.
+  - `startBattle`이 payload에 `mode`/`formatid` 동봉.
+  - `submitChoice`가 사이드별로 “슬롯 N개 액션 합본 문자열”을 받을 수 있도록 검증 완화(엔진은 어차피 `,` 합본 그대로 수용).
+- `src/engine/showdown-local-bridge.js`:
+  - `serializeChoiceForShowdown(choice, request, {gameType})` 시그니처 확장.
+    - 더블 `move`: target slot이 있으면 `move N TARGET`(상대 슬롯 1/2, 아군 슬롯 -1/-2)으로 인코딩. spread/all/foe-side 등 “타깃 비요구” 무브는 target 생략.
+    - 더블 `switch`: 기존 형식 유지(`switch K`).
+    - 두 슬롯 합본 빌더 추가: `buildSideChoiceForDoubles(side, request, pendingChoicesBySlot)` → `act1,act2`. wait/forced-switch 슬롯은 "pass"로 채움(엔진 요구사항).
+  - `submitShowdownLocalSinglesChoices`를 `submitShowdownLocalChoices`로 일반화(또는 doubles 변형 분기). 사이드별 actionSlots를 모두 모아서 합본.
+- `src/engine/showdown-online-room-bridge.js`:
+  - `submitOnlineRoomChoice` payload에 `choice` 문자열만 보내는 구조는 유지하되, **호출부(app)에서 사이드별 두 슬롯 합본 문자열을 만들어 단일 호출**로 보내도록 변경.
+- `src/engine/showdown-singles-engine.js`(브라우저 fallback):
+  - 현재 사용 경로가 아니나, 기능 동치(doubles 분기 포함) 유지 또는 deprecate 표시.
+
+### 9.3 클라이언트 상태/팀빌더 / 시작 흐름
+
+- `src/app.js`:
+  - `state.mode === 'doubles'` 분기 정리: `getConfiguredTeamSize()`(이미 4) + 빌더 토글(이미 존재) + `rebuildTeamSize()`(이미 존재). 신규는 거의 없음.
+  - 신규 `getEngineAuthoritativeDoublesRuntimeDescriptor()` 추가, `getSelectedBattleRuntimeDescriptor`가 `state.mode === 'doubles'` 일 때 doubles 디스크립터 반환.
+  - `buildShowdownBattlePayload()`: `mode: state.mode`, `formatid: state.mode === 'doubles' ? ENGINE_AUTHORITATIVE_DOUBLES_FORMAT : ENGINE_AUTHORITATIVE_SINGLES_FORMAT`로 분기.
+  - `startBattle()`의 “싱글만 허용” 게이트(`runtime.id !== 'engine-authoritative-singles'`)를 doubles 디스크립터 허용으로 확장.
+  - `state.battleUi`에 슬롯 차원 추가:
+    - `modeByPlayerSlot[player][slot] = 'command' | 'fight' | 'party' | 'target'` (기존 `modeByPlayer`를 슬롯별로 확장).
+    - `currentSlotByPlayer[player] = 0|1` — 더블에서 “지금 입력 받는 슬롯” 포인터(슬롯 0의 명령 결정 → 슬롯 1로 이동 → 두 슬롯 모두 결정 시 turn-resolve 트리거).
+  - `submitOnlineChoiceIfPossible(player)`을 더블에서는 “양쪽 슬롯 모두 결정 시 1회만 합본 호출”하도록 변경(현재는 슬롯 0만 즉시 호출).
+  - `resolveEngineTurn()`의 `moveAnimationHints` 수집은 이미 `actionSlots`를 순회하므로 변경 거의 없음. `injectDerivedSubstituteBoundaryEvents`는 슬롯 차원 이미 처리.
+- `src/battle-constants.js`: `ENGINE_AUTHORITATIVE_DOUBLES_FORMAT` 추가.
+
+### 9.4 씬/스프라이트/애니메이션 (side당 두 슬롯 마운트)
+
+- `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`:
+  - 마운트 구조 확장: `enemySprite`/`playerSprite` → `enemySprites = [mount0, mount1]`, `playerSprites = [mount0, mount1]`. 호환을 위해 단축 `this.enemySprite = this.enemySprites[0]` 유지.
+  - `_mountForBattleSide(side)` → `_mountForBattleSideSlot(side, slot)` 신규(기존 시그니처는 slot=0으로 위임). `_mountsForBattleSide(side)` 헬퍼.
+  - 모든 `setBattlerSprite/Visibility/Terastallized/DynamaxState/playFormChange/playQuiet.../playTerastallize/playDynamaxStart/playDynamaxEnd/faintBattler/switchInBattler/playStatStageEffect/concealBattler/prepareSwitchInBattler` 시그니처를 `(side, slotOrOptions, ...)`로 확장 — 기본 slot=0 유지, 호출부에서 명시 전달.
+  - `_resolveAnimEndpoints(userSide, userSlot, targetSide, targetSlot)`로 확장. 슬롯별 좌표는 마운트의 `baseX/baseY`를 사용.
+  - `playMoveAnim(moveName, actorSide, actorSlot, targetSide, targetSlot, opts)`로 확장.
+  - `playFieldAnim`은 사이드 전체 효과이므로 “좌/우 user-target endpoints” 1쌍을 합리적 기본값으로 유지하되, 더블에서는 두 사이드의 “바깥 슬롯끼리” 또는 “필드 중심 좌표”로 대체 검토.
+  - 좌표 신규 상수: `DOUBLES_MOUNT_OFFSET_X` 같은 상대 X 오프셋(좌/우 슬롯 분리). 1차는 PokeRogue 더블 좌표를 측정해 도입; 그 전엔 `±24px` 등 임시값.
+- `src/pokerogue-transplant-runtime/runtime/sprite-host.js`: 슬롯 인자만 통과(렌더 자체는 mount-bound이라 변경 최소).
+- `src/pokerogue-transplant-runtime/ui/ui.js`:
+  - `attachSpriteMounts({enemy:[m0,m1], player:[m0,m1]})`로 변경(기존 단일 객체 호환 유지).
+  - `layout()`에서 슬롯별 `baseX/baseY` 부여.
+  - `enemyInfo`/`playerInfo`도 슬롯별 두 인스턴스(`enemyInfos[0..1]`, `playerInfos[0..1]`) 도입. 기본 위치(player 110/72 / enemy 140/-141 등)에 더블용 두 번째 슬롯 위치 추가.
+- `src/pokerogue-transplant-runtime/ui/battle-info/*`: 인스턴스 차원만 늘려도 동작. 좌표는 ui.js에서 두 번째 슬롯용 오프셋 부여.
+
+### 9.5 프레젠테이션 타임라인 (slot-aware 분기)
+
+- `src/battle-presentation/timeline.js`:
+  - `_infoForSide(side)` → `_infoForSideSlot(side, slot)`로 교체. `ui.playerInfos[slot]`/`ui.enemyInfos[slot]` 조회.
+  - `_setBattlerSprite/_playFormChangePresentation/_applyInfoForSlot`의 `Number(slot) === 0` 가드(테라/다이맥스 mount 갱신 호출) 제거 또는 슬롯별 호출로 일반화.
+  - 모든 이벤트 핸들러가 `ev.target?.slot ?? 0`/`ev.actor?.slot ?? 0`을 “0으로 폴백”하던 부분을 “undefined면 0, 단 doubles에서는 명시 필수”로 안전화. 메시지/HP/info/스프라이트 호출은 항상 `(side, slot)` 기반.
+  - `move_use`에서 `playMoveAnim(actorSide, actorSlot, targetSide, targetSlot)` 호출(현재는 사이드만 전달).
+  - `weather/terrain/side_*` 같은 사이드 광역 이벤트는 변경 거의 없음.
+  - `callback_event`(forced switch) 처리: 슬롯별 forceSwitch 배열 길이만큼 입력 게이트가 발생할 수 있음 — UI 트리거 시 슬롯 정보 전달.
+
+### 9.6 입력 흐름 / UI / 타깃 선택
+
+- `src/app.js`의 빌더들(`buildPhaserCommandWindowModel`/`...FightWindowModel`/`...PartyWindowModel`/`...MessageWindowModel`/`...TargetWindowModel`):
+  - `actionSlots[0]`만 사용하던 자리를 `state.battleUi.currentSlotByPlayer[player]`(또는 `actionSlots[currentIndex]`)로 교체.
+  - 더블에서 “슬롯 0 명령 결정 → 슬롯 1 명령 결정” 단계 진행을 명시(상태머신: `slot0-command → slot0-fight/party → (target if needed) → slot1-command → ... → ready`).
+  - 한 사이드 자원 토글(테라/다이맥스/메가/Z) 사이드 단일성 보장: 슬롯 1에서 토글 시 슬롯 0의 동일 토글 자동 해제(또는 disabled 처리).
+- `buildPhaserTargetWindowModel`(현재 placeholder):
+  - 모델: `targets: [{label, side, slot, disabled, action}]` + `kind`(자기/아군/상대 1마리/광역).
+  - move의 `target` 힌트로 후보 산출:
+    - `single-opponent`/`adjacentFoe` → 상대 두 슬롯(둘 다 살아있을 때만)
+    - `ally`/`adjacentAlly` → 아군 다른 슬롯
+    - `ally-or-self` → 아군 두 슬롯
+    - `all-adjacent`/`all-other-pokemon`/`all-pokemon`/`opponent-side`/`ally-side`/`self` → 자동(타깃 선택 스킵)
+  - 액션 dispatch 시 `setEnginePendingChoice`로 `choice.target = {side, slot}`을 박고 fight → command 또는 다음 슬롯으로 진행.
+- `src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js`:
+  - 현재 “Back만 가능” 구조에서 후보 리스트 + 커서 + 십자키 이동 UI로 확장.
+  - `pkb-battle-ui-adapter.js`의 `getTargetInputModel`/`resolveTargetInput`도 후보 인덱스/선택 액션 처리로 확장.
+- `src/pokerogue-transplant-runtime/ui/handlers/command-ui-handler.js`/`fight-ui-handler.js`:
+  - `fieldIndex`가 1일 때 cursor2를 사용하는 설계 이미 존재(원본 PokeRogue 반영). 더블에서 슬롯 0/1 분리 커서가 자연스럽게 활용됨.
+- `src/pokerogue-transplant-runtime/ui/handlers/party-ui-handler.js`:
+  - 이미 `battlerCount`가 2를 받을 수 있음. 더블에서 “현재 선택 슬롯이 어느 베틀러를 교체하는지” 명확히 하기 위해 타이틀/서브타이틀 분기 보강 필요.
+
+### 9.7 온라인 룸 (분리 단계)
+
+로컬 더블이 안정화된 다음 단계로 분리.
+- `OnlineRoomService`/`server.cjs` API에 `mode` 추가, room.settings.mode 저장.
+- `ready/start-battle/submit-choice` 흐름은 기존과 동일하지만 사이드별 choice는 “슬롯 N개 액션 합본 문자열”이라는 점만 보장.
+- `online.html` 페이지의 모드 선택 UI(현재는 싱글 강제) 해제 또는 토글 노출.
+
+### 9.8 위험 요소 / 회귀 방지 가드
+
+- 싱글 회귀 차단:
+  - 모든 `playXxx(side, ...)` 시그니처 확장은 `slot`을 옵셔널(기본 0)로 두어 기존 호출부 무영향.
+  - 마운트 배열 도입 시 `this.enemySprite = this.enemySprites[0]` 같은 단축 alias 유지(외부 참조 깨짐 방지).
+  - `state.mode === 'singles'` 경로의 모든 빌더/디스패처가 변경 없이 동작해야 함(테스트 시 가장 먼저 검증).
+- 더블 전용 가드:
+  - 한 사이드 자원(테라/다이맥스/메가/Z) 동시 켜짐 방지(드래프트 정규화).
+  - target 미지정 + target 요구 무브 시 submit 차단(엔진 reject 전 클라 단계에서 가드).
+  - `cant_move`/`forceSwitch`가 한 슬롯에만 발생할 때 다른 슬롯 입력은 정상 진행 가능하도록 상태머신 분리.
+- 애니메이션 회귀:
+  - `playMoveAnim`이 multi-target 광역 무브에서도 단일 target 좌표를 폴백으로 사용(원본도 유사) — 변경 시 별도 회귀 검증.
+  - `playFieldAnim`의 endpoints가 mount0 기준이어야 함(시각적으로 가장 자연).
+
+### 9.9 단계별 마일스톤(권장 순서)
+
+1. **DB-1 포맷/상수**: 더블 포맷 상수 + `getEngineAuthoritativeDoublesRuntimeDescriptor` 추가, `state.mode==='doubles'` 시 디스크립터 반환. UI 미변경. 빌더에서 더블 선택 시 “준비 중”에서 “시작 가능” 디스크립터로 바뀌는 단계까지.
+2. **DB-2 엔진 시작/스냅샷**: `server/showdown-engine.cjs`에 doubles 세션 추가, `server.cjs`/룸 서비스가 mode를 위임. `buildShowdownBattlePayload()`가 더블 페이로드 발사. 시작 직후 스냅샷이 두 슬롯 active를 채우는지 확인.
+3. **DB-3 듀얼 마운트/렌더**: 씬에 슬롯별 마운트 배열 도입, ui.js layout 좌표 분리. 첫 턴 두 마리 각각 정상 표시. 메시지/필드 연출은 기존 single-pair endpoint로 임시 유지.
+4. **DB-4 타임라인 슬롯 분기**: `_infoForSideSlot`/슬롯별 mount 호출. 두 슬롯 각각 HP/상태/연출 정상.
+5. **DB-5 명령 흐름 슬롯화**: `currentSlotByPlayer` 상태머신, 슬롯 0 → 슬롯 1 명령 결정. 토글 사이드 단일화. UI 빌더가 슬롯별 모델을 발행.
+6. **DB-6 타깃 선택**: target hint 기반 후보 산출 + 타깃 선택 UI 활성화. 무브의 `target.slot`을 choice에 박고 직렬화.
+7. **DB-7 choice 직렬화/제출**: `serializeChoiceForShowdown`에 target slot/`,` 합본/사이드별 두 슬롯 묶음 추가. 로컬 엔진 첫 턴 정상 해석 확인.
+8. **DB-8 forceSwitch 듀얼 슬롯**: 두 슬롯 동시 기절 시 forceSwitch 양쪽 처리. 한쪽만 기절 시 한 슬롯만 입력.
+9. **DB-9 회귀/검증**: 싱글 시나리오 회귀 + 더블 핵심 무브 시나리오(스프라이트 지정 무브, ally-target 무브, 광역 무브, 보호/대타) 단위.
+10. **DB-10 온라인 더블 분리**: `OnlineRoomService`/online.html 토글. 별도 PR.
+
+### 9.10 검증 전략
+
+- 정적: 변경 파일별 `node --check`.
+- 회귀 묶음: `npm run verify:core` (item-manifests/audit-language/ba20/stage22/passb).
+- 신규 더블 회귀(권장 추가):
+  - `verify:doubles-smoke` — 더블 포맷 시작 → 첫 턴 양쪽 단일 무브 → 정상 turn 진행 → 양쪽 기절/forceSwitch까지의 미니 시뮬레이션(샘플 팀 고정).
+  - 무브 타깃 카테고리별 직렬화 단위 테스트(`single-opponent`/`adjacentAlly`/`alladjacentfoes`/`all`/`self`).
+  - `playMoveAnim` 슬롯-쌍 endpoint 회귀(스냅샷 텍스트로 user/target 좌표 기록).
+- 수동 시나리오:
+  - 더블에서 한 슬롯이 보호 사용/다른 슬롯이 광역 무브 사용 → 보호 슬롯만 데미지 0 확인.
+  - Helping Hand(`adjacentAlly`) 자기 슬롯에는 disabled 표시 확인.
+  - 다이맥스/테라/메가/Z를 사이드 내 한 슬롯에서만 토글 가능함을 확인.
+  - 한쪽만 기절 시 다음 턴 forceSwitch가 정상 슬롯에만 표시.
+
+### 9.11 본 분석에서 다루지 않은 / 결정 보류
+
+- 풀팀(6) + 더블의 풀 파티 선택(team preview) 흐름 도입 여부. 1차는 4 고정.
+- 트리플/멀티/FFA 미지원(범위 제외).
+- 더블 전용 BGM/효과음 큐 차이 검토(현재 BGM 트랙 풀 그대로 사용 가능).
+- PokeRogue 원본 더블 좌표 정확 측정(임시값으로 시작 후 추후 미세조정).
