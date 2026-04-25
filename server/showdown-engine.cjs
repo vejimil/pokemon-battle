@@ -1193,15 +1193,23 @@ function reorderArrayByTargetIndices(items = [], targetIndices = [], fallbackLen
   return out;
 }
 
+// Class name kept as `ShowdownLocalSinglesSession` for backward compatibility
+// (DB-2: mode is now driven by payload.mode; rename deferred to a future cleanup).
 class ShowdownLocalSinglesSession {
   constructor(payload = {}) {
     this.id = randomUUID();
-    this.mode = 'singles';
-    this.formatid = payload.formatid || 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
+    this.mode = payload.mode === 'doubles' ? 'doubles' : 'singles';
+    const defaultFormat = this.mode === 'doubles'
+      ? 'gen9doublescustomgame@@@+pokemontag:past,+pokemontag:future'
+      : 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
+    this.formatid = payload.formatid || defaultFormat;
     this.players = payload.players || [];
     this.stream = new BattleStreams.BattleStream({keepAlive: true});
     this.requests = {p1: null, p2: null};
-    this.logEntries = [{text: '로컬 Showdown 싱글 엔진으로 배틀 시작 / Battle started with the local Showdown singles engine.', tone: 'accent'}];
+    const initialLogText = this.mode === 'doubles'
+      ? '로컬 Showdown 더블 엔진으로 배틀 시작 / Battle started with the local Showdown doubles engine.'
+      : '로컬 Showdown 싱글 엔진으로 배틀 시작 / Battle started with the local Showdown singles engine.';
+    this.logEntries = [{text: initialLogText, tone: 'accent'}];
     this.protocol = [];
     this.rawOutputs = [];
     // Event stream state (M1)
@@ -1476,8 +1484,8 @@ class ShowdownLocalSinglesSession {
 
     return {
       id: this.id,
-      engine: 'showdown-local-singles',
-      mode: 'singles',
+      engine: this.mode === 'doubles' ? 'showdown-local-doubles' : 'showdown-local-singles',
+      mode: this.mode,
       turn: battle.turn,
       winner: battle.winner || null,
       players,
@@ -1492,8 +1500,8 @@ class ShowdownLocalSinglesSession {
         engineName: '@pkmn/sim (vendored local package)',
         formatid: this.formatid,
         supportsSingles: true,
-        supportsDoubles: false,
-        notes: 'Stage 1 migration path: singles only. Current engine path supports Gen 9 Custom Game battle flow with Showdown-family resolution. Mega Evolution, Z-Moves, and Terastallization are available in this default format. Dynamax handling is implemented in the presentation/parser path and becomes available only in formats/requests that expose canDynamax.',
+        supportsDoubles: true,
+        notes: 'Engine path supports Gen 9 Custom Game (singles and doubles) with Showdown-family resolution. Mega Evolution, Z-Moves, and Terastallization are available in the default formats. Dynamax handling is in the presentation/parser path and becomes available only in formats/requests that expose canDynamax.',
       },
     };
   }
@@ -1515,20 +1523,21 @@ class ShowdownEngineService {
       available: true,
       engine: '@pkmn/sim vendored local package',
       version: '0.10.7',
-      modeSupport: ['singles'],
+      modeSupport: ['singles', 'doubles'],
       formatid: 'gen9customgame@@@+pokemontag:past,+pokemontag:future',
-      note: 'Local Node-backed Showdown-family singles engine is available.',
+      doublesFormatid: 'gen9doublescustomgame@@@+pokemontag:past,+pokemontag:future',
+      note: 'Local Node-backed Showdown-family engine supports singles and doubles.',
     };
   }
 
-  async startSingles(payload) {
+  async startBattle(payload) {
     const session = new ShowdownLocalSinglesSession(payload);
     this.sessions.set(session.id, session);
     const snapshot = await session.initialize();
     return snapshot;
   }
 
-  async chooseSingles(id, choiceMap) {
+  async chooseBattle(id, choiceMap) {
     const session = this.sessions.get(id);
     if (!session) {
       const error = new Error('Battle session not found. Restart the battle.');
@@ -1536,6 +1545,15 @@ class ShowdownEngineService {
       throw error;
     }
     return session.choose(choiceMap);
+  }
+
+  // Backward-compatible aliases — kept so existing callers continue to work.
+  async startSingles(payload) {
+    return this.startBattle({...payload, mode: payload?.mode || 'singles'});
+  }
+
+  async chooseSingles(id, choiceMap) {
+    return this.chooseBattle(id, choiceMap);
   }
 }
 

@@ -66,6 +66,7 @@ export const ASSET_BASE_SPECIES_ALIASES = Object.freeze({
 });
 export const BUILDER_BATTLE_ONLY_FORM_SUFFIXES = new Set(['mega', 'megax', 'megay', 'primal', 'gmax']);
 export const ENGINE_AUTHORITATIVE_SINGLES_FORMAT = 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
+export const ENGINE_AUTHORITATIVE_DOUBLES_FORMAT = 'gen9doublescustomgame@@@+pokemontag:past,+pokemontag:future';
 export const OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES = Object.freeze({
   'Clefable-Mega': 'Magic Bounce',
   'Victreebel-Mega': 'Innards Out',

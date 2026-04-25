@@ -135,5 +135,6 @@ export function serializeChoiceForShowdown(choice, request = null) {
 }
 
 export function isShowdownLocalBattle(battle) {
-  return battle?.engine === 'showdown-local-singles';
+  const engineId = String(battle?.engine || '');
+  return engineId === 'showdown-local-singles' || engineId === 'showdown-local-doubles';
 }

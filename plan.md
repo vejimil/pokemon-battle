@@ -3,10 +3,14 @@
 완료 이력과 상세 분석/수정 기록은 `previous.md`로 이관했습니다.
 이 문서는 **현재 남은 작업만** 유지합니다.
 
+# 작업 시 필수 지침
+ - 작업 완료 후 plan.md에 업데이트 할 것.
+ - 브라우저에서 어떤 점을 검증해야하는지 보고할 것.
+
 ## 현재 작업 목록
 | 번호 | 항목 | 상태 | 메모 |
 |---|---|---|---|
-| 9 | 더블배틀 구현 | 분석 완료 / 착수 대기 | 아래 §9 단계별 구현 계획 참조. 코드 작업은 별도 지시 시 시작. |
+| 9 | 더블배틀 구현 | 진행 중(DB-1, DB-2 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-3(듀얼 마운트/렌더). |
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 
 ## 15번 필수 분석 포인트(보류)
@@ -170,8 +174,17 @@
 
 ### 9.9 단계별 마일스톤(권장 순서)
 
-1. **DB-1 포맷/상수**: 더블 포맷 상수 + `getEngineAuthoritativeDoublesRuntimeDescriptor` 추가, `state.mode==='doubles'` 시 디스크립터 반환. UI 미변경. 빌더에서 더블 선택 시 “준비 중”에서 “시작 가능” 디스크립터로 바뀌는 단계까지.
-2. **DB-2 엔진 시작/스냅샷**: `server/showdown-engine.cjs`에 doubles 세션 추가, `server.cjs`/룸 서비스가 mode를 위임. `buildShowdownBattlePayload()`가 더블 페이로드 발사. 시작 직후 스냅샷이 두 슬롯 active를 채우는지 확인.
+1. **DB-1 포맷/상수** ✅ 완료(2026-04-25):
+   - `src/battle-constants.js`: `ENGINE_AUTHORITATIVE_DOUBLES_FORMAT` 상수 추가.
+   - `src/app.js`: `getEngineAuthoritativeDoublesRuntimeDescriptor()` 신설, 디스패치 4곳(`getSelectedBattleRuntimeDescriptor`/`getDisplayedRuntimeDescriptor`/`applyBattleRuntimeInfo` engineAuthoritative 인정/import) 갱신.
+   - **DB-2 미완 상태에서 false UX 회피**를 위해 디스크립터 `startAllowed: false` + "엔진 연결 단계 진행 중" 라벨로 정직화. DB-2에서 true로 전환.
+2. **DB-2 엔진 시작/스냅샷** ✅ 완료(2026-04-25):
+   - `server/showdown-engine.cjs`: 세션 클래스가 `payload.mode`(기본 'singles')에 따라 doubles 포맷/엔진 라벨/로그 메시지 선택. `engineMeta.supportsDoubles = true`, `status().modeSupport = ['singles','doubles']`. `ShowdownEngineService`에 `startBattle/chooseBattle` 신설 + `startSingles/chooseSingles`는 backward-compat alias.
+   - `server/server.cjs`: `/api/battle/start` → `engine.startBattle(body)`, `/api/battle/choice` → `engine.chooseBattle(...)`로 일반화(룸 서비스는 §9.7 단계로 미루고 손대지 않음).
+   - `src/engine/showdown-local-bridge.js`: `isShowdownLocalBattle`이 `showdown-local-singles`/`showdown-local-doubles` 둘 다 인식.
+   - `src/app.js`: `buildShowdownBattlePayload()`가 `state.mode` 기반으로 mode/formatid 산출. `startEngineAuthoritativeSinglesBattle()`이 doubles 디스크립터도 적용. `adoptEngineBattleSnapshot()`이 snapshot.mode에 따라 디스크립터 선택. `startBattle()` 게이트가 두 id 모두 허용. **DB-1 doubles 디스크립터를 `startAllowed: true`로 전환**.
+   - 스모크 테스트: `node -e` 직접 호출로 doubles 시작 시 `p1/p2.active = [0,1]`, `request.active.length = 2`, `engine = 'showdown-local-doubles'` 확인. 싱글 경로(`active = [0]`) 회귀 없음. `npm run verify:core` 통과.
+   - **남은 한계(다음 단계 의존)**: 씬은 슬롯 0만 렌더, UI 빌더는 슬롯 0만 입력 받으므로 더블 시작은 가능하나 첫 턴 진행은 DB-3+/DB-7 이후에야 정상.
 3. **DB-3 듀얼 마운트/렌더**: 씬에 슬롯별 마운트 배열 도입, ui.js layout 좌표 분리. 첫 턴 두 마리 각각 정상 표시. 메시지/필드 연출은 기존 single-pair endpoint로 임시 유지.
 4. **DB-4 타임라인 슬롯 분기**: `_infoForSideSlot`/슬롯별 mount 호출. 두 슬롯 각각 HP/상태/연출 정상.
 5. **DB-5 명령 흐름 슬롯화**: `currentSlotByPlayer` 상태머신, 슬롯 0 → 슬롯 1 명령 결정. 토글 사이드 단일화. UI 빌더가 슬롯별 모델을 발행.
@@ -197,7 +210,7 @@
 
 ### 9.11 본 분석에서 다루지 않은 / 결정 보류
 
-- 풀팀(6) + 더블의 풀 파티 선택(team preview) 흐름 도입 여부. 1차는 4 고정.
-- 트리플/멀티/FFA 미지원(범위 제외).
-- 더블 전용 BGM/효과음 큐 차이 검토(현재 BGM 트랙 풀 그대로 사용 가능).
-- PokeRogue 원본 더블 좌표 정확 측정(임시값으로 시작 후 추후 미세조정).
+- 풀팀(6) + 더블의 풀 파티 선택(team preview) 흐름 도입 여부. 1차는 4 고정. - 그렇게 하자.
+- 트리플/멀티/FFA 미지원(범위 제외). - 그렇게 하자.
+- 더블 전용 BGM/효과음 큐 차이 검토(현재 BGM 트랙 풀 그대로 사용 가능). -그렇게 하자.
+- PokeRogue 원본 더블 좌표 정확 측정(임시값으로 시작 후 추후 미세조정). -거시적 위치는 원본을 사용하고 세부 위치는 우리가 싱글에서 정리한 걸로 하면 될 듯.

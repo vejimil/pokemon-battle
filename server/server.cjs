@@ -147,14 +147,14 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'POST' && pathname === '/api/battle/start') {
       const body = await readJson(req);
-      const snapshot = await engine.startSingles(body);
+      const snapshot = await engine.startBattle(body);
       sendJson(res, 200, {ok: true, snapshot});
       return;
     }
 
     if (req.method === 'POST' && pathname === '/api/battle/choice') {
       const body = await readJson(req);
-      const snapshot = await engine.chooseSingles(body.battleId, body.choices || {});
+      const snapshot = await engine.chooseBattle(body.battleId, body.choices || {});
       sendJson(res, 200, {ok: true, snapshot});
       return;
     }

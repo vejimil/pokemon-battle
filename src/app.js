@@ -12,7 +12,7 @@ import {loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationD
 import {BattleTimelineExecutor} from './battle-presentation/timeline.js';
 import {resolveFormChangePresentation} from './battle-presentation/form-change-presentation.js';
 import {createBattleLocaleManager} from './battle-i18n/locale-manager.js';
-import {SHOWDOWN_TARGET_HINTS, statOrder, statLabels, statusNames, commonItems, VALIDATION_PROFILES, BUILDER_ALLOWED_NONSTANDARD, NONSTANDARD_REASON_LABELS, ASSET_BASE_SPECIES_ALIASES, BUILDER_BATTLE_ONLY_FORM_SUFFIXES, ENGINE_AUTHORITATIVE_SINGLES_FORMAT, OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES, targetHints, MOVE_FLAG_LABELS, VOLATILE_STATUS_LABELS, SIDE_CONDITION_LABELS, WEATHER_LABELS, TERRAIN_LABELS, SPECIAL_ITEM_LINKED_FORM_OVERRIDES, SPECIAL_MOVE_LINKED_FORM_OVERRIDES, FORM_ASSET_OVERRIDES, EXPLICIT_ONLY_FORM_FAMILIES, MAX_MOVE_NAMES, GENERIC_Z_MOVE_NAMES, DYNAMAX_BANNED_SPECIES, TERA_LOW_POWER_EXEMPT_MOVES, PROTECT_MOVE_IDS, SCREEN_MOVE_IDS, CHOICE_ITEM_IDS, STRUGGLE_MOVE, MEGA_FORM_MOVE_REPLACEMENTS} from './battle-constants.js';
+import {SHOWDOWN_TARGET_HINTS, statOrder, statLabels, statusNames, commonItems, VALIDATION_PROFILES, BUILDER_ALLOWED_NONSTANDARD, NONSTANDARD_REASON_LABELS, ASSET_BASE_SPECIES_ALIASES, BUILDER_BATTLE_ONLY_FORM_SUFFIXES, ENGINE_AUTHORITATIVE_SINGLES_FORMAT, ENGINE_AUTHORITATIVE_DOUBLES_FORMAT, OFFICIALLY_CONFIRMED_FUTURE_MEGA_ABILITIES, targetHints, MOVE_FLAG_LABELS, VOLATILE_STATUS_LABELS, SIDE_CONDITION_LABELS, WEATHER_LABELS, TERRAIN_LABELS, SPECIAL_ITEM_LINKED_FORM_OVERRIDES, SPECIAL_MOVE_LINKED_FORM_OVERRIDES, FORM_ASSET_OVERRIDES, EXPLICIT_ONLY_FORM_FAMILIES, MAX_MOVE_NAMES, GENERIC_Z_MOVE_NAMES, DYNAMAX_BANNED_SPECIES, TERA_LOW_POWER_EXEMPT_MOVES, PROTECT_MOVE_IDS, SCREEN_MOVE_IDS, CHOICE_ITEM_IDS, STRUGGLE_MOVE, MEGA_FORM_MOVE_REPLACEMENTS} from './battle-constants.js';
 import {setDex, getDex, moveNameCache, CURRENT_OFFICIAL_ITEM_ID_SET, CURRENT_OFFICIAL_ABSENT_ITEM_ID_SET, isAllowedNonstandard, isDexSupported, extractSecondaryAilment, extractSecondaryBoosts, formatTargetFromDex, isFutureMegaSpeciesData, applyFutureMegaSpeciesMetadataPatches, resolveProjectMegaAbilityName, applyProjectMegaAbilityRulesToDex, fetchJson, pathExists, loadManifest, detectAssetBases, loadDataProvider, loadMoveNames, getSpeciesData, getMoveData, getItemData} from './dex-data.js';
 
 const APP_PROFILE = (() => {
@@ -2783,6 +2783,25 @@ function getEngineAuthoritativeSinglesRuntimeDescriptor() {
   };
 }
 
+function getEngineAuthoritativeDoublesRuntimeDescriptor() {
+  // DB-2: engine path opened — server session accepts mode='doubles', /api/battle/start
+  // forwards payload, buildShowdownBattlePayload emits doubles formatid, and startBattle
+  // gate accepts both singles/doubles ids. Note: scene/UI still slot-0 only until DB-3+,
+  // so the second active won't render correctly yet, and turn resolution can't complete
+  // for doubles until DB-7 (multi-slot choice serialization).
+  return {
+    id: 'engine-authoritative-doubles',
+    title: lang('더블', 'Doubles'),
+    badge: lang('사용 가능', 'Available'),
+    badgeTone: 'ready',
+    heroLabel: lang('더블', 'Doubles'),
+    detail: lang('엔진은 사용 가능. 씬/타임라인 슬롯 분기는 후속 단계.', 'Engine ready. Scene/timeline slot expansion comes in later steps.'),
+    startAllowed: true,
+    startBlockedReason: '',
+    startMessage: lang('배틀 시작!', 'Battle started!'),
+  };
+}
+
 function getOnlineRoomRuntimeDescriptor() {
   const joined = isOnlineRoomJoined();
   const bothPlayersJoined = hasOnlineBothPlayersJoined();
@@ -2866,7 +2885,9 @@ function getSelectedBattleRuntimeDescriptor() {
       ? getEngineAuthoritativeSinglesRuntimeDescriptor()
       : getBlockedSinglesRuntimeDescriptor();
   }
-  return getBlockedDoublesRuntimeDescriptor();
+  return state.showdownLocal?.available
+    ? getEngineAuthoritativeDoublesRuntimeDescriptor()
+    : getBlockedDoublesRuntimeDescriptor();
 }
 
 function applyBattleRuntimeInfo(battle, descriptor) {
@@ -2878,7 +2899,9 @@ function applyBattleRuntimeInfo(battle, descriptor) {
     badgeTone: descriptor.badgeTone,
     heroLabel: descriptor.heroLabel,
     detail: descriptor.detail,
-    engineAuthoritative: descriptor.id === 'engine-authoritative-singles' || descriptor.id === 'online-room-singles',
+    engineAuthoritative: descriptor.id === 'engine-authoritative-singles'
+      || descriptor.id === 'engine-authoritative-doubles'
+      || descriptor.id === 'online-room-singles',
     availability: descriptor.startAllowed ? 'available' : 'blocked',
   };
   battle.sourceOfTruth = battle.runtimeInfo.engineAuthoritative ? 'engine' : 'blocked-no-runtime';
@@ -2888,6 +2911,7 @@ function applyBattleRuntimeInfo(battle, descriptor) {
 function getDisplayedRuntimeDescriptor() {
   const runtimeId = state.battle?.runtimeInfo?.id || '';
   if (runtimeId === 'engine-authoritative-singles') return getEngineAuthoritativeSinglesRuntimeDescriptor();
+  if (runtimeId === 'engine-authoritative-doubles') return getEngineAuthoritativeDoublesRuntimeDescriptor();
   if (runtimeId === 'online-room-singles') return getOnlineRoomRuntimeDescriptor();
   if (runtimeId === 'blocked-singles-awaiting-engine') return getBlockedSinglesRuntimeDescriptor();
   if (runtimeId === 'blocked-doubles-awaiting-engine') return getBlockedDoublesRuntimeDescriptor();
@@ -6198,9 +6222,10 @@ async function buildShowdownPayloadMon(mon, player, slot) {
 }
 
 async function buildShowdownBattlePayload() {
+  const isDoubles = state.mode === 'doubles';
   return {
-    mode: 'singles',
-    formatid: ENGINE_AUTHORITATIVE_SINGLES_FORMAT,
+    mode: isDoubles ? 'doubles' : 'singles',
+    formatid: isDoubles ? ENGINE_AUTHORITATIVE_DOUBLES_FORMAT : ENGINE_AUTHORITATIVE_SINGLES_FORMAT,
     players: await Promise.all([0, 1].map(async player => ({
       name: state.playerNames[player],
       team: await Promise.all(state.teams[player].map((mon, slot) => buildShowdownPayloadMon(mon, player, slot))),
@@ -6210,9 +6235,12 @@ async function buildShowdownBattlePayload() {
 
 async function startEngineAuthoritativeSinglesBattle() {
   const payload = await buildShowdownBattlePayload();
+  const descriptor = state.mode === 'doubles'
+    ? getEngineAuthoritativeDoublesRuntimeDescriptor()
+    : getEngineAuthoritativeSinglesRuntimeDescriptor();
   return applyBattleRuntimeInfo(
     adoptEngineBattleSnapshot(await startShowdownLocalSinglesBattle(payload)),
-    getEngineAuthoritativeSinglesRuntimeDescriptor()
+    descriptor
   );
 }
 function cloneEngineBattleSnapshot(snapshot) {
@@ -6280,7 +6308,10 @@ function adoptEngineBattleSnapshot(snapshot) {
   normalizeBattleSpriteState(battle);
   clearEnginePendingChoices(battle);
   battle.resolvingTurn = false;
-  applyBattleRuntimeInfo(battle, getEngineAuthoritativeSinglesRuntimeDescriptor());
+  const descriptor = battle.mode === 'doubles'
+    ? getEngineAuthoritativeDoublesRuntimeDescriptor()
+    : getEngineAuthoritativeSinglesRuntimeDescriptor();
+  applyBattleRuntimeInfo(battle, descriptor);
   return battle;
 }
 // Battle start is engine-authoritative for singles and explicitly blocked otherwise.
@@ -6317,9 +6348,9 @@ async function startBattle() {
     }
   }
 
-  if (runtime.id !== 'engine-authoritative-singles') {
+  if (runtime.id !== 'engine-authoritative-singles' && runtime.id !== 'engine-authoritative-doubles') {
     showRuntime(
-      lang('현재는 싱글 배틀만 시작할 수 있습니다.', 'Only singles can start right now.'),
+      lang('현재는 싱글/더블 배틀만 시작할 수 있습니다.', 'Only singles/doubles can start right now.'),
       'warning'
     );
     renderAll();
