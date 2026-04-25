@@ -78,6 +78,7 @@ export class BattleAnimPlayer {
     this._texLoading  = new Map();   // graphic key → Promise (in-flight)
     this._bgTexLoaded  = new Set();  // background texture keys for timed bg events
     this._bgTexLoading = new Map();  // background texture key → Promise
+    this._graphicFrameResolveCache = new Map();
     // Bug fix: track the cancel function of the currently running animation.
     // Calling it destroys all pool sprites and resolves the Promise immediately.
     this._activeCancel = null;
@@ -326,24 +327,28 @@ export class BattleAnimPlayer {
 
     const tick = () => {
       if (destroyed) return;
-      if (f >= frameCount) { cleanUp(); return; }
+      try {
+        if (f >= frameCount) { cleanUp(); return; }
 
-      if (!f && hasBattlerFrames) {
-        try { if (uSrc?.active) uSrc.setVisible(false); } catch {}
-        try { if (tSrc?.active) tSrc.setVisible(false); } catch {}
-      }
+        if (!f && hasBattlerFrames) {
+          try { if (uSrc?.active) uSrc.setVisible(false); } catch {}
+          try { if (tSrc?.active) tSrc.setVisible(false); } catch {}
+        }
 
-      const spriteFrames = frames[f] || [];
-      let u = 0;
-      let t = 0;
-      let g = 0;
+        const spriteFrames = frames[f] || [];
+        let u = 0;
+        let t = 0;
+        let g = 0;
 
       for (const frame of spriteFrames) {
         const frameData = this._computeFrameData(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine);
         if (frame.target === FT_GRAPHIC) {
           if (!texKey) continue;
           if (g >= graphicPool.length) {
-            const spr = this.scene.add.sprite(0, 0, texKey, 0);
+            const initialFrame = this._resolveGraphicFrame(texKey, frame.graphicFrame ?? 0);
+            const spr = initialFrame === null || typeof initialFrame === 'undefined'
+              ? this.scene.add.sprite(0, 0, texKey)
+              : this.scene.add.sprite(0, 0, texKey, initialFrame);
             spr.setDepth(12);  // above battlers (6-7), below UI (30+)
             graphicPool.push(spr);
           }
@@ -353,8 +358,10 @@ export class BattleAnimPlayer {
           spr.setPosition(frameData.x, frameData.y);
 
           // Frame of the spritesheet
-          const frameIdx = frame.graphicFrame ?? 0;
-          try { spr.setFrame(frameIdx); } catch {}
+          const frameIdx = this._resolveGraphicFrame(texKey, frame.graphicFrame ?? 0);
+          if (frameIdx !== null && typeof frameIdx !== 'undefined') {
+            try { spr.setFrame(frameIdx); } catch {}
+          }
 
           // Transform
           spr.setScale(
@@ -390,7 +397,7 @@ export class BattleAnimPlayer {
         const pool = isUser ? userPool : targetPool;
         const spriteIndex = isUser ? u++ : t++;
         if (spriteIndex >= pool.length) {
-          const copy = this.scene.add.image(0, 0, srcSprite.texture.key, srcSprite.frame?.name);
+          const copy = this.scene.add.image(0, 0, srcSprite.texture.key);
           copy.setOrigin(0.5, 0.5);
           copy.setDepth(srcSprite.depth ?? 7);
           pool.push(copy);
@@ -430,9 +437,10 @@ export class BattleAnimPlayer {
         copySprite.setVisible(frame.visible !== false);
         this._setBlendMode(copySprite, frame.blendType ?? AB_NORMAL);
         this._applyToneAndColor(copySprite, frame, globalTint);
-        if (Number.isFinite(frame.priority)) {
-          copySprite.setDepth(this._resolvePriorityDepth(frame.priority, frame, bgLayerRef));
-        }
+        // Keep USER/TARGET copy sprites at source battler depth.
+        // Original PokeRogue priority reordering applies to GRAPHIC sprites only.
+        // Applying frame.priority here can push copies behind the field (e.g. Shadow Ball),
+        // making battlers disappear while the source sprites are intentionally hidden.
       }
 
       // Hide any pool sprites not used in this frame.
@@ -449,13 +457,17 @@ export class BattleAnimPlayer {
         }
       }
 
-      f++;
-      if (f < frameCount) {
-        this.scene.time.delayedCall(FRAME_MS, tick);
-      } else {
-        // Keep tail long enough for timed BG updates (original returns duration*2 frames).
-        const tailMs = FRAME_MS * (0.5 + Math.max(0, extraFrames));
-        this.scene.time.delayedCall(tailMs, cleanUp);
+        f++;
+        if (f < frameCount) {
+          this.scene.time.delayedCall(FRAME_MS, tick);
+        } else {
+          // Keep tail long enough for timed BG updates (original returns duration*2 frames).
+          const tailMs = FRAME_MS * (0.5 + Math.max(0, extraFrames));
+          this.scene.time.delayedCall(tailMs, cleanUp);
+        }
+      } catch (error) {
+        console.warn('[BattleAnimPlayer] Animation frame execution failed.', error);
+        cleanUp();
       }
     };
 
@@ -538,9 +550,21 @@ export class BattleAnimPlayer {
     const key = source.texture.key;
     const frameName = source.frame?.name;
     if (!key || !this.scene.textures.exists(key)) return;
+    const texture = this.scene.textures.get(key);
+    if (!texture) return;
+    let safeFrame = null;
+    if (frameName !== undefined && frameName !== null && texture.has(frameName)) {
+      safeFrame = frameName;
+    } else if (texture.has(0)) {
+      safeFrame = 0;
+    } else if (texture.has('0')) {
+      safeFrame = '0';
+    } else if (texture.has('__BASE')) {
+      safeFrame = '__BASE';
+    }
     try {
-      if (frameName !== undefined && frameName !== null) {
-        copy.setTexture(key, frameName);
+      if (safeFrame !== null) {
+        copy.setTexture(key, safeFrame);
       } else {
         copy.setTexture(key);
       }
@@ -548,6 +572,60 @@ export class BattleAnimPlayer {
     // Original BattleAnim copy sprites use default sprite origin (center).
     copy.setOrigin(0.5, 0.5);
     copy.setDepth(source.depth ?? copy.depth);
+  }
+
+  _resolveGraphicFrame(texKey, requestedFrame = 0) {
+    if (!texKey || !this.scene?.textures?.exists(texKey)) return null;
+    const texture = this.scene.textures.get(texKey);
+    if (!texture) return null;
+
+    const normalizedRequested = Number.isFinite(Number(requestedFrame))
+      ? Math.max(0, Math.trunc(Number(requestedFrame)))
+      : String(requestedFrame ?? '');
+    const cacheKey = `${texKey}|${String(normalizedRequested)}`;
+    if (this._graphicFrameResolveCache.has(cacheKey)) {
+      return this._graphicFrameResolveCache.get(cacheKey);
+    }
+
+    const candidates = [];
+    if (typeof normalizedRequested === 'number') {
+      candidates.push(normalizedRequested, String(normalizedRequested));
+    } else if (normalizedRequested) {
+      candidates.push(normalizedRequested);
+      const asNumber = Number(normalizedRequested);
+      if (Number.isFinite(asNumber)) candidates.push(Math.max(0, Math.trunc(asNumber)));
+    }
+    candidates.push(0, '0');
+
+    let resolved = null;
+    for (const candidate of candidates) {
+      if (texture.has(candidate)) {
+        resolved = candidate;
+        break;
+      }
+    }
+    if (resolved === null) {
+      const frameNames = typeof texture.getFrameNames === 'function'
+        ? texture.getFrameNames().filter(name => name !== '__BASE')
+        : [];
+      if (frameNames.length) {
+        const numericNames = frameNames
+          .map(name => Number(name))
+          .filter(Number.isFinite)
+          .sort((a, b) => a - b);
+        if (numericNames.length && typeof normalizedRequested === 'number') {
+          const bounded = numericNames.filter(value => value <= normalizedRequested);
+          resolved = bounded.length ? bounded[bounded.length - 1] : numericNames[numericNames.length - 1];
+        } else {
+          resolved = frameNames[0];
+        }
+      } else if (texture.has('__BASE')) {
+        resolved = '__BASE';
+      }
+    }
+
+    this._graphicFrameResolveCache.set(cacheKey, resolved);
+    return resolved;
   }
 
   _applyToneAndColor(sprite, frame, globalTint = null) {

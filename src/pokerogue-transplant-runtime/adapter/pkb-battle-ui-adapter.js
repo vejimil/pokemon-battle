@@ -278,10 +278,16 @@ export class PkbBattleUiAdapter {
       Math.max(0, footerActions.length - 1),
     );
 
-    let focusRegion = previousSelection.focusRegion || 'moves';
-    if (activeToggleIndex >= 0) focusRegion = 'toggles';
-    else if (activeFooterIndex >= 0) focusRegion = 'footer';
-    else if (!previousSelection.focusRegion && activeMoveIndex >= 0) focusRegion = 'moves';
+    // Seed focus only when there is no explicit prior region.
+    // If we re-apply `active` every frame, toggles (e.g. Dynamax/Z) keep stealing
+    // focus and directional/mobile input cannot remain on move buttons.
+    let focusRegion = previousSelection.focusRegion || '';
+    if (!focusRegion) {
+      if (activeToggleIndex >= 0) focusRegion = 'toggles';
+      else if (activeFooterIndex >= 0) focusRegion = 'footer';
+      else if (activeMoveIndex >= 0) focusRegion = 'moves';
+      else focusRegion = 'moves';
+    }
 
     if (focusRegion === 'toggles' && !toggles.length) focusRegion = footerActions.length ? 'footer' : 'moves';
     if (focusRegion === 'footer' && !footerActions.length) focusRegion = toggles.length ? 'toggles' : 'moves';

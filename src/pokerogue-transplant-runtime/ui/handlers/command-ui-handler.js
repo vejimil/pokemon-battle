@@ -123,6 +123,12 @@ export class CommandUiHandler extends UiHandler {
     if (!this.teraButton) return;
     const active = this.getCursor() === Command.TERA || Boolean(this.getTeraToggle()?.active);
     this.teraButton.setScale(active ? 1.45 : 1.3);
+    if (typeof this.teraButton.setTint === 'function') {
+      if (active) this.teraButton.setTint(0xff8080);
+      else this.teraButton.clearTint?.();
+    } else if (typeof this.teraButton.setColor === 'function') {
+      this.teraButton.setColor(active ? '#fecaca' : '#f8fbff');
+    }
   }
 
   getCursor() {

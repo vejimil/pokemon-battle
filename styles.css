@@ -997,8 +997,12 @@ body.hide-builder-warning-box .warning-box {
   background: rgba(255,255,255,0.04);
 }
 .toggle-pill.active {
-  border-color: rgba(192,132,252,0.45);
-  background: rgba(192,132,252,0.14);
+  border-color: rgba(248, 113, 113, 0.48);
+  background: rgba(248, 113, 113, 0.16);
+  color: #fecaca;
+}
+.toggle-pill.active .toggle-pill-copy small {
+  color: #fda4af;
 }
 .choice-footer {
   display: flex;
@@ -1031,6 +1035,7 @@ body.hide-builder-warning-box .warning-box {
   line-height: 1.45;
 }
 .log-line.accent { color: var(--text); background: rgba(125,211,252,0.08); }
+.log-line.warning { color: #fecaca; background: rgba(248, 113, 113, 0.18); border: 1px solid rgba(248, 113, 113, 0.28); }
 .log-line.win { color: var(--good); }
 .target-grid {
   display: grid;
@@ -1263,9 +1268,29 @@ body.hide-builder-warning-box .warning-box {
   min-height: 1.2rem;
   margin-top: -2px;
 }
+.picker-species-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.picker-filter-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.picker-filter-field span {
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+.picker-filter-field select {
+  width: 100%;
+}
 
 @media (max-width: 900px) {
   .picker-body {
+    grid-template-columns: 1fr;
+  }
+  .picker-species-filters {
     grid-template-columns: 1fr;
   }
 }
@@ -2686,6 +2711,7 @@ body.hide-builder-warning-box .warning-box {
 
 .pkbattle-command-tera-btn.active {
   transform: translateY(-1px) scale(1.03);
+  filter: drop-shadow(0 0 6px rgba(248, 113, 113, 0.65));
 }
 
 .pkbattle-command-tera-btn:disabled {
@@ -3175,11 +3201,21 @@ body.hide-builder-warning-box .warning-box {
   height: 18px;
 }
 
-.pkbattle-inline-action.active,
+.pkbattle-inline-action.active {
+  border-color: rgba(248, 113, 113, 0.5);
+  color: #fecaca;
+}
+
 .pkbattle-inline-action:hover,
 .pkbattle-inline-action:focus-visible {
   border-color: rgba(255, 240, 152, 0.38);
   color: #fff6a8;
+}
+
+.pkbattle-inline-action.active:hover,
+.pkbattle-inline-action.active:focus-visible {
+  border-color: rgba(248, 113, 113, 0.6);
+  color: #fecaca;
 }
 
 .pkbattle-inline-action:disabled {

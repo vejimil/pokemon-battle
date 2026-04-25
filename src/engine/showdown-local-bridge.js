@@ -45,10 +45,12 @@ function getPendingChoiceForSide(battle, sideId, slot) {
 }
 
 function getForcedChoiceFromRequest(request) {
+  if (Array.isArray(request?.forceSwitch) && request.forceSwitch.some(Boolean)) return null;
   const moves = Array.isArray(request?.active?.[0]?.moves) ? request.active[0].moves : [];
   if (moves.length !== 1) return null;
   const onlyMove = moves[0] || null;
-  if (!onlyMove || onlyMove.disabled || !toId(onlyMove.id || onlyMove.move || '')) return null;
+  const moveId = toId(onlyMove?.id || onlyMove?.move || '');
+  if (!onlyMove || onlyMove.disabled || !moveId || moveId === 'struggle') return null;
   return {
     kind: 'move',
     move: onlyMove.move || 'Locked move',

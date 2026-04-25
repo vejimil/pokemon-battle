@@ -72,6 +72,9 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.currentModel = null;
       this._persistentTerrainBg = null;
       this._persistentTerrainId = '';
+      this._bgTextureLoadPromises = new Map();
+      this._deferredTextureReleaseKeys = new Set();
+      this._deferredTextureReleaseTimer = null;
       this.ui = null;
       this.handleResize = () => this.layoutSafely();
       this.handleWindowKeyDown = event => this.handleGlobalKeyDown(event);
@@ -87,6 +90,9 @@ export function createBattleShellSceneClass(Phaser, env) {
         try { this._teraSparkleTimer?.remove?.(); this._teraSparkleTimer = null; } catch (_error) {}
         try { this._destroyMountTeraFx(this.enemySprite); } catch (_error) {}
         try { this._destroyMountTeraFx(this.playerSprite); } catch (_error) {}
+        try { this._deferredTextureReleaseTimer?.remove?.(); this._deferredTextureReleaseTimer = null; } catch (_error) {}
+        this._deferredTextureReleaseKeys?.clear?.();
+        this._bgTextureLoadPromises?.clear?.();
       };
       this.runtimeEnv = {
         ...env,
@@ -129,6 +135,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           this._refreshBattlerSpritesForMetrics();
         }).catch(() => {});
         this.createArenaLayers();
+        this._preloadTerrainBackgroundTextures();
         this.enemySprite = this.createSpriteMount('enemy');
         this.playerSprite = this.createSpriteMount('player');
         this.runtimeEnv.audio = this.audio; // expose audio manager to UI handlers
@@ -261,17 +268,58 @@ export function createBattleShellSceneClass(Phaser, env) {
 
     _clearBattlerFrameTextures(mount) {
       if (!mount?.frameTextureKeys?.length) return;
-      for (const texKey of mount.frameTextureKeys) {
-        if (this.textures.exists(texKey)) this.textures.remove(texKey);
-      }
+      this._requestDeferredTextureRelease(mount.frameTextureKeys);
       mount.frameTextureKeys = [];
       mount.animMode = 'sheet';
     }
 
     _clearFrameTexturesByKeys(keys = []) {
-      for (const texKey of keys) {
-        if (this.textures.exists(texKey)) this.textures.remove(texKey);
+      this._requestDeferredTextureRelease(keys);
+    }
+
+    _requestDeferredTextureRelease(keys = []) {
+      const normalizedKeys = (Array.isArray(keys) ? keys : [keys])
+        .map(key => String(key || '').trim())
+        .filter(Boolean);
+      if (!normalizedKeys.length) return;
+      normalizedKeys.forEach(key => this._deferredTextureReleaseKeys.add(key));
+      this._scheduleDeferredTextureReleaseFlush();
+    }
+
+    _scheduleDeferredTextureReleaseFlush(delayMs = 120) {
+      if (!this._deferredTextureReleaseKeys.size) return;
+      if (this._deferredTextureReleaseTimer) return;
+      this._deferredTextureReleaseTimer = this.time.delayedCall(delayMs, () => {
+        this._deferredTextureReleaseTimer = null;
+        this._flushDeferredTextureReleases();
+        if (this._deferredTextureReleaseKeys.size) this._scheduleDeferredTextureReleaseFlush(220);
+      });
+    }
+
+    _isTextureKeyInUse(textureKey = '') {
+      const key = String(textureKey || '').trim();
+      if (!key) return false;
+      const list = Array.isArray(this.children?.list) ? this.children.list : [];
+      for (const obj of list) {
+        if (!obj?.active) continue;
+        const objKey = String(obj?.texture?.key || '').trim();
+        if (objKey && objKey === key) return true;
       }
+      return false;
+    }
+
+    _flushDeferredTextureReleases() {
+      if (!this._deferredTextureReleaseKeys.size) return;
+      const pending = [...this._deferredTextureReleaseKeys];
+      this._deferredTextureReleaseKeys.clear();
+      pending.forEach(key => {
+        if (!this.textures.exists(key)) return;
+        if (this._isTextureKeyInUse(key)) {
+          this._deferredTextureReleaseKeys.add(key);
+          return;
+        }
+        try { this.textures.remove(key); } catch (_error) {}
+      });
     }
 
     _buildFrameTexturesFromStrip(mount, keyPrefix, img, frameSize, frameCount) {
@@ -585,9 +633,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         this._clearBattlerAnim(mount);
         mount.phaserSprite.setTexture('pkb-battler-placeholder').setVisible(false);
         this._clearBattlerFrameTextures(mount);
-        if (mount?.currentTextureKey && this.textures.exists(mount.currentTextureKey)) {
-          this.textures.remove(mount.currentTextureKey);
-        }
+        if (mount?.currentTextureKey) this._requestDeferredTextureRelease(mount.currentTextureKey);
         mount.currentUrl = '';
         mount.currentTextureKey = '';
         mount.metricsSnapshot = null;
@@ -782,8 +828,8 @@ export function createBattleShellSceneClass(Phaser, env) {
         }
 
         this._clearFrameTexturesByKeys(prevFrameTextureKeys);
-        if (prevTextureKey && prevTextureKey !== mount.currentTextureKey && this.textures.exists(prevTextureKey)) {
-          this.textures.remove(prevTextureKey);
+        if (prevTextureKey && prevTextureKey !== mount.currentTextureKey) {
+          this._requestDeferredTextureRelease(prevTextureKey);
         }
       } catch (_err) {
         if (mount.currentUrl === url) {
@@ -909,13 +955,32 @@ export function createBattleShellSceneClass(Phaser, env) {
       if (!name) return Promise.resolve();
       const key = this._bgTextureKey(name);
       if (this.textures.exists(key)) return Promise.resolve();
-      return new Promise(resolve => {
+      if (this._bgTextureLoadPromises.has(key)) return this._bgTextureLoadPromises.get(key);
+      const promise = new Promise(resolve => {
         const filename = encodeURIComponent(name) + '.png';
         const url = `./assets/pokerogue/battle__anims/${filename}`;
         this.load.image(key, url);
-        this.load.once('complete', () => resolve());
-        this.load.once('loaderror', () => resolve());
+        const done = () => {
+          this._bgTextureLoadPromises.delete(key);
+          resolve();
+        };
+        this.load.once('complete', done);
+        this.load.once('loaderror', done);
         this.load.start();
+      });
+      this._bgTextureLoadPromises.set(key, promise);
+      return promise;
+    }
+
+    _preloadTerrainBackgroundTextures() {
+      const resourceNames = Array.from(new Set(
+        Object.values(TERRAIN_BG_RESOURCE_BY_ID || {})
+          .map(value => String(value || '').trim())
+          .filter(Boolean)
+      ));
+      if (!resourceNames.length) return;
+      resourceNames.forEach(resourceName => {
+        this._ensureBgTextureLoaded(resourceName).catch(() => {});
       });
     }
 
@@ -926,9 +991,16 @@ export function createBattleShellSceneClass(Phaser, env) {
         this.clearPersistentTerrainBackground();
         return;
       }
-      await this._ensureBgTextureLoaded(resourceName);
       const key = this._bgTextureKey(resourceName);
-      if (!this.textures.exists(key)) return;
+      if (!this.textures.exists(key)) {
+        this._persistentTerrainId = normalizedTerrainId;
+        this._ensureBgTextureLoaded(resourceName).then(() => {
+          if (this._persistentTerrainId !== normalizedTerrainId) return;
+          if (!this.textures.exists(key)) return;
+          this.setPersistentTerrainBackground(normalizedTerrainId).catch(() => {});
+        }).catch(() => {});
+        return;
+      }
       if (this._persistentTerrainBg?.active && this._persistentTerrainBg.texture?.key === key) {
         this._persistentTerrainId = normalizedTerrainId;
         this._layoutPersistentTerrainBackground();

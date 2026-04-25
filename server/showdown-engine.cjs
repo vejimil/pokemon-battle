@@ -512,8 +512,24 @@ function normalizeLogTextFromLine(line, logCtx = null) {
       return {text: `${displayNameForPokemonProtocol(a)}에게 통하지 않음. / It had no effect on ${displayNameForPokemonProtocol(a)}.`, tone: ''};
     case 'miss':
       return {text: `${displayNameForPokemonProtocol(a)}의 공격이 빗나감! / ${displayNameForPokemonProtocol(a)} missed ${displayNameForPokemonProtocol(b)}.`, tone: ''};
-    case 'cant':
-      return {text: `${displayNameForPokemonProtocol(a)}은(는) 행동할 수 없다. / ${displayNameForPokemonProtocol(a)} couldn't move.`, tone: ''};
+    case '-fail': {
+      const side = /^(p[12])[a-z]?:/.exec(String(a || ''))?.[1] || '';
+      const reason = String(b || '').trim();
+      const reasonText = reason ? ` (${reason})` : '';
+      return {
+        text: `${displayNameForPokemonProtocol(a)}의 행동이 실패했다${reasonText}. / ${displayNameForPokemonProtocol(a)}'s action failed${reasonText}.`,
+        tone: 'warning',
+        side,
+      };
+    }
+    case 'cant': {
+      const side = /^(p[12])[a-z]?:/.exec(String(a || ''))?.[1] || '';
+      return {
+        text: `${displayNameForPokemonProtocol(a)}은(는) 행동할 수 없다. / ${displayNameForPokemonProtocol(a)} couldn't move.`,
+        tone: 'warning',
+        side,
+      };
+    }
     case 'win':
       return {text: `${a} 승리! / ${a} wins the battle!`, tone: 'win'};
     case 'error':
@@ -931,7 +947,14 @@ function normalizeEventsFromLine(line, ctx) {
     }
     case 'cant': {
       const id = parseIdentForEvent(parts[2]);
-      return [{type: 'cant_move', turn: ctx.turn, seq: ctx.seq++, actor: {side: id.side, slot: id.slot}, reason: parts[3] || ''}];
+      return [{
+        type: 'cant_move',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        actor: {side: id.side, slot: id.slot},
+        reason: parts[3] || '',
+        reasonId: normalizeProtocolEffectId(parts[3] || ''),
+      }];
     }
 
     case 'callback': {

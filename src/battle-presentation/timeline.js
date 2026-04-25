@@ -893,6 +893,51 @@ export class BattleTimelineExecutor {
     );
   }
 
+  _cantMoveMessage(ev = {}) {
+    const side = ev?.actor?.side;
+    const slot = ev?.actor?.slot ?? 0;
+    const pokemonName = this._slotName(side, slot);
+    const pokemonNameWithAffix = this._pokemonNameWithAffix(pokemonName, side);
+    const reasonId = toId(ev?.reasonId || ev?.reason || '');
+
+    if (reasonId === 'par' || reasonId === 'paralysis') {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} is paralyzed!\nIt can't move!`
+        : `${pokemonNameWithAffix}은(는)\n마비에 걸려 움직일 수 없다!`;
+    }
+    if (reasonId === 'flinch') {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} flinched!\nIt couldn't move!`
+        : `${pokemonNameWithAffix}은(는)\n풀죽어서 움직일 수 없었다!`;
+    }
+    if (reasonId === 'slp' || reasonId === 'sleep') {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} is fast asleep.`
+        : `${pokemonNameWithAffix}은(는)\n잠들어 있어서 움직일 수 없다.`;
+    }
+    if (reasonId === 'frz' || reasonId === 'freeze') {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} is frozen solid!`
+        : `${pokemonNameWithAffix}은(는)\n얼어붙어서 움직일 수 없다!`;
+    }
+    if (reasonId === 'recharge') {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} must recharge!`
+        : `${pokemonNameWithAffix}은(는)\n반동으로 움직일 수 없다!`;
+    }
+
+    const reasonText = String(ev?.reason || '').trim();
+    if (reasonText && !/^(par|slp|frz|flinch|recharge)$/i.test(reasonText)) {
+      return this._isEnglishLocale()
+        ? `${pokemonNameWithAffix} can't move (${reasonText}).`
+        : `${pokemonNameWithAffix}은(는)\n움직일 수 없다 (${reasonText}).`;
+    }
+
+    return this._isEnglishLocale()
+      ? `${pokemonNameWithAffix} can't move!`
+      : `${pokemonNameWithAffix}은(는)\n움직일 수 없다.`;
+  }
+
   _substituteSpriteUrlForSide(side) {
     if (!side) return '';
     return side === this._playerSide
@@ -1627,7 +1672,7 @@ export class BattleTimelineExecutor {
         const effectId = this._normalizeTerrainId(ev.effect || ev.raw || '');
         this._activeTerrainId = effectId || this._activeTerrainId;
         const tLabel = this._terrainStartMessage(effectId, ev.effect || ev.raw || '');
-        await this._showMsg(tLabel, { minMs: 620 });
+        await this._showMsg(tLabel, { minMs: 520 });
         await this._playFieldAnim(this._terrainCommonAnimName(this._activeTerrainId));
         const scene = this._scene();
         if (scene?.setPersistentTerrainBackground) {
@@ -1754,13 +1799,7 @@ export class BattleTimelineExecutor {
 
       // ── BA-4: Can't move ─────────────────────────────────────────────────
       case 'cant_move': {
-        const cantName = this._slotName(ev.actor?.side, ev.actor?.slot ?? 0);
-        const cantNameWithAffix = this._pokemonNameWithAffix(cantName, ev.actor?.side);
-        // BA-22: simple EN/KO branch (no single generic locale key covers all cant_move causes)
-        const cantMsg = this._isEnglishLocale()
-          ? `${cantNameWithAffix} can't move!`
-          : `${cantNameWithAffix}은(는) 움직일 수 없다.`;
-        await this._showMsg(cantMsg, { minMs: 500 });
+        await this._showMsg(this._cantMoveMessage(ev), { minMs: 500 });
         break;
       }
 

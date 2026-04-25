@@ -392,14 +392,27 @@ function buildAssetDex() {
 
   const baseChoices = Array.from(assetDex.families.values())
     .filter(family => family.speciesToAsset.get(family.baseSpeciesName))
-    .map(family => makeChoice('species', family.baseSpeciesName, {
-      assetId: family.speciesToAsset.get(family.baseSpeciesName) || family.assetBaseId,
-      family: family.baseSpeciesName,
-      formSearchTerms: uniqueNames((family.searchableFormChoices || []).flatMap(choice => [
-        choice?.speciesName,
-        displaySpeciesName(choice?.speciesName || ''),
-      ])),
-    }))
+    .map(family => {
+      const speciesMeta = getSpeciesPickerMeta(family.baseSpeciesName);
+      const stats = speciesMeta.stats || {};
+      const typeSearchTerms = buildSpeciesTypeSearchTerms(speciesMeta.types || []);
+      const statSearchTerms = statOrder.map(stat => `${stat}:${Number(stats?.[stat] || 0)}`);
+      const bstSearchTerm = `bst:${Number(speciesMeta.bst || 0)}`;
+      return makeChoice('species', family.baseSpeciesName, {
+        assetId: family.speciesToAsset.get(family.baseSpeciesName) || family.assetBaseId,
+        family: family.baseSpeciesName,
+        speciesMeta,
+        formSearchTerms: uniqueNames((family.searchableFormChoices || []).flatMap(choice => [
+          choice?.speciesName,
+          displaySpeciesName(choice?.speciesName || ''),
+        ])),
+        extraSearchTerms: uniqueNames([
+          ...typeSearchTerms,
+          ...statSearchTerms,
+          bstSearchTerm,
+        ]),
+      });
+    })
     .sort((a, b) => a.english.localeCompare(b.english));
 
   state.assetDex = assetDex;
@@ -407,6 +420,37 @@ function buildAssetDex() {
   state.allSpeciesChoices = uniqueNames(assetDex.allSpeciesChoices.map(choice => choice.english))
     .map(name => assetDex.allSpeciesChoices.find(choice => choice.english === name))
     .sort((a, b) => a.english.localeCompare(b.english));
+}
+function getSpeciesPickerMeta(speciesName = '') {
+  const emptyStats = {hp: 0, atk: 0, def: 0, spa: 0, spd: 0, spe: 0};
+  if (!state.dex || !speciesName) return {types: [], stats: {...emptyStats}, bst: 0};
+  const species = state.dex.species.get(speciesName);
+  if (!species?.exists) return {types: [], stats: {...emptyStats}, bst: 0};
+  const stats = {
+    hp: Number(species.baseStats?.hp || 0),
+    atk: Number(species.baseStats?.atk || 0),
+    def: Number(species.baseStats?.def || 0),
+    spa: Number(species.baseStats?.spa || 0),
+    spd: Number(species.baseStats?.spd || 0),
+    spe: Number(species.baseStats?.spe || 0),
+  };
+  const bst = statOrder.reduce((sum, stat) => sum + Number(stats?.[stat] || 0), 0);
+  return {
+    types: (species.types || []).map(type => toId(type)).filter(Boolean),
+    stats,
+    bst,
+  };
+}
+function buildSpeciesTypeSearchTerms(types = []) {
+  const out = [];
+  for (const typeId of types || []) {
+    const normalized = toId(typeId);
+    if (!normalized) continue;
+    const englishLabel = String(normalized).toUpperCase();
+    const localized = getLocalizedName('types', normalized);
+    out.push(normalized, englishLabel, localized, displayType(normalized));
+  }
+  return uniqueNames(out);
 }
 function getFamilyForSpecies(speciesName) {
   if (!state.assetDex) return null;
@@ -869,10 +913,61 @@ function getDefaultMaxMovePower(move) {
   if (bp >= 45) return lighterTypes.has(type) ? 75 : 100;
   return lighterTypes.has(type) ? 70 : 90;
 }
+function buildStrongestMoveAnimationByTypeMap() {
+  const out = {};
+  if (!state.dex?.moves?.all) return out;
+  for (const move of state.dex.moves.all()) {
+    if (!move?.exists || move.isZ || move.isMax) continue;
+    if (String(move.category || '').toLowerCase() === 'status') continue;
+    const typeId = toId(move.type || '');
+    const basePower = Number(move.basePower || 0);
+    if (!typeId || !Number.isFinite(basePower) || basePower <= 0) continue;
+    const current = out[typeId];
+    if (!current || basePower > current.basePower || (basePower === current.basePower && String(move.name || '').localeCompare(current.name) < 0)) {
+      out[typeId] = {name: String(move.name || ''), basePower};
+    }
+  }
+  return Object.fromEntries(
+    Object.entries(out)
+      .map(([typeId, entry]) => [typeId, entry?.name || ''])
+      .filter(([, name]) => Boolean(name))
+  );
+}
+function getStrongestMoveAnimationByType(moveType = '') {
+  const typeId = toId(moveType || '');
+  if (!typeId) return '';
+  const cacheKey = `${String(state.dexVersion || '')}|${Boolean(state.dex)}`;
+  if (!strongestMoveAnimationByTypeCache || strongestMoveAnimationByTypeCacheKey !== cacheKey) {
+    strongestMoveAnimationByTypeCache = buildStrongestMoveAnimationByTypeMap();
+    strongestMoveAnimationByTypeCacheKey = cacheKey;
+  }
+  return strongestMoveAnimationByTypeCache?.[typeId] || '';
+}
 function getMaxMoveName(mon, move) {
   if (!move || move.category === 'status') return 'Max Guard';
   if (mon?.gmaxMove && mon?.gigantamaxed) return mon.gmaxMove;
   return MAX_MOVE_NAMES[toId(move.type)] || 'Max Strike';
+}
+function getTypeIdFromMaxMoveName(moveName = '') {
+  const moveId = toId(moveName || '');
+  if (!moveId) return '';
+  const direct = Object.entries(MAX_MOVE_NAMES).find(([, maxMoveName]) => toId(maxMoveName) === moveId);
+  if (direct) return direct[0];
+  // Common G-Max signatures that keep the source move's type.
+  if (moveId.startsWith('gmax')) {
+    if (['gmaxwildfire'].includes(moveId)) return 'fire';
+    if (['gmaxcannonade'].includes(moveId)) return 'water';
+    if (['gmaxvinelash'].includes(moveId)) return 'grass';
+    if (['gmaxvolcalith'].includes(moveId)) return 'rock';
+    if (['gmaxbefuddle'].includes(moveId)) return 'bug';
+    if (['gmaxterror', 'gmaxdepletion'].includes(moveId)) return 'dragon';
+    if (['gmaxoneblow'].includes(moveId)) return 'dark';
+    if (['gmaxrapidflow'].includes(moveId)) return 'water';
+    if (['gmaxresonance'].includes(moveId)) return 'ice';
+    if (['gmaxsteelsurge'].includes(moveId)) return 'steel';
+    if (['gmaxchistrike'].includes(moveId)) return 'fighting';
+  }
+  return '';
 }
 function canDynamax(mon, side) {
   if (!runtimeSupportsDynamax()) return false;
@@ -1241,7 +1336,14 @@ const state = {
   natureChoices: [],
   allMoveChoices: [],
   currentMoveChoices: [],
-  picker: {mode: '', moveIndex: null, options: [], emptyHint: '', detailOption: null},
+  picker: {
+    mode: '',
+    moveIndex: null,
+    options: [],
+    emptyHint: '',
+    detailOption: null,
+    speciesFilter: { type: '', sort: 'name' },
+  },
   battle: null,
   battleUi: {
     perspective: 0,
@@ -1249,6 +1351,7 @@ const state = {
     moveDetailByPlayer: {0: {}, 1: {}},
     inputLocked: false,
     timelineSpriteOverrides: {},
+    preHideSwitchInSides: [],
     passPrompt: '',
     lastFlyoutKey: '',
     flyoutTimer: null,
@@ -1295,6 +1398,8 @@ const els = {};
 let pickerReturnFocusEl = null;
 const phaserBattleRenderers = { 0: null, 1: null };
 const mobileInputRepeatTimers = new Map();
+let strongestMoveAnimationByTypeCache = null;
+let strongestMoveAnimationByTypeCacheKey = '';
 const rosterDragState = {player: -1, slot: -1};
 const battleLocaleManager = createBattleLocaleManager({
   language: 'ko',
@@ -1642,6 +1747,27 @@ function collectTimelineInitialSlotInfo(battle = state.battle) {
     });
   });
   return initialSlotInfo;
+}
+
+function collectInitialSwitchInSides(events = []) {
+  if (!Array.isArray(events) || !events.length) return [];
+  return [...new Set(
+    events
+      .filter(ev => ev?.type === 'switch_in' && ev?.fromBall && (ev?.side === 'p1' || ev?.side === 'p2'))
+      .map(ev => ev.side)
+  )];
+}
+
+function setBattleUiInitialSwitchPreHide(battle = state.battle, events = []) {
+  const ui = getBattleUiState(battle);
+  if (!ui) return;
+  ui.preHideSwitchInSides = collectInitialSwitchInSides(events);
+}
+
+function clearBattleUiInitialSwitchPreHide(battle = state.battle) {
+  const ui = getBattleUiState(battle);
+  if (!ui) return;
+  ui.preHideSwitchInSides = [];
 }
 
 function primeTimelineSpriteOverrides(events = [], battle = state.battle) {
@@ -2268,8 +2394,11 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
       resetBattleUiModesFromRequests(state.battle);
       const initialBattleSnapshot = !previousBattle || String(previousBattle.id || '') !== String(adoptedBattle.id || '');
       if (initialBattleSnapshot) {
+        setBattleUiInitialSwitchPreHide(state.battle, adoptedBattle?.events || []);
         await syncPhaserBattleRenderer(adoptedBattle);
         getPrimaryBattleScene()?.audio?.playRandomBattleBgm?.(BATTLE_BGM_TRACKS).catch(() => {});
+      } else {
+        clearBattleUiInitialSwitchPreHide(state.battle);
       }
 
       const shouldPlayTimeline = Boolean(
@@ -2282,6 +2411,7 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
           await playTimelineAcrossActiveViews(adoptedBattle.events, {
             onComplete: () => {
               resetBattleUiModesFromRequests(state.battle);
+              clearBattleUiInitialSwitchPreHide(state.battle);
               clearTimelineSpriteOverrides();
               renderBattle();
             },
@@ -2291,10 +2421,12 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
           });
         } catch (error) {
           console.warn('[OnlineBattle] timeline play failed:', error);
+          clearBattleUiInitialSwitchPreHide(state.battle);
           clearTimelineSpriteOverrides();
           renderBattle();
         }
       } else {
+        clearBattleUiInitialSwitchPreHide(state.battle);
         clearTimelineSpriteOverrides();
         renderBattle();
       }
@@ -3555,6 +3687,18 @@ function buildPickerSubtitle(option, mode) {
   const alternate = state.language === 'en'
     ? (option.korean && option.korean !== option.english ? option.korean : '')
     : (option.english && option.english !== option.korean ? option.english : '');
+  if (mode === 'species') {
+    const speciesMeta = option?.speciesMeta || {};
+    const types = Array.isArray(speciesMeta.types) ? speciesMeta.types : [];
+    const bst = Number(speciesMeta.bst || 0);
+    const typeLabel = types.length ? types.map(type => displayType(type)).join(' · ') : '';
+    const stats = speciesMeta.stats || {};
+    const statLabel = statOrder
+      .map(stat => `${String(stat).toUpperCase()} ${Number(stats?.[stat] || 0)}`)
+      .join(' · ');
+    const extra = [typeLabel, bst > 0 ? `BST ${bst}` : '', statLabel].filter(Boolean).join(' · ');
+    return [alternate, extra].filter(Boolean).join(' · ');
+  }
   if (mode === 'move' && option.meta) {
     const details = [option.meta.type && displayType(option.meta.type), option.meta.categoryLabel, option.meta.powerLabel, option.meta.accuracyLabel].filter(Boolean);
     return [alternate, details.join(' · ')].filter(Boolean).join(' · ');
@@ -3605,6 +3749,69 @@ function filterPickerOptions(options = [], rawQuery = '') {
     return left.localeCompare(right, state.language === 'ko' ? 'ko' : 'en', {numeric: true, sensitivity: 'base'});
   });
   return ranked.map(entry => entry.option);
+}
+function createDefaultPickerSpeciesFilter() {
+  return {type: '', sort: 'name'};
+}
+function normalizePickerSpeciesFilter(filter = {}) {
+  const allowedSorts = new Set(['name', 'bst-desc', 'hp-desc', 'atk-desc', 'def-desc', 'spa-desc', 'spd-desc', 'spe-desc']);
+  const typeId = toId(filter?.type || '');
+  const normalizedType = TYPES.some(type => toId(type) === typeId) ? typeId : '';
+  const sort = String(filter?.sort || 'name').trim().toLowerCase();
+  return {
+    type: normalizedType,
+    sort: allowedSorts.has(sort) ? sort : 'name',
+  };
+}
+function getPickerSpeciesFilterState(picker = state.picker || {}) {
+  if (!picker?.speciesFilter) picker.speciesFilter = createDefaultPickerSpeciesFilter();
+  picker.speciesFilter = normalizePickerSpeciesFilter(picker.speciesFilter);
+  return picker.speciesFilter;
+}
+function comparePickerOptionNames(leftOption = {}, rightOption = {}) {
+  const left = state.language === 'en'
+    ? (leftOption?.english || leftOption?.display || '')
+    : (leftOption?.korean || leftOption?.display || leftOption?.english || '');
+  const right = state.language === 'en'
+    ? (rightOption?.english || rightOption?.display || '')
+    : (rightOption?.korean || rightOption?.display || rightOption?.english || '');
+  return left.localeCompare(right, state.language === 'ko' ? 'ko' : 'en', {numeric: true, sensitivity: 'base'});
+}
+function applySpeciesPickerFilters(options = [], picker = state.picker || {}) {
+  const filter = getPickerSpeciesFilterState(picker);
+  const statSortKeyMap = {
+    'hp-desc': 'hp',
+    'atk-desc': 'atk',
+    'def-desc': 'def',
+    'spa-desc': 'spa',
+    'spd-desc': 'spd',
+    'spe-desc': 'spe',
+  };
+  let out = [...(options || [])];
+  if (filter.type) {
+    out = out.filter(option => {
+      const types = Array.isArray(option?.speciesMeta?.types) ? option.speciesMeta.types : [];
+      return types.some(type => toId(type) === filter.type);
+    });
+  }
+  if (filter.sort !== 'name') {
+    out.sort((leftOption, rightOption) => {
+      if (filter.sort === 'bst-desc') {
+        const leftBst = Number(leftOption?.speciesMeta?.bst || 0);
+        const rightBst = Number(rightOption?.speciesMeta?.bst || 0);
+        if (leftBst !== rightBst) return rightBst - leftBst;
+        return comparePickerOptionNames(leftOption, rightOption);
+      }
+      const statKey = statSortKeyMap[filter.sort] || '';
+      if (!statKey) return comparePickerOptionNames(leftOption, rightOption);
+      const leftStat = Number(leftOption?.speciesMeta?.stats?.[statKey] || 0);
+      const rightStat = Number(rightOption?.speciesMeta?.stats?.[statKey] || 0);
+      if (leftStat !== rightStat) return rightStat - leftStat;
+      return comparePickerOptionNames(leftOption, rightOption);
+    });
+    return out;
+  }
+  return out;
 }
 function getCurrentMoveChoices(mon = getSelectedMon()) {
   if (!mon?.data?.learnset?.length || !state.dex) return [];
@@ -3785,6 +3992,50 @@ function renderMoveDetail(option) {
   els.pickerDetailDesc.textContent = getBuilderMoveDescriptionText(move, option);
   if (els.pickerDetailFlags) els.pickerDetailFlags.innerHTML = '';
 }
+function buildPickerSpeciesTypeFilterOptions() {
+  return [
+    {value: '', label: lang('전체 타입', 'All types')},
+    ...TYPES.map(type => ({value: toId(type), label: displayType(type)})),
+  ];
+}
+function buildPickerSpeciesSortFilterOptions() {
+  return [
+    {value: 'name', label: lang('이름순', 'Name')},
+    {value: 'bst-desc', label: lang('BST 높은순', 'BST high → low')},
+    {value: 'hp-desc', label: 'HP high → low'},
+    {value: 'atk-desc', label: 'ATK high → low'},
+    {value: 'def-desc', label: 'DEF high → low'},
+    {value: 'spa-desc', label: 'SPA high → low'},
+    {value: 'spd-desc', label: 'SPD high → low'},
+    {value: 'spe-desc', label: 'SPE high → low'},
+  ];
+}
+function syncPickerSpeciesFilterControls(picker = state.picker || {}) {
+  const isSpeciesMode = picker?.mode === 'species';
+  if (els.pickerSpeciesFilters) els.pickerSpeciesFilters.hidden = !isSpeciesMode;
+  if (!isSpeciesMode) return;
+  const filter = getPickerSpeciesFilterState(picker);
+  if (els.pickerSpeciesTypeFilter) {
+    if (els.pickerSpeciesTypeFilter.dataset.lang !== state.language) {
+      const options = buildPickerSpeciesTypeFilterOptions();
+      els.pickerSpeciesTypeFilter.innerHTML = options
+        .map(option => `<option value="${option.value}">${option.label}</option>`)
+        .join('\n');
+      els.pickerSpeciesTypeFilter.dataset.lang = state.language;
+    }
+    els.pickerSpeciesTypeFilter.value = filter.type || '';
+  }
+  if (els.pickerSpeciesSortFilter) {
+    if (els.pickerSpeciesSortFilter.dataset.lang !== state.language) {
+      const options = buildPickerSpeciesSortFilterOptions();
+      els.pickerSpeciesSortFilter.innerHTML = options
+        .map(option => `<option value="${option.value}">${option.label}</option>`)
+        .join('\n');
+      els.pickerSpeciesSortFilter.dataset.lang = state.language;
+    }
+    els.pickerSpeciesSortFilter.value = filter.sort || 'name';
+  }
+}
 function getPickerFallbackFocusTarget(picker = state.picker || {}) {
   if (picker.mode === 'species') return els.browseSpeciesBtn || els.speciesInput || document.body;
   if (picker.mode === 'move' && Number.isInteger(picker.moveIndex)) {
@@ -3850,12 +4101,17 @@ function refreshOpenPickerForCurrentLanguage() {
   if (!els.pickerModal || els.pickerModal.classList.contains('hidden')) return;
   const previousPicker = state.picker || {};
   const config = getPickerConfig(previousPicker.mode, previousPicker.moveIndex, getSelectedMon());
+  const speciesFilter = config.mode === 'species'
+    ? normalizePickerSpeciesFilter(previousPicker.speciesFilter || createDefaultPickerSpeciesFilter())
+    : createDefaultPickerSpeciesFilter();
   state.picker = {
     ...previousPicker,
     ...config,
     detailOption: previousPicker.detailOption || null,
+    speciesFilter,
   };
   if (els.pickerTitle) els.pickerTitle.textContent = config.title;
+  syncPickerSpeciesFilterControls(state.picker);
   renderPickerOptions();
   if (config.mode === 'move' || config.mode === 'item') {
     const detailEnglish = previousPicker.detailOption?.english;
@@ -3873,6 +4129,10 @@ function refreshOpenPickerForCurrentLanguage() {
 }
 function showPicker(mode, moveIndex = null, triggerEl = null) {
   const config = getPickerConfig(mode, moveIndex, getSelectedMon());
+  const previousPicker = state.picker || {};
+  const speciesFilter = config.mode === 'species'
+    ? normalizePickerSpeciesFilter(previousPicker.speciesFilter || createDefaultPickerSpeciesFilter())
+    : createDefaultPickerSpeciesFilter();
   pickerReturnFocusEl = triggerEl && typeof triggerEl.focus === 'function'
     ? triggerEl
     : (document.activeElement && typeof document.activeElement.focus === 'function' ? document.activeElement : null);
@@ -3882,10 +4142,12 @@ function showPicker(mode, moveIndex = null, triggerEl = null) {
     options: config.options,
     emptyHint: config.emptyHint,
     detailOption: null,
+    speciesFilter,
   };
   els.pickerTitle.textContent = config.title;
   els.pickerSearch.value = '';
   setPickerModalOpen(true);
+  syncPickerSpeciesFilterControls(state.picker);
   resetPickerDetail();
   renderPickerOptions();
   els.pickerList.scrollTop = 0;
@@ -3905,8 +4167,12 @@ function hidePicker({restoreFocus = true} = {}) {
 }
 function renderPickerOptions() {
   const picker = state.picker || {options: [], emptyHint: ''};
+  syncPickerSpeciesFilterControls(picker);
   const query = els.pickerSearch?.value || '';
-  const filtered = filterPickerOptions(picker.options || [], query);
+  let filtered = filterPickerOptions(picker.options || [], query);
+  if (picker.mode === 'species') {
+    filtered = applySpeciesPickerFilters(filtered, picker);
+  }
   els.pickerList.innerHTML = '';
   els.pickerEmpty.textContent = filtered.length ? '' : (picker.emptyHint || lang('검색 결과가 없습니다.', 'No results found.'));
   for (const option of filtered) {
@@ -4949,6 +5215,9 @@ function bindElements() {
     pickerModal: document.getElementById('picker-modal'),
     pickerTitle: document.getElementById('picker-title'),
     pickerSearch: document.getElementById('picker-search'),
+    pickerSpeciesFilters: document.getElementById('picker-species-filters'),
+    pickerSpeciesTypeFilter: document.getElementById('picker-species-type-filter'),
+    pickerSpeciesSortFilter: document.getElementById('picker-species-sort-filter'),
     pickerList: document.getElementById('picker-list'),
     pickerEmpty: document.getElementById('picker-empty'),
     pickerDetail: document.getElementById('picker-detail'),
@@ -5723,6 +5992,24 @@ function wireEditorEvents() {
     if (event.target === els.pickerModal) hidePicker();
   });
   els.pickerSearch?.addEventListener('input', renderPickerOptions);
+  els.pickerSpeciesTypeFilter?.addEventListener('change', () => {
+    if (state.picker?.mode !== 'species') return;
+    const nextFilter = normalizePickerSpeciesFilter({
+      ...(state.picker?.speciesFilter || createDefaultPickerSpeciesFilter()),
+      type: els.pickerSpeciesTypeFilter?.value || '',
+    });
+    state.picker.speciesFilter = nextFilter;
+    renderPickerOptions();
+  });
+  els.pickerSpeciesSortFilter?.addEventListener('change', () => {
+    if (state.picker?.mode !== 'species') return;
+    const nextFilter = normalizePickerSpeciesFilter({
+      ...(state.picker?.speciesFilter || createDefaultPickerSpeciesFilter()),
+      sort: els.pickerSpeciesSortFilter?.value || 'name',
+    });
+    state.picker.speciesFilter = nextFilter;
+    renderPickerOptions();
+  });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && !els.pickerModal?.classList.contains('hidden')) hidePicker();
   });
@@ -6042,17 +6329,18 @@ async function startBattle() {
   try {
     resetBattlePresentationState();
     state.battle = await startEngineAuthoritativeSinglesBattle();
+    setBattleUiInitialSwitchPreHide(state.battle, state.battle?.events || []);
     showRuntime(runtime.startMessage, 'ready', runtime.detail);
     els.battlePanel.classList.remove('hidden');
-    renderBattle();
+    await renderBattle();
 
     // BA-2: play initial switch_in events (cries etc.) through the timeline executor.
     // Wait for Phaser scene + audio to be ready first, then fire events in background.
     if (FLAGS.battlePresentationV2 && Array.isArray(state.battle?.events) && state.battle.events.length > 0) {
-      await syncPhaserBattleRenderer(state.battle);
       getPrimaryBattleScene()?.audio?.playRandomBattleBgm?.(BATTLE_BGM_TRACKS).catch(() => {});
       playTimelineAcrossActiveViews(state.battle.events, {
         onComplete: () => {
+          clearBattleUiInitialSwitchPreHide(state.battle);
           clearTimelineSpriteOverrides();
           renderBattle();
         },
@@ -6060,7 +6348,12 @@ async function startBattle() {
         preHideSwitchInSides: true,
       }).catch(error => {
         console.warn('[BattleTimeline] initial play failed:', error);
+        clearBattleUiInitialSwitchPreHide(state.battle);
+        renderBattle();
       });  // fire-and-forget; don't block return
+    } else {
+      clearBattleUiInitialSwitchPreHide(state.battle);
+      renderBattle();
     }
 
     return;
@@ -6245,7 +6538,9 @@ function isEngineSingleMoveRequest(moveRequest) {
   const moves = Array.isArray(moveRequest?.moves) ? moveRequest.moves : [];
   if (moves.length !== 1) return false;
   const onlyMove = moves[0] || null;
-  return Boolean(onlyMove && !onlyMove.disabled && toId(onlyMove?.id || onlyMove?.move || ''));
+  const moveId = toId(onlyMove?.id || onlyMove?.move || '');
+  // Do not hard-force Struggle auto-lock. Keep it user-selectable when it appears.
+  return Boolean(onlyMove && !onlyMove.disabled && moveId && moveId !== 'struggle');
 }
 function isEngineForcedContinuationRequest(moveRequest) {
   return isEngineSingleMoveRequest(moveRequest);
@@ -6419,6 +6714,17 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   }
 
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  if (isEngineForceSwitchRequest(request)) {
+    const switchOptions = getEngineSwitchOptions(player, slot, battle);
+    const hasSwitchTarget = Number.isInteger(rawChoice?.switchTo) && switchOptions.some(({index}) => index === rawChoice.switchTo);
+    if (!hasSwitchTarget || rawChoice?.kind !== 'switch') {
+      clearEnginePendingChoice(player, slot, battle);
+      return createEmptyBattleChoice();
+    }
+    const sanitized = {...createEmptyBattleChoice(), kind: 'switch', switchTo: rawChoice.switchTo};
+    setEnginePendingChoice(player, slot, sanitized, battle);
+    return sanitized;
+  }
   const forcedMoveChoice = getEngineForcedMoveChoice(moveRequest);
   if (forcedMoveChoice) {
     setEnginePendingChoice(player, slot, forcedMoveChoice, battle);
@@ -6449,15 +6755,6 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
 
   const switchOptions = getEngineSwitchOptions(player, slot, battle);
   const hasSwitchTarget = Number.isInteger(rawChoice.switchTo) && switchOptions.some(({index}) => index === rawChoice.switchTo);
-  if (isEngineForceSwitchRequest(request)) {
-    if (!hasSwitchTarget || rawChoice.kind !== 'switch') {
-      clearEnginePendingChoice(player, slot, battle);
-      return createEmptyBattleChoice();
-    }
-    const sanitized = {...createEmptyBattleChoice(), kind: 'switch', switchTo: rawChoice.switchTo};
-    setEnginePendingChoice(player, slot, sanitized, battle);
-    return sanitized;
-  }
 
   if (rawChoice.kind === 'switch') {
     const switchOptionsExist = switchOptions.length > 0;
@@ -7004,6 +7301,7 @@ function getBattleUiState(battle = state.battle) {
   ui.moveDetailByPlayer = ui.moveDetailByPlayer || {0: {}, 1: {}};
   if (typeof ui.inputLocked !== 'boolean') ui.inputLocked = false;
   ui.timelineSpriteOverrides = ui.timelineSpriteOverrides || {};
+  if (!Array.isArray(ui.preHideSwitchInSides)) ui.preHideSwitchInSides = [];
   if (typeof ui.passPrompt !== 'string') ui.passPrompt = '';
   if (typeof ui.lastFlyoutKey !== 'string') ui.lastFlyoutKey = '';
   if (!('flyoutTimer' in ui)) ui.flyoutTimer = null;
@@ -7144,6 +7442,7 @@ function resetBattlePresentationState({perspective = 0, passPrompt = ''} = {}) {
   ui.moveDetailByPlayer = {0: {}, 1: {}};
   ui.inputLocked = false;
   ui.timelineSpriteOverrides = {};
+  ui.preHideSwitchInSides = [];
   ui.passPrompt = passPrompt || '';
   ui.lastFlyoutKey = '';
   if (ui.flyoutTimer) clearTimeout(ui.flyoutTimer);
@@ -7209,6 +7508,22 @@ function renderBattlePerspectiveTabs(battle) {
   }
 }
 
+function getOnlineVisibleBattleLogLines(battle, {limit = Number.POSITIVE_INFINITY} = {}) {
+  const allLines = Array.isArray(battle?.log) ? battle.log : [];
+  const localSide = isOnlineProfile() && isOnlineRoomJoined()
+    ? String(state.online?.side || '').toLowerCase()
+    : '';
+  const out = [];
+  for (const line of allLines) {
+    const tone = String(line?.tone || '').toLowerCase();
+    const lineSide = String(line?.side || '').toLowerCase();
+    if (localSide && tone === 'warning' && lineSide && lineSide !== localSide) continue;
+    out.push(line);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 function renderBattleMessagesWindow(battle, player) {
   if (!els.battleMessageWindow) return;
   const inputLocked = isBattleInputLocked(battle);
@@ -7247,7 +7562,9 @@ function renderBattleMessagesWindow(battle, player) {
                     : currentMode === 'message'
                     ? (inputLocked ? '' : lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn..."))
                     : lang('행동을 선택하세요.', 'Choose an action.');
-  const messageLines = (battle.log || []).slice(0, 2).map(line => localizeText(line.rawText || line.text || '').trim()).filter(Boolean);
+  const messageLines = getOnlineVisibleBattleLogLines(battle, {limit: 2})
+    .map(line => localizeText(line.rawText || line.text || '').trim())
+    .filter(Boolean);
   // BA-21: waiting for opponent — waiting message takes priority over battle.log lines
   const waitingForOpponent = !inputLocked && !battle.winner && currentMode === 'message' && Boolean(request);
   const usePromptAsPrimary = currentMode === 'command' || waitingForOpponent || !messageLines.length;
@@ -7401,13 +7718,49 @@ function renderBattleDebugPanel(battle) {
     const actionable = isShowdownLocalBattle(battle) ? getEnginePlayersNeedingAction(battle).map(player => battle.players[player]?.name || `P${player + 1}`) : [];
     els.battleDebugSummary.textContent = `${runtimeLabel} · ${winnerLabel} · ${lang('행동 필요', 'Needs action')}: ${actionable.join(', ') || lang('없음', 'None')}`;
   }
-  els.battleLog.innerHTML = (battle.log || []).map(line => `<div class="log-line ${line.tone || ''}">${localizeText(line.rawText || line.text)}</div>`).join('');
+  const visibleLogLines = getOnlineVisibleBattleLogLines(battle);
+  els.battleLog.innerHTML = visibleLogLines
+    .map(line => `<div class="log-line ${line.tone || ''}">${localizeText(line.rawText || line.text)}</div>`)
+    .join('');
   renderPendingChoices();
 }
 
 function buildMoveDetailFallback(mon, moveInfo, moveRequest, choice, moveData, moveIndex) {
-  const previewChoice = choice?.kind === 'move' && choice.moveIndex === moveIndex ? choice : null;
-  return moveData ? describeMoveForBattle(mon, moveData, previewChoice) : {
+  const moveSelected = choice?.kind === 'move' && choice.moveIndex === moveIndex;
+  const zModeActive = Boolean(choice?.z && Array.isArray(moveRequest?.canZMove) && moveRequest.canZMove[moveIndex]);
+  const dynamaxModeActive = isEngineDynamaxMoveMode(choice, mon, moveRequest);
+  const previewChoice = moveSelected
+    ? choice
+    : (zModeActive
+      ? {...(choice || createEmptyBattleChoice()), kind: 'move', moveIndex, z: true}
+      : (dynamaxModeActive
+        ? {...(choice || createEmptyBattleChoice()), kind: 'move', moveIndex, dynamax: true}
+        : null));
+
+  if (!moveData) {
+    const fallback = {
+      type: moveInfo?.type || '',
+      category: moveInfo?.category || '',
+      power: moveInfo?.basePower || '',
+      accuracy: moveInfo?.accuracy || '',
+    };
+    if (dynamaxModeActive) {
+      const maxMoveEntry = getEngineMaxMoveEntry(moveRequest, moveIndex);
+      const maxPower = Number(maxMoveEntry?.basePower || 0);
+      if (maxPower > 0) fallback.power = maxPower;
+    }
+    return fallback;
+  }
+
+  const preview = describeMoveForBattle(mon, moveData, previewChoice);
+  if (preview && dynamaxModeActive) {
+    const maxMoveEntry = getEngineMaxMoveEntry(moveRequest, moveIndex);
+    const maxPower = Number(maxMoveEntry?.basePower || 0);
+    if (maxPower > 0 && String(preview.category || '').toLowerCase() !== 'status') {
+      preview.power = maxPower;
+    }
+  }
+  return preview || {
     type: moveData?.type || moveInfo?.type || '',
     category: moveData?.category || '',
     power: moveData?.basePower || '',
@@ -7889,7 +8242,9 @@ function buildBattleMessageModel(battle, player) {
                   : currentMode === 'message'
                     ? (inputLocked ? '' : lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn..."))
                     : lang('행동을 선택하세요.', 'Choose an action.');
-  const messageLines = (battle.log || []).slice(0, 2).map(line => localizeText(line.rawText || line.text || '').trim()).filter(Boolean);
+  const messageLines = getOnlineVisibleBattleLogLines(battle, {limit: 2})
+    .map(line => localizeText(line.rawText || line.text || '').trim())
+    .filter(Boolean);
   const interactiveMode = !inputLocked && !battle.winner && !request?.wait && ['command', 'fight', 'party', 'target'].includes(currentMode);
   // BA-21: player committed and waiting for opponent — waiting message takes priority over battle.log lines
   const waitingForOpponent = !inputLocked && !battle.winner && currentMode === 'message' && Boolean(request);
@@ -8230,9 +8585,17 @@ function resolveBattleSpritePresentation(mon, facing = 'front') {
   };
 }
 
-function resolveSpriteModelForBattleSide(sideIndex, perspective, mon, isRenderable) {
+function resolveSpriteModelForBattleSide(sideIndex, perspective, mon, isRenderable, battle = state.battle) {
   const sideId = sideIndex === 1 ? 'p2' : 'p1';
   const facing = sideIndex === perspective ? 'back' : 'front';
+  const ui = getBattleUiState(battle);
+  const preHideSwitchInSides = Array.isArray(ui?.preHideSwitchInSides) ? ui.preHideSwitchInSides : [];
+  if (preHideSwitchInSides.includes(sideId)) {
+    return {
+      url: '',
+      yOffset: 0,
+    };
+  }
   if (isRenderable && mon) {
     const presentation = resolveBattleSpritePresentation(mon, facing);
     if (!presentation.hidden && presentation.url) {
@@ -8288,8 +8651,8 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
     ...rawAbilityBar,
     side: perspective === 0 ? rawAbilityBar.side : (rawAbilityBar.side === 'player' ? 'enemy' : 'player'),
   } : rawAbilityBar;
-  const enemySpriteModel = resolveSpriteModelForBattleSide(enemyPlayer, perspective, enemyMon, enemyRenderable);
-  const playerSpriteModel = resolveSpriteModelForBattleSide(allyPlayer, perspective, playerMon, playerRenderable);
+  const enemySpriteModel = resolveSpriteModelForBattleSide(enemyPlayer, perspective, enemyMon, enemyRenderable, battle);
+  const playerSpriteModel = resolveSpriteModelForBattleSide(allyPlayer, perspective, playerMon, playerRenderable, battle);
   return {
     turn: battle.turn,
     perspective,
@@ -8577,7 +8940,7 @@ async function syncPhaserBattleRenderer(battle) {
 
 function renderBattle() {
   const battle = ensureBattleUiState(state.battle);
-  if (!battle) return;
+  if (!battle) return Promise.resolve(false);
   normalizeBattleSpriteState(battle);
   syncRuntimeModeUi();
   if (isShowdownLocalBattle(battle)) pruneEnginePendingChoices(battle);
@@ -8588,7 +8951,7 @@ function renderBattle() {
   renderBattleFieldStatus();
   renderBattleDebugPanel(battle);
 
-  syncPhaserBattleRenderer(battle).then(active => {
+  const rendererSyncPromise = syncPhaserBattleRenderer(battle).then(active => {
     if (active) return;
     renderSideSprites(0, els.battleSideP1, 'back');
     renderSideSprites(1, els.battleSideP2, 'front');
@@ -8611,6 +8974,7 @@ function renderBattle() {
       : [0, 1].every(player => isPlayerReady(player)))
     : false;
   if (allSet && !battle.winner && !battle.resolvingTurn && !isBattleInputLocked(battle)) resolveTurn();
+  return rendererSyncPromise;
 }
 
 function renderSideSprites(player, container, facing) {
@@ -8784,13 +9148,24 @@ async function resolveEngineTurn(battle = state.battle) {
       const hint = moveAnimationHints[hintKey];
       const moveId = toId(ev.move || '');
       if (moveId.startsWith('max') || moveId.startsWith('gmax')) {
-        let animationMove = String(hint?.kind === 'dynamax' ? hint.baseMove : '').trim();
-        if (!animationMove && (side === 'p1' || side === 'p2')) {
+        let animationMove = '';
+        if (moveId === 'maxguard') {
+          animationMove = 'Protect';
+        }
+        let actorMon = null;
+        if (side === 'p1' || side === 'p2') {
           const sideIndex = side === 'p2' ? 1 : 0;
           const actorSide = nextSnapshot.players?.[sideIndex];
           const teamIndex = Number.isInteger(actorSide?.active?.[slot]) ? actorSide.active[slot] : -1;
-          const actorMon = Number.isInteger(teamIndex) && teamIndex >= 0 ? actorSide?.team?.[teamIndex] : null;
-          animationMove = resolveEngineMoveName(actorMon?.lastMoveUsed || '');
+          actorMon = Number.isInteger(teamIndex) && teamIndex >= 0 ? actorSide?.team?.[teamIndex] : null;
+        }
+        if (!animationMove) {
+          const hintBaseMove = resolveEngineMoveName(hint?.kind === 'dynamax' ? hint.baseMove : '');
+          const fallbackBaseMove = resolveEngineMoveName(actorMon?.lastMoveUsed || '');
+          const typedMove = hintBaseMove || fallbackBaseMove;
+          const typedMoveData = typedMove ? state.dex?.moves?.get?.(typedMove) : null;
+          const maxMoveType = toId(typedMoveData?.type || getTypeIdFromMaxMoveName(ev.move || ''));
+          animationMove = getStrongestMoveAnimationByType(maxMoveType) || typedMove;
         }
         if (animationMove && toId(animationMove) !== moveId) {
           ev.animationMove = animationMove;

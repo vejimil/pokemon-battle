@@ -341,6 +341,16 @@
           <button id="picker-close-btn" class="ghost-btn small" type="button" data-i18n="picker_close_btn">닫기</button>
         </div>
         <input id="picker-search" type="text" placeholder="검색" data-i18n-placeholder="picker_search_placeholder" autocomplete="off" />
+        <div id="picker-species-filters" class="picker-species-filters" hidden>
+          <label class="picker-filter-field">
+            <span>타입 / Type</span>
+            <select id="picker-species-type-filter"></select>
+          </label>
+          <label class="picker-filter-field">
+            <span>정렬 / Sort</span>
+            <select id="picker-species-sort-filter"></select>
+          </label>
+        </div>
         <div id="picker-empty" class="small-note picker-empty"></div>
         <div class="picker-body">
           <div class="picker-list-wrap">
