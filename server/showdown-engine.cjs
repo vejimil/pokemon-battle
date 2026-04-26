@@ -1067,6 +1067,21 @@ function normalizeEventsFromLine(line, ctx) {
       }];
     }
 
+    // Side Change (Shift): |swap|IDENT|NEWPOSITION|
+    // NEWPOSITION is 0-indexed (0=slot a, 1=slot b in doubles).
+    case 'swap': {
+      const id = parseIdentForEvent(parts[2]);
+      const toPos = Number(parts[3]) || 0;
+      return [{
+        type: 'position_swap',
+        turn: ctx.turn,
+        seq: ctx.seq++,
+        side: id.side,
+        fromSlot: id.slot,
+        toSlot: toPos,
+      }];
+    }
+
     // Raw passthrough for unknown/debug/meta tags
     case 'error':
       return [{type: 'engine_error', turn: ctx.turn, seq: ctx.seq++, message: parts[2] || ''}];

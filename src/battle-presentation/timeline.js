@@ -438,6 +438,7 @@ export class BattleTimelineExecutor {
       case 'terastallize':
       case 'faint':
       case 'forme_change':
+      case 'position_swap':
         return EVENT_GAP_MEDIUM_MS;
       default:
         return EVENT_GAP_SHORT_MS;
@@ -2150,6 +2151,52 @@ export class BattleTimelineExecutor {
         this.running = false;
         this.onInputRequired(ev.requestType ?? 'switch');
         return;  // do not continue; the next turn's events will play after the switch choice
+      }
+
+      // ── Side Change (사이드체인지 / Shift) ───────────────────────────────────
+      case 'position_swap': {
+        const side = ev.side;
+        const slot0 = Number.isInteger(ev.fromSlot) ? ev.fromSlot : 0;
+        const slot1 = Number.isInteger(ev.toSlot) ? ev.toSlot : 1;
+
+        // Capture display name BEFORE swap for the message.
+        const movedRaw = this._slotNames.get(this._slotKey(side, slot0)) || '';
+        const movedDisplay = this._localizeMonName(movedRaw) || movedRaw || '???';
+
+        // Swap _slotNames entries.
+        const name0 = this._slotNames.get(this._slotKey(side, slot0));
+        const name1 = this._slotNames.get(this._slotKey(side, slot1));
+        if (name1 !== undefined) this._slotNames.set(this._slotKey(side, slot0), name1);
+        else this._slotNames.delete(this._slotKey(side, slot0));
+        if (name0 !== undefined) this._slotNames.set(this._slotKey(side, slot1), name0);
+        else this._slotNames.delete(this._slotKey(side, slot1));
+
+        // Swap _slotInfo entries.
+        const info0 = this._slotInfo.get(this._slotKey(side, slot0));
+        const info1 = this._slotInfo.get(this._slotKey(side, slot1));
+        if (info1 !== undefined) this._slotInfo.set(this._slotKey(side, slot0), info1);
+        else this._slotInfo.delete(this._slotKey(side, slot0));
+        if (info0 !== undefined) this._slotInfo.set(this._slotKey(side, slot1), info0);
+        else this._slotInfo.delete(this._slotKey(side, slot1));
+
+        // Refresh info panels with swapped data.
+        const panel0 = this._infoForSideSlot(side, slot0);
+        const panel1 = this._infoForSideSlot(side, slot1);
+        panel0?.update?.(info1 || {});
+        panel1?.update?.(info0 || {});
+
+        // Swap sprites between the two display slots.
+        const scene = this._scene();
+        if (scene?.swapBattlerPositions) {
+          await scene.swapBattlerPositions(side, slot0, slot1);
+        }
+
+        // Show position-swap message.
+        const swapMsg = this._isEnglishLocale()
+          ? `${movedDisplay} moved to a new position!`
+          : `${movedDisplay}이(가) 자리를 바꿨다!`;
+        await this._showMsg(swapMsg, { minMs: 520 });
+        break;
       }
 
       case 'raw_event':

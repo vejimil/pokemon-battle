@@ -4852,8 +4852,13 @@ function getBattleActiveIndices(player, battle = state.battle) {
   const side = battle?.players?.[player];
   if (!side) return [];
   const requestEntries = getEngineRequestSideEntries(player, battle);
+  // Sort by engineOrderIndex (p1a=0, p1b=1) before extracting teamIndex so that
+  // display slot 0 (LEFT) always maps to p1a and slot 1 (RIGHT) to p1b regardless
+  // of team-builder ordering.  Without this sort the result is in team-index order,
+  // which swaps left/right when the lead pokemon are not the lowest-indexed mons.
   const requestActive = requestEntries
     .filter(entry => entry?.active)
+    .sort((a, b) => (a.engineOrderIndex ?? 0) - (b.engineOrderIndex ?? 0))
     .map(entry => Number(entry.teamIndex))
     .filter(index => Number.isInteger(index) && index >= 0);
   if (requestActive.length) return requestActive;

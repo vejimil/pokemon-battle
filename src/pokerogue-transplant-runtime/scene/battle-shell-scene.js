@@ -1130,6 +1130,24 @@ export function createBattleShellSceneClass(Phaser, env) {
       this._syncMountTeraFx(mount, 0);
     }
 
+    // Visually swap the sprites between two display slots on the same side.
+    // Used by the position_swap timeline event (Side Change / Shift).
+    // Both slots are re-rendered with swapped URLs; browser cache makes this fast.
+    async swapBattlerPositions(side, slot0, slot1) {
+      const mount0 = this._mountForBattleSideSlot(side, slot0);
+      const mount1 = this._mountForBattleSideSlot(side, slot1);
+      if (!mount0 || !mount1 || mount0 === mount1) return;
+      const url0 = mount0.currentUrl || '';
+      const url1 = mount1.currentUrl || '';
+      // Clear same-URL guard so setBattlerSprite forces a re-render with swapped URLs.
+      mount0.currentUrl = '';
+      mount1.currentUrl = '';
+      await Promise.all([
+        url1 ? this.setBattlerSprite(side, url1, { slot: slot0 }) : Promise.resolve(),
+        url0 ? this.setBattlerSprite(side, url0, { slot: slot1 }) : Promise.resolve(),
+      ]);
+    }
+
     setBattlerVisibility(side, visible = true, options = {}) {
       const slot = Number(options?.slot) === 1 ? 1 : 0;
       const mount = this._mountForBattleSideSlot(side, slot);
