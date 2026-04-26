@@ -327,7 +327,6 @@ export class PartyUiHandler extends UiHandler {
   }
 
   hideBattleOverlaysForParty() {
-    if (this.hiddenOverlayState?.captured) return;
     const spriteMounts = [
       ...(Array.isArray(this.ui.enemySprites) ? this.ui.enemySprites : []),
       ...(Array.isArray(this.ui.playerSprites) ? this.ui.playerSprites : []),
@@ -342,25 +341,38 @@ export class PartyUiHandler extends UiHandler {
     if (!infoBoxes.length) {
       infoBoxes.push(this.ui.enemyInfo, this.ui.playerInfo);
     }
-    this.hiddenOverlayState = {
-      captured: true,
-      spriteDoms: [],
-      infoContainers: [],
+    if (!this.hiddenOverlayState?.captured) {
+      this.hiddenOverlayState = {
+        captured: true,
+        spriteDoms: [],
+        infoContainers: [],
+      };
+    }
+
+    const ensureVisibilityEntry = (entries = [], node = null, visible = true) => {
+      if (!node) return;
+      if (entries.some(entry => entry?.node === node)) return;
+      entries.push({ node, visible });
     };
 
     spriteMounts.forEach(mount => {
       const dom = mount?.dom;
       if (!dom?.setVisible) return;
-      this.hiddenOverlayState.spriteDoms.push({
-        node: dom,
-        visible: this.getSpriteMountVisibleState(mount),
-      });
+      ensureVisibilityEntry(
+        this.hiddenOverlayState.spriteDoms,
+        dom,
+        this.getSpriteMountVisibleState(mount),
+      );
       dom.setVisible(false);
     });
     infoBoxes.forEach(info => {
       const container = info?.container;
       if (!container?.setVisible) return;
-      this.hiddenOverlayState.infoContainers.push({ node: container, visible: Boolean(container.visible) });
+      ensureVisibilityEntry(
+        this.hiddenOverlayState.infoContainers,
+        container,
+        Boolean(container.visible),
+      );
       container.setVisible(false);
     });
   }
