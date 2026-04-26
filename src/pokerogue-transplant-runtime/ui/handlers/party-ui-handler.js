@@ -317,6 +317,14 @@ export class PartyUiHandler extends UiHandler {
     };
   }
 
+  getSpriteMountVisibleState(mount) {
+    const domVisible = mount?.dom?.visible;
+    if (typeof domVisible === 'boolean') return domVisible;
+    const spriteVisible = mount?.phaserSprite?.visible;
+    if (typeof spriteVisible === 'boolean') return spriteVisible;
+    return true;
+  }
+
   hideBattleOverlaysForParty() {
     const spriteMounts = [
       ...(Array.isArray(this.ui.enemySprites) ? this.ui.enemySprites : []),
@@ -340,7 +348,10 @@ export class PartyUiHandler extends UiHandler {
     spriteMounts.forEach(mount => {
       const dom = mount?.dom;
       if (!dom?.setVisible) return;
-      this.hiddenOverlayState.spriteDoms.push({ node: dom, visible: Boolean(dom.visible) });
+      this.hiddenOverlayState.spriteDoms.push({
+        node: dom,
+        visible: this.getSpriteMountVisibleState(mount),
+      });
       dom.setVisible(false);
     });
     infoBoxes.forEach(info => {

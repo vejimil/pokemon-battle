@@ -56,6 +56,11 @@
         `all-other-pokemon`(예: 지진/파도타기)은 즉시 커밋(타깃 선택 없음),
         `all-opponents`(예: 스톤샤워/열풍)은 `상대 전체` vs `아군 1명` 선택지로 타깃 선택 진입.
         (src/app.js:buildEngineMoveTargetOptions, src/app.js:resolveEngineMoveTargetSelection)
+  12. DB-6 party overlay 복원 버그 수정(2026-04-26):
+      - party UI 진입 시 배틀러 스프라이트 숨김 전 visible 상태를
+        `mount.dom.visible`(미정의) 대신 `mount.phaserSprite.visible`까지 fallback으로 저장하도록 수정.
+      - 이로 인해 party UI 종료(교체/뒤로) 후 상대/아군 스프라이트가 계속 사라지던 문제 해결.
+        (src/pokerogue-transplant-runtime/ui/handlers/party-ui-handler.js)
 
   ———
 
@@ -80,6 +85,7 @@
   - DB-6 target-select 보완(왼쪽 질문 문구 복원, 아군 타깃 목록 포함) 반영 완료.
   - DB-6 target-select 2x2 배열(목록/뒤로) 및 그리드 방향키 이동 반영 완료.
   - DB-6 target-select 추가 보완(2x2 중앙 정렬/커서 간격, 전체기 타깃 규칙 분리) 반영 완료.
+  - DB-6 party overlay 복원 버그(파티 복귀 후 배틀러 스프라이트 소실) 수정 완료.
   - plan.md도 DB-6 완료로 업데이트됨.
     (plan.md:13, plan.md:242)
 
