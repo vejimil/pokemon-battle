@@ -6690,6 +6690,169 @@ function getEngineDisplayMoveName(moveRequest, moveIndex, baseMoveName, choice =
   if (megaReplacement) return megaReplacement;
   return resolveEngineMoveName(baseMoveName);
 }
+const ENGINE_EXPLICIT_TARGET_HINTS = new Set(['single-opponent', 'ally', 'ally-or-self']);
+function normalizeEngineMoveTargetHint(rawTarget = '') {
+  const raw = String(rawTarget || '').trim();
+  if (!raw) return 'single-opponent';
+  const mapped = SHOWDOWN_TARGET_HINTS[raw]
+    || targetHints[raw]
+    || SHOWDOWN_TARGET_HINTS[toId(raw)]
+    || targetHints[toId(raw)]
+    || raw;
+  const id = toId(mapped);
+  if (id === 'singleopponent' || id === 'adjacentfoe' || id === 'normal' || id === 'randomnormal' || id === 'randomopponent' || id === 'selectedpokemon' || id === 'any') return 'single-opponent';
+  if (id === 'ally') return 'ally';
+  if (id === 'allyorself' || id === 'adjacentallyorself' || id === 'userorally') return 'ally-or-self';
+  if (id === 'allopponents' || id === 'alladjacentfoes') return 'all-opponents';
+  if (id === 'allotherpokemon' || id === 'alladjacent') return 'all-other-pokemon';
+  if (id === 'allpokemon' || id === 'all') return 'all-pokemon';
+  if (id === 'self' || id === 'user') return 'self';
+  if (id === 'allyside' || id === 'usersside') return 'ally-side';
+  if (id === 'selfside' || id === 'usersfield') return 'self-side';
+  if (id === 'opponentside' || id === 'foeside' || id === 'opponentsfield') return 'opponent-side';
+  if (id === 'field' || id === 'entirefield') return 'field';
+  return 'single-opponent';
+}
+function getEngineMoveChoiceContext(player, activeIndex, choice, battle = state.battle) {
+  if (choice?.kind !== 'move' || !Number.isInteger(choice?.moveIndex)) return null;
+  const requestSlot = getEngineRequestSlotForActiveIndex(player, activeIndex, battle);
+  if (requestSlot < 0) return null;
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  const moveInfo = Array.isArray(moveRequest?.moves) ? (moveRequest.moves[choice.moveIndex] || null) : null;
+  const side = battle?.players?.[player];
+  const mon = side?.team?.[activeIndex] || null;
+  const slotInfo = mon?.moveSlots?.[choice.moveIndex] || null;
+  const moveName = moveInfo?.move || slotInfo?.name || choice.move || '';
+  const dexMove = moveName ? state.dex?.moves?.get?.(moveName) : null;
+  const targetHint = normalizeEngineMoveTargetHint(moveInfo?.target || slotInfo?.target || dexMove?.target || '');
+  return {
+    requestSlot,
+    moveRequest,
+    moveInfo,
+    slotInfo,
+    mon,
+    moveName,
+    targetHint,
+  };
+}
+function getEngineLiveActiveTargetsForSide(player, battle = state.battle) {
+  const side = battle?.players?.[player];
+  const sideId = getEngineSideId(player);
+  const activeOrder = Array.isArray(side?.active) ? side.active : [];
+  return activeOrder
+    .map((activeIndex, slot) => {
+      if (!Number.isInteger(activeIndex) || activeIndex < 0) return null;
+      const mon = side?.team?.[activeIndex] || null;
+      if (!mon || Number(mon.hp || 0) <= 0 || mon.fainted) return null;
+      return {
+        player,
+        side: sideId,
+        slot,
+        activeIndex,
+        mon,
+      };
+    })
+    .filter(Boolean);
+}
+function buildEngineMoveTargetOptions(player, activeIndex, targetHint, battle = state.battle) {
+  const actorRequestSlot = getEngineRequestSlotForActiveIndex(player, activeIndex, battle);
+  if (actorRequestSlot < 0) return [];
+  const allyTargets = getEngineLiveActiveTargetsForSide(player, battle);
+  const foeTargets = getEngineLiveActiveTargetsForSide(player === 0 ? 1 : 0, battle);
+  let candidates = [];
+  if (targetHint === 'single-opponent') {
+    candidates = foeTargets;
+  } else if (targetHint === 'ally') {
+    candidates = allyTargets.filter(entry => entry.slot !== actorRequestSlot);
+  } else if (targetHint === 'ally-or-self') {
+    candidates = allyTargets;
+  }
+  const actorSideId = getEngineSideId(player);
+  return candidates.map(entry => {
+    const roleLabel = entry.side !== actorSideId
+      ? lang('상대', 'Foe')
+      : (entry.slot === actorRequestSlot ? lang('자신', 'Self') : lang('아군', 'Ally'));
+    const slotLabel = lang(`슬롯 ${entry.slot + 1}`, `Slot ${entry.slot + 1}`);
+    return {
+      side: entry.side,
+      slot: entry.slot,
+      activeIndex: entry.activeIndex,
+      mon: entry.mon,
+      label: displayBattleSpeciesName(entry.mon),
+      sublabel: `${roleLabel} · ${slotLabel}`,
+    };
+  });
+}
+function resolveEngineMoveTargetSelection(player, activeIndex, choice, battle = state.battle) {
+  const context = getEngineMoveChoiceContext(player, activeIndex, choice, battle);
+  if (!context) {
+    return {
+      requiresTarget: false,
+      options: [],
+      validTarget: null,
+      validTargetOption: null,
+      autoTarget: null,
+      autoTargetOption: null,
+      needsSelection: false,
+      blockedReason: '',
+      targetHint: '',
+      moveName: '',
+      requestSlot: 0,
+    };
+  }
+  const requiresTarget = battle?.mode === 'doubles' && ENGINE_EXPLICIT_TARGET_HINTS.has(context.targetHint);
+  const options = requiresTarget ? buildEngineMoveTargetOptions(player, activeIndex, context.targetHint, battle) : [];
+  const actorSide = getEngineSideId(player);
+  const foeSide = getEngineSideId(player === 0 ? 1 : 0);
+  const rawSlot = Number(choice?.target?.slot);
+  let selectedTarget = null;
+  if (Number.isInteger(rawSlot)) {
+    let side = String(choice?.target?.side || '').toLowerCase();
+    if (side !== 'p1' && side !== 'p2') {
+      side = context.targetHint === 'single-opponent' ? foeSide : actorSide;
+    }
+    selectedTarget = {side, slot: rawSlot};
+  }
+  const validTargetOption = selectedTarget
+    ? (options.find(option => option.side === selectedTarget.side && option.slot === selectedTarget.slot) || null)
+    : null;
+  const autoTargetOption = (!validTargetOption && requiresTarget && options.length === 1) ? options[0] : null;
+  return {
+    ...context,
+    requiresTarget,
+    options,
+    validTarget: validTargetOption ? {side: validTargetOption.side, slot: validTargetOption.slot} : null,
+    validTargetOption,
+    autoTarget: autoTargetOption ? {side: autoTargetOption.side, slot: autoTargetOption.slot} : null,
+    autoTargetOption,
+    needsSelection: Boolean(requiresTarget && !validTargetOption && !autoTargetOption && options.length > 0),
+    blockedReason: (requiresTarget && !validTargetOption && !autoTargetOption && !options.length)
+      ? lang('선택 가능한 대상이 없습니다.', 'No valid target is available.')
+      : '',
+  };
+}
+function commitEngineMoveChoiceFromUi(player, activeIndex, choice, battle = state.battle) {
+  if (!choice || choice.kind !== 'move' || !Number.isInteger(choice.moveIndex)) {
+    return {committed: false, targetSelectionPending: false};
+  }
+  const targetState = resolveEngineMoveTargetSelection(player, activeIndex, choice, battle);
+  if (targetState.requiresTarget && !targetState.validTarget && !targetState.autoTarget) {
+    setEnginePendingChoice(player, activeIndex, {
+      ...choice,
+      target: null,
+    }, battle);
+    setBattleUiMode(player, 'target', {rerender: false});
+    return {committed: false, targetSelectionPending: true, targetState};
+  }
+  const resolvedTarget = targetState.validTarget || targetState.autoTarget || null;
+  const finalizedChoice = {
+    ...choice,
+    target: resolvedTarget ? {...resolvedTarget} : null,
+  };
+  setEnginePendingChoice(player, activeIndex, finalizedChoice, battle);
+  handleBattleChoiceCommitted(player, battle);
+  return {committed: true, targetSelectionPending: false, targetState, choice: finalizedChoice};
+}
 function buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle = state.battle) {
   const requestSlot = getEngineRequestSlotForActiveIndex(player, activeIndex, battle);
   if (requestSlot < 0) return null;
@@ -6700,13 +6863,16 @@ function buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle =
   const canZMove = Array.isArray(moveRequest?.canZMove) && Boolean(moveRequest.canZMove[moveIndex]);
   const isForcedContinuation = isEngineForcedContinuationRequest(moveRequest);
   const zModeActive = !isForcedContinuation && Boolean(previous?.z) && getAvailableEngineZMoveOptions(moveRequest).length > 0;
+  const preservedTarget = previous?.kind === 'move' && previous.moveIndex === moveIndex
+    ? (previous.target || null)
+    : null;
   return {
     ...createEmptyBattleChoice(),
     kind: 'move',
     move: moveInfo?.move || previous?.move || '',
     moveIndex,
     switchTo: null,
-    target: null,
+    target: preservedTarget,
     z: Boolean(zModeActive && canZMove),
     mega: !isForcedContinuation && Boolean(previous?.mega && moveRequest?.canMegaEvo),
     ultra: !isForcedContinuation && Boolean(previous?.ultra && moveRequest?.canUltraBurst),
@@ -6826,8 +6992,16 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   }
   const forcedMoveChoice = getEngineForcedMoveChoice(moveRequest);
   if (forcedMoveChoice) {
-    setEnginePendingChoice(player, slot, forcedMoveChoice, battle);
-    return forcedMoveChoice;
+    const forcedWithTarget = {
+      ...forcedMoveChoice,
+      target: rawChoice?.target || null,
+    };
+    const forcedTargetState = resolveEngineMoveTargetSelection(player, slot, forcedWithTarget, battle);
+    if (forcedTargetState.validTarget) forcedWithTarget.target = {...forcedTargetState.validTarget};
+    else if (forcedTargetState.autoTarget) forcedWithTarget.target = {...forcedTargetState.autoTarget};
+    else forcedWithTarget.target = null;
+    setEnginePendingChoice(player, slot, forcedWithTarget, battle);
+    return forcedWithTarget;
   }
   if (!rawChoice) return createEmptyBattleChoice();
   if (!rawChoice.kind) {
@@ -6901,6 +7075,13 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   };
   if (sanitized.z && sanitized.dynamax) sanitized.dynamax = false;
   if (sanitized.tera && sanitized.dynamax) sanitized.dynamax = false;
+  const targetState = resolveEngineMoveTargetSelection(player, slot, {
+    ...sanitized,
+    target: rawChoice?.target || null,
+  }, battle);
+  if (targetState.validTarget) sanitized.target = {...targetState.validTarget};
+  else if (targetState.autoTarget) sanitized.target = {...targetState.autoTarget};
+  else sanitized.target = null;
   setEnginePendingChoice(player, slot, sanitized, battle);
   return sanitized;
 }
@@ -6984,6 +7165,17 @@ function getEngineChoiceSummary(player, slot, battle = state.battle) {
     if (choice.tera) text += state.language === 'ko' ? ' · 테라' : ' · Tera';
     if (choice.z) text += ' · Z';
     if (choice.dynamax) text += state.language === 'ko' ? ' · 다이맥스' : ' · Dynamax';
+    const targetState = resolveEngineMoveTargetSelection(player, slot, choice, battle);
+    if (targetState.requiresTarget) {
+      if (targetState.validTargetOption) {
+        const slotLabel = lang(`슬롯 ${targetState.validTargetOption.slot + 1}`, `Slot ${targetState.validTargetOption.slot + 1}`);
+        text += state.language === 'ko'
+          ? ` → ${targetState.validTargetOption.label} (${slotLabel})`
+          : ` -> ${targetState.validTargetOption.label} (${slotLabel})`;
+      } else {
+        text += lang(' · 대상 선택 중', ' · Choosing target');
+      }
+    }
     return text;
   }
   return lang('대기 중', 'Pending');
@@ -7309,12 +7501,13 @@ function renderEngineSinglesChoicePanel(player, container, statusEl, titleEl) {
         btn.addEventListener('click', () => {
           const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle);
           if (!nextChoice) return;
-          setEnginePendingChoice(player, activeIndex, nextChoice, battle);
-          handleBattleChoiceCommitted(player, battle);
+          const commitResult = commitEngineMoveChoiceFromUi(player, activeIndex, nextChoice, battle);
           renderBattle();
-          submitOnlineChoiceIfPossible(player, battle).catch(error => {
-            console.warn('Online choice submit failed.', error);
-          });
+          if (commitResult.committed) {
+            submitOnlineChoiceIfPossible(player, battle).catch(error => {
+              console.warn('Online choice submit failed.', error);
+            });
+          }
         });
       }
       moveButtons.appendChild(btn);
@@ -8187,9 +8380,13 @@ function renderBattleFightWindow(battle, player) {
         if (isBattleInputLocked(battle)) return;
         const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, moveIndex, battle);
         if (!nextChoice) return;
-        setEnginePendingChoice(player, activeIndex, nextChoice, battle);
-        handleBattleChoiceCommitted(player, battle);
+        const commitResult = commitEngineMoveChoiceFromUi(player, activeIndex, nextChoice, battle);
         renderBattle();
+        if (commitResult.committed) {
+          submitOnlineChoiceIfPossible(player, battle).catch(error => {
+            console.warn('Online choice submit failed.', error);
+          });
+        }
       });
     }
     moveGrid.appendChild(button);
@@ -8326,24 +8523,97 @@ function renderBattlePartyWindow(battle, player) {
 function renderBattleTargetWindow(battle, player) {
   const container = els.battleStateWindow;
   if (!container) return;
+  const side = battle.players[player];
+  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
+  const actionSlotCount = getEngineActionSlots(player, battle).length;
+  const choice = getEngineDraftChoice(player, activeIndex, battle);
+  const targetState = resolveEngineMoveTargetSelection(player, activeIndex, choice, battle);
+  const inputLocked = isBattleInputLocked(battle);
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  const mon = side?.team?.[activeIndex] || null;
+  const moveInfo = (choice.kind === 'move' && Number.isInteger(choice.moveIndex))
+    ? (Array.isArray(moveRequest?.moves) ? (moveRequest.moves[choice.moveIndex] || null) : null)
+    : null;
+  const moveName = choice.kind === 'move'
+    ? getEngineDisplayMoveName(moveRequest, choice.moveIndex, moveInfo?.move || choice.move || '', choice, mon)
+    : '';
+  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
+    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
+    : '';
+
   container.innerHTML = `
     <div class="pkbattle-target-body pkbattle-party-layout">
       <div class="pkbattle-party-sidebar">
         <div class="pkbattle-command-summary">
           <strong>${battle.players?.[player]?.name || `P${player + 1}`}</strong>
-          <small>${lang('대상 선택', 'Target select')}</small>
+          <small>${lang('대상 선택', 'Target select')}${slotHint ? ` · ${slotHint}` : ''}</small>
         </div>
-        <div class="pkbattle-window-note">${lang(
-          '현재 엔진 필수 싱글 경로에서는 대상 선택이 별도 화면으로 노출되지 않습니다. 구조만 유지하고 실제 전투 진실은 엔진 요청을 따릅니다.',
-          'The current engine-required singles path does not expose a separate target-select screen. The structural role is preserved while battle truth still comes from engine requests.'
-        )}</div>
-        <div class="pkbattle-action-row"><button type="button" class="pkbattle-action-btn pkbattle-action-btn-back"><strong>${lang('뒤로', 'Back')}</strong><small>${lang('명령 창으로 돌아갑니다.', 'Return to the command window.')}</small></button></div>
+        <div class="pkbattle-window-note" id="pkbattle-target-note"></div>
+        <div class="pkbattle-action-row"><button type="button" class="pkbattle-action-btn pkbattle-action-btn-back"><strong>${lang('뒤로', 'Back')}</strong><small>${lang('기술 선택 창으로 돌아갑니다.', 'Return to move selection.')}</small></button></div>
       </div>
       <div class="pkbattle-party-grid-wrap">
-        <div class="pkbattle-target-placeholder">${lang('향후 더블 배틀의 대상 선택 모드를 위해 이 자리와 역할을 남겨 둡니다.', 'This role and space are kept for future doubles target-selection flow.')}</div>
+        <div class="pkbattle-party-grid" id="pkbattle-target-grid"></div>
       </div>
     </div>`;
-  container.querySelector('button')?.addEventListener('click', () => setBattleUiMode(player, 'command'));
+  const note = container.querySelector('#pkbattle-target-note');
+  const grid = container.querySelector('#pkbattle-target-grid');
+  const backButton = container.querySelector('button');
+  if (backButton) {
+    backButton.disabled = inputLocked;
+    if (!inputLocked) backButton.addEventListener('click', () => setBattleUiMode(player, 'fight'));
+  }
+  if (!note || !grid) return;
+
+  if (choice.kind !== 'move' || !Number.isInteger(choice.moveIndex)) {
+    note.textContent = lang('먼저 기술을 선택하세요.', 'Choose a move first.');
+    grid.innerHTML = `<div class="pkbattle-window-note">${lang('기술을 선택한 뒤 대상 선택으로 이동합니다.', 'After choosing a move, this screen shows valid targets.')}</div>`;
+    return;
+  }
+  if (!targetState.requiresTarget) {
+    note.textContent = lang('이 기술은 대상 선택이 필요하지 않습니다.', 'This move does not require manual target selection.');
+    grid.innerHTML = `<div class="pkbattle-window-note">${lang('뒤로 돌아가 다른 기술을 선택하거나 그대로 진행하세요.', 'Go back and choose another move or proceed.')}</div>`;
+    return;
+  }
+  if (targetState.blockedReason || !targetState.options.length) {
+    note.textContent = targetState.blockedReason || lang('선택 가능한 대상이 없습니다.', 'No valid target is available.');
+    grid.innerHTML = `<div class="pkbattle-window-note">${lang('다른 기술을 선택하세요.', 'Choose a different move.')}</div>`;
+    return;
+  }
+
+  note.textContent = moveName
+    ? lang(`${displayMoveName(moveName)} 대상`, `${displayMoveName(moveName)} target`)
+    : lang('대상을 선택하세요.', 'Choose a target.');
+
+  targetState.options.forEach(option => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    const isActive = Boolean(
+      targetState.validTarget
+      && targetState.validTarget.side === option.side
+      && targetState.validTarget.slot === option.slot
+    );
+    button.className = `pkbattle-party-card ${isActive ? 'active' : ''}`;
+    button.disabled = inputLocked;
+    button.innerHTML = `<div class="pkbattle-party-card-body"><div class="pkbattle-party-card-topline"><strong>${option.label}</strong></div><div class="pkbattle-party-card-meta"><span class="pkbattle-mini-badge">${option.sublabel}</span></div></div>`;
+    if (!button.disabled) {
+      button.addEventListener('click', () => {
+        const draft = getEngineDraftChoice(player, activeIndex, battle);
+        const nextChoice = {
+          ...draft,
+          kind: 'move',
+          target: {side: option.side, slot: option.slot},
+        };
+        const commitResult = commitEngineMoveChoiceFromUi(player, activeIndex, nextChoice, battle);
+        renderBattle();
+        if (commitResult.committed) {
+          submitOnlineChoiceIfPossible(player, battle).catch(error => {
+            console.warn('Online choice submit failed.', error);
+          });
+        }
+      });
+    }
+    grid.appendChild(button);
+  });
 }
 
 function renderBattleBottomWindows(battle, player) {
@@ -8737,16 +9007,53 @@ function buildPhaserPartyWindowModel(battle, player) {
 }
 
 function buildPhaserTargetWindowModel(battle, player) {
-  const { requestSlot } = getBattleUiActionContext(player, battle);
+  const side = battle.players[player];
+  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
+  const actionSlotCount = getEngineActionSlots(player, battle).length;
+  const inputLocked = isBattleInputLocked(battle);
+  const choice = getEngineDraftChoice(player, activeIndex, battle);
+  const targetState = resolveEngineMoveTargetSelection(player, activeIndex, choice, battle);
+  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  const mon = side?.team?.[activeIndex] || null;
+  const moveInfo = (choice.kind === 'move' && Number.isInteger(choice.moveIndex))
+    ? (Array.isArray(moveRequest?.moves) ? (moveRequest.moves[choice.moveIndex] || null) : null)
+    : null;
+  const moveName = (choice.kind === 'move' && Number.isInteger(choice.moveIndex))
+    ? getEngineDisplayMoveName(moveRequest, choice.moveIndex, moveInfo?.move || choice.move || '', choice, mon)
+    : '';
+  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
+    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
+    : '';
+  const blockedReason = (choice.kind !== 'move' || !Number.isInteger(choice.moveIndex))
+    ? lang('먼저 기술을 선택하세요.', 'Choose a move first.')
+    : (!targetState.requiresTarget
+      ? lang('이 기술은 대상 선택이 필요하지 않습니다.', 'This move does not require manual target selection.')
+      : (targetState.blockedReason || ''));
+  const targets = !blockedReason
+    ? targetState.options.map(option => ({
+      label: option.label,
+      sublabel: option.sublabel,
+      disabled: inputLocked,
+      active: Boolean(
+        targetState.validTarget
+        && targetState.validTarget.side === option.side
+        && targetState.validTarget.slot === option.slot
+      ),
+      action: inputLocked
+        ? null
+        : {type: 'target', target: {side: option.side, slot: option.slot}},
+    }))
+    : [];
   return {
     mode: 'target',
     fieldIndex: requestSlot,
-    title: lang('대상 선택', 'Target select'),
-    placeholder: lang(
-      '현재 엔진 필수 싱글 경로에서는 대상 선택이 별도 화면으로 노출되지 않습니다. 이 자리는 향후 더블용 구조 자리만 남겨 둔 상태입니다.',
-      'The current engine-required singles path does not expose a separate target-select screen. This space is kept as honest structure for future doubles support.'
-    ),
-    footerActions: [{label: lang('뒤로', 'Back'), disabled: false, action: {type: 'command', key: 'command'}}],
+    title: moveName
+      ? `${displayMoveName(moveName)}${slotHint ? ` · ${slotHint}` : ''}`
+      : `${lang('대상 선택', 'Target select')}${slotHint ? ` · ${slotHint}` : ''}`,
+    placeholder: blockedReason || lang('대상을 선택하세요.', 'Choose a target.'),
+    blockedReason,
+    targets,
+    footerActions: [{label: lang('뒤로', 'Back'), disabled: inputLocked, action: {type: 'command', key: 'fight'}}],
   };
 }
 
@@ -9052,12 +9359,37 @@ function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
     if (isBattleInputLocked(battle)) return;
     const nextChoice = buildEngineMoveChoiceFromDraft(player, activeIndex, action.moveIndex, battle);
     if (!nextChoice) return;
-    setEnginePendingChoice(player, activeIndex, nextChoice, battle);
-    handleBattleChoiceCommitted(player, battle);
+    const commitResult = commitEngineMoveChoiceFromUi(player, activeIndex, nextChoice, battle);
     renderBattle();
-    submitOnlineChoiceIfPossible(player, battle).catch(error => {
-      console.warn('Online choice submit failed.', error);
-    });
+    if (commitResult.committed) {
+      submitOnlineChoiceIfPossible(player, battle).catch(error => {
+        console.warn('Online choice submit failed.', error);
+      });
+    }
+    return;
+  }
+  if (action.type === 'target') {
+    if (isBattleInputLocked(battle)) return;
+    const draft = getEngineDraftChoice(player, activeIndex, battle);
+    if (draft.kind !== 'move' || !Number.isInteger(draft.moveIndex)) {
+      setBattleUiMode(player, 'fight');
+      renderBattle();
+      return;
+    }
+    const slot = Number(action?.target?.slot);
+    const side = String(action?.target?.side || '').toLowerCase();
+    const nextChoice = {
+      ...draft,
+      kind: 'move',
+      target: Number.isInteger(slot) ? {side, slot} : null,
+    };
+    const commitResult = commitEngineMoveChoiceFromUi(player, activeIndex, nextChoice, battle);
+    renderBattle();
+    if (commitResult.committed) {
+      submitOnlineChoiceIfPossible(player, battle).catch(error => {
+        console.warn('Online choice submit failed.', error);
+      });
+    }
     return;
   }
   if (action.type === 'switch') {
@@ -9372,7 +9704,12 @@ function isChoiceComplete(player, activeIndex, battle = state.battle) {
     if (!choice?.kind) return false;
     if (isEngineForceSwitchRequest(request)) return choice.kind === 'switch' && Number.isInteger(choice.switchTo);
     if (choice.kind === 'switch') return Number.isInteger(choice.switchTo);
-    if (choice.kind === 'move') return Number.isInteger(choice.moveIndex);
+    if (choice.kind === 'move') {
+      if (!Number.isInteger(choice.moveIndex)) return false;
+      const targetState = resolveEngineMoveTargetSelection(player, activeIndex, choice, battle);
+      if (!targetState.requiresTarget) return true;
+      return Boolean(targetState.validTarget || targetState.autoTarget);
+    }
     return false;
   }
   return false;

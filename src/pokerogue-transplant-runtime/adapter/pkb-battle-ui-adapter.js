@@ -625,15 +625,62 @@ export class PkbBattleUiAdapter {
     return this.getTargetState().footerActions || [];
   }
 
+  getTargetOptions() {
+    return this.getTargetState().targets || [];
+  }
+
   getTargetInputModel() {
     const state = this.getTargetState();
     return {
       fieldIndex: Number.isInteger(state.fieldIndex) ? state.fieldIndex : 0,
       title: state.title || '',
       placeholder: state.placeholder || '',
+      targets: this.getTargetOptions(),
       footerActions: this.getTargetFooterActions(),
       blockedReason: state.blockedReason || '',
     };
+  }
+
+  getTargetSelectionState(previousCursor = null) {
+    const targets = this.getTargetOptions();
+    const footerActions = this.getTargetFooterActions();
+    const activeTargetIndex = findFlaggedIndex(targets, ['active']);
+    let cursor = Number.isInteger(previousCursor) ? previousCursor : null;
+    if (cursor == null && activeTargetIndex >= 0) cursor = activeTargetIndex;
+    if (cursor == null) cursor = findFirstEnabledIndex(targets, 0);
+    if (!targets.length) cursor = 0;
+    else cursor = clampIndex(cursor, 0, Math.max(0, targets.length - 1));
+    if (targets.length && targets[cursor]?.disabled) {
+      cursor = findFirstEnabledIndex(targets, cursor);
+    }
+    return {
+      cursor,
+      targets,
+      footerActions,
+    };
+  }
+
+  moveTargetSelection(currentCursor, button) {
+    const selection = this.getTargetSelectionState(currentCursor);
+    const { targets } = selection;
+    if (!targets.length) return selection.cursor;
+    let direction = 0;
+    if (button === Button.UP || button === Button.LEFT) direction = -1;
+    else if (button === Button.DOWN || button === Button.RIGHT) direction = 1;
+    if (!direction) return selection.cursor;
+    const size = targets.length;
+    let next = selection.cursor;
+    for (let tries = 0; tries < size; tries += 1) {
+      next = (next + direction + size) % size;
+      if (!targets[next]?.disabled) return next;
+    }
+    return selection.cursor;
+  }
+
+  getTargetSelectionSubmitAction(currentCursor) {
+    const selection = this.getTargetSelectionState(currentCursor);
+    const target = selection.targets[selection.cursor] || null;
+    return hasInteractiveAction(target) ? target.action : null;
   }
 
   getTargetBackAction() {
@@ -641,14 +688,35 @@ export class PkbBattleUiAdapter {
     return hasInteractiveAction(footerAction) ? footerAction.action : null;
   }
 
-  resolveTargetInput(button) {
-    if (button !== Button.ACTION && button !== Button.CANCEL) {
-      return { action: null, handled: false };
+  resolveTargetInput(currentCursor, button) {
+    const selection = this.getTargetSelectionState(currentCursor);
+    if (button === Button.ACTION) {
+      const action = this.getTargetSelectionSubmitAction(selection.cursor) || this.getTargetBackAction();
+      return {
+        cursor: selection.cursor,
+        action,
+        changed: false,
+        handled: Boolean(action),
+      };
     }
-    const action = this.getTargetBackAction();
+    if (button === Button.CANCEL) {
+      const action = this.getTargetBackAction();
+      return {
+        cursor: selection.cursor,
+        action,
+        changed: false,
+        handled: Boolean(action),
+      };
+    }
+    if (![Button.UP, Button.DOWN, Button.LEFT, Button.RIGHT].includes(button)) {
+      return { cursor: selection.cursor, action: null, changed: false, handled: false };
+    }
+    const nextCursor = this.moveTargetSelection(selection.cursor, button);
     return {
-      action,
-      handled: Boolean(action),
+      cursor: nextCursor,
+      action: null,
+      changed: nextCursor !== selection.cursor,
+      handled: true,
     };
   }
 

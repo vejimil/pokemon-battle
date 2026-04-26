@@ -3,6 +3,43 @@
 완료 이력과 상세 분석/수정 기록은 `previous.md`로 이관했습니다.
 이 문서는 **현재 남은 작업만** 유지합니다.
 
+# DB - 6 수정사항
+  1. 더블에서만 수동 타겟 선택이 뜹니다.
+     single-opponent, ally, ally-or-self 기술만 대상 선택 모드로 진입합니다.
+     (src/app.js:6693, src/app.js:6834)
+  2. 후보가 1개면 자동 타겟으로 바로 커밋됩니다. 후보가 여러 개면 타겟 창이 열립니다.
+     (src/app.js:6786)
+  3. 타겟 창(Phaser)에서 방향키/패드 이동 + A 선택 + B 취소(뒤로)가 됩니다.
+     (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js:24, src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js:644)
+  4. “뒤로”는 command가 아니라 fight로 돌아가게 되어 있습니다.
+     (src/app.js:9056)
+  5. DOM fallback UI도 placeholder가 아니라 실제 타겟 카드 목록으로 바뀌어 있습니다.
+     (src/app.js:8523)
+
+  ———
+
+  나중에 UI만 손볼 때 건드리면 되는 곳
+
+  1. 레이아웃/좌표/행 간격/커서 위치:
+     src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js:24
+  2. 타겟 행 개수(현재 3개 고정), 폰트/컬러/포커스 색상:
+     src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js:40, src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js:86
+  3. 타겟 창에 들어오는 데이터 형태(title, placeholder, targets, footerActions):
+     src/app.js:9009, src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js:632
+  4. DOM 버전 카드 스타일/문구를 바꾸려면:
+     src/app.js:8523
+
+  ———
+
+  오늘 마무리 상태
+
+  - DB-6 구현 반영 완료.
+  - plan.md도 DB-6 완료로 업데이트됨.
+    (plan.md:13, plan.md:242)
+
+  다음에 이어서 할 때는 “디자인만 수정”이면 target-select-ui-handler.js 중심으로 보면 됩니다.
+
+
 # 작업 시 필수 지침
  - 작업 완료 후 plan.md에 업데이트 할 것.
  - 브라우저에서 어떤 점을 검증해야하는지 보고할 것.
@@ -10,7 +47,7 @@
 ## 현재 작업 목록
 | 번호 | 항목 | 상태 | 메모 |
 |---|---|---|---|
-| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-5 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-6(타깃 선택). |
+| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-6 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-7(choice 직렬화/제출). |
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 
 ## 15번 필수 분석 포인트(보류)
@@ -239,7 +276,20 @@
    - `src/app.js`: `toggleEngineDraftFlag()` 보강으로 더블에서 사이드 내 슬롯 간 `테라/다이맥스/메가/울트라/Z` 중복 활성화를 자동 해제(마지막 토글 슬롯 우선).
    - `src/app.js`: DB-7 이전 오동작 방지를 위해 `canAutoResolveEngineTurn()`에서 doubles 자동 턴 해석을 명시적으로 차단(직렬화/제출 경로 준비 후 해제).
    - `src/app.js`: 온라인 제출(`submitOnlineChoiceIfPossible`)은 싱글(액션 슬롯 1개)에서만 동작하도록 제한.
-6. **DB-6 타깃 선택**: target hint 기반 후보 산출 + 타깃 선택 UI 활성화. 무브의 `target.slot`을 choice에 박고 직렬화.
+6. **DB-6 타깃 선택** ✅ 완료(2026-04-26):
+   - `src/app.js`: `normalizeEngineMoveTargetHint()`/`resolveEngineMoveTargetSelection()`/`commitEngineMoveChoiceFromUi()` 추가. 더블에서 `single-opponent`/`ally`/`ally-or-self`만 명시 타깃이 필요하도록 판정하고, 후보를 슬롯 기준으로 생성.
+   - `src/app.js`: move 선택 시 타깃이 필요한 기술은 즉시 커밋하지 않고 `target` 모드로 전환. 타깃 확정 후에만 `handleBattleChoiceCommitted()`가 실행되도록 분리.
+   - `src/app.js`: `normalizeEnginePendingChoice()`가 `choice.target`을 더 이상 지우지 않도록 보정하고, 유효 타깃/자동 타깃(후보 1개)을 정규화. `isChoiceComplete()`도 더블의 명시 타깃 기술에서는 타깃까지 선택되어야 true.
+   - `src/app.js`: Phaser/DOM `TargetWindow`가 placeholder에서 실제 후보 리스트 UI로 전환. 뒤로 가기는 command가 아니라 fight로 복귀하도록 수정.
+   - `src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js`: target 전용 selection state/cursor 이동/submit/back 입력 해석 추가.
+   - `src/pokerogue-transplant-runtime/ui/facade/global-scene-facade.js`: `getTargetSelectionState()`/`resolveTargetInput(currentCursor, button)` 시그니처 확장.
+   - `src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js`: 타깃 목록 렌더 + 커서 이동 + ACTION 선택 동작 구현(기존 Back-only placeholder 제거).
+   - 검증: `node --check`(app/adapter/facade/target-handler) 통과, `npm run verify:core` PASS.
+   - 브라우저 수동 확인 포인트:
+     - 더블에서 단일 대상 기술 선택 시 타깃 창이 열리고, 상대 슬롯 1/2 후보가 표시되는지 확인.
+     - 더블에서 `ally-or-self` 기술(예: Helping Hand 계열) 선택 시 자신/아군 후보가 함께 뜨고 선택 결과가 pending summary에 반영되는지 확인.
+     - 더블에서 후보가 1개뿐인 경우(예: 상대 1마리만 생존) 타깃 창 없이 자동 타깃으로 바로 커밋되는지 확인.
+     - 싱글에서는 기존처럼 타깃 창으로 들어가지 않고 move 선택 즉시 커밋되는지 확인.
 7. **DB-7 choice 직렬화/제출**: `serializeChoiceForShowdown`에 target slot/`,` 합본/사이드별 두 슬롯 묶음 추가. 로컬 엔진 첫 턴 정상 해석 확인.
 8. **DB-8 forceSwitch 듀얼 슬롯**: 두 슬롯 동시 기절 시 forceSwitch 양쪽 처리. 한쪽만 기절 시 한 슬롯만 입력.
 9. **DB-9 회귀/검증**: 싱글 시나리오 회귀 + 더블 핵심 무브 시나리오(스프라이트 지정 무브, ally-target 무브, 광역 무브, 보호/대타) 단위.

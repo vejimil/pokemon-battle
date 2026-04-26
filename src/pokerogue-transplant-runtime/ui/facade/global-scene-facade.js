@@ -173,6 +173,10 @@ export class TransplantGlobalSceneFacade {
     return this.adapter?.getTargetInputModel?.() || { fieldIndex: 0, footerActions: [] };
   }
 
+  getTargetSelectionState(previousCursor = null) {
+    return this.adapter?.getTargetSelectionState?.(previousCursor) || { cursor: 0, targets: [], footerActions: [] };
+  }
+
   getTargetBackAction() {
     return this.adapter?.getTargetBackAction?.() || null;
   }
@@ -202,8 +206,8 @@ export class TransplantGlobalSceneFacade {
     return this.adapter?.resolvePartyInput?.(currentCursor, button) || { cursor: currentCursor, action: null, changed: false };
   }
 
-  resolveTargetInput(button) {
-    return this.adapter?.resolveTargetInput?.(button) || { action: null, handled: false };
+  resolveTargetInput(currentCursor, button) {
+    return this.adapter?.resolveTargetInput?.(currentCursor, button) || { cursor: currentCursor, action: null, changed: false, handled: false };
   }
 
   getBlockedReason() {
