@@ -44,9 +44,10 @@ function getPendingChoiceForSide(battle, sideId, slot) {
   return battle?.pendingChoices?.[sideId]?.[slot] || null;
 }
 
-function getForcedChoiceFromRequest(request) {
+function getForcedChoiceFromRequestSlot(request, requestSlot = 0) {
   if (Array.isArray(request?.forceSwitch) && request.forceSwitch.some(Boolean)) return null;
-  const moves = Array.isArray(request?.active?.[0]?.moves) ? request.active[0].moves : [];
+  const activeRequest = Array.isArray(request?.active) ? request.active[requestSlot] : null;
+  const moves = Array.isArray(activeRequest?.moves) ? activeRequest.moves : [];
   if (moves.length !== 1) return null;
   const onlyMove = moves[0] || null;
   const moveId = toId(onlyMove?.id || onlyMove?.move || '');
@@ -61,6 +62,40 @@ function getForcedChoiceFromRequest(request) {
     z: false,
     dynamax: false,
   };
+}
+
+function resolveChoiceTargetLoc(target = null, request = null) {
+  if (!target) return null;
+  if (Number.isInteger(target.loc)) return target.loc;
+  const rawSlot = Number(target.slot);
+  if (!Number.isInteger(rawSlot)) return null;
+  const baseLoc = rawSlot + 1;
+  const actorSide = String(request?.side?.id || '').toLowerCase();
+  const targetSide = String(target?.side || '').toLowerCase();
+  if ((actorSide === 'p1' || actorSide === 'p2') && (targetSide === 'p1' || targetSide === 'p2')) {
+    return targetSide === actorSide ? -baseLoc : baseLoc;
+  }
+  return baseLoc;
+}
+
+const CHOOSABLE_TARGET_TYPES = new Set([
+  'normal',
+  'any',
+  'adjacentAlly',
+  'adjacentAllyOrSelf',
+  'adjacentFoe',
+]);
+
+function resolveRequestMoveTargetType(choice, request = null, options = {}) {
+  if (!choice || choice.kind !== 'move' || !Number.isInteger(choice.moveIndex)) return '';
+  const requestSlot = Number.isInteger(options?.requestSlot) ? options.requestSlot : 0;
+  const moveRequest = Array.isArray(request?.active) ? request.active[requestSlot] : null;
+  const moveEntry = Array.isArray(moveRequest?.moves) ? moveRequest.moves[choice.moveIndex] : null;
+  const zEntry = Array.isArray(moveRequest?.canZMove) ? moveRequest.canZMove[choice.moveIndex] : null;
+  const maxEntry = Array.isArray(moveRequest?.maxMoves?.maxMoves) ? moveRequest.maxMoves.maxMoves[choice.moveIndex] : null;
+  if (choice.dynamax && maxEntry?.target) return String(maxEntry.target);
+  if (choice.z && zEntry?.target) return String(zEntry.target);
+  return String(moveEntry?.target || '');
 }
 
 export async function probeShowdownLocalServer() {
@@ -90,12 +125,14 @@ export async function submitShowdownLocalSinglesChoices({battleId, battle}) {
     if (!actionSlots.length) {
       throw new Error(`Player ${playerIndex + 1} has an actionable request but no active slot.`);
     }
-    const slot = actionSlots[0];
-    const choice = getPendingChoiceForSide(battle, sideId, slot) || getForcedChoiceFromRequest(request);
-    if (!choice) {
-      throw new Error(`Player ${playerIndex + 1} choice is missing.`);
-    }
-    choices[sideId] = serializeChoiceForShowdown(choice, request);
+    const serializedChoices = actionSlots.map((slot, requestSlot) => {
+      const choice = getPendingChoiceForSide(battle, sideId, slot) || getForcedChoiceFromRequestSlot(request, requestSlot);
+      if (!choice) {
+        throw new Error(`Player ${playerIndex + 1} choice is missing for slot ${slot}.`);
+      }
+      return serializeChoiceForShowdown(choice, request, {requestSlot});
+    });
+    choices[sideId] = serializedChoices.join(', ');
   }
   if (!Object.keys(choices).length) {
     throw new Error('No actionable engine request is pending.');
@@ -107,7 +144,7 @@ export async function submitShowdownLocalSinglesChoices({battleId, battle}) {
   return data.snapshot;
 }
 
-export function serializeChoiceForShowdown(choice, request = null) {
+export function serializeChoiceForShowdown(choice, request = null, options = {}) {
   if (!choice || !choice.kind) throw new Error('Choice is empty.');
   if (choice.kind === 'switch') {
     if (!Number.isInteger(choice.switchTo)) throw new Error('Switch target is missing.');
@@ -121,8 +158,11 @@ export function serializeChoiceForShowdown(choice, request = null) {
   if (choice.kind === 'move') {
     if (!Number.isInteger(choice.moveIndex)) throw new Error('Move index is missing.');
     const parts = ['move', String(choice.moveIndex + 1)];
-    if (choice.target && Number.isInteger(choice.target.slot)) {
-      parts.push(String(choice.target.slot + 1));
+    const targetType = resolveRequestMoveTargetType(choice, request, options);
+    const canSpecifyTarget = CHOOSABLE_TARGET_TYPES.has(targetType);
+    const targetLoc = canSpecifyTarget ? resolveChoiceTargetLoc(choice.target, request) : null;
+    if (canSpecifyTarget && Number.isInteger(targetLoc)) {
+      parts.push(String(targetLoc));
     }
     if (choice.mega) parts.push('mega');
     if (choice.ultra) parts.push('ultra');

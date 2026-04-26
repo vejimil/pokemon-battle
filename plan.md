@@ -99,7 +99,7 @@
 ## 현재 작업 목록
 | 번호 | 항목 | 상태 | 메모 |
 |---|---|---|---|
-| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-6 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-7(choice 직렬화/제출). |
+| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-7 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-8(forceSwitch 듀얼 슬롯). |
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 
 ## 15번 필수 분석 포인트(보류)
@@ -342,7 +342,26 @@
      - 더블에서 `ally-or-self` 기술(예: Helping Hand 계열) 선택 시 자신/아군 후보가 함께 뜨고 선택 결과가 pending summary에 반영되는지 확인.
      - 더블에서 후보가 1개뿐인 경우(예: 상대 1마리만 생존) 타깃 창 없이 자동 타깃으로 바로 커밋되는지 확인.
      - 싱글에서는 기존처럼 타깃 창으로 들어가지 않고 move 선택 즉시 커밋되는지 확인.
-7. **DB-7 choice 직렬화/제출**: `serializeChoiceForShowdown`에 target slot/`,` 합본/사이드별 두 슬롯 묶음 추가. 로컬 엔진 첫 턴 정상 해석 확인.
+7. **DB-7 choice 직렬화/제출** ✅ 완료(2026-04-26):
+   - `src/engine/showdown-local-bridge.js`:
+     - `submitShowdownLocalSinglesChoices()`가 더블 액션 슬롯 전체를 순회해 슬롯별 choice 문자열을 직렬화하고 `', '`로 합쳐 side별 합본 choice를 생성.
+     - `serializeChoiceForShowdown()`에 target loc 부호 변환 추가:
+       - foe 타깃은 `+1/+2`(문자열은 `1/2`)
+       - ally/self 타깃은 `-1/-2`
+       - `request.side.id`와 `choice.target.side`를 비교해 부호를 결정.
+     - spread 계열(`allAdjacentFoes` 등 비-choosable target type)은 target loc를 직렬화하지 않도록 보정하여
+       `Can't move: You can't choose a target` 엔진 에러를 차단.
+     - 슬롯별 강제 단일 무브(locked/encore 등) 보강을 위해 `getForcedChoiceFromRequestSlot(request, requestSlot)` 추가.
+   - `src/app.js`:
+     - `canAutoResolveEngineTurn()`의 더블 차단 가드 제거(직렬화/제출 경로 준비 완료).
+     - 온라인 제출은 여전히 싱글-only라는 주석을 DB-10 기준으로 갱신.
+   - 검증:
+     - `node --check src/engine/showdown-local-bridge.js src/app.js` 통과.
+     - 모킹 테스트에서 더블 직렬화 결과 확인:
+       - `p1: move 1 2, move 1 -1`
+       - `p2: move 1, move 1`
+     - 로컬 엔진 통합 테스트(`ShowdownEngineService` 직접 호출)로 doubles 첫 턴 제출 후 `turn=2` 진행 확인.
+     - `npm run verify:core` PASS.
 8. **DB-8 forceSwitch 듀얼 슬롯**: 두 슬롯 동시 기절 시 forceSwitch 양쪽 처리. 한쪽만 기절 시 한 슬롯만 입력.
 9. **DB-9 회귀/검증**: 싱글 시나리오 회귀 + 더블 핵심 무브 시나리오(스프라이트 지정 무브, ally-target 무브, 광역 무브, 보호/대타) 단위.
 10. **DB-10 온라인 더블 분리**: `OnlineRoomService`/online.html 토글. 별도 PR.

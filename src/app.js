@@ -2541,7 +2541,7 @@ async function submitOnlineChoiceIfPossible(player, battle = state.battle) {
   if (!isEngineActionableRequest(request)) return;
   if (!isPlayerReady(player, battle)) return;
   const actionSlots = getEngineActionSlots(player, battle);
-  // Online rooms are still singles-only; defer doubles submit wiring to DB-7.
+  // Online room doubles wiring is handled in DB-10; for now online submit stays singles-only.
   if (actionSlots.length !== 1) return;
   const activeIndex = actionSlots[0];
   if (!Number.isInteger(activeIndex)) return;
@@ -7244,8 +7244,6 @@ function getEnginePlayersNeedingAction(battle = state.battle) {
 }
 function canAutoResolveEngineTurn(battle = state.battle) {
   if (!isShowdownLocalBattle(battle) || battle?.winner || battle?.resolvingTurn) return false;
-  // DB-7 not landed yet: doubles choice serialization/submission is still pending.
-  if (battle?.mode === 'doubles') return false;
   pruneEnginePendingChoices(battle);
   seedEngineForcedPendingChoices(battle);
   const players = battle?.players || [];
