@@ -10,7 +10,7 @@
 ## 현재 작업 목록
 | 번호 | 항목 | 상태 | 메모 |
 |---|---|---|---|
-| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-4 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-5(명령 흐름 슬롯화). |
+| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-5 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-6(타깃 선택). |
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 
 ## 15번 필수 분석 포인트(보류)
@@ -226,9 +226,19 @@
      - 첫 커맨드 단계 진입 후에도 슬롯별 스프라이트/정보창 매핑이 유지되는지 확인.
      - 더블 시작 직후(스프라이트 등장 전~등장 직후): 타입 마커가 처음부터 최종 위치/텍스처로 표시되는지(중간 점프 없음) 확인.
      - 더블 겹침 구간: 적군 스프라이트는 슬롯0이 슬롯1 위로, 아군 스프라이트는 슬롯1이 슬롯0 위로 렌더되는지 확인.
+     - 더블 명령 입력: 슬롯0에서 기술/교체 확정 시 즉시 슬롯1 명령 화면으로 넘어가는지 확인(반대 방향도 동일).
+     - 더블 토글 자원: 같은 사이드에서 슬롯0/슬롯1이 동시에 `테라/다이맥스/메가/울트라/Z` 활성화되지 않고, 마지막으로 켠 슬롯만 유지되는지 확인.
      - 싱글 시작 직후: 정보창/스프라이트가 기존 싱글 좌표(슬롯0 더블 좌표 아님)로 렌더되는지 확인.
-   - **남은 한계(다음 단계)**: 명령(기술/포켓몬 선택) 입력은 슬롯 0만 받는 상태 — DB-5에서 슬롯 0 → 슬롯 1 상태머신 도입.
-5. **DB-5 명령 흐름 슬롯화**: `currentSlotByPlayer` 상태머신, 슬롯 0 → 슬롯 1 명령 결정. 토글 사이드 단일화. UI 빌더가 슬롯별 모델을 발행.
+   - **남은 한계(다음 단계)**: DB-7(더블 choice 직렬화/제출) 전까지 더블 자동 턴 해석은 의도적으로 비활성화 상태.
+5. **DB-5 명령 흐름 슬롯화** ✅ 완료(2026-04-26):
+   - `src/app.js`: `battleUi` 상태에 `modeByPlayerSlot`/`currentSlotByPlayer` 추가. 현재 입력 중인 액션 슬롯(요청 슬롯)을 기준으로 모드(`command/fight/party/target`)를 슬롯별로 보존.
+   - `src/app.js`: `getBattleUiActionContext()`/`focusNextUncommittedBattleSlot()` 도입. 더블에서 **슬롯0 선택 완료 → 슬롯1 선택 화면 자동 전환** 흐름 구현.
+   - `src/app.js`: `syncBattleUiState()`/`setBattleUiMode()`/`getBattleDisplayMode()`를 슬롯 기반으로 갱신. 강제교체(forceSwitch)는 미선택 슬롯에 `party` 강제 유지.
+   - `src/app.js`: Phaser/DOM 윈도우 빌더(`buildPhaserCommand/Fight/Party/TargetWindowModel`, `buildBattleMessageModel`, `renderBattle*Window`)가 현재 슬롯 컨텍스트를 사용하도록 변경.
+   - `src/app.js`: `dispatchPkbPokerogueUiAction()`가 현재 슬롯 대상에게 move/switch/toggle를 적용하도록 변경.
+   - `src/app.js`: `toggleEngineDraftFlag()` 보강으로 더블에서 사이드 내 슬롯 간 `테라/다이맥스/메가/울트라/Z` 중복 활성화를 자동 해제(마지막 토글 슬롯 우선).
+   - `src/app.js`: DB-7 이전 오동작 방지를 위해 `canAutoResolveEngineTurn()`에서 doubles 자동 턴 해석을 명시적으로 차단(직렬화/제출 경로 준비 후 해제).
+   - `src/app.js`: 온라인 제출(`submitOnlineChoiceIfPossible`)은 싱글(액션 슬롯 1개)에서만 동작하도록 제한.
 6. **DB-6 타깃 선택**: target hint 기반 후보 산출 + 타깃 선택 UI 활성화. 무브의 `target.slot`을 choice에 박고 직렬화.
 7. **DB-7 choice 직렬화/제출**: `serializeChoiceForShowdown`에 target slot/`,` 합본/사이드별 두 슬롯 묶음 추가. 로컬 엔진 첫 턴 정상 해석 확인.
 8. **DB-8 forceSwitch 듀얼 슬롯**: 두 슬롯 동시 기절 시 forceSwitch 양쪽 처리. 한쪽만 기절 시 한 슬롯만 입력.

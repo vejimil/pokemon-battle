@@ -1348,6 +1348,8 @@ const state = {
   battleUi: {
     perspective: 0,
     modeByPlayer: {0: 'command', 1: 'command'},
+    modeByPlayerSlot: {0: {0: 'command'}, 1: {0: 'command'}},
+    currentSlotByPlayer: {0: 0, 1: 0},
     moveDetailByPlayer: {0: {}, 1: {}},
     inputLocked: false,
     timelineSpriteOverrides: {},
@@ -2537,7 +2539,11 @@ async function submitOnlineChoiceIfPossible(player, battle = state.battle) {
   if (state.online.side && sideId !== state.online.side) return;
   const request = getEngineRequestForPlayer(player, battle);
   if (!isEngineActionableRequest(request)) return;
-  const activeIndex = getEngineActionSlots(player, battle)[0];
+  if (!isPlayerReady(player, battle)) return;
+  const actionSlots = getEngineActionSlots(player, battle);
+  // Online rooms are still singles-only; defer doubles submit wiring to DB-7.
+  if (actionSlots.length !== 1) return;
+  const activeIndex = actionSlots[0];
   if (!Number.isInteger(activeIndex)) return;
   const choice = getEngineDraftChoice(player, activeIndex, battle);
   if (!choice?.kind) return;
@@ -6761,6 +6767,30 @@ function toggleEngineDraftFlag(player, activeIndex, flag, battle = state.battle)
     return false;
   }
   setEnginePendingChoice(player, activeIndex, next, battle);
+  if (next[flag]) {
+    getEngineActionSlots(player, battle).forEach(otherActiveIndex => {
+      if (otherActiveIndex === activeIndex) return;
+      const otherChoice = getEngineDraftChoice(player, otherActiveIndex, battle);
+      if (!otherChoice?.[flag]) return;
+      const nextOtherChoice = {
+        ...otherChoice,
+        [flag]: false,
+      };
+      const hasMeaningfulState = Boolean(
+        nextOtherChoice.kind
+        || nextOtherChoice.mega
+        || nextOtherChoice.ultra
+        || nextOtherChoice.tera
+        || nextOtherChoice.z
+        || nextOtherChoice.dynamax
+      );
+      if (!hasMeaningfulState) {
+        clearEnginePendingChoice(player, otherActiveIndex, battle);
+        return;
+      }
+      setEnginePendingChoice(player, otherActiveIndex, nextOtherChoice, battle);
+    });
+  }
   return true;
 }
 function seedEngineForcedPendingChoices(battle = state.battle) {
@@ -6963,6 +6993,8 @@ function getEnginePlayersNeedingAction(battle = state.battle) {
 }
 function canAutoResolveEngineTurn(battle = state.battle) {
   if (!isShowdownLocalBattle(battle) || battle?.winner || battle?.resolvingTurn) return false;
+  // DB-7 not landed yet: doubles choice serialization/submission is still pending.
+  if (battle?.mode === 'doubles') return false;
   pruneEnginePendingChoices(battle);
   seedEngineForcedPendingChoices(battle);
   const players = battle?.players || [];
@@ -6973,7 +7005,7 @@ function canAutoResolveEngineTurn(battle = state.battle) {
     if (!request) return false;
     if (!isEngineActionableRequest(request)) continue;
     actionableCount += 1;
-    if (!isPlayerReady(player)) return false;
+    if (!isPlayerReady(player, battle)) return false;
   }
   return actionableCount > 0;
 }
@@ -6983,11 +7015,11 @@ function getEngineTurnChipState(player, battle = state.battle) {
   if (!request) return {done: false, text: lang('요청 대기', 'Awaiting request')};
   if (request.wait) return {done: true, text: lang('대기 중', 'Waiting')};
   if (isEngineForceSwitchRequest(request)) {
-    return isPlayerReady(player)
+    return isPlayerReady(player, battle)
       ? {done: true, text: lang('교체 확정', 'Switch locked')}
       : {done: false, text: lang('교체 선택', 'Choose switch')};
   }
-  return isPlayerReady(player)
+  return isPlayerReady(player, battle)
     ? {done: true, text: lang('선택 완료', 'Choice locked')}
     : {done: false, text: lang('선택 중', 'Selecting')};
 }
@@ -7367,6 +7399,8 @@ function getBattleUiState(battle = state.battle) {
   const ui = state.battleUi || (state.battleUi = {});
   if (!Number.isInteger(ui.perspective)) ui.perspective = 0;
   ui.modeByPlayer = ui.modeByPlayer || {0: 'command', 1: 'command'};
+  ui.modeByPlayerSlot = ui.modeByPlayerSlot || {0: {0: 'command'}, 1: {0: 'command'}};
+  ui.currentSlotByPlayer = ui.currentSlotByPlayer || {0: 0, 1: 0};
   ui.moveDetailByPlayer = ui.moveDetailByPlayer || {0: {}, 1: {}};
   if (typeof ui.inputLocked !== 'boolean') ui.inputLocked = false;
   ui.timelineSpriteOverrides = ui.timelineSpriteOverrides || {};
@@ -7375,6 +7409,56 @@ function getBattleUiState(battle = state.battle) {
   if (typeof ui.lastFlyoutKey !== 'string') ui.lastFlyoutKey = '';
   if (!('flyoutTimer' in ui)) ui.flyoutTimer = null;
   return ui;
+}
+
+function getBattleUiActionContext(player, battle = state.battle, {updateState = true} = {}) {
+  const ui = getBattleUiState(battle);
+  const actionSlots = getEngineActionSlots(player, battle);
+  const fallbackActiveIndex = getBattleActiveIndices(player, battle)[0] ?? 0;
+  if (!actionSlots.length) {
+    if (updateState && ui?.currentSlotByPlayer) {
+      ui.currentSlotByPlayer[player] = fallbackActiveIndex;
+    }
+    return {
+      actionable: false,
+      actionSlots: [],
+      activeIndex: fallbackActiveIndex,
+      requestSlot: 0,
+    };
+  }
+
+  let activeIndex = Number(ui?.currentSlotByPlayer?.[player]);
+  if (!actionSlots.includes(activeIndex)) {
+    const firstIncomplete = actionSlots.find(slot => !isChoiceComplete(player, slot, battle));
+    activeIndex = Number.isInteger(firstIncomplete) ? firstIncomplete : actionSlots[0];
+  }
+  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
+  if (updateState && ui?.currentSlotByPlayer) {
+    ui.currentSlotByPlayer[player] = activeIndex;
+  }
+  return {
+    actionable: true,
+    actionSlots,
+    activeIndex,
+    requestSlot,
+  };
+}
+
+function focusNextUncommittedBattleSlot(player, battle = state.battle) {
+  const ui = getBattleUiState(battle);
+  if (!ui || !battle) return false;
+  const actionSlots = getEngineActionSlots(player, battle);
+  if (!actionSlots.length) return false;
+  const nextActiveIndex = actionSlots.find(activeIndex => !isChoiceComplete(player, activeIndex, battle));
+  if (!Number.isInteger(nextActiveIndex)) return false;
+  ui.currentSlotByPlayer[player] = nextActiveIndex;
+  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, nextActiveIndex, battle));
+  const defaultMode = getDefaultBattleUiModeForPlayer(player, battle);
+  ui.modeByPlayerSlot = ui.modeByPlayerSlot || {0: {}, 1: {}};
+  ui.modeByPlayerSlot[player] = ui.modeByPlayerSlot[player] || {};
+  ui.modeByPlayerSlot[player][requestSlot] = defaultMode;
+  ui.modeByPlayer[player] = defaultMode;
+  return true;
 }
 
 function isBattleInputLocked(battle = state.battle) {
@@ -7414,17 +7498,30 @@ function getDefaultBattleUiModeForPlayer(player, battle = state.battle) {
 function resetBattleUiModesFromRequests(battle = state.battle) {
   const ui = getBattleUiState(battle);
   if (!ui || !battle) return;
-  ui.modeByPlayer = {
-    0: getDefaultBattleUiModeForPlayer(0, battle),
-    1: getDefaultBattleUiModeForPlayer(1, battle),
-  };
+  ui.modeByPlayer = {0: 'message', 1: 'message'};
+  ui.modeByPlayerSlot = {0: {}, 1: {}};
+  ui.currentSlotByPlayer = {0: 0, 1: 0};
+  [0, 1].forEach(player => {
+    const defaultMode = getDefaultBattleUiModeForPlayer(player, battle);
+    const actionSlots = getEngineActionSlots(player, battle);
+    actionSlots.forEach((_activeIndex, requestSlot) => {
+      ui.modeByPlayerSlot[player][requestSlot] = defaultMode;
+    });
+    const fallbackActiveIndex = actionSlots[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+    ui.currentSlotByPlayer[player] = fallbackActiveIndex;
+    const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, fallbackActiveIndex, battle));
+    ui.modeByPlayer[player] = ui.modeByPlayerSlot[player][requestSlot] || defaultMode;
+  });
   ui.moveDetailByPlayer = {0: {}, 1: {}};
   ui.passPrompt = '';
 }
 
 function getBattleDisplayMode(player, battle = state.battle) {
   const ui = getBattleUiState(battle);
-  const mode = ui?.modeByPlayer?.[player] || getDefaultBattleUiModeForPlayer(player, battle);
+  const context = getBattleUiActionContext(player, battle, {updateState: false});
+  const requestSlot = Math.max(0, Number(context?.requestSlot || 0));
+  const slotMode = ui?.modeByPlayerSlot?.[player]?.[requestSlot] || '';
+  const mode = ui?.modeByPlayer?.[player] || slotMode || getDefaultBattleUiModeForPlayer(player, battle);
   if (ui?.inputLocked && ['command', 'fight', 'party', 'target'].includes(mode)) return 'message';
   return mode;
 }
@@ -7454,7 +7551,24 @@ function syncBattleUiState(battle = state.battle) {
   [0, 1].forEach(player => {
     const defaultMode = getDefaultBattleUiModeForPlayer(player, battle);
     const request = getEngineRequestForPlayer(player, battle);
-    const current = ui.modeByPlayer[player] || defaultMode;
+    const actionSlots = getEngineActionSlots(player, battle);
+    ui.modeByPlayerSlot = ui.modeByPlayerSlot || {0: {}, 1: {}};
+    ui.modeByPlayerSlot[player] = ui.modeByPlayerSlot[player] || {};
+    const slotModes = ui.modeByPlayerSlot[player];
+    const validRequestSlots = new Set(actionSlots.map((_activeIndex, requestSlot) => requestSlot));
+    Object.keys(slotModes).forEach(rawRequestSlot => {
+      const requestSlot = Number(rawRequestSlot);
+      if (!Number.isInteger(requestSlot) || !validRequestSlots.has(requestSlot)) {
+        delete slotModes[rawRequestSlot];
+      }
+    });
+    actionSlots.forEach((_activeIndex, requestSlot) => {
+      if (!['message', 'command', 'fight', 'party', 'target'].includes(slotModes[requestSlot])) {
+        slotModes[requestSlot] = defaultMode;
+      }
+    });
+    const context = getBattleUiActionContext(player, battle);
+    const current = slotModes[context.requestSlot] || ui.modeByPlayer[player] || defaultMode;
     const sideId = getEngineSideId(player);
     const localSubmittedThisTurn = isOnlineRoomJoined()
       && state.online?.side === sideId
@@ -7463,11 +7577,13 @@ function syncBattleUiState(battle = state.battle) {
       ui.modeByPlayer[player] = 'message';
       return;
     }
-    if (current === 'message' && isEngineActionableRequest(request) && !isPlayerReady(player) && !localSubmittedThisTurn) {
+    if (current === 'message' && isEngineActionableRequest(request) && !isPlayerReady(player, battle) && !localSubmittedThisTurn) {
+      slotModes[context.requestSlot] = defaultMode;
       ui.modeByPlayer[player] = defaultMode;
       return;
     }
     if (ui.inputLocked && ['command', 'fight', 'party', 'target'].includes(current)) {
+      slotModes[context.requestSlot] = current;
       ui.modeByPlayer[player] = current;
       return;
     }
@@ -7475,16 +7591,27 @@ function syncBattleUiState(battle = state.battle) {
       // Only force 'party' if the player has NOT yet committed a choice.
       // Without this guard, syncBattleUiState re-enters after handleBattleChoiceCommitted
       // and overwrites mode='message' back to 'party', preventing the screen from closing.
-      if (!isPlayerReady(player)) {
-        ui.modeByPlayer[player] = 'party';
+      if (!isPlayerReady(player, battle)) {
+        const forcedActiveIndex = actionSlots.find(activeIndex => !isChoiceComplete(player, activeIndex, battle));
+        if (Number.isInteger(forcedActiveIndex)) {
+          ui.currentSlotByPlayer[player] = forcedActiveIndex;
+          const forcedRequestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, forcedActiveIndex, battle));
+          slotModes[forcedRequestSlot] = 'party';
+          ui.modeByPlayer[player] = 'party';
+          return;
+        }
       }
+      ui.modeByPlayer[player] = 'message';
       return;
     }
-    if (current === 'party' && !getEngineSwitchOptions(player, getEngineActionSlots(player, battle)[0] ?? 0, battle).length) {
+    if (current === 'party' && !getEngineSwitchOptions(player, context.activeIndex, battle).length) {
+      slotModes[context.requestSlot] = 'command';
       ui.modeByPlayer[player] = 'command';
       return;
     }
-    ui.modeByPlayer[player] = ['message', 'command', 'fight', 'party', 'target'].includes(current) ? current : defaultMode;
+    const normalized = ['message', 'command', 'fight', 'party', 'target'].includes(current) ? current : defaultMode;
+    slotModes[context.requestSlot] = normalized;
+    ui.modeByPlayer[player] = normalized;
   });
   return ui;
 }
@@ -7498,8 +7625,13 @@ function setBattlePerspective(player, {prompt = ''} = {}) {
 }
 
 function setBattleUiMode(player, mode, {rerender = true} = {}) {
-  const ui = getBattleUiState(state.battle);
+  const battle = state.battle;
+  const ui = getBattleUiState(battle);
   if (!ui) return;
+  ui.modeByPlayerSlot = ui.modeByPlayerSlot || {0: {}, 1: {}};
+  ui.modeByPlayerSlot[player] = ui.modeByPlayerSlot[player] || {};
+  const context = getBattleUiActionContext(player, battle);
+  ui.modeByPlayerSlot[player][context.requestSlot] = mode;
   ui.modeByPlayer[player] = mode;
   if (rerender) renderBattle();
 }
@@ -7508,6 +7640,8 @@ function resetBattlePresentationState({perspective = 0, passPrompt = ''} = {}) {
   const ui = state.battleUi || (state.battleUi = {});
   ui.perspective = clamp(Number(perspective || 0), 0, 1);
   ui.modeByPlayer = {0: 'command', 1: 'command'};
+  ui.modeByPlayerSlot = {0: {0: 'command'}, 1: {0: 'command'}};
+  ui.currentSlotByPlayer = {0: 0, 1: 0};
   ui.moveDetailByPlayer = {0: {}, 1: {}};
   ui.inputLocked = false;
   ui.timelineSpriteOverrides = {};
@@ -7524,6 +7658,14 @@ function handleBattleChoiceCommitted(player, battle = state.battle) {
   const ui = getBattleUiState(battle);
   if (!ui || !battle) return;
   if (ui.inputLocked) return;
+  if (isShowdownLocalBattle(battle) && focusNextUncommittedBattleSlot(player, battle)) {
+    ui.passPrompt = '';
+    return;
+  }
+  const committedContext = getBattleUiActionContext(player, battle);
+  ui.modeByPlayerSlot = ui.modeByPlayerSlot || {0: {}, 1: {}};
+  ui.modeByPlayerSlot[player] = ui.modeByPlayerSlot[player] || {};
+  ui.modeByPlayerSlot[player][committedContext.requestSlot] = 'message';
   ui.modeByPlayer[player] = 'message';
 
   // Dual-view mode: both player screens stay visible simultaneously.
@@ -7533,7 +7675,11 @@ function handleBattleChoiceCommitted(player, battle = state.battle) {
     const actionablePlayers = isShowdownLocalBattle(battle) ? getEnginePlayersNeedingAction(battle) : [];
     actionablePlayers.forEach(nextPlayer => {
       if (Number.isInteger(nextPlayer) && nextPlayer !== player) {
-        ui.modeByPlayer[nextPlayer] = getDefaultBattleUiModeForPlayer(nextPlayer, battle);
+        const nextMode = getDefaultBattleUiModeForPlayer(nextPlayer, battle);
+        const nextContext = getBattleUiActionContext(nextPlayer, battle);
+        ui.modeByPlayerSlot[nextPlayer] = ui.modeByPlayerSlot[nextPlayer] || {};
+        ui.modeByPlayerSlot[nextPlayer][nextContext.requestSlot] = nextMode;
+        ui.modeByPlayer[nextPlayer] = nextMode;
       }
     });
     return;
@@ -7547,7 +7693,11 @@ function handleBattleChoiceCommitted(player, battle = state.battle) {
   const nextPlayer = actionablePlayers.find(index => index !== player);
   if (Number.isInteger(nextPlayer)) {
     ui.perspective = nextPlayer;
-    ui.modeByPlayer[nextPlayer] = getDefaultBattleUiModeForPlayer(nextPlayer, battle);
+    const nextMode = getDefaultBattleUiModeForPlayer(nextPlayer, battle);
+    const nextContext = getBattleUiActionContext(nextPlayer, battle);
+    ui.modeByPlayerSlot[nextPlayer] = ui.modeByPlayerSlot[nextPlayer] || {};
+    ui.modeByPlayerSlot[nextPlayer][nextContext.requestSlot] = nextMode;
+    ui.modeByPlayer[nextPlayer] = nextMode;
     ui.passPrompt = lang(
       `이제 ${battle.players[nextPlayer].name} 차례입니다. 기기를 넘겨 주세요.`,
       `It is now ${battle.players[nextPlayer].name}'s turn. Pass the device.`
@@ -7598,9 +7748,13 @@ function renderBattleMessagesWindow(battle, player) {
   const inputLocked = isBattleInputLocked(battle);
   const request = getEngineRequestForPlayer(player, battle);
   const currentMode = getBattleDisplayMode(player, battle);
-  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
+  const actionSlotCount = getEngineActionSlots(player, battle).length;
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
   const pokemonName = displayBattleSpeciesName(activeMon);
+  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
+    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
+    : '';
   const winnerName = String(battle?.winner || '').trim();
   if (winnerName) {
     const winnerText = /^\d+$/.test(winnerName)
@@ -7621,7 +7775,9 @@ function renderBattleMessagesWindow(battle, player) {
         : isEngineForceSwitchRequest(request)
           ? lang('교체할 포켓몬을 선택하세요.', 'Choose a replacement Pokémon.')
           : currentMode === 'command'
-            ? lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`)
+            ? (slotHint
+              ? lang(`${pokemonName} (${slotHint}), 무엇을 할까?`, `What will ${pokemonName} (${slotHint}) do?`)
+              : lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`))
             : currentMode === 'fight'
               ? lang('기술을 선택하세요.', 'Choose a move.')
               : currentMode === 'party'
@@ -7884,8 +8040,7 @@ function renderBattleFightWindow(battle, player) {
   const container = els.battleStateWindow;
   if (!container) return;
   const side = battle.players[player];
-  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
-  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
+  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
   const mon = side?.team?.[activeIndex];
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const choice = getEngineDraftChoice(player, activeIndex, battle);
@@ -8046,9 +8201,8 @@ function renderBattleCommandWindow(battle, player) {
   const container = els.battleStateWindow;
   if (!container) return;
   const side = battle.players[player];
-  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
   const mon = side?.team?.[activeIndex];
-  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   const inputLocked = isBattleInputLocked(battle);
@@ -8106,8 +8260,7 @@ function renderBattlePartyWindow(battle, player) {
   if (!container) return;
   const side = battle.players[player];
   const request = getEngineRequestForPlayer(player, battle);
-  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
-  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
+  const { activeIndex } = getBattleUiActionContext(player, battle);
   const forced = isEngineForceSwitchRequest(request);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
   const inputLocked = isBattleInputLocked(battle);
@@ -8279,9 +8432,13 @@ function buildBattleMessageModel(battle, player) {
   const inputLocked = isBattleInputLocked(battle);
   const request = getEngineRequestForPlayer(player, battle);
   const currentMode = getBattleDisplayMode(player, battle);
-  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
+  const actionSlotCount = getEngineActionSlots(player, battle).length;
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
   const pokemonName = displayBattleSpeciesName(activeMon);
+  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
+    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
+    : '';
   const winnerName = String(battle?.winner || '').trim();
   if (winnerName) {
     return {
@@ -8301,7 +8458,9 @@ function buildBattleMessageModel(battle, player) {
         : isEngineForceSwitchRequest(request)
           ? lang('교체할 포켓몬을 선택하세요.', 'Choose a replacement Pokémon.')
           : currentMode === 'command'
-            ? lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`)
+            ? (slotHint
+              ? lang(`${pokemonName} (${slotHint}), 무엇을 할까?`, `What will ${pokemonName} (${slotHint}) do?`)
+              : lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`))
             : currentMode === 'fight'
               ? lang('기술을 선택하세요.', 'Choose a move.')
               : currentMode === 'party'
@@ -8398,20 +8557,25 @@ function buildBattleTrayModel(player, battle = state.battle) {
 
 function buildPhaserCommandWindowModel(battle, player) {
   const side = battle.players[player];
-  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
+  const actionSlotCount = getEngineActionSlots(player, battle).length;
   const mon = side?.team?.[activeIndex];
-  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   const inputLocked = isBattleInputLocked(battle);
   const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
   const pokemonName = displayBattleSpeciesName(mon);
+  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
+    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
+    : '';
   const canForfeit = !inputLocked && !battle.winner;
   return {
     mode: 'command',
     fieldIndex: requestSlot,
-    title: `${side?.name || `P${player + 1}`} · ${pokemonName}`,
-    prompt: lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`),
+    title: `${side?.name || `P${player + 1}`} · ${pokemonName}${slotHint ? ` · ${slotHint}` : ''}`,
+    prompt: slotHint
+      ? lang(`${pokemonName} (${slotHint}), 무엇을 할까?`, `What will ${pokemonName} (${slotHint}) do?`)
+      : lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`),
     commands: [
       {label: lang('싸운다', 'Fight'), sublabel: lang('기술 선택', 'Choose a move'), disabled: inputLocked, active: selectedChoice.kind !== 'switch', action: {type: 'command', key: 'fight'}},
       {label: lang('볼', 'Ball'), sublabel: lang('사용 안 함', 'Unused'), disabled: true, action: null},
@@ -8430,8 +8594,8 @@ function buildPhaserCommandWindowModel(battle, player) {
 
 function buildPhaserFightWindowModel(battle, player) {
   const side = battle.players[player];
-  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
-  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
+  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
+  const actionSlotCount = getEngineActionSlots(player, battle).length;
   const mon = side?.team?.[activeIndex];
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const choice = getEngineDraftChoice(player, activeIndex, battle);
@@ -8476,10 +8640,13 @@ function buildPhaserFightWindowModel(battle, player) {
   const detailMoveInfo = moveEntries[detailIndex] || null;
   const detailSlotInfo = mon?.moveSlots?.[detailIndex] || null;
   const detail = buildPhaserMoveDetailModel(mon, detailMoveInfo, detailSlotInfo, moveRequest, choice, detailIndex);
+  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
+    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
+    : '';
   return {
     mode: 'fight',
     fieldIndex: requestSlot,
-    title: `${displayBattleSpeciesName(mon)} · ${lang('기술', 'Moves')}`,
+    title: `${displayBattleSpeciesName(mon)}${slotHint ? ` · ${slotHint}` : ''} · ${lang('기술', 'Moves')}`,
     moves,
     toggles,
     detail,
@@ -8492,8 +8659,8 @@ function buildPhaserFightWindowModel(battle, player) {
 function buildPhaserPartyWindowModel(battle, player) {
   const side = battle.players[player];
   const request = getEngineRequestForPlayer(player, battle);
-  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
-  const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
+  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
+  const actionSlotCount = getEngineActionSlots(player, battle).length;
   const forced = isEngineForceSwitchRequest(request);
   const inputLocked = isBattleInputLocked(battle);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
@@ -8503,10 +8670,13 @@ function buildPhaserPartyWindowModel(battle, player) {
   const slotCount = partyTeam.length;
   const battlerCount = Math.max(state.mode === 'doubles' ? 2 : 1, activeSet.size || 0);
   const currentChoice = getEngineDraftChoice(player, activeIndex, battle);
+  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
+    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
+    : '';
   return {
     mode: 'party',
     fieldIndex: requestSlot,
-    title: `${side?.name || `P${player + 1}`} · ${forced ? lang('강제 교체', 'Forced switch') : lang('교체', 'Switch')}`,
+    title: `${side?.name || `P${player + 1}`}${slotHint ? ` · ${slotHint}` : ''} · ${forced ? lang('강제 교체', 'Forced switch') : lang('교체', 'Switch')}`,
     subtitle: forced
       ? lang('엔진이 교체를 요구하고 있습니다.', 'The engine requires a replacement.')
       : lang('교체할 포켓몬을 선택하세요.', 'Choose the Pokémon to switch in.'),
@@ -8566,10 +8736,11 @@ function buildPhaserPartyWindowModel(battle, player) {
   };
 }
 
-function buildPhaserTargetWindowModel() {
+function buildPhaserTargetWindowModel(battle, player) {
+  const { requestSlot } = getBattleUiActionContext(player, battle);
   return {
     mode: 'target',
-    fieldIndex: 0,
+    fieldIndex: requestSlot,
     title: lang('대상 선택', 'Target select'),
     placeholder: lang(
       '현재 엔진 필수 싱글 경로에서는 대상 선택이 별도 화면으로 노출되지 않습니다. 이 자리는 향후 더블용 구조 자리만 남겨 둔 상태입니다.',
@@ -8848,7 +9019,7 @@ function dispatchPkbPokerogueUiAction(action, { playerOverride = null } = {}) {
   const player = Number.isInteger(playerOverride) ? clamp(Number(playerOverride), 0, 1) : (ui?.perspective ?? 0);
   const lockedPerspective = isOnlineProfile() && isOnlineRoomJoined() && (state.online.side === 'p1' || state.online.side === 'p2');
   if (isBattleInputLocked(battle) && action.type !== 'perspective') return;
-  const activeIndex = getEngineActionSlots(player, battle)[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+  const { activeIndex } = getBattleUiActionContext(player, battle);
   if (action.type === 'perspective') {
     if (lockedPerspective) return;
     if (FLAGS.battleDualViewV1 && Number.isInteger(playerOverride)) return;
@@ -9114,7 +9285,7 @@ function renderBattle() {
   const allSet = localAutoResolveEnabled
     ? (isShowdownLocalBattle(battle)
       ? canAutoResolveEngineTurn(battle)
-      : [0, 1].every(player => isPlayerReady(player)))
+      : [0, 1].every(player => isPlayerReady(player, battle)))
     : false;
   if (allSet && !battle.winner && !battle.resolvingTurn && !isBattleInputLocked(battle)) resolveTurn();
   return rendererSyncPromise;
@@ -9192,12 +9363,12 @@ function renderChoicePanel(player, container, statusEl, titleEl) {
     'Singles require the local engine, and doubles stay blocked until an engine-backed route exists.'
   )}</div>`;
 }
-function isChoiceComplete(player, activeIndex) {
-  if (isShowdownLocalBattle(state.battle)) {
-    pruneEnginePendingChoices(state.battle);
-    const request = getEngineRequestForPlayer(player);
+function isChoiceComplete(player, activeIndex, battle = state.battle) {
+  if (isShowdownLocalBattle(battle)) {
+    pruneEnginePendingChoices(battle);
+    const request = getEngineRequestForPlayer(player, battle);
     if (!isEngineActionableRequest(request)) return true;
-    const choice = normalizeEnginePendingChoice(player, activeIndex);
+    const choice = normalizeEnginePendingChoice(player, activeIndex, battle);
     if (!choice?.kind) return false;
     if (isEngineForceSwitchRequest(request)) return choice.kind === 'switch' && Number.isInteger(choice.switchTo);
     if (choice.kind === 'switch') return Number.isInteger(choice.switchTo);
@@ -9206,11 +9377,11 @@ function isChoiceComplete(player, activeIndex) {
   }
   return false;
 }
-function isPlayerReady(player) {
-  if (isShowdownLocalBattle(state.battle)) {
-    const request = getEngineRequestForPlayer(player);
+function isPlayerReady(player, battle = state.battle) {
+  if (isShowdownLocalBattle(battle)) {
+    const request = getEngineRequestForPlayer(player, battle);
     if (!isEngineActionableRequest(request)) return true;
-    return getEngineActionSlots(player).every(activeIndex => isChoiceComplete(player, activeIndex));
+    return getEngineActionSlots(player, battle).every(activeIndex => isChoiceComplete(player, activeIndex, battle));
   }
   return false;
 }
@@ -9365,8 +9536,8 @@ async function resolveEngineTurn(battle = state.battle) {
         const ui = getBattleUiState(state.battle);
         if (ui) {
           ui.perspective = 0;
-          ui.modeByPlayer = { 0: 'command', 1: 'command' };
           ui.passPrompt = '';
+          resetBattleUiModesFromRequests(state.battle);
         }
         clearTimelineSpriteOverrides();
         renderBattle();
