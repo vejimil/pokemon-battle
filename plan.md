@@ -35,6 +35,20 @@
        (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js)
      - target-select 텍스트/행 Y를 소폭 상향(약 2px)해 시각 중심을 위로 미세 이동.
        (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js)
+  9. DB-6 target-select 보완(2026-04-26):
+     - 왼쪽 moves 창에 타깃 질문 문구를 다시 표시하도록 복원.
+       locale(`target-select-ui-handler` namespace) 키가 있으면 사용하고, 없으면
+       `누구에게 기술을 사용할까? / Who will you use this move on?` fallback을 사용.
+       (src/app.js:getBattleLocaleText, src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js,
+        src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js)
+     - 더블배틀 타깃 후보 계산에서 `normal/any/selected-pokemon` 계열을
+       아군 포함 인접 단일 타깃(`any-adjacent`)으로 처리해, 아군도 선택 목록에 노출.
+       (src/app.js:normalizeEngineMoveTargetHint, src/app.js:buildEngineMoveTargetOptions, src/app.js:resolveEngineMoveTargetSelection)
+  10. DB-6 target-select 2x2 배열 조정(2026-04-26):
+      - 타깃 목록(대상 + 뒤로)을 세로 리스트 대신 2열 x 2행 그리드로 배치.
+        (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js)
+      - target-select 방향키 이동을 선형 순환이 아니라 2열 그리드 기준으로 이동.
+        (src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js)
 
   ———
 
@@ -56,6 +70,8 @@
   - DB-6 구현 반영 완료.
   - DB-6 target-select UI 미세조정(슬롯 문구 제거/단일 창/세로 목록) 반영 완료.
   - DB-6 target/party 추가 미세조정(타깃창 위치/크기/정렬, party 슬롯2 info 오버레이 수정) 반영 완료.
+  - DB-6 target-select 보완(왼쪽 질문 문구 복원, 아군 타깃 목록 포함) 반영 완료.
+  - DB-6 target-select 2x2 배열(목록/뒤로) 및 그리드 방향키 이동 반영 완료.
   - plan.md도 DB-6 완료로 업데이트됨.
     (plan.md:13, plan.md:242)
 

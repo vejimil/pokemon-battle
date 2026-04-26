@@ -18,6 +18,16 @@ export class TargetSelectUiHandler extends UiHandler {
     this.moveInfoPanelConfig = getMoveInfoPanelConfig();
     this.panelX = 242;
     this.panelY = 0;
+    this.gridColumns = 2;
+  }
+
+  getGridCellOffset(index = 0) {
+    const column = index % this.gridColumns;
+    const row = Math.floor(index / this.gridColumns);
+    return {
+      x: 22 + column * 36,
+      y: -36 + row * 14,
+    };
   }
 
   syncPanelLayout() {
@@ -26,10 +36,13 @@ export class TargetSelectUiHandler extends UiHandler {
     this.panelY = Number(this.moveInfoPanelConfig?.yOffset || 0);
     this.listWindow?.setPosition?.(this.panelX, this.panelY);
     this.targetRows.forEach((row, index) => {
-      const y = this.panelY - 38 + index * 14;
+      const offset = this.getGridCellOffset(index);
+      const x = this.panelX + offset.x;
+      const y = this.panelY + offset.y;
+      row.x = x;
       row.y = y;
-      row.hit?.setPosition?.(this.panelX + 40, y);
-      row.label?.setPosition?.(this.panelX + 40, y);
+      row.hit?.setPosition?.(x, y);
+      row.label?.setPosition?.(x, y);
     });
   }
 
@@ -41,16 +54,18 @@ export class TargetSelectUiHandler extends UiHandler {
     this.cursorObj = env.textureExists(scene, env.UI_ASSETS.cursor.key)
       ? scene.add.image(0, 0, env.UI_ASSETS.cursor.key).setScale(0.85)
       : addTextObject(this.ui, 0, 0, '▶', 'MOVE_INFO_CONTENT').setOrigin(0, 0);
-    this.targetRows = Array.from({ length: 3 }, (_, index) => {
-      const y = -38 + index * 14;
-      const hit = scene.add.rectangle(280, y, 68, 11, 0xffffff, 0.001).setOrigin(0.5, 0.5).setVisible(false);
-      const label = addTextObject(this.ui, 280, y, '', 'MOVE_INFO_CONTENT', {
-        wordWrap: { width: 62, useAdvancedWrap: true },
+    this.targetRows = Array.from({ length: 4 }, (_, index) => {
+      const offset = this.getGridCellOffset(index);
+      const x = 240 + offset.x;
+      const y = offset.y;
+      const hit = scene.add.rectangle(x, y, 32, 11, 0xffffff, 0.001).setOrigin(0.5, 0.5).setVisible(false);
+      const label = addTextObject(this.ui, x, y, '', 'MOVE_INFO_CONTENT', {
+        wordWrap: { width: 30, useAdvancedWrap: true },
         lineSpacing: 2,
         align: 'center',
       }).setOrigin(0.5, 0.5).setVisible(false);
       label.setAlign?.('center');
-      return { hit, label, y };
+      return { hit, label, x, y };
     });
 
     this.container.add([
@@ -84,7 +99,7 @@ export class TargetSelectUiHandler extends UiHandler {
     const canShowCursor = Boolean(targets.length && focused && focused.label.visible);
     this.cursorObj.setVisible(canShowCursor);
     if (canShowCursor) {
-      this.cursorObj.setPosition(this.panelX + 4, focused.y + 1);
+      this.cursorObj.setPosition(focused.x - 13, focused.y + 1);
     }
     this.targetRows.forEach((row, index) => {
       const target = targets[index] || null;
@@ -107,7 +122,10 @@ export class TargetSelectUiHandler extends UiHandler {
     // right move-details pane because target-select has its own selection panel.
     battleMessage.movesWindowContainer.setVisible(true);
     battleMessage.moveDetailsWindow?.setVisible(false);
-    battleMessage.message?.setText?.('');
+    const fallbackPrompt = this.ui.uiLanguage === 'en'
+      ? 'Who will you use this move on?'
+      : '누구에게 기술을 사용할까?';
+    battleMessage.showText?.(state.prompt || state.placeholder || fallbackPrompt, 0, null, null, false);
     this.fieldIndex = Number(state.fieldIndex || 0);
 
     this.currentTargets = Array.isArray(state.targets) ? state.targets : [];

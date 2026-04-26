@@ -1405,7 +1405,7 @@ let strongestMoveAnimationByTypeCacheKey = '';
 const rosterDragState = {player: -1, slot: -1};
 const battleLocaleManager = createBattleLocaleManager({
   language: 'ko',
-  namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag', 'battler-tags', 'status-effect', 'pokemon-info'],
+  namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag', 'battler-tags', 'status-effect', 'pokemon-info', 'target-select-ui-handler'],
 });
 
 function getPhaserBattleRenderer(player = 0) {
@@ -3521,6 +3521,24 @@ const reverseNameMaps = Object.fromEntries(
 );
 function lang(ko, en) {
   return state.language === 'en' ? (en || ko || '') : (ko || en || '');
+}
+function getBattleLocaleText(namespace = '', keys = [], { vars = {}, fallbackKo = '', fallbackEn = '' } = {}) {
+  const fallback = lang(fallbackKo, fallbackEn);
+  if (!FLAGS.battleLocaleV1 || !battleLocaleManager) return fallback;
+  const language = state.language === 'en' ? 'en' : 'ko';
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  for (const rawKey of keyList) {
+    const key = String(rawKey || '').trim();
+    if (!key) continue;
+    try {
+      if (!battleLocaleManager.has(namespace, key, { language })) continue;
+      const localized = battleLocaleManager.t(namespace, key, vars, { language, fallback: '' });
+      if (String(localized || '').trim()) return localized;
+    } catch (_error) {
+      // Fallback handled below.
+    }
+  }
+  return fallback;
 }
 function bilingualLabel(korean, english) {
   return lang(korean, english);
@@ -6694,14 +6712,28 @@ const ENGINE_EXPLICIT_TARGET_HINTS = new Set(['single-opponent', 'ally', 'ally-o
 function normalizeEngineMoveTargetHint(rawTarget = '') {
   const raw = String(rawTarget || '').trim();
   if (!raw) return 'single-opponent';
+  const rawId = toId(raw);
+  if (rawId === 'normal' || rawId === 'selectedpokemon' || rawId === 'any') return 'any-adjacent';
+  if (rawId === 'singleopponent' || rawId === 'adjacentfoe' || rawId === 'randomnormal' || rawId === 'randomopponent') return 'single-opponent';
+  if (rawId === 'ally' || rawId === 'adjacentally') return 'ally';
+  if (rawId === 'allyorself' || rawId === 'adjacentallyorself' || rawId === 'userorally') return 'ally-or-self';
+  if (rawId === 'allopponents' || rawId === 'alladjacentfoes') return 'all-opponents';
+  if (rawId === 'allotherpokemon' || rawId === 'alladjacent') return 'all-other-pokemon';
+  if (rawId === 'allpokemon' || rawId === 'all') return 'all-pokemon';
+  if (rawId === 'self' || rawId === 'user') return 'self';
+  if (rawId === 'allyside' || rawId === 'usersside') return 'ally-side';
+  if (rawId === 'selfside' || rawId === 'usersfield') return 'self-side';
+  if (rawId === 'opponentside' || rawId === 'foeside' || rawId === 'opponentsfield') return 'opponent-side';
+  if (rawId === 'field' || rawId === 'entirefield') return 'field';
   const mapped = SHOWDOWN_TARGET_HINTS[raw]
     || targetHints[raw]
     || SHOWDOWN_TARGET_HINTS[toId(raw)]
     || targetHints[toId(raw)]
     || raw;
   const id = toId(mapped);
-  if (id === 'singleopponent' || id === 'adjacentfoe' || id === 'normal' || id === 'randomnormal' || id === 'randomopponent' || id === 'selectedpokemon' || id === 'any') return 'single-opponent';
-  if (id === 'ally') return 'ally';
+  if (id === 'singleopponent' || id === 'adjacentfoe' || id === 'normal' || id === 'randomnormal' || id === 'randomopponent') return 'single-opponent';
+  if (id === 'selectedpokemon' || id === 'any') return 'any-adjacent';
+  if (id === 'ally' || id === 'adjacentally') return 'ally';
   if (id === 'allyorself' || id === 'adjacentallyorself' || id === 'userorally') return 'ally-or-self';
   if (id === 'allopponents' || id === 'alladjacentfoes') return 'all-opponents';
   if (id === 'allotherpokemon' || id === 'alladjacent') return 'all-other-pokemon';
@@ -6766,6 +6798,11 @@ function buildEngineMoveTargetOptions(player, activeIndex, targetHint, battle = 
     candidates = allyTargets.filter(entry => entry.slot !== actorRequestSlot);
   } else if (targetHint === 'ally-or-self') {
     candidates = allyTargets;
+  } else if (targetHint === 'any-adjacent') {
+    candidates = [
+      ...foeTargets,
+      ...allyTargets.filter(entry => entry.slot !== actorRequestSlot),
+    ];
   }
   return candidates.map(entry => {
     return {
@@ -6794,7 +6831,8 @@ function resolveEngineMoveTargetSelection(player, activeIndex, choice, battle = 
       requestSlot: 0,
     };
   }
-  const requiresTarget = battle?.mode === 'doubles' && ENGINE_EXPLICIT_TARGET_HINTS.has(context.targetHint);
+  const requiresTarget = battle?.mode === 'doubles'
+    && (ENGINE_EXPLICIT_TARGET_HINTS.has(context.targetHint) || context.targetHint === 'any-adjacent');
   const options = requiresTarget ? buildEngineMoveTargetOptions(player, activeIndex, context.targetHint, battle) : [];
   const actorSide = getEngineSideId(player);
   const foeSide = getEngineSideId(player === 0 ? 1 : 0);
@@ -9002,10 +9040,15 @@ function buildPhaserTargetWindowModel(battle, player) {
   const targets = blockedReason
     ? [{label: blockedReason, disabled: true, action: null, isNotice: true}, backAction]
     : [...selectableTargets, backAction];
+  const targetPrompt = getBattleLocaleText('target-select-ui-handler', ['targetQuestion', 'targetPrompt', 'useMoveOnWho', 'actionMessage'], {
+    fallbackKo: '누구에게 기술을 사용할까?',
+    fallbackEn: 'Who will you use this move on?',
+  });
   return {
     mode: 'target',
     fieldIndex: requestSlot,
     title: `${lang('대상 선택', 'Target select')}`,
+    prompt: blockedReason || targetPrompt,
     placeholder: blockedReason || lang('대상을 선택하세요.', 'Choose a target.'),
     blockedReason,
     targets,

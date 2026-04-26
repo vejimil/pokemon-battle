@@ -651,6 +651,7 @@ export class PkbBattleUiAdapter {
     return {
       fieldIndex: Number.isInteger(state.fieldIndex) ? state.fieldIndex : 0,
       title: state.title || '',
+      prompt: state.prompt || '',
       placeholder: state.placeholder || '',
       targets: this.getTargetSelectionEntries(),
       footerActions: this.getTargetFooterActions(),
@@ -681,15 +682,47 @@ export class PkbBattleUiAdapter {
     const selection = this.getTargetSelectionState(currentCursor);
     const { targets } = selection;
     if (!targets.length) return selection.cursor;
-    let direction = 0;
-    if (button === Button.UP || button === Button.LEFT) direction = -1;
-    else if (button === Button.DOWN || button === Button.RIGHT) direction = 1;
-    if (!direction) return selection.cursor;
+    if (![Button.UP, Button.DOWN, Button.LEFT, Button.RIGHT].includes(button)) return selection.cursor;
+
     const size = targets.length;
+    const cols = 2;
+    const rows = Math.ceil(size / cols);
+    const getRow = index => Math.floor(index / cols);
+    const getCol = index => index % cols;
+    const toIndex = (row, col) => row * cols + col;
+
+    const pickInRow = (row, preferredCol) => {
+      const alternatives = [preferredCol, preferredCol === 0 ? 1 : 0];
+      for (const col of alternatives) {
+        const index = toIndex(row, col);
+        if (index < size) return index;
+      }
+      return clampIndex(toIndex(row, preferredCol), 0, Math.max(0, size - 1));
+    };
+
+    const advance = index => {
+      const row = getRow(index);
+      const col = getCol(index);
+      switch (button) {
+        case Button.LEFT:
+          return pickInRow(row, (col + cols - 1) % cols);
+        case Button.RIGHT:
+          return pickInRow(row, (col + 1) % cols);
+        case Button.UP:
+          return pickInRow((row + rows - 1) % rows, col);
+        case Button.DOWN:
+          return pickInRow((row + 1) % rows, col);
+        default:
+          return index;
+      }
+    };
+
     let next = selection.cursor;
     for (let tries = 0; tries < size; tries += 1) {
-      next = (next + direction + size) % size;
-      if (!targets[next]?.disabled) return next;
+      next = advance(next);
+      if (!targets[next]?.disabled) {
+        return next;
+      }
     }
     return selection.cursor;
   }
