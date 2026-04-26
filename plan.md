@@ -49,6 +49,13 @@
         (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js)
       - target-select 방향키 이동을 선형 순환이 아니라 2열 그리드 기준으로 이동.
         (src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js)
+  11. DB-6 target-select 추가 보완(2026-04-26):
+      - 2x2 타깃 그리드 블록을 창 중앙(가로/세로)으로 정렬하고, 커서를 텍스트에서 소폭 더 이격.
+        (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js)
+      - 전체기 타깃 규칙 분리:
+        `all-other-pokemon`(예: 지진/파도타기)은 즉시 커밋(타깃 선택 없음),
+        `all-opponents`(예: 스톤샤워/열풍)은 `상대 전체` vs `아군 1명` 선택지로 타깃 선택 진입.
+        (src/app.js:buildEngineMoveTargetOptions, src/app.js:resolveEngineMoveTargetSelection)
 
   ———
 
@@ -72,6 +79,7 @@
   - DB-6 target/party 추가 미세조정(타깃창 위치/크기/정렬, party 슬롯2 info 오버레이 수정) 반영 완료.
   - DB-6 target-select 보완(왼쪽 질문 문구 복원, 아군 타깃 목록 포함) 반영 완료.
   - DB-6 target-select 2x2 배열(목록/뒤로) 및 그리드 방향키 이동 반영 완료.
+  - DB-6 target-select 추가 보완(2x2 중앙 정렬/커서 간격, 전체기 타깃 규칙 분리) 반영 완료.
   - plan.md도 DB-6 완료로 업데이트됨.
     (plan.md:13, plan.md:242)
 

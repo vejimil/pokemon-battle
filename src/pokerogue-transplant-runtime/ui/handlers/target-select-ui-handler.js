@@ -24,9 +24,14 @@ export class TargetSelectUiHandler extends UiHandler {
   getGridCellOffset(index = 0) {
     const column = index % this.gridColumns;
     const row = Math.floor(index / this.gridColumns);
+    // Center the full 2x2 grid inside the 80x48 target panel.
+    const centerX = 40;
+    const centerY = -24;
+    const colGap = 36;
+    const rowGap = 20;
     return {
-      x: 22 + column * 36,
-      y: -36 + row * 14,
+      x: centerX - (colGap / 2) + column * colGap,
+      y: centerY - (rowGap / 2) + row * rowGap,
     };
   }
 
@@ -99,7 +104,7 @@ export class TargetSelectUiHandler extends UiHandler {
     const canShowCursor = Boolean(targets.length && focused && focused.label.visible);
     this.cursorObj.setVisible(canShowCursor);
     if (canShowCursor) {
-      this.cursorObj.setPosition(focused.x - 13, focused.y + 1);
+      this.cursorObj.setPosition(focused.x - 16, focused.y + 1);
     }
     this.targetRows.forEach((row, index) => {
       const target = targets[index] || null;

@@ -6791,6 +6791,7 @@ function buildEngineMoveTargetOptions(player, activeIndex, targetHint, battle = 
   if (actorRequestSlot < 0) return [];
   const allyTargets = getEngineLiveActiveTargetsForSide(player, battle);
   const foeTargets = getEngineLiveActiveTargetsForSide(player === 0 ? 1 : 0, battle);
+  const foeSide = getEngineSideId(player === 0 ? 1 : 0);
   let candidates = [];
   if (targetHint === 'single-opponent') {
     candidates = foeTargets;
@@ -6803,6 +6804,27 @@ function buildEngineMoveTargetOptions(player, activeIndex, targetHint, battle = 
       ...foeTargets,
       ...allyTargets.filter(entry => entry.slot !== actorRequestSlot),
     ];
+  } else if (targetHint === 'all-opponents') {
+    const entries = [];
+    const representativeFoe = foeTargets[0] || null;
+    if (representativeFoe) {
+      entries.push({
+        side: foeSide,
+        slot: representativeFoe.slot,
+        activeIndex: representativeFoe.activeIndex,
+        mon: representativeFoe.mon,
+        label: lang('상대 전체', 'All foes'),
+      });
+    }
+    const adjacentAllies = allyTargets.filter(entry => entry.slot !== actorRequestSlot);
+    entries.push(...adjacentAllies.map(entry => ({
+      side: entry.side,
+      slot: entry.slot,
+      activeIndex: entry.activeIndex,
+      mon: entry.mon,
+      label: displayBattleSpeciesName(entry.mon),
+    })));
+    return entries;
   }
   return candidates.map(entry => {
     return {
@@ -6832,7 +6854,11 @@ function resolveEngineMoveTargetSelection(player, activeIndex, choice, battle = 
     };
   }
   const requiresTarget = battle?.mode === 'doubles'
-    && (ENGINE_EXPLICIT_TARGET_HINTS.has(context.targetHint) || context.targetHint === 'any-adjacent');
+    && (
+      ENGINE_EXPLICIT_TARGET_HINTS.has(context.targetHint)
+      || context.targetHint === 'any-adjacent'
+      || context.targetHint === 'all-opponents'
+    );
   const options = requiresTarget ? buildEngineMoveTargetOptions(player, activeIndex, context.targetHint, battle) : [];
   const actorSide = getEngineSideId(player);
   const foeSide = getEngineSideId(player === 0 ? 1 : 0);
@@ -6841,7 +6867,9 @@ function resolveEngineMoveTargetSelection(player, activeIndex, choice, battle = 
   if (Number.isInteger(rawSlot)) {
     let side = String(choice?.target?.side || '').toLowerCase();
     if (side !== 'p1' && side !== 'p2') {
-      side = context.targetHint === 'single-opponent' ? foeSide : actorSide;
+      side = (context.targetHint === 'single-opponent' || context.targetHint === 'all-opponents')
+        ? foeSide
+        : actorSide;
     }
     selectedTarget = {side, slot: rawSlot};
   }
