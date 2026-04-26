@@ -213,6 +213,8 @@
      - `src/pokerogue-transplant-runtime/ui/battle-info/player-battle-info.js`: 아군 mini 타입 마커를 정보창 몸체 중심 기준 반대편(X 미러)으로 이동하고, Y 좌표는 기존 compact 값(-15.5/-2.5)을 유지. marker 텍스처 방향은 `setMini()` 내부 `typeIcons` 루프의 `icon.setFlipX(mini)`로 좌우반전.
      - `src/pokerogue-transplant-runtime/ui/ui.js`: `DOUBLES_INFO_GLOBAL_OFFSET` 상수 추가. 아군/적군 BattleInfo 4개 슬롯 좌표에 공통 가산해, 전역 1회 조정으로 전체 패널 위치를 함께 이동 가능하게 함.
      - `src/pokerogue-transplant-runtime/ui/ui.js` (2026-04-26): `doublesLayoutActive` 모드 분기 추가. 모델이 더블(슬롯 배열 2개)일 때만 더블 미세조정 좌표(`DOUBLES_INFO_POS`, `DOUBLES_MOUNT_OFFSET_X`, 슬롯0 x-bias)를 적용하고, 싱글은 legacy 좌표(`enemy/player info: 140,39 / 310,108`, sprite baseX `216/100`)를 유지하도록 복원. **싱글 화면이 더블 슬롯0 위치로 이동하던 회귀** 수정.
+     - `src/pokerogue-transplant-runtime/ui/battle-info/player-battle-info.js` (2026-04-26): `PlayerBattleInfo.update()`에서 `setMini(compact)`를 `super.update()`보다 먼저 실행하도록 순서 조정. 첫 프레임부터 compact 타입 마커 텍스처/앵커가 적용되어, **초기 1프레임 잘못된 위치/텍스처로 나타난 뒤 뒤늦게 보정되던 현상** 수정. `compact` 판정은 `info.compact || ui.doublesLayoutActive`로 보강.
+     - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` (2026-04-26): `createSpriteMount()` depth bias를 진영별로 분기. 아군은 기존대로 슬롯1이 위(`slot1 > slot0`), 적군은 슬롯0이 위(`slot0 > slot1`)가 되도록 z-order만 조정(좌표 변경 없음).
    - UI 미세조정 포인트(나중에 수동 조정):
      - 전체 정보창 동시 이동: `src/pokerogue-transplant-runtime/ui/ui.js`의 `DOUBLES_INFO_GLOBAL_OFFSET` (`x`, `y`)
      - 진영/슬롯별 정보창 위치: `src/pokerogue-transplant-runtime/ui/ui.js`의 `DOUBLES_INFO_POS.enemy/player` (`x`, `slot0Y`, `slot1Y`)
@@ -222,6 +224,8 @@
      - 더블 시작 직후(명령 입력 전): 각 진영 슬롯0/슬롯1 스프라이트가 서로 다른 종으로 정상 표기되는지 확인.
      - 같은 구간에서 아군 정보창: 적군과 동일한 mini 형태(HP 숫자/exp 바 미표시)로 표기되는지 확인.
      - 첫 커맨드 단계 진입 후에도 슬롯별 스프라이트/정보창 매핑이 유지되는지 확인.
+     - 더블 시작 직후(스프라이트 등장 전~등장 직후): 타입 마커가 처음부터 최종 위치/텍스처로 표시되는지(중간 점프 없음) 확인.
+     - 더블 겹침 구간: 적군 스프라이트는 슬롯0이 슬롯1 위로, 아군 스프라이트는 슬롯1이 슬롯0 위로 렌더되는지 확인.
      - 싱글 시작 직후: 정보창/스프라이트가 기존 싱글 좌표(슬롯0 더블 좌표 아님)로 렌더되는지 확인.
    - **남은 한계(다음 단계)**: 명령(기술/포켓몬 선택) 입력은 슬롯 0만 받는 상태 — DB-5에서 슬롯 0 → 슬롯 1 상태머신 도입.
 5. **DB-5 명령 흐름 슬롯화**: `currentSlotByPlayer` 상태머신, 슬롯 0 → 슬롯 1 명령 결정. 토글 사이드 단일화. UI 빌더가 슬롯별 모델을 발행.

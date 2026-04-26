@@ -205,8 +205,13 @@ export function createBattleShellSceneClass(Phaser, env) {
       // Use a Phaser Image drawn directly on the canvas so it scales correctly with
       // INTEGER_SCALE mode. No DOM elements — eliminates all coordinate-system mismatches.
       const baseDepth = name === 'enemy' ? 6 : 7; // above arena bases (4,5), below UI (42+)
-      // Slot 1 sits a hair above slot 0 so doubles z-ordering is deterministic.
-      const depth = baseDepth + (slot === 1 ? 0.05 : 0);
+      // Doubles layering:
+      // - enemy side: slot 0 above slot 1
+      // - player side: slot 1 above slot 0
+      const slotDepthBias = name === 'enemy'
+        ? (slot === 0 ? 0.05 : 0)
+        : (slot === 1 ? 0.05 : 0);
+      const depth = baseDepth + slotDepthBias;
 
       // Ellipse shadow drawn just below the sprite (depth - 1 so it stays behind sprite).
       const shadow = this.add.ellipse(0, 0, 1, 1, 0x000000, 0.35)

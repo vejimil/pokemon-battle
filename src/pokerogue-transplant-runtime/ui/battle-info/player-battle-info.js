@@ -213,12 +213,14 @@ export class PlayerBattleInfo extends BattleInfo {
   }
 
   update(info = {}) {
+    const { env } = this;
+    // Apply mini geometry before the base BattleInfo update so type markers use
+    // the correct texture set/anchors on the very first visible frame.
+    const compact = Boolean(info.compact || this.ui?.doublesLayoutActive);
+    this.setMini(compact, { preservePosition: true });
+
     // Skip the parent's instant exp update — we handle it here with animation
     super.update(info);
-
-    const { env } = this;
-    const compact = Boolean(info.compact);
-    this.setMini(compact, { preservePosition: true });
 
     if (compact) return;
 
