@@ -629,20 +629,37 @@ export class PkbBattleUiAdapter {
     return this.getTargetState().targets || [];
   }
 
+  getTargetSelectionEntries() {
+    const targets = this.getTargetOptions();
+    const footerAction = this.getTargetFooterActions()[0] || null;
+    if (!footerAction) return targets;
+    const hasBackRow = targets.some(target => Boolean(target?.isBack));
+    if (hasBackRow) return targets;
+    return [
+      ...targets,
+      {
+        label: footerAction.label || 'Back',
+        disabled: Boolean(footerAction.disabled),
+        action: footerAction.action || null,
+        isBack: true,
+      },
+    ];
+  }
+
   getTargetInputModel() {
     const state = this.getTargetState();
     return {
       fieldIndex: Number.isInteger(state.fieldIndex) ? state.fieldIndex : 0,
       title: state.title || '',
       placeholder: state.placeholder || '',
-      targets: this.getTargetOptions(),
+      targets: this.getTargetSelectionEntries(),
       footerActions: this.getTargetFooterActions(),
       blockedReason: state.blockedReason || '',
     };
   }
 
   getTargetSelectionState(previousCursor = null) {
-    const targets = this.getTargetOptions();
+    const targets = this.getTargetSelectionEntries();
     const footerActions = this.getTargetFooterActions();
     const activeTargetIndex = findFlaggedIndex(targets, ['active']);
     let cursor = Number.isInteger(previousCursor) ? previousCursor : null;
@@ -691,7 +708,7 @@ export class PkbBattleUiAdapter {
   resolveTargetInput(currentCursor, button) {
     const selection = this.getTargetSelectionState(currentCursor);
     if (button === Button.ACTION) {
-      const action = this.getTargetSelectionSubmitAction(selection.cursor) || this.getTargetBackAction();
+      const action = this.getTargetSelectionSubmitAction(selection.cursor);
       return {
         cursor: selection.cursor,
         action,

@@ -15,6 +15,13 @@
      (src/app.js:9056)
   5. DOM fallback UI도 placeholder가 아니라 실제 타겟 카드 목록으로 바뀌어 있습니다.
      (src/app.js:8523)
+  6. DB-6 UI 미세조정(2026-04-26):
+     - 배틀 UI의 슬롯 표기(`슬롯 1/2`, `Slot 1/2`)를 제거하고 포켓몬 이름 중심으로 표시.
+       (src/app.js)
+     - Phaser target-select의 상단 보조창 제거, 하단 단일 창에 선택지+뒤로를 세로 목록으로 통합.
+       (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js, src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js)
+     - target-select에서 기술명을 반복 표시하지 않고, 선택지와 `뒤로`만 노출.
+       (src/app.js:buildPhaserTargetWindowModel, src/app.js:renderBattleTargetWindow, styles.css)
 
   ———
 
@@ -34,6 +41,7 @@
   오늘 마무리 상태
 
   - DB-6 구현 반영 완료.
+  - DB-6 target-select UI 미세조정(슬롯 문구 제거/단일 창/세로 목록) 반영 완료.
   - plan.md도 DB-6 완료로 업데이트됨.
     (plan.md:13, plan.md:242)
 

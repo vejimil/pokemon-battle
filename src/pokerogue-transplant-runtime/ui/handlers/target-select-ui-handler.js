@@ -8,12 +8,7 @@ export class TargetSelectUiHandler extends UiHandler {
   constructor(ui) {
     super(ui, UiMode.TARGET_SELECT);
     this.globalScene = createGlobalSceneFacade(ui);
-    this.panel = null;
-    this.title = null;
-    this.body = null;
-    this.footerBg = null;
-    this.footer = null;
-    this.backZone = null;
+    this.listWindow = null;
     this.targetRows = [];
     this.cursorObj = null;
     this.fieldIndex = 0;
@@ -21,40 +16,27 @@ export class TargetSelectUiHandler extends UiHandler {
     this.currentTargets = [];
   }
 
-  setup() {
+  setup() { 
     const { scene, env } = this;
     this.container = scene.add.container(0, env.LOGICAL_HEIGHT).setDepth(57).setName('pkb-transplant-target');
-    this.panel = addWindow(this.ui, 232, -46, 88, 46, env.UI_ASSETS.window.key).setOrigin(0, 1);
-    this.title = addTextObject(this.ui, 240, -40, '', 'WINDOW').setOrigin(0, 0);
-    this.body = addTextObject(this.ui, 240, -26, '', 'HINT', {
-      wordWrap: { width: 72, useAdvancedWrap: true },
-      lineSpacing: 1,
-    }).setOrigin(0, 0);
-    this.footerBg = addWindow(this.ui, 244, -12, 52, 12, env.UI_ASSETS.windowXthin.key).setOrigin(0, 1);
-    this.footer = addTextObject(this.ui, 270, -18, '', 'BATTLE_LABEL', { align: 'center' }).setOrigin(0.5, 0.5);
-    this.backZone = scene.add.rectangle(244, -24, 52, 12, 0xffffff, 0.001).setOrigin(0, 0);
+    this.listWindow = addWindow(this.ui, 244, -12, 66, 34, env.UI_ASSETS.windowXthin.key).setOrigin(0, 1);
 
     this.cursorObj = env.textureExists(scene, env.UI_ASSETS.cursor.key)
       ? scene.add.image(0, 0, env.UI_ASSETS.cursor.key).setScale(0.85)
-      : addTextObject(this.ui, 0, 0, '▶', 'WINDOW_BATTLE_COMMAND').setOrigin(0, 0);
+      : addTextObject(this.ui, 0, 0, '▶', 'MOVE_INFO_CONTENT').setOrigin(0, 0);
     this.targetRows = Array.from({ length: 3 }, (_, index) => {
-      const y = -26 + index * 8;
-      const hit = scene.add.rectangle(244, y - 1, 66, 8, 0xffffff, 0.001).setOrigin(0, 0).setVisible(false);
-      const label = addTextObject(this.ui, 248, y, '', 'WINDOW_BATTLE_COMMAND', {
-        wordWrap: { width: 62, useAdvancedWrap: true },
+      const y = -39 + index * 10;
+      const hit = scene.add.rectangle(248, y - 1, 60, 9, 0xffffff, 0.001).setOrigin(0, 0).setVisible(false);
+      const label = addTextObject(this.ui, 252, y, '', 'MOVE_INFO_CONTENT', {
+        wordWrap: { width: 54, useAdvancedWrap: true },
       }).setOrigin(0, 0).setVisible(false);
       return { hit, label, y };
     });
 
     this.container.add([
-      this.panel,
-      this.title,
-      this.body,
+      this.listWindow,
       ...this.targetRows.flatMap(row => [row.hit, row.label]),
       this.cursorObj,
-      this.footerBg,
-      this.footer,
-      this.backZone,
     ]);
     this.clear();
   }
@@ -99,18 +81,16 @@ export class TargetSelectUiHandler extends UiHandler {
     const battleMessage = this.ui.getMessageHandler();
     battleMessage.commandWindow.setVisible(false);
     battleMessage.movesWindowContainer.setVisible(true);
+    battleMessage.moveDetailsWindow?.setVisible(false);
     this.fieldIndex = Number(state.fieldIndex || 0);
 
-    this.title.setText(state.title || '대상 선택');
     this.currentTargets = Array.isArray(state.targets) ? state.targets : [];
-
-    const bodyText = state.blockedReason
-      || this.globalScene.getBlockedReason()
-      || state.placeholder
-      || '';
-    const showBody = !this.currentTargets.length;
-    this.body.setVisible(showBody);
-    this.body.setText(showBody ? bodyText : '');
+    if (!this.currentTargets.length) {
+      const placeholder = state.blockedReason || this.globalScene.getBlockedReason() || state.placeholder || '';
+      if (placeholder) {
+        this.currentTargets = [{ label: placeholder, disabled: true, action: null }];
+      }
+    }
 
     this.targetRows.forEach((row, index) => {
       const target = this.currentTargets[index] || null;
@@ -118,7 +98,7 @@ export class TargetSelectUiHandler extends UiHandler {
       row.hit.setVisible(Boolean(target));
       row.hit.removeAllListeners();
       if (!target) return;
-      row.label.setText(target.sublabel ? `${target.label} · ${target.sublabel}` : target.label || '');
+      row.label.setText(target.label || '');
       row.label.setAlpha(target.disabled ? 0.45 : 1);
       if (!target.disabled && target.action) {
         this.env.setInteractiveTarget(row.hit, () => {
@@ -129,23 +109,6 @@ export class TargetSelectUiHandler extends UiHandler {
         this.env.setInteractiveTarget(row.hit, () => this.getUi().playError());
       }
     });
-
-    const footerAction = this.globalScene.getTargetBackAction()
-      ? (this.globalScene.getTargetFooterActions()[0] || null)
-      : null;
-    const footerVisible = Boolean(footerAction);
-    this.footerBg.setVisible(footerVisible);
-    this.footer.setVisible(footerVisible);
-    this.backZone.setVisible(footerVisible);
-    if (footerVisible) {
-      this.footer.setText(footerAction.label || 'Back');
-      this.footerBg.setAlpha(footerAction.disabled ? 0.6 : 1);
-      this.footer.setColor(footerAction.disabled ? '#94a3b8' : '#f8fbff');
-      this.backZone.removeAllListeners();
-      if (!footerAction.disabled && footerAction.action) {
-        this.env.setInteractiveTarget(this.backZone, () => { this.getUi().playSelect(); this.globalScene.dispatchAction(footerAction.action); });
-      }
-    }
     this.setCursor(this.getCursor());
     return true;
   }
@@ -167,6 +130,7 @@ export class TargetSelectUiHandler extends UiHandler {
   clear() {
     super.clear();
     if (this.container) this.container.setVisible(false);
+    this.getUi().getMessageHandler().moveDetailsWindow?.setVisible(true);
     this.cursorObj?.setVisible(false);
     this.targetRows.forEach(row => {
       row.hit?.removeAllListeners();

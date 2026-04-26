@@ -6767,19 +6767,13 @@ function buildEngineMoveTargetOptions(player, activeIndex, targetHint, battle = 
   } else if (targetHint === 'ally-or-self') {
     candidates = allyTargets;
   }
-  const actorSideId = getEngineSideId(player);
   return candidates.map(entry => {
-    const roleLabel = entry.side !== actorSideId
-      ? lang('상대', 'Foe')
-      : (entry.slot === actorRequestSlot ? lang('자신', 'Self') : lang('아군', 'Ally'));
-    const slotLabel = lang(`슬롯 ${entry.slot + 1}`, `Slot ${entry.slot + 1}`);
     return {
       side: entry.side,
       slot: entry.slot,
       activeIndex: entry.activeIndex,
       mon: entry.mon,
       label: displayBattleSpeciesName(entry.mon),
-      sublabel: `${roleLabel} · ${slotLabel}`,
     };
   });
 }
@@ -7168,10 +7162,9 @@ function getEngineChoiceSummary(player, slot, battle = state.battle) {
     const targetState = resolveEngineMoveTargetSelection(player, slot, choice, battle);
     if (targetState.requiresTarget) {
       if (targetState.validTargetOption) {
-        const slotLabel = lang(`슬롯 ${targetState.validTargetOption.slot + 1}`, `Slot ${targetState.validTargetOption.slot + 1}`);
         text += state.language === 'ko'
-          ? ` → ${targetState.validTargetOption.label} (${slotLabel})`
-          : ` -> ${targetState.validTargetOption.label} (${slotLabel})`;
+          ? ` → ${targetState.validTargetOption.label}`
+          : ` -> ${targetState.validTargetOption.label}`;
       } else {
         text += lang(' · 대상 선택 중', ' · Choosing target');
       }
@@ -7941,13 +7934,9 @@ function renderBattleMessagesWindow(battle, player) {
   const inputLocked = isBattleInputLocked(battle);
   const request = getEngineRequestForPlayer(player, battle);
   const currentMode = getBattleDisplayMode(player, battle);
-  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
-  const actionSlotCount = getEngineActionSlots(player, battle).length;
+  const { activeIndex } = getBattleUiActionContext(player, battle);
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
   const pokemonName = displayBattleSpeciesName(activeMon);
-  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
-    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
-    : '';
   const winnerName = String(battle?.winner || '').trim();
   if (winnerName) {
     const winnerText = /^\d+$/.test(winnerName)
@@ -7968,9 +7957,7 @@ function renderBattleMessagesWindow(battle, player) {
         : isEngineForceSwitchRequest(request)
           ? lang('교체할 포켓몬을 선택하세요.', 'Choose a replacement Pokémon.')
           : currentMode === 'command'
-            ? (slotHint
-              ? lang(`${pokemonName} (${slotHint}), 무엇을 할까?`, `What will ${pokemonName} (${slotHint}) do?`)
-              : lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`))
+            ? lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`)
             : currentMode === 'fight'
               ? lang('기술을 선택하세요.', 'Choose a move.')
               : currentMode === 'party'
@@ -8523,95 +8510,96 @@ function renderBattlePartyWindow(battle, player) {
 function renderBattleTargetWindow(battle, player) {
   const container = els.battleStateWindow;
   if (!container) return;
-  const side = battle.players[player];
-  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
-  const actionSlotCount = getEngineActionSlots(player, battle).length;
+  const { activeIndex } = getBattleUiActionContext(player, battle);
   const choice = getEngineDraftChoice(player, activeIndex, battle);
   const targetState = resolveEngineMoveTargetSelection(player, activeIndex, choice, battle);
   const inputLocked = isBattleInputLocked(battle);
-  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
-  const mon = side?.team?.[activeIndex] || null;
-  const moveInfo = (choice.kind === 'move' && Number.isInteger(choice.moveIndex))
-    ? (Array.isArray(moveRequest?.moves) ? (moveRequest.moves[choice.moveIndex] || null) : null)
-    : null;
-  const moveName = choice.kind === 'move'
-    ? getEngineDisplayMoveName(moveRequest, choice.moveIndex, moveInfo?.move || choice.move || '', choice, mon)
-    : '';
-  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
-    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
-    : '';
 
   container.innerHTML = `
     <div class="pkbattle-target-body pkbattle-party-layout">
       <div class="pkbattle-party-sidebar">
         <div class="pkbattle-command-summary">
           <strong>${battle.players?.[player]?.name || `P${player + 1}`}</strong>
-          <small>${lang('대상 선택', 'Target select')}${slotHint ? ` · ${slotHint}` : ''}</small>
+          <small>${lang('대상 선택', 'Target select')}</small>
         </div>
         <div class="pkbattle-window-note" id="pkbattle-target-note"></div>
-        <div class="pkbattle-action-row"><button type="button" class="pkbattle-action-btn pkbattle-action-btn-back"><strong>${lang('뒤로', 'Back')}</strong><small>${lang('기술 선택 창으로 돌아갑니다.', 'Return to move selection.')}</small></button></div>
       </div>
       <div class="pkbattle-party-grid-wrap">
-        <div class="pkbattle-party-grid" id="pkbattle-target-grid"></div>
+        <div class="pkbattle-party-grid pkbattle-target-grid-vertical" id="pkbattle-target-grid"></div>
       </div>
     </div>`;
   const note = container.querySelector('#pkbattle-target-note');
   const grid = container.querySelector('#pkbattle-target-grid');
-  const backButton = container.querySelector('button');
-  if (backButton) {
-    backButton.disabled = inputLocked;
-    if (!inputLocked) backButton.addEventListener('click', () => setBattleUiMode(player, 'fight'));
-  }
   if (!note || !grid) return;
 
+  const entries = [];
+  let noteText = lang('대상을 선택하세요.', 'Choose a target.');
+
   if (choice.kind !== 'move' || !Number.isInteger(choice.moveIndex)) {
-    note.textContent = lang('먼저 기술을 선택하세요.', 'Choose a move first.');
-    grid.innerHTML = `<div class="pkbattle-window-note">${lang('기술을 선택한 뒤 대상 선택으로 이동합니다.', 'After choosing a move, this screen shows valid targets.')}</div>`;
-    return;
-  }
-  if (!targetState.requiresTarget) {
-    note.textContent = lang('이 기술은 대상 선택이 필요하지 않습니다.', 'This move does not require manual target selection.');
-    grid.innerHTML = `<div class="pkbattle-window-note">${lang('뒤로 돌아가 다른 기술을 선택하거나 그대로 진행하세요.', 'Go back and choose another move or proceed.')}</div>`;
-    return;
-  }
-  if (targetState.blockedReason || !targetState.options.length) {
-    note.textContent = targetState.blockedReason || lang('선택 가능한 대상이 없습니다.', 'No valid target is available.');
-    grid.innerHTML = `<div class="pkbattle-window-note">${lang('다른 기술을 선택하세요.', 'Choose a different move.')}</div>`;
-    return;
+    noteText = lang('먼저 기술을 선택하세요.', 'Choose a move first.');
+  } else if (!targetState.requiresTarget) {
+    noteText = lang('이 기술은 대상 선택이 필요하지 않습니다.', 'This move does not require manual target selection.');
+  } else if (targetState.blockedReason || !targetState.options.length) {
+    noteText = targetState.blockedReason || lang('선택 가능한 대상이 없습니다.', 'No valid target is available.');
+  } else {
+    entries.push(...targetState.options.map(option => ({
+      ...option,
+      type: 'target',
+    })));
   }
 
-  note.textContent = moveName
-    ? lang(`${displayMoveName(moveName)} 대상`, `${displayMoveName(moveName)} target`)
-    : lang('대상을 선택하세요.', 'Choose a target.');
+  entries.push({
+    type: 'back',
+    label: lang('뒤로', 'Back'),
+    disabled: inputLocked,
+  });
 
-  targetState.options.forEach(option => {
+  note.textContent = noteText;
+
+  entries.forEach(entry => {
     const button = document.createElement('button');
     button.type = 'button';
     const isActive = Boolean(
-      targetState.validTarget
-      && targetState.validTarget.side === option.side
-      && targetState.validTarget.slot === option.slot
+      entry.type === 'target'
+      && targetState.validTarget
+      && targetState.validTarget.side === entry.side
+      && targetState.validTarget.slot === entry.slot
     );
     button.className = `pkbattle-party-card ${isActive ? 'active' : ''}`;
-    button.disabled = inputLocked;
-    button.innerHTML = `<div class="pkbattle-party-card-body"><div class="pkbattle-party-card-topline"><strong>${option.label}</strong></div><div class="pkbattle-party-card-meta"><span class="pkbattle-mini-badge">${option.sublabel}</span></div></div>`;
-    if (!button.disabled) {
-      button.addEventListener('click', () => {
-        const draft = getEngineDraftChoice(player, activeIndex, battle);
-        const nextChoice = {
-          ...draft,
-          kind: 'move',
-          target: {side: option.side, slot: option.slot},
-        };
-        const commitResult = commitEngineMoveChoiceFromUi(player, activeIndex, nextChoice, battle);
-        renderBattle();
-        if (commitResult.committed) {
-          submitOnlineChoiceIfPossible(player, battle).catch(error => {
-            console.warn('Online choice submit failed.', error);
-          });
-        }
-      });
+    const disabled = inputLocked || (entry.type === 'target' && !targetState.requiresTarget);
+    button.disabled = disabled;
+    button.innerHTML = `<div class="pkbattle-party-card-body"><div class="pkbattle-party-card-topline"><strong>${entry.label}</strong></div></div>`;
+    if (button.disabled) {
+      grid.appendChild(button);
+      return;
     }
+    if (entry.type === 'back') {
+      button.addEventListener('click', () => setBattleUiMode(player, 'fight'));
+      grid.appendChild(button);
+      return;
+    }
+    const option = entry;
+    const stillActive = Boolean(
+      targetState.validTarget
+      && targetState.validTarget.side === entry.side
+      && targetState.validTarget.slot === entry.slot
+    );
+    if (stillActive) button.classList.add('active');
+    button.addEventListener('click', () => {
+      const draft = getEngineDraftChoice(player, activeIndex, battle);
+      const nextChoice = {
+        ...draft,
+        kind: 'move',
+        target: {side: option.side, slot: option.slot},
+      };
+      const commitResult = commitEngineMoveChoiceFromUi(player, activeIndex, nextChoice, battle);
+      renderBattle();
+      if (commitResult.committed) {
+        submitOnlineChoiceIfPossible(player, battle).catch(error => {
+          console.warn('Online choice submit failed.', error);
+        });
+      }
+    });
     grid.appendChild(button);
   });
 }
@@ -8702,13 +8690,9 @@ function buildBattleMessageModel(battle, player) {
   const inputLocked = isBattleInputLocked(battle);
   const request = getEngineRequestForPlayer(player, battle);
   const currentMode = getBattleDisplayMode(player, battle);
-  const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
-  const actionSlotCount = getEngineActionSlots(player, battle).length;
+  const { activeIndex } = getBattleUiActionContext(player, battle);
   const activeMon = battle?.players?.[player]?.team?.[activeIndex] || null;
   const pokemonName = displayBattleSpeciesName(activeMon);
-  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
-    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
-    : '';
   const winnerName = String(battle?.winner || '').trim();
   if (winnerName) {
     return {
@@ -8728,9 +8712,7 @@ function buildBattleMessageModel(battle, player) {
         : isEngineForceSwitchRequest(request)
           ? lang('교체할 포켓몬을 선택하세요.', 'Choose a replacement Pokémon.')
           : currentMode === 'command'
-            ? (slotHint
-              ? lang(`${pokemonName} (${slotHint}), 무엇을 할까?`, `What will ${pokemonName} (${slotHint}) do?`)
-              : lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`))
+            ? lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`)
             : currentMode === 'fight'
               ? lang('기술을 선택하세요.', 'Choose a move.')
               : currentMode === 'party'
@@ -8828,24 +8810,18 @@ function buildBattleTrayModel(player, battle = state.battle) {
 function buildPhaserCommandWindowModel(battle, player) {
   const side = battle.players[player];
   const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
-  const actionSlotCount = getEngineActionSlots(player, battle).length;
   const mon = side?.team?.[activeIndex];
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   const inputLocked = isBattleInputLocked(battle);
   const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
   const pokemonName = displayBattleSpeciesName(mon);
-  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
-    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
-    : '';
   const canForfeit = !inputLocked && !battle.winner;
   return {
     mode: 'command',
     fieldIndex: requestSlot,
-    title: `${side?.name || `P${player + 1}`} · ${pokemonName}${slotHint ? ` · ${slotHint}` : ''}`,
-    prompt: slotHint
-      ? lang(`${pokemonName} (${slotHint}), 무엇을 할까?`, `What will ${pokemonName} (${slotHint}) do?`)
-      : lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`),
+    title: `${side?.name || `P${player + 1}`} · ${pokemonName}`,
+    prompt: lang(`${pokemonName}, 무엇을 할까?`, `What will ${pokemonName} do?`),
     commands: [
       {label: lang('싸운다', 'Fight'), sublabel: lang('기술 선택', 'Choose a move'), disabled: inputLocked, active: selectedChoice.kind !== 'switch', action: {type: 'command', key: 'fight'}},
       {label: lang('볼', 'Ball'), sublabel: lang('사용 안 함', 'Unused'), disabled: true, action: null},
@@ -8865,7 +8841,6 @@ function buildPhaserCommandWindowModel(battle, player) {
 function buildPhaserFightWindowModel(battle, player) {
   const side = battle.players[player];
   const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
-  const actionSlotCount = getEngineActionSlots(player, battle).length;
   const mon = side?.team?.[activeIndex];
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const choice = getEngineDraftChoice(player, activeIndex, battle);
@@ -8910,13 +8885,10 @@ function buildPhaserFightWindowModel(battle, player) {
   const detailMoveInfo = moveEntries[detailIndex] || null;
   const detailSlotInfo = mon?.moveSlots?.[detailIndex] || null;
   const detail = buildPhaserMoveDetailModel(mon, detailMoveInfo, detailSlotInfo, moveRequest, choice, detailIndex);
-  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
-    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
-    : '';
   return {
     mode: 'fight',
     fieldIndex: requestSlot,
-    title: `${displayBattleSpeciesName(mon)}${slotHint ? ` · ${slotHint}` : ''} · ${lang('기술', 'Moves')}`,
+    title: `${displayBattleSpeciesName(mon)} · ${lang('기술', 'Moves')}`,
     moves,
     toggles,
     detail,
@@ -8930,7 +8902,6 @@ function buildPhaserPartyWindowModel(battle, player) {
   const side = battle.players[player];
   const request = getEngineRequestForPlayer(player, battle);
   const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
-  const actionSlotCount = getEngineActionSlots(player, battle).length;
   const forced = isEngineForceSwitchRequest(request);
   const inputLocked = isBattleInputLocked(battle);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
@@ -8940,13 +8911,10 @@ function buildPhaserPartyWindowModel(battle, player) {
   const slotCount = partyTeam.length;
   const battlerCount = Math.max(state.mode === 'doubles' ? 2 : 1, activeSet.size || 0);
   const currentChoice = getEngineDraftChoice(player, activeIndex, battle);
-  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
-    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
-    : '';
   return {
     mode: 'party',
     fieldIndex: requestSlot,
-    title: `${side?.name || `P${player + 1}`}${slotHint ? ` · ${slotHint}` : ''} · ${forced ? lang('강제 교체', 'Forced switch') : lang('교체', 'Switch')}`,
+    title: `${side?.name || `P${player + 1}`} · ${forced ? lang('강제 교체', 'Forced switch') : lang('교체', 'Switch')}`,
     subtitle: forced
       ? lang('엔진이 교체를 요구하고 있습니다.', 'The engine requires a replacement.')
       : lang('교체할 포켓몬을 선택하세요.', 'Choose the Pokémon to switch in.'),
@@ -9007,32 +8975,18 @@ function buildPhaserPartyWindowModel(battle, player) {
 }
 
 function buildPhaserTargetWindowModel(battle, player) {
-  const side = battle.players[player];
   const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
-  const actionSlotCount = getEngineActionSlots(player, battle).length;
   const inputLocked = isBattleInputLocked(battle);
   const choice = getEngineDraftChoice(player, activeIndex, battle);
   const targetState = resolveEngineMoveTargetSelection(player, activeIndex, choice, battle);
-  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
-  const mon = side?.team?.[activeIndex] || null;
-  const moveInfo = (choice.kind === 'move' && Number.isInteger(choice.moveIndex))
-    ? (Array.isArray(moveRequest?.moves) ? (moveRequest.moves[choice.moveIndex] || null) : null)
-    : null;
-  const moveName = (choice.kind === 'move' && Number.isInteger(choice.moveIndex))
-    ? getEngineDisplayMoveName(moveRequest, choice.moveIndex, moveInfo?.move || choice.move || '', choice, mon)
-    : '';
-  const slotHint = battle?.mode === 'doubles' && actionSlotCount > 1
-    ? lang(`슬롯 ${requestSlot + 1}`, `Slot ${requestSlot + 1}`)
-    : '';
   const blockedReason = (choice.kind !== 'move' || !Number.isInteger(choice.moveIndex))
     ? lang('먼저 기술을 선택하세요.', 'Choose a move first.')
     : (!targetState.requiresTarget
       ? lang('이 기술은 대상 선택이 필요하지 않습니다.', 'This move does not require manual target selection.')
       : (targetState.blockedReason || ''));
-  const targets = !blockedReason
+  const selectableTargets = !blockedReason
     ? targetState.options.map(option => ({
       label: option.label,
-      sublabel: option.sublabel,
       disabled: inputLocked,
       active: Boolean(
         targetState.validTarget
@@ -9044,12 +8998,14 @@ function buildPhaserTargetWindowModel(battle, player) {
         : {type: 'target', target: {side: option.side, slot: option.slot}},
     }))
     : [];
+  const backAction = {label: lang('뒤로', 'Back'), disabled: inputLocked, action: inputLocked ? null : {type: 'command', key: 'fight'}, isBack: true};
+  const targets = blockedReason
+    ? [{label: blockedReason, disabled: true, action: null, isNotice: true}, backAction]
+    : [...selectableTargets, backAction];
   return {
     mode: 'target',
     fieldIndex: requestSlot,
-    title: moveName
-      ? `${displayMoveName(moveName)}${slotHint ? ` · ${slotHint}` : ''}`
-      : `${lang('대상 선택', 'Target select')}${slotHint ? ` · ${slotHint}` : ''}`,
+    title: `${lang('대상 선택', 'Target select')}`,
     placeholder: blockedReason || lang('대상을 선택하세요.', 'Choose a target.'),
     blockedReason,
     targets,
