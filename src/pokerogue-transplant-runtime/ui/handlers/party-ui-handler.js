@@ -312,6 +312,7 @@ export class PartyUiHandler extends UiHandler {
     this.slots = [];
     this.fieldIndex = 0;
     this.hiddenOverlayState = {
+      captured: false,
       spriteDoms: [],
       infoContainers: [],
     };
@@ -326,6 +327,7 @@ export class PartyUiHandler extends UiHandler {
   }
 
   hideBattleOverlaysForParty() {
+    if (this.hiddenOverlayState?.captured) return;
     const spriteMounts = [
       ...(Array.isArray(this.ui.enemySprites) ? this.ui.enemySprites : []),
       ...(Array.isArray(this.ui.playerSprites) ? this.ui.playerSprites : []),
@@ -341,6 +343,7 @@ export class PartyUiHandler extends UiHandler {
       infoBoxes.push(this.ui.enemyInfo, this.ui.playerInfo);
     }
     this.hiddenOverlayState = {
+      captured: true,
       spriteDoms: [],
       infoContainers: [],
     };
@@ -363,10 +366,12 @@ export class PartyUiHandler extends UiHandler {
   }
 
   restoreBattleOverlaysAfterParty() {
+    if (!this.hiddenOverlayState?.captured) return;
     const { spriteDoms = [], infoContainers = [] } = this.hiddenOverlayState || {};
     spriteDoms.forEach(entry => entry?.node?.setVisible?.(entry.visible));
     infoContainers.forEach(entry => entry?.node?.setVisible?.(entry.visible));
     this.hiddenOverlayState = {
+      captured: false,
       spriteDoms: [],
       infoContainers: [],
     };

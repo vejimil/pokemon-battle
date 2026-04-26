@@ -7041,6 +7041,11 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   if (isEngineForceSwitchRequest(request)) {
     const switchOptions = getEngineSwitchOptions(player, slot, battle);
+    if (!switchOptions.length) {
+      const forcedPass = {...createEmptyBattleChoice(), kind: 'pass'};
+      setEnginePendingChoice(player, slot, forcedPass, battle);
+      return forcedPass;
+    }
     const hasSwitchTarget = Number.isInteger(rawChoice?.switchTo) && switchOptions.some(({index}) => index === rawChoice.switchTo);
     if (!hasSwitchTarget || rawChoice?.kind !== 'switch') {
       clearEnginePendingChoice(player, slot, battle);
@@ -7153,9 +7158,21 @@ function canEngineSwitchNormally(player, requestSlot = 0, battle = state.battle)
   if (!moveRequest) return false;
   return !moveRequest.trapped && !moveRequest.maybeTrapped;
 }
+function getEngineReservedSwitchTargets(player, activeIndex, battle = state.battle) {
+  const reserved = new Set();
+  const actionSlots = getEngineActionSlots(player, battle);
+  actionSlots.forEach(otherActiveIndex => {
+    if (otherActiveIndex === activeIndex) return;
+    const otherChoice = getEnginePendingChoice(player, otherActiveIndex, battle);
+    if (otherChoice?.kind !== 'switch' || !Number.isInteger(otherChoice.switchTo)) return;
+    reserved.add(otherChoice.switchTo);
+  });
+  return reserved;
+}
 function getEngineSwitchOptions(player, activeIndex, battle = state.battle) {
   const side = battle?.players?.[player];
   if (!side) return [];
+  const reservedSwitchTargets = getEngineReservedSwitchTargets(player, activeIndex, battle);
 
   const request = getEngineRequestForPlayer(player, battle);
   const requestEntries = getEngineRequestSideEntries(player, battle);
@@ -7166,7 +7183,8 @@ function getEngineSwitchOptions(player, activeIndex, battle = state.battle) {
         mon &&
         index !== activeIndex &&
         !isEngineRequestSideEntryFainted(entry) &&
-        !side.active.includes(index)
+        !side.active.includes(index) &&
+        !reservedSwitchTargets.has(index)
       ))
       .map(({mon, index}) => ({mon, index}));
   }
@@ -7208,6 +7226,9 @@ function getEngineChoiceSummary(player, slot, battle = state.battle) {
     return lang('대기 중', 'Pending');
   }
   const side = battle?.players?.[player];
+  if (choice.kind === 'pass') {
+    return lang('교체 불가 · 패스', 'No valid switch · Pass');
+  }
   if (choice.kind === 'switch') {
     if (!Number.isInteger(choice.switchTo)) return lang('교체 대상 선택 중', 'Choosing switch target');
     const target = side?.team?.[choice.switchTo];
@@ -9727,7 +9748,11 @@ function isChoiceComplete(player, activeIndex, battle = state.battle) {
     if (!isEngineActionableRequest(request)) return true;
     const choice = normalizeEnginePendingChoice(player, activeIndex, battle);
     if (!choice?.kind) return false;
-    if (isEngineForceSwitchRequest(request)) return choice.kind === 'switch' && Number.isInteger(choice.switchTo);
+    if (isEngineForceSwitchRequest(request)) {
+      const switchOptions = getEngineSwitchOptions(player, activeIndex, battle);
+      if (!switchOptions.length) return choice.kind === 'pass';
+      return choice.kind === 'switch' && Number.isInteger(choice.switchTo);
+    }
     if (choice.kind === 'switch') return Number.isInteger(choice.switchTo);
     if (choice.kind === 'move') {
       if (!Number.isInteger(choice.moveIndex)) return false;

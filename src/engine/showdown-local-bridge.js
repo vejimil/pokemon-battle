@@ -147,6 +147,9 @@ export async function submitShowdownLocalSinglesChoices({battleId, battle}) {
 
 export function serializeChoiceForShowdown(choice, request = null, options = {}) {
   if (!choice || !choice.kind) throw new Error('Choice is empty.');
+  if (choice.kind === 'pass') {
+    return 'pass';
+  }
   if (choice.kind === 'switch') {
     if (!Number.isInteger(choice.switchTo)) throw new Error('Switch target is missing.');
     const requestEntries = Array.isArray(request?.side?.pokemon) ? request.side.pokemon : [];

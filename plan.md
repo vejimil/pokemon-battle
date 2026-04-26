@@ -99,7 +99,7 @@
 ## 현재 작업 목록
 | 번호 | 항목 | 상태 | 메모 |
 |---|---|---|---|
-| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-7 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-8(forceSwitch 듀얼 슬롯). |
+| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-8 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-9(회귀/검증). |
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 
 ## 15번 필수 분석 포인트(보류)
@@ -362,9 +362,36 @@
        - `p2: move 1, move 1`
      - 로컬 엔진 통합 테스트(`ShowdownEngineService` 직접 호출)로 doubles 첫 턴 제출 후 `turn=2` 진행 확인.
      - `npm run verify:core` PASS.
-8. **DB-8 forceSwitch 듀얼 슬롯**: 두 슬롯 동시 기절 시 forceSwitch 양쪽 처리. 한쪽만 기절 시 한 슬롯만 입력.
+8. **DB-8 forceSwitch 듀얼 슬롯** ✅ 완료(2026-04-26):
+   - `src/app.js`:
+     - forceSwitch 요청 슬롯 정규화에서 교체 가능 대상이 없는 슬롯은 `kind:'pass'`를 자동 시드하도록 보강.
+       (강제교체 슬롯 2개 중 1개만 교체 가능한 상황에서 UI/턴 진행 교착 방지)
+     - forceSwitch 완료 판정(`isChoiceComplete`)이 슬롯별 교체 후보 유무를 반영:
+       - 후보 있음 → `switch` 필수
+       - 후보 없음 → `pass` 허용
+     - 다중 슬롯 교체 시 같은 벤치 포켓몬을 중복 선택하지 않도록
+       `getEngineReservedSwitchTargets()` / `getEngineSwitchOptions()`에서
+       다른 액션 슬롯의 `switchTo`를 예약 대상으로 제외.
+     - pending summary에 `pass` 상태를 표시(`교체 불가 · 패스`).
+   - `src/engine/showdown-local-bridge.js`:
+     - `serializeChoiceForShowdown()`가 `kind:'pass'` 직렬화(`pass`)를 지원.
+   - `src/pokerogue-transplant-runtime/ui/handlers/party-ui-handler.js`:
+     - party overlay hide/restore를 재진입 안전하게 보강(`captured` 플래그).
+       party 화면이 반복 re-render될 때 hidden 상태를 덮어써서
+       배틀러 스프라이트가 복귀 후 계속 사라지던 현상(강제교체 구간 포함) 방지.
 9. **DB-9 회귀/검증**: 싱글 시나리오 회귀 + 더블 핵심 무브 시나리오(스프라이트 지정 무브, ally-target 무브, 광역 무브, 보호/대타) 단위.
 10. **DB-10 온라인 더블 분리**: `OnlineRoomService`/online.html 토글. 별도 PR.
+11. **DB-11 더블 특수 로직 연출 강화**:
+    - 대상: `Side Change(사이드체인지)`, `Commander(사령탑)` 등 더블배틀 특수 상호작용.
+    - 범위:
+      - 엔진 이벤트 파싱/정규화 단계에서 특수 로직을 식별 가능한 구조 이벤트로 승격.
+      - 타임라인/씬 레이어에서 슬롯 재매핑, 동반자 탑승/해제 등 상태 변화를
+        스프라이트/정보창/메시지 연출과 일관되게 반영.
+      - 온라인/로컬 공통 스냅샷에서 재생 가능한 최소 이벤트 집합 정의.
+    - 완료 기준:
+      - Side Change 후 타깃팅/피격 연출 기준 슬롯이 양 클라이언트에서 동일.
+      - 사령탑 발동/해제 시 슬롯 점유 및 표시 상태가 턴 경계에서 안정적으로 복원.
+      - 기존 더블 기본 흐름(DB-1~DB-10) 회귀 없음.
 
 ### 9.10 검증 전략
 
