@@ -32,9 +32,9 @@ const PLAYER_NORMAL_TYPE_OFFSETS = Object.freeze([
 const PLAYER_COMPACT_TYPE_OFFSETS = Object.freeze([
   // Mirror enemy-like compact marker placement to the opposite side
   // of the player info body while preserving current Y alignment.
-  { x: -139, y: -15.5 },
-  { x: -139, y: -2.5 },
-  { x: -154, y: -15.5 },
+  { x: -146, y: -15.5 },
+  { x: -146, y: -2.5 },
+  { x: -162, y: -15.5 },
 ]);
 
 export class PlayerBattleInfo extends BattleInfo {

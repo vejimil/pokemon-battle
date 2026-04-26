@@ -11,7 +11,14 @@ import { PlayerBattleInfo } from './battle-info/player-battle-info.js';
 
 // Horizontal offset (in logical pixels) between slot 0 and slot 1 in doubles.
 // Temporary value — refined later against PokeRogue measured coordinates (DB-9).
-const DOUBLES_MOUNT_OFFSET_X = 24;
+const DOUBLES_MOUNT_OFFSET_X = 28;
+
+// Singles BattleInfo anchor positions (logical pixels).
+// Keep slot 0 at the legacy single-battle coordinates.
+const SINGLES_INFO_POS = Object.freeze({
+  enemy: { x: 140, slot0Y: 39, slot1Y: 22 },
+  player: { x: 310, slot0Y: 108, slot1Y: 125 },
+});
 
 // Global offset applied to every doubles battle info panel (enemy + player).
 // Use this for one-shot coarse movement of all four panels at once.
@@ -23,10 +30,12 @@ const DOUBLES_INFO_GLOBAL_OFFSET = Object.freeze({
 // Doubles BattleInfo anchor positions (logical pixels).
 // Keep these values centralized so visual tuning is a one-line edit.
 const DOUBLES_INFO_POS = Object.freeze({
-  enemy: { x: 140, slot0Y: 39, slot1Y: 22 },
+  enemy: { x: 144, slot0Y: 64, slot1Y: 39 },
   // Player mini info now follows enemy-like slot spacing (17px).
-  player: { x: 310, slot0Y: 108, slot1Y: 125 },
+  player: { x: 320, slot0Y: 96, slot1Y: 121 },
 });
+
+const DOUBLES_INFO_SLOT0_X_OFFSET = -8;
 
 export class TransplantBattleUI {
   constructor(scene, controller, env) {
@@ -57,6 +66,7 @@ export class TransplantBattleUI {
     this.playerSprite = null;
     this.overlayActive = false;
     this.partyModeActive = false;
+    this.doublesLayoutActive = false;
   }
 
   setup() {
@@ -109,6 +119,17 @@ export class TransplantBattleUI {
     this.playerSprites = toArray(spriteMounts.player);
     this.enemySprite = this.enemySprites[0] || null;
     this.playerSprite = this.playerSprites[0] || null;
+  }
+
+  _isDoublesLayoutModel(model = null) {
+    const source = model && typeof model === 'object'
+      ? model
+      : this.adapter.getModel();
+    const hasDualSlots = value => Array.isArray(value) && value.length > 1;
+    return hasDualSlots(source?.enemyInfos)
+      || hasDualSlots(source?.playerInfos)
+      || hasDualSlots(source?.enemySprites)
+      || hasDualSlots(source?.playerSprites);
   }
 
   getHandler(mode = this.mode) {
@@ -251,50 +272,55 @@ export class TransplantBattleUI {
     this.playerTray.container?.setPosition(320, 108);  // PokeRogue: (scaledCanvas.width, -72) in fieldUI
     // Slot 0 BattleInfo at the singles base position; slot 1 stacks vertically
     // above (enemy) / below (player) so two HP bars stay legible side-by-side.
+    const infoPos = this.doublesLayoutActive ? DOUBLES_INFO_POS : SINGLES_INFO_POS;
+    const slot0InfoXOffset = this.doublesLayoutActive ? DOUBLES_INFO_SLOT0_X_OFFSET : 0;
     const infoOffsetX = DOUBLES_INFO_GLOBAL_OFFSET.x;
     const infoOffsetY = DOUBLES_INFO_GLOBAL_OFFSET.y;
     this.enemyInfos[0]?.container?.setPosition(
-      DOUBLES_INFO_POS.enemy.x + infoOffsetX,
-      DOUBLES_INFO_POS.enemy.slot0Y + infoOffsetY
+      infoPos.enemy.x + infoOffsetX + slot0InfoXOffset,
+      infoPos.enemy.slot0Y + infoOffsetY
     );
     this.enemyInfos[1]?.container?.setPosition(
-      DOUBLES_INFO_POS.enemy.x + infoOffsetX,
-      DOUBLES_INFO_POS.enemy.slot1Y + infoOffsetY
+      infoPos.enemy.x + infoOffsetX,
+      infoPos.enemy.slot1Y + infoOffsetY
     );
     this.playerInfos[0]?.container?.setPosition(
-      DOUBLES_INFO_POS.player.x + infoOffsetX,
-      DOUBLES_INFO_POS.player.slot0Y + infoOffsetY
+      infoPos.player.x + infoOffsetX + slot0InfoXOffset,
+      infoPos.player.slot0Y + infoOffsetY
     );
     this.playerInfos[1]?.container?.setPosition(
-      DOUBLES_INFO_POS.player.x + infoOffsetX,
-      DOUBLES_INFO_POS.player.slot1Y + infoOffsetY
+      infoPos.player.x + infoOffsetX,
+      infoPos.player.slot1Y + infoOffsetY
     );
 
     // Slot 0 keeps the singles base coordinates; slot 1 is offset horizontally
     // so the doubles pair appears side-by-side.  Slot 1 mounts stay invisible
     // until renderBattlerSprite stages an actual texture on them.
+    const mountOffsetX = this.doublesLayoutActive ? DOUBLES_MOUNT_OFFSET_X : 0;
     const enemyBaseX = 216;
     const enemyBaseY = 74;
     const playerBaseX = 100;
     const playerBaseY = 143;
     if (this.enemySprites[0]?.phaserSprite) {
-      this.enemySprites[0].phaserSprite.setPosition(enemyBaseX, enemyBaseY + 10);
-      this.enemySprites[0].baseX = enemyBaseX;
+      const slot0X = enemyBaseX + mountOffsetX;
+      this.enemySprites[0].phaserSprite.setPosition(slot0X, enemyBaseY + 10);
+      this.enemySprites[0].baseX = slot0X;
       this.enemySprites[0].baseY = enemyBaseY;
     }
     if (this.enemySprites[1]?.phaserSprite) {
-      const slot1X = enemyBaseX - DOUBLES_MOUNT_OFFSET_X;
+      const slot1X = enemyBaseX - mountOffsetX;
       this.enemySprites[1].phaserSprite.setPosition(slot1X, enemyBaseY + 10);
       this.enemySprites[1].baseX = slot1X;
       this.enemySprites[1].baseY = enemyBaseY;
     }
     if (this.playerSprites[0]?.phaserSprite) {
-      this.playerSprites[0].phaserSprite.setPosition(playerBaseX + 6, playerBaseY + 5);
-      this.playerSprites[0].baseX = playerBaseX;
+      const slot0X = playerBaseX - mountOffsetX;
+      this.playerSprites[0].phaserSprite.setPosition(slot0X + 6, playerBaseY + 5);
+      this.playerSprites[0].baseX = slot0X;
       this.playerSprites[0].baseY = playerBaseY;
     }
     if (this.playerSprites[1]?.phaserSprite) {
-      const slot1X = playerBaseX + DOUBLES_MOUNT_OFFSET_X;
+      const slot1X = playerBaseX + mountOffsetX;
       this.playerSprites[1].phaserSprite.setPosition(slot1X + 6, playerBaseY + 5);
       this.playerSprites[1].baseX = slot1X;
       this.playerSprites[1].baseY = playerBaseY;
@@ -304,6 +330,11 @@ export class TransplantBattleUI {
   renderModel(model = {}) {
     this.adapter.setModel(model);
     this.uiLanguage = model.language || 'ko';
+    const shouldUseDoublesLayout = this._isDoublesLayoutModel(model);
+    if (shouldUseDoublesLayout !== this.doublesLayoutActive) {
+      this.doublesLayoutActive = shouldUseDoublesLayout;
+      this.layout();
+    }
     // Slot 0 always renders with the legacy single key (singles + doubles).
     // Slot 1 only renders when a doubles model emits an enemyInfos/playerInfos array;
     // otherwise we hide slot 1 explicitly to clear any stale state.
