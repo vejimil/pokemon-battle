@@ -311,6 +311,54 @@ export class PartyUiHandler extends UiHandler {
     this.infoVisible = false;
     this.slots = [];
     this.fieldIndex = 0;
+    this.hiddenOverlayState = {
+      spriteDoms: [],
+      infoContainers: [],
+    };
+  }
+
+  hideBattleOverlaysForParty() {
+    const spriteMounts = [
+      ...(Array.isArray(this.ui.enemySprites) ? this.ui.enemySprites : []),
+      ...(Array.isArray(this.ui.playerSprites) ? this.ui.playerSprites : []),
+    ];
+    if (!spriteMounts.length) {
+      spriteMounts.push(this.ui.enemySprite, this.ui.playerSprite);
+    }
+    const infoBoxes = [
+      ...(Array.isArray(this.ui.enemyInfos) ? this.ui.enemyInfos : []),
+      ...(Array.isArray(this.ui.playerInfos) ? this.ui.playerInfos : []),
+    ];
+    if (!infoBoxes.length) {
+      infoBoxes.push(this.ui.enemyInfo, this.ui.playerInfo);
+    }
+    this.hiddenOverlayState = {
+      spriteDoms: [],
+      infoContainers: [],
+    };
+
+    spriteMounts.forEach(mount => {
+      const dom = mount?.dom;
+      if (!dom?.setVisible) return;
+      this.hiddenOverlayState.spriteDoms.push({ node: dom, visible: Boolean(dom.visible) });
+      dom.setVisible(false);
+    });
+    infoBoxes.forEach(info => {
+      const container = info?.container;
+      if (!container?.setVisible) return;
+      this.hiddenOverlayState.infoContainers.push({ node: container, visible: Boolean(container.visible) });
+      container.setVisible(false);
+    });
+  }
+
+  restoreBattleOverlaysAfterParty() {
+    const { spriteDoms = [], infoContainers = [] } = this.hiddenOverlayState || {};
+    spriteDoms.forEach(entry => entry?.node?.setVisible?.(entry.visible));
+    infoContainers.forEach(entry => entry?.node?.setVisible?.(entry.visible));
+    this.hiddenOverlayState = {
+      spriteDoms: [],
+      infoContainers: [],
+    };
   }
 
   setCancelSelected(selected) {
@@ -409,14 +457,9 @@ export class PartyUiHandler extends UiHandler {
     // partyModeActive 플래그: ui.js renderModel()이 DOM 스프라이트를 다시 켜는 것을 차단
     this.ui.partyModeActive = true;
 
-    // Hide battle scene DOM sprites (always above canvas) and battle-info containers
-    // so the party background fully covers the battle field.
-    // Note: BattleTray containers are NOT touched here — they manage their own visibility
-    // and start hidden by BattleTray.setup(). Touching them here caused the navy-bar regression.
-    if (this.ui.enemySprite?.dom) this.ui.enemySprite.dom.setVisible(false);
-    if (this.ui.playerSprite?.dom) this.ui.playerSprite.dom.setVisible(false);
-    if (this.ui.enemyInfo?.container) this.ui.enemyInfo.container.setVisible(false);
-    if (this.ui.playerInfo?.container) this.ui.playerInfo.container.setVisible(false);
+    // Hide all slot overlays (slot0 + slot1) while party UI is open.
+    // BattleTray containers remain untouched to avoid the previous navy-bar regression.
+    this.hideBattleOverlaysForParty();
 
     this.fieldIndex = Number(state.fieldIndex || 0);
     this.message.setText([state.title || '', state.subtitle || ''].filter(Boolean).join('\n'));
@@ -719,12 +762,7 @@ export class PartyUiHandler extends UiHandler {
     // partyModeActive 해제: DOM 스프라이트 visibility 복원 허용
     this.ui.partyModeActive = false;
 
-    // Restore battle scene DOM sprites and battle-info containers.
-    // BattleTray containers are intentionally NOT restored here — they start hidden and
-    // should stay hidden (restoring them here was the navy-bar regression root cause).
-    if (this.ui.enemySprite?.dom) this.ui.enemySprite.dom.setVisible(true);
-    if (this.ui.playerSprite?.dom) this.ui.playerSprite.dom.setVisible(true);
-    if (this.ui.enemyInfo?.container) this.ui.enemyInfo.container.setVisible(true);
-    if (this.ui.playerInfo?.container) this.ui.playerInfo.container.setVisible(true);
+    // Restore previous overlay visibility per slot.
+    this.restoreBattleOverlaysAfterParty();
   }
 }

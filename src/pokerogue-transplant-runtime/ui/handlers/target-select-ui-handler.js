@@ -3,6 +3,7 @@ import { UiMode } from '../ui-mode.js';
 import { createGlobalSceneFacade } from '../facade/global-scene-facade.js';
 import { addTextObject } from '../helpers/text.js';
 import { addWindow } from '../helpers/ui-theme.js';
+import { getMoveInfoPanelConfig } from '../helpers/fight-layout-tune.js';
 
 export class TargetSelectUiHandler extends UiHandler {
   constructor(ui) {
@@ -14,22 +15,41 @@ export class TargetSelectUiHandler extends UiHandler {
     this.fieldIndex = 0;
     this.cursor2 = 0;
     this.currentTargets = [];
+    this.moveInfoPanelConfig = getMoveInfoPanelConfig();
+    this.panelX = 242;
+    this.panelY = 0;
   }
 
-  setup() { 
+  syncPanelLayout() {
+    this.moveInfoPanelConfig = getMoveInfoPanelConfig();
+    this.panelX = 240 + Number(this.moveInfoPanelConfig?.xOffset || 0);
+    this.panelY = Number(this.moveInfoPanelConfig?.yOffset || 0);
+    this.listWindow?.setPosition?.(this.panelX, this.panelY);
+    this.targetRows.forEach((row, index) => {
+      const y = this.panelY - 38 + index * 14;
+      row.y = y;
+      row.hit?.setPosition?.(this.panelX + 40, y);
+      row.label?.setPosition?.(this.panelX + 40, y);
+    });
+  }
+
+  setup() {
     const { scene, env } = this;
     this.container = scene.add.container(0, env.LOGICAL_HEIGHT).setDepth(57).setName('pkb-transplant-target');
-    this.listWindow = addWindow(this.ui, 244, -12, 66, 34, env.UI_ASSETS.windowXthin.key).setOrigin(0, 1);
+    this.listWindow = addWindow(this.ui, 240, 0, 80, 48, env.UI_ASSETS.window.key).setOrigin(0, 1);
 
     this.cursorObj = env.textureExists(scene, env.UI_ASSETS.cursor.key)
       ? scene.add.image(0, 0, env.UI_ASSETS.cursor.key).setScale(0.85)
       : addTextObject(this.ui, 0, 0, '▶', 'MOVE_INFO_CONTENT').setOrigin(0, 0);
     this.targetRows = Array.from({ length: 3 }, (_, index) => {
-      const y = -39 + index * 10;
-      const hit = scene.add.rectangle(248, y - 1, 60, 9, 0xffffff, 0.001).setOrigin(0, 0).setVisible(false);
-      const label = addTextObject(this.ui, 252, y, '', 'MOVE_INFO_CONTENT', {
-        wordWrap: { width: 54, useAdvancedWrap: true },
-      }).setOrigin(0, 0).setVisible(false);
+      const y = -38 + index * 14;
+      const hit = scene.add.rectangle(280, y, 68, 11, 0xffffff, 0.001).setOrigin(0.5, 0.5).setVisible(false);
+      const label = addTextObject(this.ui, 280, y, '', 'MOVE_INFO_CONTENT', {
+        wordWrap: { width: 62, useAdvancedWrap: true },
+        lineSpacing: 2,
+        align: 'center',
+      }).setOrigin(0.5, 0.5).setVisible(false);
+      label.setAlign?.('center');
       return { hit, label, y };
     });
 
@@ -38,6 +58,7 @@ export class TargetSelectUiHandler extends UiHandler {
       ...this.targetRows.flatMap(row => [row.hit, row.label]),
       this.cursorObj,
     ]);
+    this.syncPanelLayout();
     this.clear();
   }
 
@@ -63,7 +84,7 @@ export class TargetSelectUiHandler extends UiHandler {
     const canShowCursor = Boolean(targets.length && focused && focused.label.visible);
     this.cursorObj.setVisible(canShowCursor);
     if (canShowCursor) {
-      this.cursorObj.setPosition(242, focused.y + 6);
+      this.cursorObj.setPosition(this.panelX + 4, focused.y + 1);
     }
     this.targetRows.forEach((row, index) => {
       const target = targets[index] || null;
@@ -78,10 +99,15 @@ export class TargetSelectUiHandler extends UiHandler {
   show(args = null) {
     const state = args || this.globalScene.getTargetInputModel();
     super.show(state);
+    this.syncPanelLayout();
     const battleMessage = this.ui.getMessageHandler();
+    battleMessage.bg?.setVisible(false);
     battleMessage.commandWindow.setVisible(false);
+    // Keep the left moves window visible (fight-like background), but hide the
+    // right move-details pane because target-select has its own selection panel.
     battleMessage.movesWindowContainer.setVisible(true);
     battleMessage.moveDetailsWindow?.setVisible(false);
+    battleMessage.message?.setText?.('');
     this.fieldIndex = Number(state.fieldIndex || 0);
 
     this.currentTargets = Array.isArray(state.targets) ? state.targets : [];

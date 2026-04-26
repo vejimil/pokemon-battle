@@ -22,6 +22,19 @@
        (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js, src/pokerogue-transplant-runtime/adapter/pkb-battle-ui-adapter.js)
      - target-select에서 기술명을 반복 표시하지 않고, 선택지와 `뒤로`만 노출.
        (src/app.js:buildPhaserTargetWindowModel, src/app.js:renderBattleTargetWindow, styles.css)
+  7. DB-6 target/party 추가 UI 조정(2026-04-26):
+     - target-select 진입 시 뒤의 가로 메시지창(`battleMessage.bg`/`movesWindowContainer`)을 숨기고,
+       창 위치/크기를 fight move-info 패널과 동일(80x48, `getMoveInfoPanelConfig`)하게 정렬.
+       (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js)
+     - target-select 리스트 텍스트 중앙 정렬 및 행간/행 간격 확대.
+       (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js)
+     - party UI에서 더블 슬롯2 BattleInfo가 남아 오버레이되던 문제 수정(슬롯0/1 overlay 전체 hide/restore).
+       (src/pokerogue-transplant-runtime/ui/handlers/party-ui-handler.js)
+  8. DB-6 target-select 재조정(2026-04-26):
+     - target-select에서 왼쪽 moves 창은 유지하고, 오른쪽 상세 pane만 숨김(`movesWindowContainer=true`, `moveDetailsWindow=false`).
+       (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js)
+     - target-select 텍스트/행 Y를 소폭 상향(약 2px)해 시각 중심을 위로 미세 이동.
+       (src/pokerogue-transplant-runtime/ui/handlers/target-select-ui-handler.js)
 
   ———
 
@@ -42,6 +55,7 @@
 
   - DB-6 구현 반영 완료.
   - DB-6 target-select UI 미세조정(슬롯 문구 제거/단일 창/세로 목록) 반영 완료.
+  - DB-6 target/party 추가 미세조정(타깃창 위치/크기/정렬, party 슬롯2 info 오버레이 수정) 반영 완료.
   - plan.md도 DB-6 완료로 업데이트됨.
     (plan.md:13, plan.md:242)
 
