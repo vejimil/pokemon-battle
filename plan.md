@@ -399,10 +399,24 @@
            `_slotNames`, `_slotInfo`를 교환 → 정보창 패널 양쪽 갱신 →
            `scene.swapBattlerPositions` 호출 → 위치 바꿈 메시지 표시.
          - `_eventGapMs`에도 `position_swap`을 MEDIUM gap으로 등록.
+      5. **Commander(사령탑)** (`server/showdown-engine.cjs` + `battle-shell-scene.js` + `timeline.js`):
+         - `normalizeEventsFromLine`의 `-activate` 케이스에서 `effectId === 'commander'` 분기 추가
+           → `commander_activate {tatsugiri, dondozo}` 이벤트로 승격.
+         - `scene.getMountSpriteUrl(side, slot)` 신설: 스프라이트 URL을 타임라인이 읽어갈 수 있도록 노출.
+         - 타임라인 `commander_activate` 핸들러: 싸리용 이름 메시지 → 현재 URL 저장(복원 대비) →
+           싸리용 스프라이트 즉시 hide → 어써러셔 능력 상승 메시지.
+         - 타임라인 `faint` 핸들러 후미: 기절한 슬롯이 `_commandingState`에 등록된 Dondozo이면
+           저장해둔 URL로 싸리용 스프라이트 복원(visible=true).
+         - `_commandingState` Map 생성자에 추가.
+         - **Commander 행동 선택 스킵** (`src/app.js`): 사령탑 발동 후 싸리용 슬롯 행동 선택을 자동 패스.
+           - `normalizeEnginePendingChoice`에서 move request 직후 `request.side.pokemon[engineOrderIndex].commanding` 확인:
+             truthy면 `kind:'pass'` 자동 주입. Showdown side.js `choosePass` 허용 조건과 정합.
+           - `isChoiceComplete`에서 `choice.kind === 'pass'` → `return true` 추가(move request 컨텍스트).
+           - 결과: 싸리용 슬롯은 `focusNextUncommittedBattleSlot`에서 스킵, 어써러셔 슬롯만 UI 포커스.
+           - 직렬화: `serializeChoiceForShowdown('pass')` → `'pass'` 문자열, Showdown 수용 확인.
     - **잔여 한계**:
-      - `Commander(사령탑)` 처리는 미구현(별도 작업 필요).
       - 선출 UI(팀 빌더에서 리드 슬롯 직접 선택) 미구현 — 현재는 팀 순서(슬롯0/1)가 항상 리드로.
-    - **검증**: `node --check` 4파일 통과, `npm run verify:core` 9/9 PASS.
+    - **검증**: `node --check` 5파일 통과, `npm run verify:core` 9/9 PASS.
 9. **DB-9 회귀/검증**: 싱글 시나리오 회귀 + 더블 핵심 무브 시나리오(스프라이트 지정 무브, ally-target 무브, 광역 무브, 보호/대타) 단위.
 10. **DB-10 온라인 더블 분리**: `OnlineRoomService`/online.html 토글. 별도 PR.
 

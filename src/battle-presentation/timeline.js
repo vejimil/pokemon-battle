@@ -351,6 +351,8 @@ export class BattleTimelineExecutor {
     this._activeTerrainId = '';
     this._lastWeatherStartTurn = null;
     this._pendingBattleEndEvent = null;
+    // Tracks active Commander state: key="${dondozo.side}_${dondozo.slot}", value={tatsugiSlot, tatsugiUrl}
+    this._commandingState = new Map();
   }
 
   // ── accessors ─────────────────────────────────────────────────────────────
@@ -439,6 +441,7 @@ export class BattleTimelineExecutor {
       case 'faint':
       case 'forme_change':
       case 'position_swap':
+      case 'commander_activate':
         return EVENT_GAP_MEDIUM_MS;
       default:
         return EVENT_GAP_SHORT_MS;
@@ -1690,6 +1693,18 @@ export class BattleTimelineExecutor {
         } else {
           await this._delay(500);
         }
+        // Commander: if this slot was Dondozo with a Tatsugiri inside, restore Tatsugiri.
+        const commandedKey = `${ev.side}_${ev.slot ?? 0}`;
+        const commandingEntry = this._commandingState.get(commandedKey);
+        if (commandingEntry) {
+          this._commandingState.delete(commandedKey);
+          const { tatsugiSlot, tatsugiUrl } = commandingEntry;
+          if (tatsugiUrl) {
+            await this._setBattlerSprite(ev.side, tatsugiUrl, { slot: tatsugiSlot, visible: true });
+          } else {
+            this._scene()?.setBattlerVisibility?.(ev.side, true, { slot: tatsugiSlot });
+          }
+        }
         break;
       }
 
@@ -2151,6 +2166,41 @@ export class BattleTimelineExecutor {
         this.running = false;
         this.onInputRequired(ev.requestType ?? 'switch');
         return;  // do not continue; the next turn's events will play after the switch choice
+      }
+
+      // ── Commander (사령탑): Tatsugiri enters Dondozo ─────────────────────────
+      case 'commander_activate': {
+        const tatsugiri = ev.tatsugiri || {};
+        const dondozo   = ev.dondozo   || {};
+        const tatsugiSide = tatsugiri.side;
+        const tatsugiSlot = Number.isInteger(tatsugiri.slot) ? tatsugiri.slot : 0;
+        const dondozoSlot = Number.isInteger(dondozo.slot)   ? dondozo.slot   : 1;
+
+        // Show ability reveal message (ability_show style).
+        const tatsugiName  = this._slotName(tatsugiSide, tatsugiSlot);
+        const dondozoName  = this._slotName(dondozo.side || tatsugiSide, dondozoSlot);
+        const abilityMsg = this._isEnglishLocale()
+          ? `${tatsugiName}'s Commander activated!`
+          : `${tatsugiName}의 사령탑이 발동됐다!`;
+        await this._showMsg(abilityMsg, { minMs: 820 });
+
+        // Save Tatsugiri's sprite URL BEFORE hiding so we can restore it when Dondozo faints.
+        const scene = this._scene();
+        const tatsugiUrl = scene?.getMountSpriteUrl?.(tatsugiSide, tatsugiSlot) || '';
+        this._commandingState.set(
+          `${dondozo.side || tatsugiSide}_${dondozoSlot}`,
+          { tatsugiSlot, tatsugiUrl },
+        );
+
+        // Hide Tatsugiri — it is now "inside" Dondozo.
+        scene?.setBattlerVisibility?.(tatsugiSide, false, { slot: tatsugiSlot });
+
+        // Show stat-boost message for Dondozo.
+        const boostMsg = this._isEnglishLocale()
+          ? `${dondozoName}'s stats were boosted!`
+          : `${dondozoName}의 능력치가 올랐다!`;
+        await this._showMsg(boostMsg, { minMs: 600 });
+        break;
       }
 
       // ── Side Change (사이드체인지 / Shift) ───────────────────────────────────

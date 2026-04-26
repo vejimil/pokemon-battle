@@ -938,13 +938,30 @@ function normalizeEventsFromLine(line, ctx) {
     case '-activate': {
       const id = parseIdentForEvent(parts[2]);
       const effect = parts[3] || '';
+      const effectId = normalizeProtocolEffectId(effect);
+      // Commander: |-activate|TATSUGIRI|ability: Commander|[of] DONDOZO
+      // Intercept here so the timeline can hide Tatsugiri's sprite at the right moment.
+      if (effectId === 'commander') {
+        const ofTag = parts.slice(4).find(p => /^\[of\]/i.test(String(p || '').trim()));
+        const ofIdent = ofTag ? String(ofTag).trim().replace(/^\[of\]\s*/i, '') : '';
+        const ofId = ofIdent ? parseIdentForEvent(ofIdent) : null;
+        return [{
+          type: 'commander_activate',
+          turn: ctx.turn,
+          seq: ctx.seq++,
+          // Tatsugiri (goes "inside" Dondozo — sprite hidden)
+          tatsugiri: {side: id.side, slot: id.slot},
+          // Dondozo (receives the boosts)
+          dondozo: ofId ? {side: ofId.side, slot: ofId.slot} : null,
+        }];
+      }
       return [{
         type: 'effect_activate',
         turn: ctx.turn,
         seq: ctx.seq++,
         target: {side: id.side, slot: id.slot},
         effect,
-        effectId: normalizeProtocolEffectId(effect),
+        effectId,
       }];
     }
     case '-singleturn': {

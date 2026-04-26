@@ -7044,6 +7044,15 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
   }
 
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
+  if (!isEngineForceSwitchRequest(request)) {
+    const sidePokemons = Array.isArray(request?.side?.pokemon) ? request.side.pokemon : [];
+    const slotEntry = sidePokemons.find(p => p.engineOrderIndex === requestSlot);
+    if (slotEntry?.commanding) {
+      const forcedPass = {...createEmptyBattleChoice(), kind: 'pass'};
+      setEnginePendingChoice(player, slot, forcedPass, battle);
+      return forcedPass;
+    }
+  }
   if (isEngineForceSwitchRequest(request)) {
     const switchOptions = getEngineSwitchOptions(player, slot, battle);
     if (!switchOptions.length) {
@@ -9759,6 +9768,7 @@ function isChoiceComplete(player, activeIndex, battle = state.battle) {
       return choice.kind === 'switch' && Number.isInteger(choice.switchTo);
     }
     if (choice.kind === 'switch') return Number.isInteger(choice.switchTo);
+    if (choice.kind === 'pass') return true; // commanding pokemon (e.g. Tatsugiri inside Dondozo)
     if (choice.kind === 'move') {
       if (!Number.isInteger(choice.moveIndex)) return false;
       const targetState = resolveEngineMoveTargetSelection(player, activeIndex, choice, battle);

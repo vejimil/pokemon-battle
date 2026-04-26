@@ -1148,6 +1148,11 @@ export function createBattleShellSceneClass(Phaser, env) {
       ]);
     }
 
+    getMountSpriteUrl(side, slot = 0) {
+      const mount = this._mountForBattleSideSlot(side, slot);
+      return mount?.currentUrl || '';
+    }
+
     setBattlerVisibility(side, visible = true, options = {}) {
       const slot = Number(options?.slot) === 1 ? 1 : 0;
       const mount = this._mountForBattleSideSlot(side, slot);
