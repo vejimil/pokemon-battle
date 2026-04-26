@@ -1357,6 +1357,7 @@ const state = {
     passPrompt: '',
     lastFlyoutKey: '',
     flyoutTimer: null,
+    commandingState: new Map(),
   },
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
   showdownLocal: {available: false, checked: false, skipped: false, bundledNodeServer: false, engineApiOrigin: '', probeMode: 'uninitialized'},
@@ -1902,12 +1903,16 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
       p1: String(state.battle?.players?.[0]?.name || 'Player 1'),
       p2: String(state.battle?.players?.[1]?.name || 'Player 2'),
     };
+    const ui = state.battleUi || (state.battleUi = {});
+    if (!(ui.commandingState instanceof Map)) ui.commandingState = new Map();
+    const commandingState = ui.commandingState;
     const executors = configs.map(cfg => new BattleTimelineExecutor({
       onComplete: () => {},
       applySnapshot: () => {},
       onInputRequired: handleInputRequired,
       initialNames,
       initialSlotInfo,
+      commandingState,
       localeManager: localeEnabled ? battleLocaleManager : null,
       localeLanguage,
       resolveVisualState: ev => resolveTimelineEventVisualState(ev, {
@@ -7792,7 +7797,8 @@ function resetBattleUiModesFromRequests(battle = state.battle) {
     actionSlots.forEach((_activeIndex, requestSlot) => {
       ui.modeByPlayerSlot[player][requestSlot] = defaultMode;
     });
-    const fallbackActiveIndex = actionSlots[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
+    const firstIncompleteSlot = actionSlots.find(activeIndex => !isChoiceComplete(player, activeIndex, battle));
+    const fallbackActiveIndex = firstIncompleteSlot ?? actionSlots[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
     ui.currentSlotByPlayer[player] = fallbackActiveIndex;
     const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, fallbackActiveIndex, battle));
     ui.modeByPlayer[player] = ui.modeByPlayerSlot[player][requestSlot] || defaultMode;
@@ -7935,6 +7941,7 @@ function resetBattlePresentationState({perspective = 0, passPrompt = ''} = {}) {
   ui.lastFlyoutKey = '';
   if (ui.flyoutTimer) clearTimeout(ui.flyoutTimer);
   ui.flyoutTimer = null;
+  ui.commandingState = new Map();
   els.battleAbilityFlyout?.classList.remove('show');
   els.battleAbilityFlyout?.classList.add('hidden');
 }

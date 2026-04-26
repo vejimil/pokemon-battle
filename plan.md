@@ -414,6 +414,9 @@
            - `isChoiceComplete`에서 `choice.kind === 'pass'` → `return true` 추가(move request 컨텍스트).
            - 결과: 싸리용 슬롯은 `focusNextUncommittedBattleSlot`에서 스킵, 어써러셔 슬롯만 UI 포커스.
            - 직렬화: `serializeChoiceForShowdown('pass')` → `'pass'` 문자열, Showdown 수용 확인.
+         - **Commander 스킵 추가 수정** (`src/app.js` + `src/battle-presentation/timeline.js`):
+           - UI 포커스 버그: `resetBattleUiModesFromRequests`에서 `actionSlots[0]` 대신 `isChoiceComplete` 기준 첫 미완료 슬롯을 `currentSlotByPlayer`로 설정 → 싸리용 슬롯이 기본 포커스에서 제외됨.
+           - 스프라이트 미복원 버그: `_commandingState`가 매 턴 새 executor 인스턴스로 초기화되어 어써러셔 기절 턴에 싸리용 URL이 사라짐. `commandingState` Map을 `state.battleUi`에 유지하고 executor 생성자 옵션으로 공유 참조 전달. `resetBattlePresentationState()`에서 새 배틀 시작 시 Map 초기화.
     - **잔여 한계**:
       - 선출 UI(팀 빌더에서 리드 슬롯 직접 선택) 미구현 — 현재는 팀 순서(슬롯0/1)가 항상 리드로.
     - **검증**: `node --check` 5파일 통과, `npm run verify:core` 9/9 PASS.

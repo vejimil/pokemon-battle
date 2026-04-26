@@ -317,6 +317,7 @@ export class BattleTimelineExecutor {
     localizeMoveName,
     localizeAbilityName,
     sideNames,
+    commandingState,
   } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
     this.onComplete = onComplete ?? (() => {});
@@ -352,7 +353,8 @@ export class BattleTimelineExecutor {
     this._lastWeatherStartTurn = null;
     this._pendingBattleEndEvent = null;
     // Tracks active Commander state: key="${dondozo.side}_${dondozo.slot}", value={tatsugiSlot, tatsugiUrl}
-    this._commandingState = new Map();
+    // Shared across executor instances (passed in) so state persists between turns.
+    this._commandingState = commandingState instanceof Map ? commandingState : new Map();
   }
 
   // ── accessors ─────────────────────────────────────────────────────────────
