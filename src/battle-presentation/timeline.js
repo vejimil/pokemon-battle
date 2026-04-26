@@ -848,11 +848,29 @@ export class BattleTimelineExecutor {
       miss: false,
       immune: false,
       failed: false,
+      hasSuccess: false,
+      attemptedTargets: [],
+      successfulTargets: [],
+      animationTargets: [],
     };
     if (!actorRef || !Array.isArray(events) || index < 0) return result;
+    const attemptedKeys = new Set();
+    const successfulKeys = new Set();
+    const pushUniqueTarget = (target = null, list = [], keySet = null) => {
+      if (!target?.side) return;
+      const side = String(target.side || '');
+      const slot = Number.isInteger(target.slot) ? target.slot : 0;
+      const key = `${side}_${slot}`;
+      if (keySet?.has(key)) return;
+      if (keySet) keySet.add(key);
+      list.push({ side, slot });
+    };
+    pushUniqueTarget(targetRef, result.attemptedTargets, attemptedKeys);
     const moveId = toId(moveEvent?.move || moveEvent?.animationMove || moveEvent?.baseMove || '');
     const moveIsProtectLike = this._isProtectLikeEffect(moveId);
-    const end = Math.min(events.length, index + 10);
+    let hadFailureSignal = false;
+    let hadSuccessSignal = false;
+    const end = Math.min(events.length, index + 20);
     for (let cursor = index + 1; cursor < end; cursor += 1) {
       const next = events[cursor];
       if (!next) continue;
@@ -870,14 +888,16 @@ export class BattleTimelineExecutor {
         const missActor = next.actor || next.target;
         if (!this._sameSideSlot(missActor, actorRef)) continue;
         result.miss = true;
-        result.skipAnimation = true;
-        break;
+        hadFailureSignal = true;
+        pushUniqueTarget(next.target || targetRef, result.attemptedTargets, attemptedKeys);
+        continue;
       }
       if (next.type === 'immune') {
-        if (targetRef && next.target && !this._sameSideSlot(next.target, targetRef)) continue;
+        if (!next.target?.side) continue;
         result.immune = true;
-        result.skipAnimation = true;
-        break;
+        hadFailureSignal = true;
+        pushUniqueTarget(next.target, result.attemptedTargets, attemptedKeys);
+        continue;
       }
       if (next.type === 'move_fail') {
         const failActor = next.actor || null;
@@ -885,19 +905,44 @@ export class BattleTimelineExecutor {
         const targetMatched = Boolean(failActor && targetRef && this._sameSideSlot(failActor, targetRef));
         if (failActor && !actorMatched && !targetMatched) continue;
         result.failed = true;
-        result.skipAnimation = true;
-        break;
+        hadFailureSignal = true;
+        continue;
       }
       if (next.type === 'effect_activate' || next.type === 'single_turn_effect') {
         if (moveIsProtectLike) continue;
         const effectId = toId(next.effectId || next.effect || '');
         if (!this._isProtectLikeEffect(effectId)) continue;
-        if (targetRef && next.target && !this._sameSideSlot(next.target, targetRef)) continue;
+        if (!next.target?.side) continue;
         result.blocked = true;
-        result.skipAnimation = true;
-        break;
+        hadFailureSignal = true;
+        pushUniqueTarget(next.target, result.attemptedTargets, attemptedKeys);
+        continue;
+      }
+      if (
+        next.type === 'damage'
+        || next.type === 'heal'
+        || next.type === 'status_apply'
+        || next.type === 'status_cure'
+        || next.type === 'boost'
+        || next.type === 'unboost'
+        || next.type === 'effect_start'
+        || next.type === 'effect_end'
+      ) {
+        if (!next.target?.side) continue;
+        hadSuccessSignal = true;
+        pushUniqueTarget(next.target, result.attemptedTargets, attemptedKeys);
+        pushUniqueTarget(next.target, result.successfulTargets, successfulKeys);
       }
     }
+    result.hasSuccess = hadSuccessSignal || result.successfulTargets.length > 0;
+    if (!result.hasSuccess && hadFailureSignal) {
+      result.skipAnimation = true;
+    }
+    const combinedTargets = [];
+    const combinedKeys = new Set();
+    result.successfulTargets.forEach(target => pushUniqueTarget(target, combinedTargets, combinedKeys));
+    result.attemptedTargets.forEach(target => pushUniqueTarget(target, combinedTargets, combinedKeys));
+    result.animationTargets = combinedTargets;
     return result;
   }
 
@@ -1500,6 +1545,12 @@ export class BattleTimelineExecutor {
           break;
         }
         const scene = this._scene();
+        const animationTargets = Array.isArray(moveOutcome?.animationTargets) ? moveOutcome.animationTargets : [];
+        const uniqueTargetSides = new Set(animationTargets.map(target => String(target?.side || '')).filter(Boolean));
+        const preferTarget = animationTargets[0] || (ev.target?.side ? { side: ev.target.side, slot: targetSlot } : null);
+        const animationTargetSide = preferTarget?.side || ev.target?.side;
+        const animationTargetSlot = Number.isInteger(preferTarget?.slot) ? preferTarget.slot : targetSlot;
+        const targetSideCenter = animationTargets.length > 1 && uniqueTargetSides.size === 1;
         if (scene?.playMoveAnim) {
           // BA-10: play visual animation (includes timed sound events internally).
           // Safety timeout prevents executor hang if the Promise never resolves
@@ -1510,13 +1561,21 @@ export class BattleTimelineExecutor {
           if (animationScale !== 1) moveAnimOptions.scale = animationScale;
           if (Number.isFinite(animationTint)) moveAnimOptions.tint = animationTint;
           await Promise.race([
-            scene.playMoveAnim(animationMoveName, ev.actor?.side, ev.target?.side, {
+            scene.playMoveAnim(animationMoveName, ev.actor?.side, animationTargetSide || ev.target?.side, {
               ...moveAnimOptions,
               actorSlot,
-              targetSlot,
+              targetSlot: animationTargetSlot,
+              targetSideCenter,
             }),
             new Promise(resolve => setTimeout(resolve, ANIM_TIMEOUT_MS)),
           ]);
+          const impactTargets = (Array.isArray(moveOutcome?.successfulTargets) ? moveOutcome.successfulTargets : [])
+            .filter(target => target?.side && !this._sameSideSlot(target, { side: actorSide, slot: actorSlot }));
+          if (scene?.playMoveImpact && impactTargets.length && (targetSideCenter || impactTargets.length > 1)) {
+            await Promise.all(impactTargets.map(target => scene.playMoveImpact(target.side, {
+              slot: target.slot,
+            })));
+          }
         } else {
           // Fallback: SE-only when scene not available.
           await this._playMoveSe(animationMoveName || ev.move);

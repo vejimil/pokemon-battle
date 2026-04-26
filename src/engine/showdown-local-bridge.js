@@ -84,6 +84,7 @@ const CHOOSABLE_TARGET_TYPES = new Set([
   'adjacentAlly',
   'adjacentAllyOrSelf',
   'adjacentFoe',
+  'allAdjacentFoes',
 ]);
 
 function resolveRequestMoveTargetType(choice, request = null, options = {}) {

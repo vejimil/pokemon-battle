@@ -1813,22 +1813,64 @@ export function createBattleShellSceneClass(Phaser, env) {
         || this._mountForBattleSide('p1')
         || this.playerSprite
         || this.enemySprite;
-      const targetMount = this._mountForBattleSideSlot(normalizedTargetSide, targetSlot)
-        || this._mountForBattleSideSlot(normalizedTargetSide, 0)
-        || this._mountForBattleSide('p2')
-        || this.enemySprite
-        || this.playerSprite;
       const uSpr = userMount?.phaserSprite;
-      const tSpr = targetMount?.phaserSprite;
-      if (!uSpr || !tSpr) return null;
+      if (!uSpr) return null;
       // Animation focus uses `displayHeight / 2` for vertical centering (matches
       // PokeRogue `battle-anims.ts`). Dynamax doubles displayHeight, pushing the
       // focus far above the battler and making moves "float up". Divide out the
       // dynamax multiplier so anim focus tracks the base-size center.
       const uDynaMult = this._dynamaxScaleMultiplier(userMount) || 1;
-      const tDynaMult = this._dynamaxScaleMultiplier(targetMount) || 1;
       const uDH = (uSpr.displayHeight || 64) / uDynaMult;
-      const tDH = (tSpr.displayHeight || 64) / tDynaMult;
+      const resolveMountAnimInfo = mount => {
+        const sprite = mount?.phaserSprite;
+        if (!sprite) return null;
+        const dynaMult = this._dynamaxScaleMultiplier(mount) || 1;
+        return {
+          x: sprite.x,
+          y: sprite.y,
+          displayHeight: (sprite.displayHeight || 64) / dynaMult,
+          sprite,
+        };
+      };
+      let targetInfo = null;
+      if (options?.targetSideCenter === true) {
+        const sideMounts = (Array.isArray(this._mountsForBattleSide(normalizedTargetSide))
+          ? this._mountsForBattleSide(normalizedTargetSide)
+          : []
+        ).filter(Boolean);
+        const activeSprites = sideMounts
+          .filter(mount => mount?.phaserSprite?.active && mount?.phaserSprite?.visible)
+          .map(mount => {
+            const spr = mount.phaserSprite;
+            const dynaMult = this._dynamaxScaleMultiplier(mount) || 1;
+            return {
+              x: spr.x,
+              y: spr.y,
+              displayHeight: (spr.displayHeight || 64) / dynaMult,
+            };
+          });
+        if (activeSprites.length >= 2) {
+          const count = activeSprites.length;
+          const avgX = activeSprites.reduce((sum, info) => sum + Number(info.x || 0), 0) / count;
+          const avgY = activeSprites.reduce((sum, info) => sum + Number(info.y || 0), 0) / count;
+          const avgDH = activeSprites.reduce((sum, info) => sum + Number(info.displayHeight || 64), 0) / count;
+          targetInfo = {
+            x: avgX,
+            y: avgY,
+            displayHeight: avgDH,
+            sprite: null,
+          };
+        }
+      }
+      if (!targetInfo) {
+        const targetMount = this._mountForBattleSideSlot(normalizedTargetSide, targetSlot)
+          || this._mountForBattleSideSlot(normalizedTargetSide, 0)
+          || this._mountForBattleSide('p2')
+          || this.enemySprite
+          || this.playerSprite;
+        targetInfo = resolveMountAnimInfo(targetMount);
+      }
+      if (!targetInfo) return null;
       return {
         userInfo: {
           x: uSpr.x,
@@ -1836,12 +1878,7 @@ export function createBattleShellSceneClass(Phaser, env) {
           displayHeight: uDH,
           sprite: uSpr,
         },
-        targetInfo: {
-          x: tSpr.x,
-          y: tSpr.y,
-          displayHeight: tDH,
-          sprite: tSpr,
-        },
+        targetInfo,
       };
     }
 
@@ -1873,14 +1910,18 @@ export function createBattleShellSceneClass(Phaser, env) {
       const endpoints = this._resolveAnimEndpoints(actorSide, targetSide, {
         userSlot: options?.actorSlot,
         targetSlot: options?.targetSlot,
+        targetSideCenter: options?.targetSideCenter === true,
       });
       if (!endpoints) return;
       const perspective = Number.isInteger(this.currentModel?.perspective)
         ? clamp(Number(this.currentModel.perspective), 0, 1)
         : 0;
       const localPlayerSide = perspective === 1 ? 'p2' : 'p1';
+      const isAllyDirectedMove = (actorSide === 'p1' || actorSide === 'p2')
+        && (targetSide === 'p1' || targetSide === 'p2')
+        && actorSide === targetSide;
       const isOppAnim = (actorSide === 'p1' || actorSide === 'p2')
-        ? actorSide !== localPlayerSide
+        ? (actorSide !== localPlayerSide && !isAllyDirectedMove)
         : false;
       const variantIndex = isOppAnim ? 1 : 0;
       await this.animPlayer.play(moveName, endpoints.userInfo, endpoints.targetInfo, {
@@ -1888,6 +1929,41 @@ export function createBattleShellSceneClass(Phaser, env) {
         variantIndex,
         oppAnim: isOppAnim,
       });
+    }
+
+    async playMoveImpact(side, options = {}) {
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active || !spr.visible) return;
+      const pulse = this.add.ellipse(
+        spr.x,
+        spr.y - (spr.displayHeight * 0.52),
+        Math.max(24, Math.round(spr.displayWidth * 0.7)),
+        Math.max(18, Math.round(spr.displayHeight * 0.38)),
+        0xffffff,
+        0,
+      ).setDepth((spr.depth || 7) + 0.95);
+      try {
+        await this._runTween({
+          targets: pulse,
+          alpha: 0.5,
+          scaleX: 1.15,
+          scaleY: 1.15,
+          duration: 90,
+          ease: 'Sine.easeOut',
+        });
+        await this._runTween({
+          targets: pulse,
+          alpha: 0,
+          scaleX: 1.45,
+          scaleY: 1.45,
+          duration: 140,
+          ease: 'Sine.easeIn',
+        });
+      } finally {
+        pulse?.destroy?.();
+      }
     }
 
     async playStatStageEffect(side, options = {}) {

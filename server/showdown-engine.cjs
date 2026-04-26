@@ -136,6 +136,7 @@ const RUNTIME_FUTURE_MOVE_PATCHES = Object.freeze({
 let futureAbilityRuntimePatched = false;
 let crossGenDynamaxRuntimePatched = false;
 let megaMoveSlotRuntimePatched = false;
+let allAdjacentFoesManualTargetRuntimePatched = false;
 
 // Map of mega species ID → { originalMoveId: replacementMoveId } for mid-battle slot swap.
 const MEGA_EVOLUTION_MOVE_SWAPS = Object.freeze({
@@ -256,9 +257,59 @@ function patchBattleActionsRunMegaEvoForMoveSwap() {
   megaMoveSlotRuntimePatched = true;
 }
 
+function patchAllAdjacentFoesManualTargeting() {
+  if (allAdjacentFoesManualTargetRuntimePatched) return;
+  const BattleActions = require('../node_modules/@pkmn/sim/build/cjs/sim/battle-actions.js').BattleActions;
+  const Battle = require('../node_modules/@pkmn/sim/build/cjs/sim/battle.js').Battle;
+
+  const originalTargetTypeChoices = BattleActions.prototype.targetTypeChoices;
+  BattleActions.prototype.targetTypeChoices = function patchedTargetTypeChoices(targetType) {
+    if (String(targetType || '') === 'allAdjacentFoes') return true;
+    return originalTargetTypeChoices.call(this, targetType);
+  };
+
+  const originalValidTargetLoc = Battle.prototype.validTargetLoc;
+  Battle.prototype.validTargetLoc = function patchedValidTargetLoc(targetLoc, source, targetType) {
+    if (String(targetType || '') !== 'allAdjacentFoes') {
+      return originalValidTargetLoc.call(this, targetLoc, source, targetType);
+    }
+    if (targetLoc === 0) return true;
+    const numSlots = this.activePerHalf;
+    const sourceLoc = source.getLocOf(source);
+    if (Math.abs(targetLoc) > numSlots) return false;
+    const isSelf = (sourceLoc === targetLoc);
+    const acrossFromTargetLoc = -(numSlots + 1 - targetLoc);
+    const isAdjacent = (targetLoc > 0
+      ? Math.abs(acrossFromTargetLoc - sourceLoc) <= 1
+      : Math.abs(targetLoc - sourceLoc) === 1);
+    if (isSelf) return false;
+    // Custom targeting:
+    // - foe target => keep default spread-to-foes behavior in getMoveTargets
+    // - ally target => single-target ally behavior (handled in getMoveTargets patch)
+    return isAdjacent;
+  };
+
+  const originalGetMoveTargets = Pokemon.prototype.getMoveTargets;
+  Pokemon.prototype.getMoveTargets = function patchedGetMoveTargets(move, target) {
+    if (
+      String(move?.target || '') === 'allAdjacentFoes'
+      && target?.isActive
+      && !target?.fainted
+      && typeof target.isAlly === 'function'
+      && target.isAlly(this)
+    ) {
+      return { targets: [target], pressureTargets: [target] };
+    }
+    return originalGetMoveTargets.call(this, move, target);
+  };
+
+  allAdjacentFoesManualTargetRuntimePatched = true;
+}
+
 function applyProjectFuturePatchesToDex(dex) {
   if (!dex) return;
   patchBattleActionsRunMegaEvoForMoveSwap();
+  patchAllAdjacentFoesManualTargeting();
   applyFutureAbilityRuntimePatches(dex);
   applyFutureMoveRuntimePatches(dex);
   applyFutureMegaSpeciesMetadataPatches(dex);
