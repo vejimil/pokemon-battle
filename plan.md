@@ -116,6 +116,10 @@
   - 이미 자동 pass/강제 단일 무브로 완료된 플레이어는 “행동 필요” 목록에서 제외해 `싸리용 무엇을 할까?` 같은 command prompt가 뜨지 않게 수정.
   - 솔라빔류 차지 후속턴, 기가임팩트류 recharge, Commander pass처럼 수동 입력이 없어야 하는 슬롯도 같은 경로로 message 상태 유지.
   - `src/app.js`
+  - 추가 보강(2026-04-27): 사령탑 발동 턴에는 request의 `commanding` 반영 타이밍에 의존하지 않고
+    `commander_activate` 이벤트 자체를 근거로 싸리용 슬롯을 즉시 pass 처리. 이미 완료된 슬롯이
+    `currentSlotByPlayer`에 남아도 첫 미완료 슬롯으로 강제 재지정.
+    (`src/app.js:isEngineCommanderSuppressedSlot`, `src/app.js:getBattleUiActionContext`)
 - Commander 스프라이트 복원 + party UI:
   - forced switch party UI가 열린 상태에서 타임라인이 싸리용 스프라이트를 복원하면, party 종료 시 복원 visibility가 false로 되돌아가지 않도록 overlay restore 상태 갱신.
   - `src/pokerogue-transplant-runtime/ui/handlers/party-ui-handler.js`

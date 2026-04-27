@@ -6588,6 +6588,18 @@ function getEngineRequestSideEntryForSlot(player, activeIndex, requestSlot, batt
     || entries.find(entry => entry?.active && Number(entry?.teamIndex) === activeIndex)
     || null;
 }
+function isEngineCommanderSuppressedSlot(player, activeIndex, requestSlot, battle = state.battle) {
+  const slotEntry = getEngineRequestSideEntryForSlot(player, activeIndex, requestSlot, battle);
+  if (slotEntry?.commanding) return true;
+  const sideId = getEngineSideId(player);
+  return Array.isArray(battle?.events) && battle.events.some(ev => {
+    if (ev?.type !== 'commander_activate') return false;
+    const tatsugiri = ev.tatsugiri || {};
+    if (tatsugiri.side !== sideId) return false;
+    const eventSlot = Number(tatsugiri.slot);
+    return Number.isInteger(eventSlot) && (eventSlot === requestSlot || eventSlot === activeIndex);
+  });
+}
 function isEngineRequestSideEntryFainted(entry) {
   const condition = String(entry?.condition || '').toLowerCase();
   return Boolean(entry?.fainted) || condition.includes(' fnt');
@@ -7054,8 +7066,7 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
 
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   if (!isEngineForceSwitchRequest(request)) {
-    const slotEntry = getEngineRequestSideEntryForSlot(player, slot, requestSlot, battle);
-    if (slotEntry?.commanding) {
+    if (isEngineCommanderSuppressedSlot(player, slot, requestSlot, battle)) {
       const forcedPass = {...createEmptyBattleChoice(), kind: 'pass'};
       setEnginePendingChoice(player, slot, forcedPass, battle);
       return forcedPass;
@@ -7724,8 +7735,15 @@ function getBattleUiActionContext(player, battle = state.battle, {updateState = 
   }
 
   let activeIndex = Number(ui?.currentSlotByPlayer?.[player]);
-  if (!actionSlots.includes(activeIndex)) {
-    const firstIncomplete = actionSlots.find(slot => !isChoiceComplete(player, slot, battle));
+  const firstIncomplete = actionSlots.find(slot => !isChoiceComplete(player, slot, battle));
+  if (
+    !actionSlots.includes(activeIndex)
+    || (
+      Number.isInteger(firstIncomplete)
+      && activeIndex !== firstIncomplete
+      && isChoiceComplete(player, activeIndex, battle)
+    )
+  ) {
     activeIndex = Number.isInteger(firstIncomplete) ? firstIncomplete : actionSlots[0];
   }
   const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, activeIndex, battle));
