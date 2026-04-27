@@ -6580,6 +6580,14 @@ function getEngineRequestSideEntries(player, battle = state.battle) {
   const requestSide = getEngineRequestSide(player, battle);
   return Array.isArray(requestSide?.pokemon) ? requestSide.pokemon : [];
 }
+function getEngineRequestSideEntryForSlot(player, activeIndex, requestSlot, battle = state.battle) {
+  const entries = getEngineRequestSideEntries(player, battle);
+  if (!entries.length) return null;
+  return entries.find(entry => Number(entry?.engineOrderIndex) === requestSlot)
+    || entries.find(entry => Number(entry?.teamIndex) === activeIndex)
+    || entries.find(entry => entry?.active && Number(entry?.teamIndex) === activeIndex)
+    || null;
+}
 function isEngineRequestSideEntryFainted(entry) {
   const condition = String(entry?.condition || '').toLowerCase();
   return Boolean(entry?.fainted) || condition.includes(' fnt');
@@ -7046,8 +7054,7 @@ function normalizeEnginePendingChoice(player, slot, battle = state.battle) {
 
   const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   if (!isEngineForceSwitchRequest(request)) {
-    const sidePokemons = Array.isArray(request?.side?.pokemon) ? request.side.pokemon : [];
-    const slotEntry = sidePokemons.find(p => p.engineOrderIndex === requestSlot);
+    const slotEntry = getEngineRequestSideEntryForSlot(player, slot, requestSlot, battle);
     if (slotEntry?.commanding) {
       const forcedPass = {...createEmptyBattleChoice(), kind: 'pass'};
       setEnginePendingChoice(player, slot, forcedPass, battle);
@@ -7242,7 +7249,7 @@ function getEngineChoiceSummary(player, slot, battle = state.battle) {
   }
   const side = battle?.players?.[player];
   if (choice.kind === 'pass') {
-    return lang('교체 불가 · 패스', 'No valid switch · Pass');
+    return lang('자동 패스', 'Auto pass');
   }
   if (choice.kind === 'switch') {
     if (!Number.isInteger(choice.switchTo)) return lang('교체 대상 선택 중', 'Choosing switch target');
@@ -7276,7 +7283,10 @@ function getEngineChoiceSummary(player, slot, battle = state.battle) {
   return lang('대기 중', 'Pending');
 }
 function getEnginePlayersNeedingAction(battle = state.battle) {
-  return [0, 1].filter(player => isEngineActionableRequest(getEngineRequestForPlayer(player, battle)));
+  return [0, 1].filter(player => {
+    const request = getEngineRequestForPlayer(player, battle);
+    return isEngineActionableRequest(request) && !isPlayerReady(player, battle);
+  });
 }
 function canAutoResolveEngineTurn(battle = state.battle) {
   if (!isShowdownLocalBattle(battle) || battle?.winner || battle?.resolvingTurn) return false;
@@ -7805,7 +7815,14 @@ function resetBattleUiModesFromRequests(battle = state.battle) {
     const fallbackActiveIndex = firstIncompleteSlot ?? actionSlots[0] ?? getBattleActiveIndices(player, battle)[0] ?? 0;
     ui.currentSlotByPlayer[player] = fallbackActiveIndex;
     const requestSlot = Math.max(0, getEngineRequestSlotForActiveIndex(player, fallbackActiveIndex, battle));
-    ui.modeByPlayer[player] = ui.modeByPlayerSlot[player][requestSlot] || defaultMode;
+    if (isEngineActionableRequest(getEngineRequestForPlayer(player, battle)) && !Number.isInteger(firstIncompleteSlot)) {
+      actionSlots.forEach((_activeIndex, slotIndex) => {
+        ui.modeByPlayerSlot[player][slotIndex] = 'message';
+      });
+      ui.modeByPlayer[player] = 'message';
+    } else {
+      ui.modeByPlayer[player] = ui.modeByPlayerSlot[player][requestSlot] || defaultMode;
+    }
   });
   ui.moveDetailByPlayer = {0: {}, 1: {}};
   ui.passPrompt = '';
@@ -7869,6 +7886,13 @@ function syncBattleUiState(battle = state.battle) {
       && state.online?.side === sideId
       && state.online?.submittedChoiceTurnBySide?.[sideId] === Number(battle.turn || 0);
     if (battle.winner || !request || request.wait || request.teamPreview) {
+      ui.modeByPlayer[player] = 'message';
+      return;
+    }
+    if (isPlayerReady(player, battle) || localSubmittedThisTurn) {
+      actionSlots.forEach((_activeIndex, requestSlot) => {
+        slotModes[requestSlot] = 'message';
+      });
       ui.modeByPlayer[player] = 'message';
       return;
     }
@@ -8497,35 +8521,14 @@ function renderBattleCommandWindow(battle, player) {
   const side = battle.players[player];
   const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
   const mon = side?.team?.[activeIndex];
-  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   const inputLocked = isBattleInputLocked(battle);
-  const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
   const canForfeit = !inputLocked && !battle.winner;
   container.innerHTML = `
     <div class="pkbattle-command-body pkbattle-command-shell" data-species="${displayBattleSpeciesName(mon)}">
       <div class="pkbattle-command-grid" id="pkbattle-command-grid"></div>
     </div>`;
   const grid = container.querySelector('#pkbattle-command-grid');
-  const shell = container.querySelector('.pkbattle-command-shell');
-
-  if (moveRequest?.canTerastallize && shell) {
-    const teraChip = document.createElement('button');
-    teraChip.type = 'button';
-    teraChip.className = `pkbattle-command-tera-btn ${selectedChoice.tera ? 'active' : ''}`;
-    teraChip.title = `${lang('테라스탈', 'Terastallize')} · ${displayType(moveRequest.canTerastallize)}`;
-    teraChip.setAttribute('aria-label', teraChip.title);
-    teraChip.innerHTML = `<span class="pkbattle-tera-icon"></span>`;
-    teraChip.disabled = inputLocked;
-    renderTeraButtonIcon(teraChip.querySelector('.pkbattle-tera-icon'), moveRequest.canTerastallize);
-    if (!teraChip.disabled) {
-      teraChip.addEventListener('click', () => {
-        if (!toggleEngineDraftFlag(player, activeIndex, 'tera', battle)) return;
-        renderBattle();
-      });
-    }
-    shell.appendChild(teraChip);
-  }
 
   const commands = [
     {key: 'fight', title: lang('싸운다', 'Fight'), disabled: inputLocked, onClick: () => setBattleUiMode(player, 'fight')},
@@ -8921,7 +8924,6 @@ function buildPhaserCommandWindowModel(battle, player) {
   const side = battle.players[player];
   const { activeIndex, requestSlot } = getBattleUiActionContext(player, battle);
   const mon = side?.team?.[activeIndex];
-  const moveRequest = getEngineMoveRequest(player, requestSlot, battle);
   const canSwitch = canEngineSwitchNormally(player, requestSlot, battle) && getEngineSwitchOptions(player, activeIndex, battle).length > 0;
   const inputLocked = isBattleInputLocked(battle);
   const selectedChoice = getEngineDraftChoice(player, activeIndex, battle);
@@ -8938,13 +8940,7 @@ function buildPhaserCommandWindowModel(battle, player) {
       {label: lang('포켓몬', 'Pokémon'), sublabel: canSwitch ? lang('교체', 'Switch') : lang('불가', 'Unavailable'), disabled: inputLocked || !canSwitch, active: selectedChoice.kind === 'switch', action: {type: 'command', key: 'party'}},
       {label: lang('도망친다', 'Run'), sublabel: lang('항복', 'Surrender'), disabled: !canForfeit, action: canForfeit ? {type: 'run'} : null},
     ],
-    teraToggle: moveRequest?.canTerastallize ? {
-      label: 'Tera',
-      type: toId(moveRequest.canTerastallize) || 'unknown',
-      active: Boolean(selectedChoice.tera),
-      disabled: inputLocked,
-      action: {type: 'toggle', flag: 'tera'},
-    } : null,
+    teraToggle: null,
   };
 }
 
@@ -9662,6 +9658,14 @@ function renderBattle() {
   syncRuntimeModeUi();
   if (isShowdownLocalBattle(battle)) pruneEnginePendingChoices(battle);
   const ui = syncBattleUiState(battle);
+  if (isBattleInputLocked(battle)) {
+    // During timeline playback state.battle already points at the post-turn
+    // snapshot. Re-rendering the full Phaser model here would pre-apply HP,
+    // faint, form, and sprite end-state before their events animate.
+    forceBattleMessageOnlyUiDuringLock(battle);
+    renderMobileControls();
+    return Promise.resolve(true);
+  }
   const perspective = ui?.perspective ?? 0;
   if (els.turnNumber) els.turnNumber.textContent = battle.turn;
   renderBattlePerspectiveTabs(battle);

@@ -351,7 +351,15 @@ export class PartyUiHandler extends UiHandler {
 
     const ensureVisibilityEntry = (entries = [], node = null, visible = true) => {
       if (!node) return;
-      if (entries.some(entry => entry?.node === node)) return;
+      const existing = entries.find(entry => entry?.node === node);
+      if (existing) {
+        // If timeline events restore a sprite while party UI is open (Commander
+        // Tatsugiri restore during forced switch), preserve that newer visible
+        // state for the eventual party close. Do not overwrite true with the
+        // false value caused by our own overlay hide.
+        if (visible === true) existing.visible = true;
+        return;
+      }
       entries.push({ node, visible });
     };
 

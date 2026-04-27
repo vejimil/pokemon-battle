@@ -102,6 +102,34 @@
 | 9 | 더블배틀 구현 | 진행 중(DB-1~DB-8.5 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-9(회귀/검증) 또는 Commander 처리. |
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 
+## 2026-04-27 핫픽스 완료
+- 싱글/더블 공통: 타임라인 재생 중 `renderBattle()`이 호출되더라도 최종 스냅샷으로 Phaser 전체 모델을 다시 렌더하지 않도록 차단.
+  - 폼체인지/기절/데미지 이벤트 전에 HP·기절·스프라이트 최종 상태가 선반영되는 회귀 방지.
+  - `src/app.js:renderBattle`
+- 더블 miss 메시지: target 없는 miss(스톤샤워/광역기/일부 빗나감 로그)가 actor 자신에게 맞지 않은 것처럼 보이지 않도록, 타깃이 없거나 actor와 같으면 “공격이 빗나갔다” 메시지로 처리.
+  - `src/battle-presentation/timeline.js`
+- command UI: 테라스탈 버튼/토글은 command 창에서 노출하지 않고 fight UI에서만 유지.
+  - DOM command chip 제거, Phaser command model `teraToggle: null`, command handler도 테라 토글 무시.
+  - `src/app.js`, `src/pokerogue-transplant-runtime/ui/handlers/command-ui-handler.js`
+- Commander/강제 연속 행동 UI 스킵:
+  - `commanding` 슬롯 탐지를 `engineOrderIndex`뿐 아니라 `teamIndex` fallback까지 보강.
+  - 이미 자동 pass/강제 단일 무브로 완료된 플레이어는 “행동 필요” 목록에서 제외해 `싸리용 무엇을 할까?` 같은 command prompt가 뜨지 않게 수정.
+  - 솔라빔류 차지 후속턴, 기가임팩트류 recharge, Commander pass처럼 수동 입력이 없어야 하는 슬롯도 같은 경로로 message 상태 유지.
+  - `src/app.js`
+- Commander 스프라이트 복원 + party UI:
+  - forced switch party UI가 열린 상태에서 타임라인이 싸리용 스프라이트를 복원하면, party 종료 시 복원 visibility가 false로 되돌아가지 않도록 overlay restore 상태 갱신.
+  - `src/pokerogue-transplant-runtime/ui/handlers/party-ui-handler.js`
+- 검증:
+  - `node --check src/app.js src/battle-presentation/timeline.js src/pokerogue-transplant-runtime/ui/handlers/party-ui-handler.js src/pokerogue-transplant-runtime/ui/handlers/command-ui-handler.js`
+  - `npm run verify:core` PASS
+- 브라우저 수동 확인 포인트:
+  - 싱글에서 폼체인지/기절/데미지 연출 전 HP바·기절 표시·스프라이트가 최종 상태로 먼저 바뀌지 않는지 확인.
+  - 더블에서 스톤샤워가 빗나갈 때 사용자 자신 대상 메시지처럼 보이지 않고 “공격이 빗나갔다”로 보이는지 확인.
+  - command 창에는 테라스탈 버튼이 없고, fight 창 상세/토글 영역에서는 테라 선택이 가능한지 확인.
+  - Commander 발동 후 싸리용 슬롯으로 커맨드가 넘어가지 않고, 어써러셔만 입력 받는지 확인.
+  - 어써러셔 기절 후 아군/상대 양쪽 관점에서 싸리용 스프라이트가 party UI 종료 후 정상 복원되는지 확인.
+  - 솔라빔류 차지 후속턴, 기가임팩트/파괴광선 recharge 턴에서 해당 포켓몬의 command prompt가 뜨지 않는지 확인.
+
 ## 15번 필수 분석 포인트(보류)
 - 재현 기준: player1 포켓몬 1 출전 후, 기술 피격/필드 설치/필드 연출 종료 직후 전환 구간에서 프레임 드랍 또는 멈춤 체감.
 - 우선 점검 경로:

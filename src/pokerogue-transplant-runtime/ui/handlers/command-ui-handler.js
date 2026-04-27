@@ -112,7 +112,7 @@ export class CommandUiHandler extends UiHandler {
   }
 
   getTeraToggle() {
-    return this.getInputModel().teraToggle || null;
+    return null;
   }
 
   canTera() {

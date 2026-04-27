@@ -1901,14 +1901,30 @@ export class BattleTimelineExecutor {
 
       // ── BA-4: Miss ───────────────────────────────────────────────────────
       case 'miss': {
-        const missTarget = ev.target || ev.actor || null;
-        const missName = this._slotName(missTarget?.side, missTarget?.slot ?? 0);
-        const missNameWithAffix = this._pokemonNameWithAffix(missName, missTarget?.side);
-        // BA-22: locale-key for EN; Korean fallback
-        const missFallback = this._isEnglishLocale()
-          ? `${missNameWithAffix} was not hit!`
-          : `${missNameWithAffix}에게는 맞지 않았다!`;
-        await this._showMsg(this._t('battle', 'attackMissed', { pokemonNameWithAffix: missNameWithAffix }, missFallback), { minMs: 460 });
+        const actor = ev.actor || null;
+        const target = ev.target || null;
+        const hasDistinctTarget = Boolean(
+          target?.side
+          && (
+            target.side !== actor?.side
+            || Number(target.slot ?? 0) !== Number(actor?.slot ?? 0)
+          )
+        );
+        if (hasDistinctTarget) {
+          const missName = this._slotName(target.side, target.slot ?? 0);
+          const missNameWithAffix = this._pokemonNameWithAffix(missName, target.side);
+          const missFallback = this._isEnglishLocale()
+            ? `${missNameWithAffix} was not hit!`
+            : `${missNameWithAffix}에게는 맞지 않았다!`;
+          await this._showMsg(this._t('battle', 'attackMissed', { pokemonNameWithAffix: missNameWithAffix }, missFallback), { minMs: 460 });
+        } else {
+          const actorName = this._slotName(actor?.side, actor?.slot ?? 0);
+          const actorNameWithAffix = this._pokemonNameWithAffix(actorName, actor?.side);
+          const missFallback = this._isEnglishLocale()
+            ? `${actorNameWithAffix}'s attack missed!`
+            : `${actorNameWithAffix}의 공격은 빗나갔다!`;
+          await this._showMsg(missFallback, { minMs: 460 });
+        }
         break;
       }
 
