@@ -5925,17 +5925,10 @@ async function renderValidation() {
   const runtime = getSelectedBattleRuntimeDescriptor();
   const runtimeBlocked = !runtime.startAllowed;
 
-  const hideBuilderErrorBox = isOnlineProfile();
-
   if (allErrors.length) {
     if (els.builderErrors) {
-      if (hideBuilderErrorBox) {
-        els.builderErrors.classList.add('hidden');
-        els.builderErrors.textContent = '';
-      } else {
-        els.builderErrors.classList.remove('hidden');
-        els.builderErrors.textContent = allErrors.map(localizeText).join('\n');
-      }
+      els.builderErrors.classList.remove('hidden');
+      els.builderErrors.textContent = allErrors.map(localizeText).join('\n');
     }
     els.validationSummary.textContent = state.language === 'ko'
       ? `배틀 시작 전 해결할 문제 ${allErrors.length}개가 남아 있습니다.`
