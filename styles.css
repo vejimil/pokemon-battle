@@ -3202,8 +3202,8 @@ body.hide-builder-warning-box .warning-box {
 }
 
 .pkbattle-inline-action.active {
-  border-color: rgba(248, 113, 113, 0.5);
-  color: #fecaca;
+  border-color: rgba(220, 38, 38, 0.85);
+  color: #b91c1c;
 }
 
 .pkbattle-inline-action:hover,
@@ -3214,8 +3214,8 @@ body.hide-builder-warning-box .warning-box {
 
 .pkbattle-inline-action.active:hover,
 .pkbattle-inline-action.active:focus-visible {
-  border-color: rgba(248, 113, 113, 0.6);
-  color: #fecaca;
+  border-color: rgba(220, 38, 38, 0.95);
+  color: #991b1b;
 }
 
 .pkbattle-inline-action:disabled {

@@ -1357,7 +1357,10 @@ const state = {
     passPrompt: '',
     lastFlyoutKey: '',
     flyoutTimer: null,
-    commandingState: new Map(),
+    // Per-perspective Commander (Tatsugiri inside Dondozo) state. Each timeline
+    // executor consumes from its own Map so the entry isn't drained by the first
+    // executor before the second can restore the sprite on its scene.
+    commandingStateByPerspective: {0: new Map(), 1: new Map()},
   },
   assetBase: {pokemon: './assets/Pokemon', items: './assets/items'},
   showdownLocal: {available: false, checked: false, skipped: false, bundledNodeServer: false, engineApiOrigin: '', probeMode: 'uninitialized'},
@@ -1564,6 +1567,13 @@ function resolveTimelineSwitchSpriteOverride(ev, battle = state.battle) {
 function buildTimelineStaticInfoPatch(mon, { compact = false } = {}) {
   if (!mon) return null;
   const info = buildBattleInfoModelFromMon(mon);
+  // STATIC info only — species/level/types/gender/shiny/tera/dynamax/badges.
+  // HP / status / fainted are intentionally OMITTED: those fields reflect the
+  // post-turn snapshot, and timeline events (damage / heal / faint / switch_in
+  // / dynamax_start) carry their own event-time hp/status values. Including
+  // them here makes _applyInfoForSlot pre-apply post-turn HP on visual events
+  // (forme_change / terastallize / effect_end), so the HP bar jumps before the
+  // damage animation plays. See guardrail in CLAUDE.md §3.
   const patch = {
     displayName: info.displayName,
     levelLabel: info.levelLabel,
@@ -1574,19 +1584,9 @@ function buildTimelineStaticInfoPatch(mon, { compact = false } = {}) {
     dynamaxed: Boolean(info.dynamaxed),
     gigantamaxed: Boolean(info.gigantamaxed),
     badges: info.badges,
-    hpLabel: info.hpLabel || '',
-    statusEffect: info.statusEffect || '',
-    statusLabel: info.statusLabel || '',
-    fainted: Boolean(info.fainted),
     compact: Boolean(compact),
   };
-  const hp = Number(info.hp);
-  const maxHp = Number(info.maxHp);
-  const hpPercent = Number(info.hpPercent);
   const expPercent = Number(info.expPercent);
-  if (Number.isFinite(hp)) patch.hp = hp;
-  if (Number.isFinite(maxHp)) patch.maxHp = maxHp;
-  if (Number.isFinite(hpPercent)) patch.hpPercent = hpPercent;
   if (Number.isFinite(expPercent)) patch.expPercent = expPercent;
   return patch;
 }
@@ -1904,15 +1904,18 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
       p2: String(state.battle?.players?.[1]?.name || 'Player 2'),
     };
     const ui = state.battleUi || (state.battleUi = {});
-    if (!(ui.commandingState instanceof Map)) ui.commandingState = new Map();
-    const commandingState = ui.commandingState;
+    if (!ui.commandingStateByPerspective || typeof ui.commandingStateByPerspective !== 'object') {
+      ui.commandingStateByPerspective = {0: new Map(), 1: new Map()};
+    }
+    if (!(ui.commandingStateByPerspective[0] instanceof Map)) ui.commandingStateByPerspective[0] = new Map();
+    if (!(ui.commandingStateByPerspective[1] instanceof Map)) ui.commandingStateByPerspective[1] = new Map();
     const executors = configs.map(cfg => new BattleTimelineExecutor({
       onComplete: () => {},
       applySnapshot: () => {},
       onInputRequired: handleInputRequired,
       initialNames,
       initialSlotInfo,
-      commandingState,
+      commandingState: ui.commandingStateByPerspective[cfg.playerSide === 'p2' ? 1 : 0],
       localeManager: localeEnabled ? battleLocaleManager : null,
       localeLanguage,
       resolveVisualState: ev => resolveTimelineEventVisualState(ev, {
@@ -7781,6 +7784,14 @@ function getDefaultBattleUiModeForPlayer(player, battle = state.battle) {
 function resetBattleUiModesFromRequests(battle = state.battle) {
   const ui = getBattleUiState(battle);
   if (!ui || !battle) return;
+  // Seed forced pending choices (commanding → pass, locked move → forced move,
+  // recharge / two-turn moves) so isChoiceComplete reflects them before we pick
+  // the focused slot. Without this the "focus first incomplete slot" pass below
+  // lands on a slot whose choice is forced by the engine — surfacing
+  // "X, 무엇을 할까?" UI for a Pokémon that should not be selectable.
+  if (isShowdownLocalBattle(battle)) {
+    seedEngineForcedPendingChoices(battle);
+  }
   ui.modeByPlayer = {0: 'message', 1: 'message'};
   ui.modeByPlayerSlot = {0: {}, 1: {}};
   ui.currentSlotByPlayer = {0: 0, 1: 0};
@@ -7934,7 +7945,7 @@ function resetBattlePresentationState({perspective = 0, passPrompt = ''} = {}) {
   ui.lastFlyoutKey = '';
   if (ui.flyoutTimer) clearTimeout(ui.flyoutTimer);
   ui.flyoutTimer = null;
-  ui.commandingState = new Map();
+  ui.commandingStateByPerspective = {0: new Map(), 1: new Map()};
   els.battleAbilityFlyout?.classList.remove('show');
   els.battleAbilityFlyout?.classList.add('hidden');
 }

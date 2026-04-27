@@ -267,7 +267,7 @@ export class FightUiHandler extends UiHandler {
       const isActive = Boolean(model.active);
       const color = model.disabled
         ? (isFocused ? '#cbd5e1' : '#94a3b8')
-        : (isFocused ? '#fff6b0' : (isActive ? '#fecaca' : '#f8fbff'));
+        : (isFocused ? '#fff6b0' : (isActive ? '#dc2626' : '#f8fbff'));
       entry.label.setColor(color);
     });
   }
