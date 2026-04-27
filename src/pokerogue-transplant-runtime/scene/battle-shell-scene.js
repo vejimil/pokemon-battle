@@ -10,7 +10,9 @@ import { BattleAnimPlayer } from '../../battle-presentation/battle-anim-player.j
 // Global shadow nudge for visual alignment tuning.
 // Negative x = left, negative y = up.
 const SHADOW_GLOBAL_OFFSET = Object.freeze({ x: 0, y: 0 });
-const ENABLE_BATTLER_SHADOWS = false;
+const ENABLE_BATTLER_SHADOWS = true;
+const SHADOW_ALPHA = 0.35;
+const SHADOW_BASE_Y_OFFSET = 3;
 const NORMAL_DYNAMAX_BASE_Y_OFFSET = 12;
 const PLAYER_DYNAMAX_METRICS_RATIO = 2;
 const FIELD_BG_LAYER_DEPTH = 5.4;
@@ -214,8 +216,8 @@ export function createBattleShellSceneClass(Phaser, env) {
       const depth = baseDepth + slotDepthBias;
 
       // Ellipse shadow drawn just below the sprite (depth - 1 so it stays behind sprite).
-      const shadow = this.add.ellipse(0, 0, 1, 1, 0x000000, 0.35)
-        .setDepth(depth - 1)
+      const shadow = this.add.ellipse(0, 0, 1, 1, 0x000000, SHADOW_ALPHA)
+        .setDepth(depth - 0.2)
         .setVisible(false);
 
       const img = this.add.image(0, 0, 'pkb-battler-placeholder')
@@ -252,7 +254,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         dom: {
           setVisible: visible => {
             img.setVisible(visible);
-            shadow.setVisible(ENABLE_BATTLER_SHADOWS && visible && !!mount.currentUrl && !!mount.shadowVisibleByMetrics);
+            this._syncMountShadowVisibility(mount);
             this._syncMountTeraFx(mount, 0);
           },
         },
@@ -422,44 +424,58 @@ export function createBattleShellSceneClass(Phaser, env) {
         this._syncMountTeraFx(mount, 0);
         return;
       }
-      if (!ENABLE_BATTLER_SHADOWS) {
+      this._applyMountShadowSnapshot(mount, snap, { baseX, baseY, dmaxYOffset, manualYOffset, reason: 'reapply' });
+      this._syncMountTeraFx(mount, 0);
+    }
+
+    _shouldShowMountShadow(mount) {
+      const spr = mount?.phaserSprite;
+      return Boolean(
+        ENABLE_BATTLER_SHADOWS
+        && mount?.name === 'enemy'
+        && mount?.shadowVisibleByMetrics
+        && mount?.currentUrl
+        && !mount?.fainted
+        && spr?.active
+        && spr.visible
+        && Number(spr.alpha ?? 1) > 0
+      );
+    }
+
+    _syncMountShadowVisibility(mount) {
+      if (!mount?.shadow) return;
+      mount.shadow.setVisible(this._shouldShowMountShadow(mount));
+      if (mount.shadow.visible && Number(mount.shadow.alpha ?? SHADOW_ALPHA) <= 0) {
+        mount.shadow.setAlpha(SHADOW_ALPHA);
+      }
+    }
+
+    _applyMountShadowSnapshot(mount, snap, { baseX = 0, baseY = 0, dmaxYOffset = 0, manualYOffset = 0, reason = 'apply' } = {}) {
+      if (!mount?.shadow) return;
+      if (!ENABLE_BATTLER_SHADOWS || mount.name !== 'enemy' || !snap?.showShadow) {
         mount.shadowVisibleByMetrics = false;
         mount.shadow.setVisible(false);
-        this._syncMountTeraFx(mount, 0);
         return;
       }
-      if (snap.showShadow) {
-        const scaleMultiplier = this._dynamaxScaleMultiplier(mount);
-        const shadowW = snap.shadowW * scaleMultiplier;
-        const shadowH = snap.shadowH * scaleMultiplier;
-        const shadowBaseline = snap.shadowBaseline * scaleMultiplier;
-        const shadowX = baseX + snap.offsetX + snap.shX + SHADOW_GLOBAL_OFFSET.x;
-        const shadowY = baseY + snap.offsetY + snap.shY + SHADOW_GLOBAL_OFFSET.y + dmaxYOffset + manualYOffset;
-        const finalShadowY = shadowY - shadowBaseline;
-        mount.shadow.setPosition(shadowX, finalShadowY);
-        mount.shadow.setSize(shadowW, shadowH);
-        mount.shadowVisibleByMetrics = true;
-        mount.shadow.setVisible(true);
-        this._logShadowMetrics(mount, 'reapply', {
-          baseX,
-          baseY,
-          offsetX: snap.offsetX,
-          offsetY: snap.offsetY,
-          dmaxYOffset,
-          manualYOffset,
-          shX: snap.shX,
-          shY: snap.shY,
-          shadowBaseline,
-          shadowW,
-          shadowH,
-          finalShadowX: shadowX,
-          finalShadowY,
-        });
-      } else {
-        mount.shadowVisibleByMetrics = false;
-        mount.shadow.setVisible(false);
-      }
-      this._syncMountTeraFx(mount, 0);
+      const scaleMultiplier = this._dynamaxScaleMultiplier(mount);
+      const shadowW = Math.max(1, snap.shadowW * scaleMultiplier);
+      const shadowH = Math.max(1, snap.shadowH * scaleMultiplier);
+      const shadowX = baseX + SHADOW_GLOBAL_OFFSET.x;
+      const shadowY = baseY + SHADOW_BASE_Y_OFFSET + SHADOW_GLOBAL_OFFSET.y;
+      mount.shadow.setPosition(shadowX, shadowY);
+      mount.shadow.setSize(shadowW, shadowH);
+      mount.shadowVisibleByMetrics = true;
+      this._syncMountShadowVisibility(mount);
+      this._logShadowMetrics(mount, reason, {
+        baseX,
+        baseY,
+        dmaxYOffset,
+        manualYOffset,
+        shadowW,
+        shadowH,
+        finalShadowX: shadowX,
+        finalShadowY: shadowY,
+      });
     }
 
     _setMountDynamaxState(mount, options = {}) {
@@ -740,19 +756,12 @@ export function createBattleShellSceneClass(Phaser, env) {
         mount.phaserSprite.setVisible(!mount.fainted);
         this._syncMountTeraFx(mount, 0);
 
-        // Shadow: composite sprite offset + shadow offset (follows DBK apply_metrics_to_sprite
-        // which applies front/back sprite offset AND shadow_sprite offset to the shadow position).
-        const shX  = metrics?.shadowX ?? 0;
-        const shY  = isFront ? (metrics?.shadowFrontY ?? 0) : (metrics?.shadowBackY ?? 0);
-        const shadowX = baseX + offsetX + shX;
-        const shadowY = baseY + offsetY + shY + manualYOffset;
-        const isPlayerSide = !isFront;
+        // Shadow size follows PBS metrics, but PKB anchors enemy-side shadows
+        // to the battler base point instead of the PBS shadow offset.
         const rawShadowSize = Number.isFinite(metrics?.shadowSize) ? metrics.shadowSize : 1;
-        const showBySide = !isPlayerSide || DBK_DEFAULTS.showPlayerSideShadows;
-        const showShadow = ENABLE_BATTLER_SHADOWS && showBySide && rawShadowSize !== 0;
+        const showShadow = ENABLE_BATTLER_SHADOWS && isFront && rawShadowSize !== 0;
         let shadowW = 0;
         let shadowH = 0;
-        let shadowBaseline = 0;
 
         if (showShadow) {
           // DBK size formula: zoom_x = scale + effective*0.1, zoom_y = scale*0.25 + effective*0.025
@@ -761,20 +770,6 @@ export function createBattleShellSceneClass(Phaser, env) {
           const zoomY = sprScale * 0.25 + effective * 0.025;
           shadowW = frameH * 0.45 * zoomX;
           shadowH = frameH * 0.45 * zoomY;
-          // Baseline correction:
-          // DBK does `self.y -= (self.height / 4)`, where height is post-zoom bitmap height.
-          // Our ellipse height (`shadowH`) is stylized (0.45 factor), so compute baseline from
-          // DBK-equivalent rendered shadow height instead of ellipse display height.
-          const legacyBaseline = shadowH * 0.25;
-          const dbkRenderedShadowH = frameH * zoomY;
-          shadowBaseline = dbkRenderedShadowH * 0.25;
-          mount.shadow.setPosition(
-            shadowX + SHADOW_GLOBAL_OFFSET.x,
-            shadowY + SHADOW_GLOBAL_OFFSET.y - shadowBaseline
-          );
-          mount.shadow.setSize(shadowW, shadowH);
-          mount.shadowVisibleByMetrics = true;
-          mount.shadow.setVisible(!mount.fainted);
           this._logShadowMetrics(mount, 'init', {
             url,
             spriteId,
@@ -784,16 +779,10 @@ export function createBattleShellSceneClass(Phaser, env) {
             offsetX,
             offsetY,
             manualYOffset,
-            shX,
-            shY,
             zoomX,
             zoomY,
             shadowW,
             shadowH,
-            legacyBaseline,
-            dbkBaseline: shadowBaseline,
-            finalShadowX: shadowX + SHADOW_GLOBAL_OFFSET.x,
-            finalShadowY: shadowY + SHADOW_GLOBAL_OFFSET.y - shadowBaseline,
           });
         } else {
           mount.shadowVisibleByMetrics = false;
@@ -803,12 +792,9 @@ export function createBattleShellSceneClass(Phaser, env) {
           offsetX,
           offsetY,
           sprScale,
-          shX,
-          shY,
           showShadow,
           shadowW,
           shadowH,
-          shadowBaseline,
         };
         this._applyMountMetricsSnapshot(mount);
 
@@ -1124,9 +1110,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       const shouldShow = options?.visible !== false;
       spr.setAlpha(1);
       spr.setVisible(shouldShow);
-      if (mount?.shadow) {
-        mount.shadow.setVisible(Boolean(shouldShow && mount.shadowVisibleByMetrics));
-      }
+      this._syncMountShadowVisibility(mount);
       this._syncMountTeraFx(mount, 0);
     }
 
@@ -1164,9 +1148,7 @@ export function createBattleShellSceneClass(Phaser, env) {
       const shouldShow = visible !== false;
       spr.setVisible(shouldShow);
       spr.setAlpha(1);
-      if (mount?.shadow) {
-        mount.shadow.setVisible(Boolean(shouldShow && mount.shadowVisibleByMetrics));
-      }
+      this._syncMountShadowVisibility(mount);
       this._syncMountTeraFx(mount, 0);
     }
 
@@ -1741,6 +1723,8 @@ export function createBattleShellSceneClass(Phaser, env) {
 
       if (!fromBall) {
         spr.setVisible(true);
+        spr.setAlpha(1);
+        this._syncMountShadowVisibility(mount);
         this._syncMountTeraFx(mount, 0);
         return;
       }
@@ -1748,6 +1732,9 @@ export function createBattleShellSceneClass(Phaser, env) {
       const pbKey = UI_ASSETS.pokeballAtlas.key;
       if (!this.textures.exists(pbKey)) {
         spr.setVisible(true);
+        spr.setAlpha(1);
+        this._syncMountShadowVisibility(mount);
+        this._syncMountTeraFx(mount, 0);
         if (audioEnabled) this.audio?.play?.('se/pb_rel');
         return;
       }
@@ -1807,20 +1794,52 @@ export function createBattleShellSceneClass(Phaser, env) {
 
       if (!completedArc) {
         spr.setAlpha(1);
+        this._syncMountShadowVisibility(mount);
+        this._syncMountTeraFx(mount, 0);
         return;
       }
 
+      const shadow = mount?.shadow;
+      const fadeShadow = Boolean(
+        shadow
+        && ENABLE_BATTLER_SHADOWS
+        && mount.name === 'enemy'
+        && mount.shadowVisibleByMetrics
+        && mount.currentUrl
+        && !mount.fainted
+      );
+      if (fadeShadow) {
+        shadow.setAlpha(0);
+        shadow.setVisible(true);
+      }
+
       if (audioEnabled) this.audio?.play?.('se/pb_rel');
-      await new Promise(resolve => {
-        this.tweens.add({
-          targets: spr,
-          duration: 250,
-          ease: 'Sine.easeIn',
-          alpha: 1,
-          onComplete: resolve,
-          onStop: resolve,
-        });
-      });
+      const fadePromises = [
+        new Promise(resolve => {
+          this.tweens.add({
+            targets: spr,
+            duration: 250,
+            ease: 'Sine.easeIn',
+            alpha: 1,
+            onComplete: resolve,
+            onStop: resolve,
+          });
+        }),
+      ];
+      if (fadeShadow) {
+        fadePromises.push(new Promise(resolve => {
+          this.tweens.add({
+            targets: shadow,
+            duration: 250,
+            ease: 'Sine.easeIn',
+            alpha: SHADOW_ALPHA,
+            onComplete: resolve,
+            onStop: resolve,
+          });
+        }));
+      }
+      await Promise.all(fadePromises);
+      this._syncMountShadowVisibility(mount);
       this._syncMountTeraFx(mount, 0);
     }
 

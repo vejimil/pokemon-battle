@@ -134,6 +134,24 @@
   - 어써러셔 기절 후 아군/상대 양쪽 관점에서 싸리용 스프라이트가 party UI 종료 후 정상 복원되는지 확인.
   - 솔라빔류 차지 후속턴, 기가임팩트/파괴광선 recharge 턴에서 해당 포켓몬의 command prompt가 뜨지 않는지 확인.
 
+## 2026-04-27 배틀러 그림자 추가
+- 적군(enemy mount) 배틀러에만 Phaser ellipse 그림자를 활성화.
+  - 위치는 PBS shadow offset을 무시하고 `mount.baseX`, `mount.baseY + 10`에 고정.
+  - 크기는 기존 PBS/DBK shadow size 계산(`ShadowSize`, sprite scale, frame size)을 사용.
+  - 아군(player mount) 그림자는 계속 숨김.
+- 표시 조건:
+  - `currentUrl`이 있는 실제 스프라이트가 로드되고, sprite가 visible이며, faint 상태가 아닐 때만 그림자 visible.
+  - switch-in 볼 연출에서는 스프라이트 fade-in과 그림자 fade-in을 같이 시작해 그림자가 먼저/나중에 튀어나오지 않도록 처리.
+  - faint/conceal/party overlay/sprite clear 경로에서는 그림자도 함께 숨김.
+  - `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+- 검증:
+  - `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`
+- 브라우저 수동 확인 포인트:
+  - 싱글 적군 등장 순간 그림자가 스프라이트와 함께 나타나는지 확인.
+  - 더블 적군 슬롯 0/1 각각 base 기준 위치에 그림자가 붙는지 확인.
+  - 아군 배틀러 아래에는 그림자가 보이지 않는지 확인.
+  - 기절/교체/폼체인지/party UI 진입·복귀 후 그림자가 남거나 먼저 보이지 않는지 확인.
+
 ## 15번 필수 분석 포인트(보류)
 - 재현 기준: player1 포켓몬 1 출전 후, 기술 피격/필드 설치/필드 연출 종료 직후 전환 구간에서 프레임 드랍 또는 멈춤 체감.
 - 우선 점검 경로:
