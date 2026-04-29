@@ -152,6 +152,28 @@
   - 아군 배틀러 아래에는 그림자가 보이지 않는지 확인.
   - 기절/교체/폼체인지/party UI 진입·복귀 후 그림자가 남거나 먼저 보이지 않는지 확인.
 
+## 2026-04-29 턴/정보바 표시 정리 완료
+- 턴 표시 제거:
+  - DOM 배틀 화면의 상단 턴 배지 제거.
+    (`index.html`, `online.html`, `styles.css`)
+  - Phaser UI 모델의 미사용 `turnChip` 제거 및 DOM `turn-number` 갱신 경로 제거.
+    (`src/app.js`)
+  - 서버 로그 정규화에서 `|turn|` 라인을 화면 로그로 만들지 않도록 변경.
+    기존/구동 중 서버 스냅샷 보호용으로 클라이언트 채택 시 `턴 N / Turn N` 로그도 필터링.
+    (`server/showdown-engine.cjs`, `src/app.js`)
+- 정보바 표시 제한:
+  - DOM fallback flyout과 Phaser `AbilityBar` 모두 `accent` 로그 전체를 정보바로 올리던 경로를 제거.
+  - `ability_show`/`-ability`/`특성` 로그만 정보바에 표시하며, 표시 문구는 포켓몬 등장/기절 문장이 아니라 특성명만 쓰도록 변경.
+    (`src/app.js`, `server/showdown-engine.cjs`)
+- 검증:
+  - `node --check src/app.js`
+  - `node --check server/showdown-engine.cjs`
+  - `npm run verify:core` PASS
+- 브라우저 수동 확인 포인트:
+  - 로컬(`index.html`)과 온라인(`online.html`) 배틀 화면 상단에 `턴 0`, `Turn N` 배지가 보이지 않는지 확인.
+  - 배틀 시작/교체/강제교체/기절 직후 정보바에 `00 등장!`, `00 기절!`, `턴 N`이 뜨지 않는지 확인.
+  - 위협/잔비/가뭄 등 특성 발동 시 정보바에는 특성명만 표시되는지 확인.
+
 ## 15번 필수 분석 포인트(보류)
 - 재현 기준: player1 포켓몬 1 출전 후, 기술 피격/필드 설치/필드 연출 종료 직후 전환 구간에서 프레임 드랍 또는 멈춤 체감.
 - 우선 점검 경로:

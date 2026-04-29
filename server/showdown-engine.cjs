@@ -444,7 +444,7 @@ function normalizeLogTextFromLine(line, logCtx = null) {
   switch (tag) {
     case 'turn':
       if (logCtx?.faintedIdents?.clear) logCtx.faintedIdents.clear();
-      return {text: `턴 ${a} / Turn ${a}`, tone: 'accent'};
+      return null;
     case 'switch':
     case 'drag':
       return {text: `${displayNameForPokemonProtocol(a)} 등장! / ${displayNameForPokemonProtocol(a)} entered the field.`, tone: 'accent'};
@@ -471,7 +471,7 @@ function normalizeLogTextFromLine(line, logCtx = null) {
     case '-ability': {
       const source = displayNameForPokemonProtocol(a);
       const detail = c ? ` (${c})` : '';
-      return {text: `${source} 특성 발동: ${b}${detail} / ${source} ability activated: ${b}${detail}.`, tone: 'accent'};
+      return {text: `${source} 특성 발동: ${b}${detail} / ${source} ability activated: ${b}${detail}.`, tone: 'accent', kind: 'ability', ability: b};
     }
     case '-boost': {
       const source = displayNameForPokemonProtocol(a);

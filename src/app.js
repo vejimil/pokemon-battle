@@ -5292,7 +5292,6 @@ function bindElements() {
     battleMessageWindow: document.getElementById('battle-message-window'),
     battleStateWindow: document.getElementById('battle-state-window'),
     battleDebugSummary: document.getElementById('battle-debug-summary'),
-    turnNumber: document.getElementById('turn-number'),
     battleFieldStatus: document.getElementById('battle-field-status'),
     battlePhaserRoot: document.getElementById('battle-phaser-root'),
     battlePhaserMountP1: document.getElementById('battle-phaser-mount-p1'),
@@ -6330,9 +6329,13 @@ function cloneEngineBattleSnapshot(snapshot) {
       mustSwitch: [],
       request: side.request || null,
     })),
-    log: Array.isArray(snapshot.log) ? [...snapshot.log] : [],
+    log: Array.isArray(snapshot.log) ? snapshot.log.filter(entry => !isTurnDisplayLogEntry(entry)) : [],
     events: Array.isArray(snapshot.events) ? [...snapshot.events] : [],
   };
+}
+function isTurnDisplayLogEntry(entry) {
+  const text = String(entry?.rawText || entry?.text || '').trim();
+  return /^(?:턴\s*\d+\s*(?:\/\s*Turn\s*\d+)?|Turn\s*\d+)$/i.test(text);
 }
 function clearSideFieldStateForBattleEnd(side = null) {
   if (!side || typeof side !== 'object') return;
@@ -8150,12 +8153,13 @@ function maybeShowBattleAbilityFlyout(battle) {
   const latest = battle?.log?.[0];
   const text = localizeText(latest?.rawText || latest?.text || '').trim();
   if (!text) return;
-  const looksLikeFlyout = latest?.tone === 'accent' || /ability|특성|intimidate|download|sword|드라이브|테라|mega|ultra|dynamax/i.test(text);
-  if (!looksLikeFlyout) return;
-  const key = `${battle.turn}|${text}`;
+  if (!isAbilityInfoBarLogEntry(latest, text)) return;
+  const flyoutText = getAbilityInfoBarText(latest, text);
+  if (!flyoutText) return;
+  const key = `${battle.turn}|${flyoutText}`;
   if (ui.lastFlyoutKey === key) return;
   ui.lastFlyoutKey = key;
-  flyout.textContent = text;
+  flyout.textContent = flyoutText;
   const lower = text.toLowerCase();
   const playerName = (battle.players?.[0]?.name || '').toLowerCase();
   const enemyName = (battle.players?.[1]?.name || '').toLowerCase();
@@ -8171,6 +8175,22 @@ function maybeShowBattleAbilityFlyout(battle) {
     els.battleAbilityFlyout.classList.remove('show');
     els.battleAbilityFlyout.classList.add('hidden');
   }, 1800);
+}
+function isAbilityInfoBarLogEntry(entry, text = '') {
+  const kind = String(entry?.kind || entry?.type || entry?.tag || '').toLowerCase();
+  if (kind === 'ability' || kind === 'ability_show' || kind === '-ability') return true;
+  if (String(entry?.ability || '').trim()) return true;
+  return /\bability\b|특성/i.test(String(text || entry?.rawText || entry?.text || ''));
+}
+function getAbilityInfoBarText(entry, text = '') {
+  const explicitAbility = String(entry?.ability || entry?.abilityName || '').trim();
+  if (explicitAbility) return displayAbilityName(explicitAbility) || explicitAbility;
+  const raw = String(text || entry?.rawText || entry?.text || '').trim();
+  const match = /특성(?:\s*발동)?\s*:\s*([^/!.()]+)/i.exec(raw)
+    || /\bAbility\s*:\s*([^/!.()]+)/i.exec(raw)
+    || /\bability\s+activated\s*:\s*([^/!.()]+)/i.exec(raw);
+  const ability = String(match?.[1] || '').trim();
+  return ability ? (displayAbilityName(ability) || ability) : raw;
 }
 
 function renderPokerogueTypeIcon(element, typeName = '') {
@@ -8793,10 +8813,10 @@ function updateBattleAbilityBarState(battle) {
   const now = Date.now();
   const latest = battle?.log?.[0];
   const text = localizeText(latest?.rawText || latest?.text || '').trim();
-  if (text) {
-    const looksLikeFlyout = latest?.tone === 'accent' || /ability|특성|intimidate|download|sword|shield|drive|burst|tera|mega|ultra|dynamax|불요의 검|특성/i.test(text);
-    const key = `${battle.turn}|${text}`;
-    if (looksLikeFlyout && ui.lastFlyoutKey !== key) {
+  if (text && isAbilityInfoBarLogEntry(latest, text)) {
+    const abilityText = getAbilityInfoBarText(latest, text);
+    const key = `${battle.turn}|${abilityText}`;
+    if (abilityText && ui.lastFlyoutKey !== key) {
       ui.lastFlyoutKey = key;
       const lower = text.toLowerCase();
       const playerName = (battle.players?.[0]?.name || '').toLowerCase();
@@ -8806,7 +8826,7 @@ function updateBattleAbilityBarState(battle) {
       const playerSide = [playerName, ...playerMonNames].some(token => token && lower.includes(token));
       const enemySide = [enemyName, ...enemyMonNames].some(token => token && lower.includes(token));
       ui.currentFlyout = {
-        text,
+        text: abilityText,
         side: enemySide && !playerSide ? 'enemy' : 'player',
         expiresAt: now + 1800,
       };
@@ -9362,7 +9382,6 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
         {label: battle.players?.[0]?.name || 'P1', active: perspective === 0, action: {type: 'perspective', player: 0}},
         {label: battle.players?.[1]?.name || 'P2', active: perspective === 1, action: {type: 'perspective', player: 1}},
       ]),
-    turnChip: `${lang('턴', 'Turn')} ${battle.turn}`,
     bannerText: (FLAGS.battleDualViewV1 && useForcedPerspective)
       ? `${battle.players?.[perspective]?.name || `P${perspective + 1}`} · ${bannerChip.text || lang('배틀 화면', 'Battle screen')}`
       : (ui?.passPrompt || `${battle.players?.[perspective]?.name || `P${perspective + 1}`} · ${bannerChip.text || lang('배틀 화면', 'Battle screen')}`),
@@ -9685,7 +9704,6 @@ function renderBattle() {
     return Promise.resolve(true);
   }
   const perspective = ui?.perspective ?? 0;
-  if (els.turnNumber) els.turnNumber.textContent = battle.turn;
   renderBattlePerspectiveTabs(battle);
   renderBattleFieldStatus();
   renderBattleDebugPanel(battle);
