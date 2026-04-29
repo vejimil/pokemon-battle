@@ -288,6 +288,9 @@ if (batch) {
   - 광역기 피해: 같은 `move_use` 뒤에 이어지는 서로 다른 대상의 plain damage
 - HP 배치에서는 대상별 `_slotInfo`를 먼저 갱신하고 `BattleInfo.tweenHpTo(...)`를 `Promise.all`로 실행한다.
 - 광역기 hit result 메시지는 critical/super/not_very 그룹별로 묶어 표시한다.
+- 광역기 `immune` 연속 이벤트는 `효과가 없는 것 같다` 메시지를 대상명 묶음으로 1회 표시한다.
+- `critical`과 `super`/`not_very`가 동시에 붙은 피해는 급소 메시지와 효과 메시지를 모두 표시한다.
+- 더블배틀 hit result는 대상이 1마리여도 대상명을 표시하고, 아군 대상은 `아군 000`으로 표시한다.
 - 연속 `switch_in` 이벤트는 같은 side/서로 다른 slot/`fromBall === true`/switch-out 메시지가 필요 없는 경우에만 배치 처리한다.
 - 일반 더블 교체처럼 switch-out 메시지가 필요한 경우도 같은 side 2마리면 회수 메시지를 먼저 묶고 등장 연출은 동시에 처리한다.
 - 동시 등장 메시지는 side별로 1회 표시하고, 볼 연출은 `Promise.all`로 동시에 실행한다.

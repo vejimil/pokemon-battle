@@ -181,6 +181,9 @@
   - 더블배틀(`battle.mode === 'doubles'`)에서만 fast timeline 배치 재생 활성화.
   - 날씨 피해와 광역기 plain damage만 HP 동시 tween 처리.
   - 같은 hit result 메시지는 대상명을 묶어 1회 표시하고, super/not_very 등 서로 다른 결과는 순차 표시.
+  - 광역기 `immune` 연속 이벤트도 대상명을 묶어 `효과가 없는 것 같다`를 1회 표시.
+  - `critical`과 `super`/`not_very`가 동시에 붙은 피해는 급소 메시지와 효과 메시지를 모두 표시.
+  - 더블배틀 hit result는 대상이 1마리여도 대상명을 표시하고, 아군 대상은 `아군 000`으로 표시.
   - 같은 플레이어가 동시에 내보내는 2마리 `switch_in`은 플레이어별로 묶어 메시지 1회 + 볼 연출 동시 실행.
   - 울음소리는 모든 대상에 대해 동시에 재생하되 타임라인 진행을 기다리지 않음.
   - `src/battle-presentation/timeline.js`, `src/app.js`

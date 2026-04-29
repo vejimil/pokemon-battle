@@ -521,9 +521,12 @@ export class BattleTimelineExecutor {
     return toId(this._localeLanguage).startsWith('en');
   }
 
-  _pokemonNameWithAffix(name, side) {
+  _pokemonNameWithAffix(name, side, { includeAlly = false } = {}) {
     const pokemonName = String(name || '???');
-    if (side === this._currentPlayerSide()) return pokemonName;
+    if (side === this._currentPlayerSide()) {
+      if (!includeAlly) return pokemonName;
+      return this._isEnglishLocale() ? `Ally ${pokemonName}` : `아군 ${pokemonName}`;
+    }
     const fallback = this._isEnglishLocale() ? `Foe ${pokemonName}` : `상대 ${pokemonName}`;
     return this._t('battle', 'foePokemonWithAffix', { pokemonName }, fallback);
   }
@@ -858,7 +861,7 @@ export class BattleTimelineExecutor {
     return this._joinDisplayNames(events.map(ev => {
       const target = ev?.target || {};
       const name = this._slotName(target.side, target.slot ?? 0);
-      return this._pokemonNameWithAffix(name, target.side);
+      return this._pokemonNameWithAffix(name, target.side, { includeAlly: this._fastDoublesTimeline });
     }));
   }
 
@@ -1073,10 +1076,29 @@ export class BattleTimelineExecutor {
     return batch.length >= 2 ? { type: 'damage', kind: 'spread_move', moveEvent, events: batch } : null;
   }
 
+  _collectImmuneBatch(events = [], index = 0) {
+    const first = events[index];
+    if (!this._fastDoublesTimeline || first?.type !== 'immune') return null;
+    const moveEvent = this._findPreviousMoveUse(events, index);
+    if (!moveEvent) return null;
+    const batch = [];
+    const seenTargets = new Set();
+    for (let cursor = index; cursor < events.length; cursor += 1) {
+      const ev = events[cursor];
+      if (ev?.type !== 'immune') break;
+      const key = this._targetKey(ev.target);
+      if (!key || seenTargets.has(key)) break;
+      seenTargets.add(key);
+      batch.push(ev);
+    }
+    return batch.length >= 2 ? { type: 'immune', kind: 'spread_move', moveEvent, events: batch } : null;
+  }
+
   _collectFastBatch(events = [], index = 0, context = {}) {
     if (!this._fastDoublesTimeline) return null;
     return this._collectSwitchInBatch(events, index, context)
-      || this._collectDamageBatch(events, index);
+      || this._collectDamageBatch(events, index)
+      || this._collectImmuneBatch(events, index);
   }
 
   _switchInBatchMessage(side, events = []) {
@@ -1118,13 +1140,13 @@ export class BattleTimelineExecutor {
           : `${targetNames}의 급소에 맞았다!`,
       },
       {
-        predicate: ev => !ev?.critical && ev?.hitResult === 'super',
+        predicate: ev => ev?.hitResult === 'super',
         message: targetNames => this._isEnglishLocale()
           ? `It's super effective on ${targetNames}!`
           : `${targetNames}에게 효과가 굉장했다!`,
       },
       {
-        predicate: ev => !ev?.critical && ev?.hitResult === 'not_very',
+        predicate: ev => ev?.hitResult === 'not_very',
         message: targetNames => this._isEnglishLocale()
           ? `It's not very effective on ${targetNames}.`
           : `${targetNames}에게 효과가 별로인 것 같다...`,
@@ -1138,6 +1160,23 @@ export class BattleTimelineExecutor {
         return targetNames ? group.message(targetNames) : '';
       })
       .filter(Boolean);
+  }
+
+  _hitResultMessages(ev = {}) {
+    if (!this._fastDoublesTimeline) {
+      const messages = [];
+      if (ev.critical) messages.push(this._t('battle', 'hitResultCriticalHit', {}, '급소에 맞았다!'));
+      if (ev.hitResult === 'super') messages.push(this._t('battle', 'hitResultSuperEffective', {}, '효과는 굉장했다!'));
+      else if (ev.hitResult === 'not_very') messages.push(this._t('battle', 'hitResultNotVeryEffective', {}, '효과는 별로인 것 같다...'));
+      return messages;
+    }
+    return this._hitResultBatchMessages([ev]);
+  }
+
+  _immuneBatchMessage(events = []) {
+    const targetNames = this._joinTargetNames(events);
+    if (this._isEnglishLocale()) return `It had no effect on ${targetNames}!`;
+    return `${targetNames}에게는\n효과가 없는 것 같다…`;
   }
 
   async _applySwitchInBatch(batch = {}) {
@@ -1263,6 +1302,12 @@ export class BattleTimelineExecutor {
     }
   }
 
+  async _applyImmuneBatch(batch = {}) {
+    const events = Array.isArray(batch.events) ? batch.events : [];
+    if (!events.length) return;
+    await this._showMsg(this._immuneBatchMessage(events), { minMs: 560 });
+  }
+
   async _applyFastBatch(batch = {}) {
     if (batch.type === 'switch_in') {
       await this._applySwitchInBatch(batch);
@@ -1270,6 +1315,10 @@ export class BattleTimelineExecutor {
     }
     if (batch.type === 'damage') {
       await this._applyDamageBatch(batch);
+      return;
+    }
+    if (batch.type === 'immune') {
+      await this._applyImmuneBatch(batch);
     }
   }
 
@@ -1955,12 +2004,8 @@ export class BattleTimelineExecutor {
         } else {
           await this._delay(320);
         }
-        // Show hit result message after HP tween
-        let hitMsg = null;
-        if (ev.critical)                        hitMsg = this._t('battle', 'hitResultCriticalHit', {}, '급소에 맞았다!');
-        else if (ev.hitResult === 'super')       hitMsg = this._t('battle', 'hitResultSuperEffective', {}, '효과는 굉장했다!');
-        else if (ev.hitResult === 'not_very')    hitMsg = this._t('battle', 'hitResultNotVeryEffective', {}, '효과는 별로인 것 같다...');
-        if (hitMsg) {
+        // Show hit result messages after HP tween. Critical and type effectiveness can both apply.
+        for (const hitMsg of this._hitResultMessages(ev)) {
           await this._showMsg(hitMsg, { minMs: 340 });
         }
         break;
@@ -2266,6 +2311,10 @@ export class BattleTimelineExecutor {
       // ── BA-5a: Immune / fail ─────────────────────────────────────────────
       case 'immune': {
         // "X에게는 효과가 없는 것 같다…"
+        if (this._fastDoublesTimeline) {
+          await this._showMsg(this._immuneBatchMessage([ev]), { minMs: 560 });
+          break;
+        }
         const immuneName = this._slotName(ev.target?.side, ev.target?.slot ?? 0);
         await this._showMsg(this._t(
           'battle',
