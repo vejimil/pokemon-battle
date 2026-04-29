@@ -140,7 +140,7 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, {
         available: true,
         roomSupport: true,
-        modeSupport: ['online-room-singles'],
+        modeSupport: ['online-room-singles', 'online-room-doubles'],
       });
       return;
     }
@@ -165,6 +165,7 @@ const server = http.createServer(async (req, res) => {
         name: body.name,
         builder: body.builder,
         teamSize: body.teamSize,
+        mode: body.mode,
       });
       sendJson(res, 200, {ok: true, ...result});
       return;

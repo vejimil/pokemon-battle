@@ -17,10 +17,10 @@ async function requestJson(url, options = {}) {
   return data;
 }
 
-export async function createOnlineRoom({name = '', builder = null, teamSize = null} = {}) {
+export async function createOnlineRoom({name = '', builder = null, teamSize = null, mode = null} = {}) {
   const data = await requestJson('/api/rooms/create', {
     method: 'POST',
-    body: JSON.stringify({name, builder, teamSize}),
+    body: JSON.stringify({name, builder, teamSize, mode}),
   });
   return {
     roomId: normalizeRoomId(data.roomId),

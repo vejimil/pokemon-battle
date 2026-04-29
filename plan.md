@@ -99,7 +99,7 @@
 ## 현재 작업 목록
 | 번호 | 항목 | 상태 | 메모 |
 |---|---|---|---|
-| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-8.5 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-9(회귀/검증) 또는 Commander 처리. |
+| 9 | 더블배틀 구현 | 진행 중(DB-1~DB-8.5, DB-10 완료) | 아래 §9 단계별 구현 계획 참조. 다음: DB-9(회귀/검증). |
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 
 ## 2026-04-27 핫픽스 완료
@@ -513,7 +513,28 @@
       - 선출 UI(팀 빌더에서 리드 슬롯 직접 선택) 미구현 — 현재는 팀 순서(슬롯0/1)가 항상 리드로.
     - **검증**: `node --check` 5파일 통과, `npm run verify:core` 9/9 PASS.
 9. **DB-9 회귀/검증**: 싱글 시나리오 회귀 + 더블 핵심 무브 시나리오(스프라이트 지정 무브, ally-target 무브, 광역 무브, 보호/대타) 단위.
-10. **DB-10 온라인 더블 분리**: `OnlineRoomService`/online.html 토글. 별도 PR.
+10. **DB-10 온라인 더블 활성화** ✅ 완료(2026-04-29):
+    - `server/online-room-service.cjs`: `room.settings.mode` 추가(`sanitizeMode`), `createRoom`/`joinRoom`/`serialize`가 mode 보존. `startBattle`이 `engine.startBattle` 일반화 호출 + mode에 따라 `gen9customgame`/`gen9doublescustomgame` formatid 분기. `submitChoice`는 `engine.chooseBattle` 사용(슬롯 합본 choice 문자열 그대로 위임).
+    - `server/server.cjs`: `/api/rooms/create`가 `body.mode`를 위임. `/api/online/status`의 `modeSupport`에 `online-room-doubles` 추가.
+    - `src/engine/showdown-online-room-bridge.js`: `createOnlineRoom`이 `mode`를 POST.
+    - `src/app.js`:
+      - `state.online.mode` 추가, save/load/reset-storage에 포함.
+      - `applyOnlineBuilderFromRoomState`/`applyOnlineRoomState`가 `roomState.settings.mode`를 읽어 `state.mode`/`state.online.mode` 동기화(이전 강제 'singles' 제거).
+      - `createOnlineRoomFlow`가 `mode: state.online.mode`를 전송.
+      - 빌더 mode 토글 핸들러: 온라인에서 룸 join 전엔 toggle 가능하도록 가드 완화 + `state.online.mode` 갱신. join 후엔 `renderAll`에서 disabled 처리.
+      - `getOnlineRoomRuntimeDescriptor`가 mode에 따라 `online-room-singles`/`online-room-doubles` id, 라벨, hero label 분기. `applyBattleRuntimeInfo`/`getDisplayedRuntimeDescriptor`가 새 id 인식.
+      - `submitOnlineChoiceIfPossible`가 actionSlots 전체를 순회해 슬롯별 직렬화 결과를 `, `로 합쳐 단일 choice 문자열로 제출(싱글/더블 공통 경로).
+    - `online.html`: `online-create-config` 안에 `online-room-mode` select(싱글/더블) 추가. 가입 후 disabled.
+    - 검증:
+      - `node --check src/app.js src/engine/showdown-online-room-bridge.js src/engine/showdown-local-bridge.js server/online-room-service.cjs server/server.cjs server/showdown-engine.cjs` 통과.
+      - 온라인 룸 더블 스모크: createRoom(mode='doubles') → 양쪽 ready → start → snapshot.engine='showdown-local-doubles', mode='doubles', 양쪽 active.length=2. 양쪽 `move 1 1, move 1 2` 제출 후 turn=2 진행 확인.
+      - `npm run verify:core` 9/9 PASS.
+    - 브라우저 수동 확인 포인트:
+      - online.html에서 이름 입력 → "방 만들기" → 새로 생긴 "배틀 모드" select에서 더블 선택 → "설정 후 방 만들기" 클릭 → 룸 생성 후 hero/runtime 라벨이 "온라인 더블"로 표시되는지 확인.
+      - 다른 브라우저로 같은 방 코드 참가 → P2의 mode/teamSize select가 disabled로 보이고 룸 mode가 더블로 동기화되는지 확인.
+      - 양쪽 ready → 배틀 시작 시 슬롯 0/1 두 마리가 양쪽에 등장하고, 첫 턴 명령 입력에서 두 슬롯 순차 입력 + 단일 대상 무브의 타깃 창이 정상 동작하는지 확인.
+      - 첫 턴 양쪽 제출 후 turn 2로 진행되는지 확인. 광역기/스위치/forceSwitch 흐름이 로컬 doubles와 동일하게 동작하는지 확인.
+      - 룸 생성 시 모드를 싱글로 두면 기존 싱글 룸 동작이 그대로 유지되는지 회귀 확인.
 
 ### 9.10 검증 전략
 

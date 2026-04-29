@@ -1,13 +1,22 @@
 const {randomUUID} = require('crypto');
 
-const DEFAULT_FORMAT_ID = 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
+const DEFAULT_SINGLES_FORMAT_ID = 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
+const DEFAULT_DOUBLES_FORMAT_ID = 'gen9doublescustomgame@@@+pokemontag:past,+pokemontag:future';
 const DEFAULT_ROOM_TTL_MS = 12 * 60 * 60 * 1000;
 const DEFAULT_TEAM_SIZE = 3;
+const DEFAULT_MODE = 'singles';
 
 function sanitizeTeamSize(value, fallback = DEFAULT_TEAM_SIZE) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(1, Math.min(6, Math.trunc(parsed)));
+}
+
+function sanitizeMode(value, fallback = DEFAULT_MODE) {
+  const text = String(value || '').trim().toLowerCase();
+  if (text === 'doubles') return 'doubles';
+  if (text === 'singles') return 'singles';
+  return fallback === 'doubles' ? 'doubles' : 'singles';
 }
 
 function toId(value) {
@@ -57,7 +66,7 @@ class OnlineRoomService {
     this.rooms = new Map();
   }
 
-  createRoom({name = '', builder = null, teamSize = DEFAULT_TEAM_SIZE} = {}) {
+  createRoom({name = '', builder = null, teamSize = DEFAULT_TEAM_SIZE, mode = DEFAULT_MODE} = {}) {
     this.cleanupExpiredRooms();
     const roomId = this.generateRoomId();
     const p1Token = randomUUID();
@@ -76,6 +85,7 @@ class OnlineRoomService {
       },
       settings: {
         teamSize: sanitizeTeamSize(teamSize, DEFAULT_TEAM_SIZE),
+        mode: sanitizeMode(mode, DEFAULT_MODE),
       },
       builder: {
         p1: cloneBuilderPayload(builder, p1Name),
@@ -105,11 +115,15 @@ class OnlineRoomService {
     if (!room.settings || typeof room.settings !== 'object') {
       room.settings = {
         teamSize: sanitizeTeamSize(teamSize, DEFAULT_TEAM_SIZE),
+        mode: DEFAULT_MODE,
       };
-    } else if (!Number.isInteger(room.settings.teamSize)) {
-      room.settings.teamSize = sanitizeTeamSize(teamSize, DEFAULT_TEAM_SIZE);
     } else {
-      room.settings.teamSize = sanitizeTeamSize(room.settings.teamSize, DEFAULT_TEAM_SIZE);
+      if (!Number.isInteger(room.settings.teamSize)) {
+        room.settings.teamSize = sanitizeTeamSize(teamSize, DEFAULT_TEAM_SIZE);
+      } else {
+        room.settings.teamSize = sanitizeTeamSize(room.settings.teamSize, DEFAULT_TEAM_SIZE);
+      }
+      room.settings.mode = sanitizeMode(room.settings.mode, DEFAULT_MODE);
     }
     if (room.players.p2) {
       const error = new Error('Room is already full.');
@@ -160,6 +174,7 @@ class OnlineRoomService {
     const room = this.getRoomOrThrow(roomId);
     this.resolveSideByToken(room, token);
     const teamSize = sanitizeTeamSize(room.settings?.teamSize, DEFAULT_TEAM_SIZE);
+    const mode = sanitizeMode(room.settings?.mode, DEFAULT_MODE);
 
     if (!room.players.p1 || !room.players.p2) {
       const error = new Error('Both players must join before starting a battle.');
@@ -173,8 +188,8 @@ class OnlineRoomService {
     }
 
     const payload = {
-      mode: 'singles',
-      formatid: DEFAULT_FORMAT_ID,
+      mode,
+      formatid: mode === 'doubles' ? DEFAULT_DOUBLES_FORMAT_ID : DEFAULT_SINGLES_FORMAT_ID,
       players: [
         {
           name: sanitizeName(room.builder.p1?.name || room.players.p1?.name || 'Player 1', 'Player 1'),
@@ -187,7 +202,7 @@ class OnlineRoomService {
       ],
     };
 
-    const snapshot = await this.engine.startSingles(payload);
+    const snapshot = await this.engine.startBattle(payload);
     room.battle = {
       started: true,
       sessionId: String(snapshot?.id || ''),
@@ -233,7 +248,7 @@ class OnlineRoomService {
         p1: actionableSides.includes('p1') ? room.battle.pendingChoices.p1 : '',
         p2: actionableSides.includes('p2') ? room.battle.pendingChoices.p2 : '',
       };
-      const nextSnapshot = await this.engine.chooseSingles(room.battle.sessionId, choices);
+      const nextSnapshot = await this.engine.chooseBattle(room.battle.sessionId, choices);
       room.battle.snapshot = nextSnapshot;
       room.battle.started = !Boolean(nextSnapshot?.winner);
       room.battle.pendingChoices = {p1: '', p2: ''};
@@ -406,6 +421,7 @@ class OnlineRoomService {
       },
       settings: {
         teamSize: sanitizeTeamSize(room.settings?.teamSize, DEFAULT_TEAM_SIZE),
+        mode: sanitizeMode(room.settings?.mode, DEFAULT_MODE),
       },
       builder: {
         p1: cloneBuilderPayload(room.builder.p1, room.players.p1?.name || 'Player 1'),

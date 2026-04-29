@@ -1367,6 +1367,7 @@ const state = {
   online: {
     enabled: isOnlineProfile(),
     teamSize: ONLINE_TEAM_SIZE_DEFAULT,
+    mode: 'singles',
     roomId: '',
     token: '',
     side: '',
@@ -2091,6 +2092,11 @@ function renderOnlineRoomPanel() {
     els.onlineRoomTeamSizeSelect.value = String(onlineTeamSize);
     els.onlineRoomTeamSizeSelect.disabled = joined;
   }
+  if (els.onlineRoomModeSelect) {
+    const onlineMode = state.online?.mode === 'doubles' ? 'doubles' : 'singles';
+    els.onlineRoomModeSelect.value = onlineMode;
+    els.onlineRoomModeSelect.disabled = joined;
+  }
   const hasName = Boolean(els.onlineRoomNameInput?.value?.trim());
   const roomInputValue = normalizeRoomId(els.onlineRoomIdInput?.value || '');
   const canCreate = hasName && !joined;
@@ -2273,7 +2279,9 @@ async function applyOnlineBuilderFromRoomState(roomState, {preserveLocal = true}
   if (!roomState?.builder) return;
   const p1 = roomState.builder.p1 || {name: 'Player 1', team: []};
   const p2 = roomState.builder.p2 || {name: 'Player 2', team: []};
-  state.mode = 'singles';
+  const remoteMode = roomState?.settings?.mode === 'doubles' ? 'doubles' : 'singles';
+  state.online.mode = remoteMode;
+  state.mode = remoteMode;
   rebuildTeamSize();
   const remoteNames = [p1.name || 'Player 1', p2.name || 'Player 2'];
   const remoteTeams = [0, 1].map(player => Array.from({length: state.teamSize}, (_, slot) => {
@@ -2378,8 +2386,11 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   );
 
   state.online.teamSize = nextOnlineTeamSize;
-  state.mode = 'singles';
-  if (state.teamSize !== nextOnlineTeamSize) {
+  const nextOnlineMode = roomState?.settings?.mode === 'doubles' ? 'doubles' : 'singles';
+  const modeChanged = state.online.mode !== nextOnlineMode || state.mode !== nextOnlineMode;
+  state.online.mode = nextOnlineMode;
+  state.mode = nextOnlineMode;
+  if (modeChanged || state.teamSize !== nextOnlineTeamSize) {
     rebuildTeamSize();
   }
 
@@ -2550,20 +2561,22 @@ async function submitOnlineChoiceIfPossible(player, battle = state.battle) {
   if (!isEngineActionableRequest(request)) return;
   if (!isPlayerReady(player, battle)) return;
   const actionSlots = getEngineActionSlots(player, battle);
-  // Online room doubles wiring is handled in DB-10; for now online submit stays singles-only.
-  if (actionSlots.length !== 1) return;
-  const activeIndex = actionSlots[0];
-  if (!Number.isInteger(activeIndex)) return;
-  const choice = getEngineDraftChoice(player, activeIndex, battle);
-  if (!choice?.kind) return;
+  if (!actionSlots.length) return;
 
-  let serialized = '';
-  try {
-    serialized = serializeChoiceForShowdown(choice, request);
-  } catch (error) {
-    console.warn('Failed to serialize online choice.', error);
-    return;
+  const serializedParts = [];
+  for (let requestSlot = 0; requestSlot < actionSlots.length; requestSlot += 1) {
+    const activeIndex = actionSlots[requestSlot];
+    if (!Number.isInteger(activeIndex)) return;
+    const choice = getEngineDraftChoice(player, activeIndex, battle);
+    if (!choice?.kind) return;
+    try {
+      serializedParts.push(serializeChoiceForShowdown(choice, request, {requestSlot}));
+    } catch (error) {
+      console.warn('Failed to serialize online choice.', error);
+      return;
+    }
   }
+  const serialized = serializedParts.join(', ');
 
   const currentTurn = Number(battle.turn || 0);
   if (state.online.submittedChoiceTurnBySide[sideId] === currentTurn
@@ -2644,6 +2657,7 @@ async function createOnlineRoomFlow() {
     name,
     builder: buildOnlineLocalBuilderPayload(0),
     teamSize: normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT),
+    mode: state.online?.mode === 'doubles' ? 'doubles' : 'singles',
   });
   state.online.roomId = normalizeRoomId(result.roomId);
   state.online.side = result.side || 'p1';
@@ -2744,6 +2758,15 @@ function wireOnlineRoomEvents() {
     if (isOnlineRoomJoined()) return;
     const nextSize = normalizeOnlineTeamSize(els.onlineRoomTeamSizeSelect.value, state.online?.teamSize || ONLINE_TEAM_SIZE_DEFAULT);
     state.online.teamSize = nextSize;
+    rebuildTeamSize();
+    renderAll();
+    saveState();
+  });
+  els.onlineRoomModeSelect?.addEventListener('change', () => {
+    if (isOnlineRoomJoined()) return;
+    const nextMode = els.onlineRoomModeSelect.value === 'doubles' ? 'doubles' : 'singles';
+    state.online.mode = nextMode;
+    state.mode = nextMode;
     rebuildTeamSize();
     renderAll();
     saveState();
@@ -2862,6 +2885,10 @@ function getOnlineRoomRuntimeDescriptor() {
   const connected = Boolean(state.online.connected);
   const battleActive = isOnlineBattleInProgress();
   const roomId = state.online.roomId || '';
+  const isDoubles = (state.online?.mode || state.mode) === 'doubles';
+  const readyDetail = isDoubles
+    ? lang('온라인 더블 룸이 준비되었습니다.', 'Online doubles room is ready.')
+    : lang('온라인 싱글 룸이 준비되었습니다.', 'Online singles room is ready.');
   const detail = !joined
     ? lang('온라인 방을 먼저 생성/참가하세요.', 'Create or join an online room first.')
     : !bothPlayersJoined
@@ -2872,10 +2899,10 @@ function getOnlineRoomRuntimeDescriptor() {
       ? lang('양쪽 플레이어가 모두 Ready 상태여야 시작할 수 있습니다.', 'Both players must be ready before the battle can start.')
       : !connected
         ? lang('방 연결 상태를 확인한 뒤 다시 시도하세요.', 'Check room connectivity before starting.')
-        : lang('온라인 싱글 룸이 준비되었습니다.', 'Online singles room is ready.');
+        : readyDetail;
   return {
-    id: 'online-room-singles',
-    title: lang('온라인 싱글', 'Online Singles'),
+    id: isDoubles ? 'online-room-doubles' : 'online-room-singles',
+    title: isDoubles ? lang('온라인 더블', 'Online Doubles') : lang('온라인 싱글', 'Online Singles'),
     badge: !joined
       ? lang('방 필요', 'Room required')
       : !bothPlayersJoined
@@ -2892,7 +2919,9 @@ function getOnlineRoomRuntimeDescriptor() {
         : battleActive
           ? 'warning'
         : (bothReady ? 'ready' : 'warning'),
-    heroLabel: roomId ? `${lang('온라인', 'Online')} · ${roomId}` : lang('온라인', 'Online'),
+    heroLabel: roomId
+      ? `${lang('온라인', 'Online')} · ${roomId} · ${isDoubles ? lang('더블', 'Doubles') : lang('싱글', 'Singles')}`
+      : `${lang('온라인', 'Online')} · ${isDoubles ? lang('더블', 'Doubles') : lang('싱글', 'Singles')}`,
     detail,
     startAllowed: Boolean(joined && bothPlayersJoined && bothReady && connected && !battleActive),
     startBlockedReason: detail,
@@ -2954,7 +2983,8 @@ function applyBattleRuntimeInfo(battle, descriptor) {
     detail: descriptor.detail,
     engineAuthoritative: descriptor.id === 'engine-authoritative-singles'
       || descriptor.id === 'engine-authoritative-doubles'
-      || descriptor.id === 'online-room-singles',
+      || descriptor.id === 'online-room-singles'
+      || descriptor.id === 'online-room-doubles',
     availability: descriptor.startAllowed ? 'available' : 'blocked',
   };
   battle.sourceOfTruth = battle.runtimeInfo.engineAuthoritative ? 'engine' : 'blocked-no-runtime';
@@ -2966,6 +2996,7 @@ function getDisplayedRuntimeDescriptor() {
   if (runtimeId === 'engine-authoritative-singles') return getEngineAuthoritativeSinglesRuntimeDescriptor();
   if (runtimeId === 'engine-authoritative-doubles') return getEngineAuthoritativeDoublesRuntimeDescriptor();
   if (runtimeId === 'online-room-singles') return getOnlineRoomRuntimeDescriptor();
+  if (runtimeId === 'online-room-doubles') return getOnlineRoomRuntimeDescriptor();
   if (runtimeId === 'blocked-singles-awaiting-engine') return getBlockedSinglesRuntimeDescriptor();
   if (runtimeId === 'blocked-doubles-awaiting-engine') return getBlockedDoublesRuntimeDescriptor();
   return getSelectedBattleRuntimeDescriptor();
@@ -4485,6 +4516,7 @@ function saveState() {
       // Persist only non-session preferences. Room sessions are intentionally
       // ephemeral to avoid auto-rejoining stale battles during debugging.
       teamSize: normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT),
+      mode: state.online?.mode === 'doubles' ? 'doubles' : 'singles',
     } : undefined,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
@@ -4508,12 +4540,13 @@ function loadSavedState() {
       state.online.token = '';
       state.online.side = '';
       state.online.teamSize = normalizeOnlineTeamSize(online.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
+      state.online.mode = online.mode === 'doubles' ? 'doubles' : 'singles';
       state.online.joined = {p1: false, p2: false};
       state.online.joinInputOpen = false;
       state.online.createConfigOpen = false;
       state.online.revision = 0;
       resetOnlineBuilderAutoSyncState();
-      state.mode = 'singles';
+      state.mode = state.online.mode;
     }
     rebuildTeamSize();
     if (Array.isArray(parsed.teams)) {
@@ -5223,6 +5256,7 @@ function bindElements() {
     onlineRoomStatus: document.getElementById('online-room-status'),
     onlineRoomCode: document.getElementById('online-room-code'),
     onlineRoomTeamSizeSelect: document.getElementById('online-room-team-size'),
+    onlineRoomModeSelect: document.getElementById('online-room-mode'),
     setupPanel: document.getElementById('setup-panel') || document.querySelector('.setup-panel'),
     modeSinglesBtn: document.getElementById('mode-singles-btn'),
     modeDoublesBtn: document.getElementById('mode-doubles-btn'),
@@ -5971,14 +6005,17 @@ function wireEditorEvents() {
   els.langKoBtn?.addEventListener('click', () => setLanguage('ko'));
   els.langEnBtn?.addEventListener('click', () => setLanguage('en'));
   els.modeSinglesBtn.addEventListener('click', () => {
+    if (isOnlineProfile() && isOnlineRoomJoined()) return;
     state.mode = 'singles';
+    if (isOnlineProfile()) state.online.mode = 'singles';
     rebuildTeamSize();
     renderAll();
     saveState();
   });
   els.modeDoublesBtn.addEventListener('click', () => {
-    if (isOnlineProfile()) return;
+    if (isOnlineProfile() && isOnlineRoomJoined()) return;
     state.mode = 'doubles';
+    if (isOnlineProfile()) state.online.mode = 'doubles';
     rebuildTeamSize();
     renderAll();
     saveState();
@@ -6147,6 +6184,7 @@ function wireEditorEvents() {
       state.online.token = '';
       state.online.side = '';
       state.online.teamSize = ONLINE_TEAM_SIZE_DEFAULT;
+      state.online.mode = 'singles';
       state.online.joined = {p1: false, p2: false};
       state.online.joinInputOpen = false;
       state.online.createConfigOpen = false;
@@ -10065,7 +10103,11 @@ function renderAll() {
   document.body.classList.toggle('hide-builder-warning-box', Boolean(UI_TUNING.builder.hideWarningBox));
   els.modeSinglesBtn.classList.toggle('active', state.mode === 'singles');
   els.modeDoublesBtn.classList.toggle('active', state.mode === 'doubles');
-  if (isOnlineProfile() && els.modeDoublesBtn) els.modeDoublesBtn.disabled = true;
+  if (isOnlineProfile()) {
+    const lockMode = isOnlineRoomJoined();
+    if (els.modeSinglesBtn) els.modeSinglesBtn.disabled = lockMode;
+    if (els.modeDoublesBtn) els.modeDoublesBtn.disabled = lockMode;
+  }
 
   const showSetupPanel = !isOnlineProfile()
     ? true
@@ -10116,7 +10158,8 @@ async function bootstrap() {
   if (assetPaths.items) state.assetBase.items = assetPaths.items;
   loadSavedState();
   if (isOnlineProfile()) {
-    state.mode = 'singles';
+    state.online.mode = state.online.mode === 'doubles' ? 'doubles' : 'singles';
+    state.mode = state.online.mode;
     rebuildTeamSize();
   }
   const {source: dexSource, version: dexVersion} = await loadDataProvider();
