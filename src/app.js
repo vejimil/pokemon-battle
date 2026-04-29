@@ -1916,6 +1916,7 @@ async function playTimelineAcrossActiveViews(events = [], { initialNames = {}, i
       initialNames,
       initialSlotInfo,
       commandingState: ui.commandingStateByPerspective[cfg.playerSide === 'p2' ? 1 : 0],
+      fastDoublesTimeline: state.battle?.mode === 'doubles',
       localeManager: localeEnabled ? battleLocaleManager : null,
       localeLanguage,
       resolveVisualState: ev => resolveTimelineEventVisualState(ev, {

@@ -318,6 +318,7 @@ export class BattleTimelineExecutor {
     localizeAbilityName,
     sideNames,
     commandingState,
+    fastDoublesTimeline = false,
   } = {}) {
     this.onInputRequired = onInputRequired ?? (() => {});
     this.onComplete = onComplete ?? (() => {});
@@ -352,6 +353,7 @@ export class BattleTimelineExecutor {
     this._activeTerrainId = '';
     this._lastWeatherStartTurn = null;
     this._pendingBattleEndEvent = null;
+    this._fastDoublesTimeline = fastDoublesTimeline === true;
     // Tracks active Commander state: key="${dondozo.side}_${dondozo.slot}", value={tatsugiSlot, tatsugiUrl}
     // Shared across executor instances (passed in) so state persists between turns.
     this._commandingState = commandingState instanceof Map ? commandingState : new Map();
@@ -835,6 +837,66 @@ export class BattleTimelineExecutor {
     return Boolean(aSide && bSide && aSide === bSide && aSlot === bSlot);
   }
 
+  _targetKey(target = null) {
+    if (!target?.side) return '';
+    const slot = Number.isInteger(target.slot) ? target.slot : 0;
+    return `${target.side}_${slot}`;
+  }
+
+  _joinDisplayNames(names = []) {
+    const clean = names.map(name => String(name || '').trim()).filter(Boolean);
+    if (!clean.length) return '';
+    if (clean.length === 1) return clean[0];
+    if (this._isEnglishLocale()) {
+      if (clean.length === 2) return `${clean[0]} and ${clean[1]}`;
+      return `${clean.slice(0, -1).join(', ')}, and ${clean[clean.length - 1]}`;
+    }
+    return clean.join('와 ');
+  }
+
+  _joinTargetNames(events = []) {
+    return this._joinDisplayNames(events.map(ev => {
+      const target = ev?.target || {};
+      const name = this._slotName(target.side, target.slot ?? 0);
+      return this._pokemonNameWithAffix(name, target.side);
+    }));
+  }
+
+  _normalizeWeatherDamageId(effectId = '') {
+    const id = toId(effectId);
+    return id === 'sand' ? 'sandstorm' : id;
+  }
+
+  _isWeatherDamageEvent(ev = {}) {
+    return ev?.type === 'damage' && WEATHER_DAMAGE_IDS.has(toId(ev?.fromEffectId || ''));
+  }
+
+  _isPlainMoveDamageEvent(ev = {}) {
+    return ev?.type === 'damage'
+      && !String(ev?.fromKind || '').trim()
+      && !String(ev?.fromEffectId || '').trim()
+      && !String(ev?.fromSource || '').trim();
+  }
+
+  _findPreviousMoveUse(events = [], index = 0) {
+    for (let cursor = index - 1; cursor >= 0 && cursor >= index - 20; cursor -= 1) {
+      const prev = events[cursor];
+      if (!prev) continue;
+      if (prev.type === 'move_use') return prev;
+      if ([
+        'turn_start',
+        'turn_end',
+        'switch_in',
+        'faint',
+        'battle_end',
+        'callback_event',
+      ].includes(prev.type)) {
+        return null;
+      }
+    }
+    return null;
+  }
+
   _isProtectLikeEffect(effectId = '') {
     return PROTECT_BLOCK_EFFECT_IDS.has(toId(effectId));
   }
@@ -950,6 +1012,265 @@ export class BattleTimelineExecutor {
     result.attemptedTargets.forEach(target => pushUniqueTarget(target, combinedTargets, combinedKeys));
     result.animationTargets = combinedTargets;
     return result;
+  }
+
+  _canBatchSwitchIn(ev = {}, context = {}) {
+    if (ev?.type !== 'switch_in' || ev.fromBall !== true) return false;
+    if (ev.cause === 'drag') return false;
+    return true;
+  }
+
+  _collectSwitchInBatch(events = [], index = 0, context = {}) {
+    const first = events[index];
+    if (!this._fastDoublesTimeline || !this._canBatchSwitchIn(first, context)) return null;
+    const side = first.side;
+    const batch = [];
+    const seenSlots = new Set();
+    for (let cursor = index; cursor < events.length; cursor += 1) {
+      const ev = events[cursor];
+      if (!ev || ev.type !== 'switch_in' || ev.side !== side) break;
+      if (!this._canBatchSwitchIn(ev, context)) break;
+      const slot = Number(ev.slot) === 1 ? 1 : 0;
+      if (seenSlots.has(slot)) break;
+      seenSlots.add(slot);
+      batch.push(ev);
+    }
+    return batch.length >= 2 ? { type: 'switch_in', events: batch } : null;
+  }
+
+  _collectDamageBatch(events = [], index = 0) {
+    const first = events[index];
+    if (!this._fastDoublesTimeline || first?.type !== 'damage') return null;
+
+    if (this._isWeatherDamageEvent(first)) {
+      const weatherId = this._normalizeWeatherDamageId(first.fromEffectId);
+      const batch = [];
+      const seenTargets = new Set();
+      for (let cursor = index; cursor < events.length; cursor += 1) {
+        const ev = events[cursor];
+        if (!this._isWeatherDamageEvent(ev)) break;
+        if (this._normalizeWeatherDamageId(ev.fromEffectId) !== weatherId) break;
+        const key = this._targetKey(ev.target);
+        if (!key || seenTargets.has(key)) break;
+        seenTargets.add(key);
+        batch.push(ev);
+      }
+      return batch.length >= 2 ? { type: 'damage', kind: 'weather', weatherId, events: batch } : null;
+    }
+
+    const moveEvent = this._findPreviousMoveUse(events, index);
+    if (!moveEvent || !this._isPlainMoveDamageEvent(first)) return null;
+    const batch = [];
+    const seenTargets = new Set();
+    for (let cursor = index; cursor < events.length; cursor += 1) {
+      const ev = events[cursor];
+      if (!this._isPlainMoveDamageEvent(ev)) break;
+      const key = this._targetKey(ev.target);
+      if (!key || seenTargets.has(key)) break;
+      seenTargets.add(key);
+      batch.push(ev);
+    }
+    return batch.length >= 2 ? { type: 'damage', kind: 'spread_move', moveEvent, events: batch } : null;
+  }
+
+  _collectFastBatch(events = [], index = 0, context = {}) {
+    if (!this._fastDoublesTimeline) return null;
+    return this._collectSwitchInBatch(events, index, context)
+      || this._collectDamageBatch(events, index);
+  }
+
+  _switchInBatchMessage(side, events = []) {
+    const trainerName = this._sideNames?.[side] || (side === 'p2' ? 'Player 2' : 'Player 1');
+    const names = events
+      .map(ev => this._localizeMonName(ev.species || '') || ev.species || '')
+      .filter(Boolean);
+    const joined = this._joinDisplayNames(names);
+    if (this._isEnglishLocale()) return `${trainerName} sent out ${joined}!`;
+    return `${trainerName}는 ${joined}을 내보냈다!`;
+  }
+
+  _switchOutBatchMessage(names = []) {
+    const joined = this._joinDisplayNames(names);
+    if (!joined) return '';
+    return this._isEnglishLocale()
+      ? `Come back, ${joined}!`
+      : `들어와! ${joined}!`;
+  }
+
+  _weatherDamageBatchMessage(weatherId = '', events = []) {
+    const names = this._joinTargetNames(events);
+    const id = this._normalizeWeatherDamageId(weatherId);
+    if (this._isEnglishLocale()) {
+      const verb = events.length === 1 ? 'is' : 'are';
+      if (id === 'sandstorm') return `${names} ${verb} buffeted\nby the sandstorm!`;
+      return `${names} ${verb} pelted\nby the hail!`;
+    }
+    if (id === 'sandstorm') return `모래바람이\n${names}을 덮쳤다!`;
+    return `싸라기눈이\n${names}을 덮쳤다!`;
+  }
+
+  _hitResultBatchMessages(events = []) {
+    const groups = [
+      {
+        predicate: ev => Boolean(ev?.critical),
+        message: targetNames => this._isEnglishLocale()
+          ? `A critical hit on ${targetNames}!`
+          : `${targetNames}의 급소에 맞았다!`,
+      },
+      {
+        predicate: ev => !ev?.critical && ev?.hitResult === 'super',
+        message: targetNames => this._isEnglishLocale()
+          ? `It's super effective on ${targetNames}!`
+          : `${targetNames}에게 효과가 굉장했다!`,
+      },
+      {
+        predicate: ev => !ev?.critical && ev?.hitResult === 'not_very',
+        message: targetNames => this._isEnglishLocale()
+          ? `It's not very effective on ${targetNames}.`
+          : `${targetNames}에게 효과가 별로인 것 같다...`,
+      },
+    ];
+    return groups
+      .map(group => {
+        const matching = events.filter(group.predicate);
+        if (!matching.length) return '';
+        const targetNames = this._joinTargetNames(matching);
+        return targetNames ? group.message(targetNames) : '';
+      })
+      .filter(Boolean);
+  }
+
+  async _applySwitchInBatch(batch = {}) {
+    const events = Array.isArray(batch.events) ? batch.events : [];
+    if (!events.length) return;
+    const side = events[0]?.side;
+    const previousEntries = events.map(ev => {
+      const slot = ev.slot ?? 0;
+      const previousSpecies = this._slotNameRaw(side, slot);
+      const previousInfo = this._slotInfoFor(side, slot) || null;
+      const shouldShowSwitchOut = Boolean(
+        side === this._currentPlayerSide()
+        && previousSpecies
+        && toId(previousSpecies)
+        && toId(previousSpecies) !== toId(ev.species || '')
+        && !previousInfo?.fainted
+      );
+      return {
+        slot,
+        shouldShowSwitchOut,
+        displayName: this._localizeMonName(previousSpecies) || previousSpecies,
+      };
+    });
+    const switchOutNames = previousEntries
+      .filter(entry => entry.shouldShowSwitchOut)
+      .map(entry => entry.displayName)
+      .filter(Boolean);
+    if (switchOutNames.length) {
+      await this._showMsg(this._switchOutBatchMessage(switchOutNames), { minMs: 520 });
+      previousEntries
+        .filter(entry => entry.shouldShowSwitchOut)
+        .forEach(entry => this._scene()?.setBattlerVisibility?.(side, false, { yOffset: 0, slot: entry.slot }));
+      await this._delay(120);
+    }
+    const prepared = await Promise.all(events.map(async ev => {
+      const slot = ev.slot ?? 0;
+      const species = ev.species || this._slotNameRaw(side, slot) || '???';
+      this._slotNames.set(this._slotKey(side, slot), species);
+      const visual = await this._resolveVisual(ev);
+      const displaySpecies = this._localizeMonName(species) || species;
+      const switchPatch = {
+        displayName: displaySpecies,
+        ...(visual?.infoPatch || {}),
+      };
+      if (Number.isFinite(ev.hpAfter) && Number.isFinite(ev.maxHp) && ev.maxHp > 0) {
+        switchPatch.hp = ev.hpAfter;
+        switchPatch.maxHp = ev.maxHp;
+        switchPatch.hpPercent = (ev.hpAfter / ev.maxHp) * 100;
+        switchPatch.hpLabel = `${ev.hpAfter}/${ev.maxHp}`;
+        switchPatch.fainted = ev.hpAfter <= 0 || ev.status === 'fnt';
+      }
+      if (ev.status) {
+        switchPatch.statusEffect = ev.status === 'fnt' ? '' : ev.status;
+        switchPatch.statusLabel = ev.status === 'fnt' ? '' : ev.status;
+      }
+      this._applyInfoForSlot(side, slot, switchPatch);
+      return { slot, species, visual };
+    }));
+
+    await this._showMsg(this._switchInBatchMessage(side, events), { minMs: 520 });
+    await Promise.all(prepared.map(entry => (
+      entry.visual?.spriteUrl
+        ? this._setBattlerSprite(side, entry.visual.spriteUrl, { visible: false, slot: entry.slot })
+        : Promise.resolve()
+    )));
+
+    const scene = this._scene();
+    if (scene?.switchInBattler) {
+      await Promise.all(prepared.map(entry => (
+        scene.switchInBattler(side, true, { audioEnabled: this._audioEnabled, slot: entry.slot })
+      )));
+    } else {
+      this._playAudio('se/pb_rel');
+      await this._delay(260);
+    }
+
+    prepared.forEach(entry => {
+      const dexNum = speciesToDexNum(entry.species);
+      if (!dexNum) return;
+      this._playCryByNum(dexNum).catch?.(() => {});
+    });
+  }
+
+  async _applyDamageBatch(batch = {}) {
+    const events = Array.isArray(batch.events) ? batch.events : [];
+    if (!events.length) return;
+
+    if (batch.kind === 'weather') {
+      await this._showMsg(this._weatherDamageBatchMessage(batch.weatherId, events), { minMs: 360 });
+      const weatherDamageAnim = this._weatherDamageAnimName(batch.weatherId);
+      if (weatherDamageAnim) {
+        await this._playFieldAnim(weatherDamageAnim);
+      }
+    }
+
+    this._playHitByResult(events[0]?.hitResult ?? 'effective');
+    const tweens = events.map(ev => {
+      const hpPct = ev.maxHp > 0 ? (ev.hpAfter / ev.maxHp) * 100 : 0;
+      this._updateSlotInfo(ev.target?.side, ev.target?.slot ?? 0, {
+        hp: ev.hpAfter,
+        maxHp: ev.maxHp,
+        hpPercent: hpPct,
+        hpLabel: `${ev.hpAfter}/${ev.maxHp}`,
+        ...(ev.status && ev.status !== 'fnt' ? {
+          statusEffect: ev.status,
+          statusLabel: ev.status,
+        } : {}),
+        ...(ev.status === 'fnt' ? {
+          statusEffect: '',
+          statusLabel: '',
+        } : {}),
+        fainted: ev.hpAfter <= 0 || ev.status === 'fnt',
+      });
+      const info = this._infoForSideSlot(ev.target?.side, ev.target?.slot ?? 0);
+      return info?.tweenHpTo ? info.tweenHpTo(hpPct, ev.maxHp) : this._delay(320);
+    });
+    await Promise.all(tweens);
+
+    if (batch.kind === 'spread_move') {
+      for (const msg of this._hitResultBatchMessages(events)) {
+        await this._showMsg(msg, { minMs: 340 });
+      }
+    }
+  }
+
+  async _applyFastBatch(batch = {}) {
+    if (batch.type === 'switch_in') {
+      await this._applySwitchInBatch(batch);
+      return;
+    }
+    if (batch.type === 'damage') {
+      await this._applyDamageBatch(batch);
+    }
   }
 
   _effectActivateMessage(ev = {}, kind = 'activate') {
@@ -1300,16 +1621,24 @@ export class BattleTimelineExecutor {
       for (let index = 0; index < events.length; index += 1) {
         const ev = events[index];
         if (!this.running) break;  // fastForward was called
-        await this._applyEvent(ev, {
+        const eventContext = {
           ...context,
           events,
           index,
           prevEvent: index > 0 ? events[index - 1] : null,
           nextEvent: index + 1 < events.length ? events[index + 1] : null,
           isInitialSummonSequence,
-        });
+        };
+        const batch = this._collectFastBatch(events, index, eventContext);
+        if (batch) {
+          await this._applyFastBatch(batch, eventContext);
+          index += batch.events.length - 1;
+        } else {
+          await this._applyEvent(ev, eventContext);
+        }
         if (!this.running) break;
-        const gapMs = this._eventGapMs(ev?.type);
+        const gapSource = batch?.events?.[batch.events.length - 1] || ev;
+        const gapMs = this._eventGapMs(gapSource?.type);
         if (gapMs > 0) {
           await this._delay(gapMs);
         }
