@@ -51,6 +51,23 @@ const USER_FOCUS_X   = 106;
 const USER_FOCUS_Y   = 116;   // 148 - 32
 const TARGET_FOCUS_X = 234;
 const TARGET_FOCUS_Y = 52;    // 84 - 32
+const TARGET_CENTER_FRAME_X = TARGET_FOCUS_X - USER_FOCUS_X; // 128
+const TARGET_CENTER_FRAME_Y = TARGET_FOCUS_Y - USER_FOCUS_Y; // -64
+
+// A few shield animations carry a baked-in x/y nudge that lands the barrier
+// visibly above/right in this runtime. Keep the correction limited to those
+// barrier sprites so unrelated USER-focused graphics keep their authored motion.
+const CENTERED_BARRIER_GRAPHIC_ANIMS = new Set([
+  'protect',
+  'kings-shield',
+  'burning-bulwark',
+  'detect',
+  'obstruct',
+  'guard-split',
+]);
+const MOVE_ANIM_SLUG_ALIASES = new Map([
+  ['king-s-shield', 'kings-shield'],
+]);
 
 // Optional baseline offsets for USER/TARGET copy frames.
 // `NO_GRAPHIC` helps purely USER/TARGET animations (graphic='') keep a natural position.
@@ -101,7 +118,8 @@ export class BattleAnimPlayer {
     }
 
     if (!moveName || !userInfo || !targetInfo) return;
-    const slug = moveName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
+    const rawSlug = moveName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '');
+    const slug = MOVE_ANIM_SLUG_ALIASES.get(rawSlug) || rawSlug;
 
     const variantIndex = Number.isFinite(Number(options?.variantIndex))
       ? Math.max(0, Number(options.variantIndex) | 0)
@@ -129,6 +147,7 @@ export class BattleAnimPlayer {
     return new Promise(resolve => {
       const cancel = this._runAnim(anim, texKey || null, resolvedUserInfo, resolvedTargetInfo, {
         audioEnabled: options.audioEnabled !== false,
+        animSlug: slug,
         scale: Number.isFinite(Number(options.scale)) ? Number(options.scale) : 1,
         scaleGraphicsOnly: options?.scaleGraphicsOnly === true,
         tint: Number.isFinite(Number(options.tint)) ? Number(options.tint) : null,
@@ -275,6 +294,7 @@ export class BattleAnimPlayer {
     const frameCount = frames.length;
     if (!frameCount) { callback(); return () => {}; }
     const audioEnabled = options?.audioEnabled !== false;
+    const animSlug = String(options?.animSlug || '');
     const scaleMultiplier = Number.isFinite(options?.scale) && Number(options.scale) > 0
       ? Number(options.scale)
       : 1;
@@ -341,7 +361,7 @@ export class BattleAnimPlayer {
         let g = 0;
 
       for (const frame of spriteFrames) {
-        const frameData = this._computeFrameData(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine);
+        const frameData = this._computeFrameData(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine, animSlug);
         if (frame.target === FT_GRAPHIC) {
           if (!texKey) continue;
           if (g >= graphicPool.length) {
@@ -481,12 +501,13 @@ export class BattleAnimPlayer {
    * Compute frame data in scene coordinates.
    * Ported from getGraphicFrameData() in battle-anims.ts lines 789-834.
    */
-  _computeFrameData(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine) {
-    let x = (frame.x ?? 0) + USER_FOCUS_X;
-    let y = (frame.y ?? 0) + USER_FOCUS_Y;
-    let scaleX = ((frame.zoomX ?? 100) / 100) * (frame.mirror ? -1 : 1);
-    const scaleY = (frame.zoomY ?? 100) / 100;
-    const focus = Number.isFinite(Number(frame.focus)) ? Number(frame.focus) : AF_TARGET;
+  _computeFrameData(frame, uX, uY, uH, tX, tY, tH, srcLine, dstLine, animSlug = '') {
+    const normalizedFrame = this._normalizeCenteredBarrierFrame(frame, animSlug);
+    let x = (normalizedFrame.x ?? 0) + USER_FOCUS_X;
+    let y = (normalizedFrame.y ?? 0) + USER_FOCUS_Y;
+    let scaleX = ((normalizedFrame.zoomX ?? 100) / 100) * (normalizedFrame.mirror ? -1 : 1);
+    const scaleY = (normalizedFrame.zoomY ?? 100) / 100;
+    const focus = Number.isFinite(Number(normalizedFrame.focus)) ? Number(normalizedFrame.focus) : AF_TARGET;
 
     switch (focus) {
       case 0:
@@ -509,7 +530,7 @@ export class BattleAnimPlayer {
         );
         x = pt[0];
         y = pt[1];
-        if (frame.target === FT_GRAPHIC && this._isReversed(srcLine[0], srcLine[2], dstLine[0], dstLine[2])) {
+        if (normalizedFrame.target === FT_GRAPHIC && this._isReversed(srcLine[0], srcLine[2], dstLine[0], dstLine[2])) {
           scaleX *= -1;
         }
         break;
@@ -521,6 +542,19 @@ export class BattleAnimPlayer {
         break;
     }
     return { x, y, scaleX, scaleY, angle: -(frame.angle ?? 0) };
+  }
+
+  _normalizeCenteredBarrierFrame(frame, animSlug = '') {
+    if (
+      frame?.target !== FT_GRAPHIC
+      || !CENTERED_BARRIER_GRAPHIC_ANIMS.has(String(animSlug || ''))
+    ) {
+      return frame;
+    }
+    const focus = Number.isFinite(Number(frame.focus)) ? Number(frame.focus) : AF_TARGET;
+    if (focus === AF_USER) return { ...frame, x: 0, y: 0 };
+    if (focus === AF_TARGET) return { ...frame, x: TARGET_CENTER_FRAME_X, y: TARGET_CENTER_FRAME_Y };
+    return frame;
   }
 
   // Ports transformPoint / yAxisIntersect / repositionY from battle-anims.ts lines 674-721.

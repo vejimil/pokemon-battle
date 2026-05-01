@@ -22,6 +22,23 @@ const TERRAIN_BG_RESOURCE_BY_ID = Object.freeze({
   mistyterrain: 'PRAS- Misty Terrain BG',
   psychicterrain: 'PRAS- Psychic Terrain BG',
 });
+const SAME_SIDE_OPP_VARIANT_ANIMS = new Set([
+  'protect',
+  'detect',
+  'kings-shield',
+  'burning-bulwark',
+  'obstruct',
+  'spiky-shield',
+  'baneful-bunker',
+  'silk-trap',
+  'wide-guard',
+  'quick-guard',
+  'mat-block',
+  'crafty-shield',
+]);
+const MOVE_ANIM_SLUG_ALIASES = new Map([
+  ['king-s-shield', 'kings-shield'],
+]);
 const TERA_TYPE_TINTS = Object.freeze({
   normal:   0xa8a878,
   fighting: 0xc03028,
@@ -61,6 +78,14 @@ const SUBSTITUTE_SPRITE_METRICS = Object.freeze({
 function isSubstituteSpriteId(spriteId = '') {
   const normalized = String(spriteId || '').trim().toLowerCase();
   return normalized === 'substitute' || normalized === 'substitute_back';
+}
+
+function moveAnimSlug(moveName = '') {
+  const rawSlug = String(moveName || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return MOVE_ANIM_SLUG_ALIASES.get(rawSlug) || rawSlug;
 }
 
 export function createBattleShellSceneClass(Phaser, env) {
@@ -1962,8 +1987,10 @@ export function createBattleShellSceneClass(Phaser, env) {
       const isAllyDirectedMove = (actorSide === 'p1' || actorSide === 'p2')
         && (targetSide === 'p1' || targetSide === 'p2')
         && actorSide === targetSide;
+      const useSameSideOppVariant = isAllyDirectedMove
+        && SAME_SIDE_OPP_VARIANT_ANIMS.has(moveAnimSlug(moveName));
       const isOppAnim = (actorSide === 'p1' || actorSide === 'p2')
-        ? (actorSide !== localPlayerSide && !isAllyDirectedMove)
+        ? (actorSide !== localPlayerSide && (!isAllyDirectedMove || useSameSideOppVariant))
         : false;
       const variantIndex = isOppAnim ? 1 : 0;
       await this.animPlayer.play(moveName, endpoints.userInfo, endpoints.targetInfo, {
