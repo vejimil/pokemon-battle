@@ -6701,7 +6701,8 @@ function isEngineSingleMoveRequest(moveRequest) {
   if (moves.length !== 1) return false;
   const onlyMove = moves[0] || null;
   const moveId = toId(onlyMove?.id || onlyMove?.move || '');
-  return Boolean(onlyMove && !onlyMove.disabled && moveId === 'recharge');
+  // Do not hard-force Struggle auto-lock. Keep it user-selectable when it appears.
+  return Boolean(onlyMove && !onlyMove.disabled && moveId && moveId !== 'struggle');
 }
 function isEngineForcedContinuationRequest(moveRequest) {
   return isEngineSingleMoveRequest(moveRequest);
