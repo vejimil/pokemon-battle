@@ -279,6 +279,7 @@ const PROTECT_BLOCK_EFFECT_IDS = new Set([
 
 const EVENT_GAP_SHORT_MS = 120;
 const EVENT_GAP_MEDIUM_MS = 170;
+const MOVE_ANIM_TIMEOUT_MS = 3500;
 
 export class BattleTimelineExecutor {
   /**
@@ -465,6 +466,48 @@ export class BattleTimelineExecutor {
   async _playMoveSe(moveName) {
     if (!this._audioEnabled || !moveName) return;
     await this._audio?.playMoveSe?.(moveName);
+  }
+
+  _moveAnimationNameFor(moveEvent = {}) {
+    const explicit = String(moveEvent?.animationMove || '').trim();
+    const base = String(moveEvent?.baseMove || moveEvent?.move || '').trim();
+    const resolved = explicit || base;
+    if (toId(resolved) === 'terablast') return 'Swift';
+    return resolved;
+  }
+
+  async _playMoveAnimation(moveEvent = {}, options = {}) {
+    const animationMoveName = this._moveAnimationNameFor(moveEvent);
+    if (!animationMoveName) return { animationMoveName, scene: this._scene() };
+    const scene = this._scene();
+    const actorSlot = Number.isInteger(moveEvent?.actor?.slot) ? moveEvent.actor.slot : 0;
+    const targetRef = options?.target?.side
+      ? options.target
+      : (moveEvent?.target?.side ? moveEvent.target : null);
+    const targetSlot = Number.isInteger(targetRef?.slot) ? targetRef.slot : 0;
+    const targetSide = targetRef?.side || moveEvent?.target?.side;
+    const animationScale = Number.isFinite(Number(moveEvent?.animationScale))
+      ? Math.max(0.25, Math.min(4, Number(moveEvent.animationScale)))
+      : (moveEvent?.zMove ? 1.0 : 1);
+    const animationTint = moveEvent?.zMove ? this._zMoveTint(moveEvent?.zMoveType) : null;
+    if (scene?.playMoveAnim) {
+      const moveAnimOptions = { audioEnabled: this._audioEnabled };
+      if (animationScale !== 1) moveAnimOptions.scale = animationScale;
+      if (Number.isFinite(animationTint)) moveAnimOptions.tint = animationTint;
+      await Promise.race([
+        scene.playMoveAnim(animationMoveName, moveEvent?.actor?.side, targetSide, {
+          ...moveAnimOptions,
+          actorSlot,
+          targetSlot,
+          targetSideCenter: options?.targetSideCenter === true,
+        }),
+        new Promise(resolve => setTimeout(resolve, MOVE_ANIM_TIMEOUT_MS)),
+      ]);
+    } else {
+      await this._playMoveSe(animationMoveName || moveEvent?.move);
+      await this._delay(280);
+    }
+    return { animationMoveName, scene };
   }
 
   /**
@@ -881,11 +924,11 @@ export class BattleTimelineExecutor {
       && !String(ev?.fromSource || '').trim();
   }
 
-  _findPreviousMoveUse(events = [], index = 0) {
+  _findPreviousMoveUseIndex(events = [], index = 0) {
     for (let cursor = index - 1; cursor >= 0 && cursor >= index - 20; cursor -= 1) {
       const prev = events[cursor];
       if (!prev) continue;
-      if (prev.type === 'move_use') return prev;
+      if (prev.type === 'move_use') return cursor;
       if ([
         'turn_start',
         'turn_end',
@@ -894,10 +937,44 @@ export class BattleTimelineExecutor {
         'battle_end',
         'callback_event',
       ].includes(prev.type)) {
-        return null;
+        return -1;
       }
     }
-    return null;
+    return -1;
+  }
+
+  _findPreviousMoveUse(events = [], index = 0) {
+    const moveIndex = this._findPreviousMoveUseIndex(events, index);
+    return moveIndex >= 0 ? events[moveIndex] : null;
+  }
+
+  _repeatedMoveHitInfo(events = [], index = 0) {
+    const current = events[index];
+    if (!this._isPlainMoveDamageEvent(current) || !current?.target?.side) return null;
+    const moveIndex = this._findPreviousMoveUseIndex(events, index);
+    if (moveIndex < 0) return null;
+    const moveEvent = events[moveIndex];
+    let previousHitsOnTarget = 0;
+    for (let cursor = moveIndex + 1; cursor < index; cursor += 1) {
+      const ev = events[cursor];
+      if (!ev) continue;
+      if (
+        ev.type === 'move_use'
+        || ev.type === 'switch_in'
+        || ev.type === 'turn_start'
+        || ev.type === 'turn_end'
+        || ev.type === 'battle_end'
+        || ev.type === 'callback_event'
+      ) {
+        return null;
+      }
+      if (this._isPlainMoveDamageEvent(ev) && this._sameSideSlot(ev.target, current.target)) {
+        previousHitsOnTarget += 1;
+      }
+    }
+    return previousHitsOnTarget > 0
+      ? { moveEvent, target: current.target, hitNumber: previousHitsOnTarget + 1 }
+      : null;
   }
 
   _isProtectLikeEffect(effectId = '') {
@@ -1913,16 +1990,11 @@ export class BattleTimelineExecutor {
         const actorName = this._slotName(ev.actor?.side, actorSlot);
         const actorNameWithAffix = this._pokemonNameWithAffix(actorName, ev.actor?.side);
         const moveName = this._localizeMoveName(ev.move || '') || ev.move || '';
-        const animationMoveName = String(ev.animationMove || ev.baseMove || ev.move || '').trim();
         const moveVisual = await this._resolveVisual(ev);
         const actorSide = ev.actor?.side;
         const movePresentation = moveVisual?.presentation || {};
         const yOffset = Number(movePresentation?.spriteYOffset || 0);
         const moveOutcome = this._scanMoveOutcome(context?.events, Number(context?.index) || 0, ev);
-        const animationScale = Number.isFinite(Number(ev.animationScale))
-          ? Math.max(0.25, Math.min(4, Number(ev.animationScale)))
-          : (ev?.zMove ? 1.0 : 1);
-        const animationTint = ev?.zMove ? this._zMoveTint(ev?.zMoveType) : null;
         await this._showMsg(this._t(
           'battle',
           'useMove',
@@ -1947,35 +2019,17 @@ export class BattleTimelineExecutor {
         const animationTargetSide = preferTarget?.side || ev.target?.side;
         const animationTargetSlot = Number.isInteger(preferTarget?.slot) ? preferTarget.slot : targetSlot;
         const targetSideCenter = animationTargets.length > 1 && uniqueTargetSides.size === 1;
-        if (scene?.playMoveAnim) {
-          // BA-10: play visual animation (includes timed sound events internally).
-          // Safety timeout prevents executor hang if the Promise never resolves
-          // (e.g. Phaser delayedCall cancelled on scene reset / loaderror).
-          // Max duration: generous upper bound so even long animations always complete.
-          const ANIM_TIMEOUT_MS = 3500;
-          const moveAnimOptions = { audioEnabled: this._audioEnabled };
-          if (animationScale !== 1) moveAnimOptions.scale = animationScale;
-          if (Number.isFinite(animationTint)) moveAnimOptions.tint = animationTint;
-          await Promise.race([
-            scene.playMoveAnim(animationMoveName, ev.actor?.side, animationTargetSide || ev.target?.side, {
-              ...moveAnimOptions,
-              actorSlot,
-              targetSlot: animationTargetSlot,
-              targetSideCenter,
-            }),
-            new Promise(resolve => setTimeout(resolve, ANIM_TIMEOUT_MS)),
-          ]);
-          const impactTargets = (Array.isArray(moveOutcome?.successfulTargets) ? moveOutcome.successfulTargets : [])
-            .filter(target => target?.side && !this._sameSideSlot(target, { side: actorSide, slot: actorSlot }));
-          if (scene?.playMoveImpact && impactTargets.length && (targetSideCenter || impactTargets.length > 1)) {
-            await Promise.all(impactTargets.map(target => scene.playMoveImpact(target.side, {
-              slot: target.slot,
-            })));
-          }
-        } else {
-          // Fallback: SE-only when scene not available.
-          await this._playMoveSe(animationMoveName || ev.move);
-          await this._delay(280);
+        const animationResult = await this._playMoveAnimation(ev, {
+          target: animationTargetSide ? { side: animationTargetSide, slot: animationTargetSlot } : null,
+          targetSideCenter,
+        });
+        const impactTargets = (Array.isArray(moveOutcome?.successfulTargets) ? moveOutcome.successfulTargets : [])
+          .filter(target => target?.side && !this._sameSideSlot(target, { side: actorSide, slot: actorSlot }));
+        const impactScene = animationResult?.scene || scene;
+        if (impactScene?.playMoveImpact && impactTargets.length && (targetSideCenter || impactTargets.length > 1)) {
+          await Promise.all(impactTargets.map(target => impactScene.playMoveImpact(target.side, {
+            slot: target.slot,
+          })));
         }
         if (actorSide && movePresentation?.isSemiInvulnerable) {
           this._scene()?.setBattlerVisibility?.(actorSide, false, { yOffset, slot: actorSlot });
@@ -1985,6 +2039,10 @@ export class BattleTimelineExecutor {
 
       // ── BA-1: Damage ─────────────────────────────────────────────────────
       case 'damage': {
+        const repeatedHit = this._repeatedMoveHitInfo(context?.events, Number(context?.index) || 0);
+        if (repeatedHit?.moveEvent) {
+          await this._playMoveAnimation(repeatedHit.moveEvent, { target: repeatedHit.target });
+        }
         const sourceMessage = this._damageSourceMessage(ev) || this._itemSourceMessage(ev, 'damage');
         if (sourceMessage) {
           await this._showMsg(sourceMessage, { minMs: 360 });

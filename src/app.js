@@ -1356,6 +1356,7 @@ const state = {
     preHideSwitchInSides: [],
     passPrompt: '',
     lastFlyoutKey: '',
+    currentFlyout: null,
     flyoutTimer: null,
     // Per-perspective Commander (Tatsugiri inside Dondozo) state. Each timeline
     // executor consumes from its own Map so the entry isn't drained by the first
@@ -6700,8 +6701,7 @@ function isEngineSingleMoveRequest(moveRequest) {
   if (moves.length !== 1) return false;
   const onlyMove = moves[0] || null;
   const moveId = toId(onlyMove?.id || onlyMove?.move || '');
-  // Do not hard-force Struggle auto-lock. Keep it user-selectable when it appears.
-  return Boolean(onlyMove && !onlyMove.disabled && moveId && moveId !== 'struggle');
+  return Boolean(onlyMove && !onlyMove.disabled && moveId === 'recharge');
 }
 function isEngineForcedContinuationRequest(moveRequest) {
   return isEngineSingleMoveRequest(moveRequest);
@@ -7756,6 +7756,7 @@ function getBattleUiState(battle = state.battle) {
   if (!Array.isArray(ui.preHideSwitchInSides)) ui.preHideSwitchInSides = [];
   if (typeof ui.passPrompt !== 'string') ui.passPrompt = '';
   if (typeof ui.lastFlyoutKey !== 'string') ui.lastFlyoutKey = '';
+  if (!('currentFlyout' in ui)) ui.currentFlyout = null;
   if (!('flyoutTimer' in ui)) ui.flyoutTimer = null;
   return ui;
 }
@@ -8027,6 +8028,7 @@ function resetBattlePresentationState({perspective = 0, passPrompt = ''} = {}) {
   ui.preHideSwitchInSides = [];
   ui.passPrompt = passPrompt || '';
   ui.lastFlyoutKey = '';
+  ui.currentFlyout = null;
   if (ui.flyoutTimer) clearTimeout(ui.flyoutTimer);
   ui.flyoutTimer = null;
   ui.commandingStateByPerspective = {0: new Map(), 1: new Map()};
@@ -8849,6 +8851,10 @@ function getBattleFieldStatusText(battle = state.battle) {
 function updateBattleAbilityBarState(battle) {
   const ui = getBattleUiState(battle);
   if (!ui) return {visible: false, text: '', side: 'player'};
+  if (FLAGS.battlePresentationV2) {
+    ui.currentFlyout = null;
+    return {visible: false, text: '', side: 'player'};
+  }
   const now = Date.now();
   const latest = battle?.log?.[0];
   const text = localizeText(latest?.rawText || latest?.text || '').trim();
