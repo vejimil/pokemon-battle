@@ -245,6 +245,41 @@ function printBlock(title, checks) {
   }
 
   {
+    const garchomp = makeMon(
+      'Garchomp',
+      '',
+      'Rough Skin',
+      ['Tera Blast', 'Protect', 'Earthquake', 'Swords Dance'],
+      'fire',
+      makeUi(0, 0, 'Garchomp', 'Garchomp', 'GARCHOMP', {
+        ability: 'Rough Skin',
+        teraType: 'fire',
+        types: ['dragon', 'ground'],
+      })
+    );
+    const blissey = foeMon({
+      species: 'Blissey',
+      ability: 'Natural Cure',
+      moves: ['Tackle', 'Protect', 'Soft-Boiled', 'Seismic Toss'],
+      teraType: 'normal',
+      types: ['normal'],
+      spriteId: 'BLISSEY',
+    });
+    const {request, snapshot, mon, foe} = await runBattle(garchomp, 'move 1 terastallize', 'move 1', blissey);
+    const eventTypes = (snapshot.events || []).map(ev => `${ev.type}${ev.move ? `:${ev.move}` : ''}`).join(', ');
+    const teraEvent = (snapshot.events || []).find(ev => ev?.type === 'terastallize');
+    const checks = [
+      printCheck('request keeps lowercase tera id for UI', request.canTerastallize === 'fire', String(request.canTerastallize)),
+      printCheck('turn advances after terastallized Tera Blast', Number(snapshot.turn) >= 2, `turn ${snapshot.turn}`),
+      printCheck('terastallize event uses canonical engine type name', teraEvent?.teraType === 'fire' && teraEvent?.teraTypeName === 'Fire', JSON.stringify(teraEvent || null)),
+      printCheck('Tera Blast move_use event is emitted', (snapshot.events || []).some(ev => ev?.type === 'move_use' && ev?.move === 'Tera Blast'), eventTypes),
+      printCheck('Tera Blast deals damage after terastallizing', (foe?.hp || 0) < (foe?.maxHp || 0), `${foe?.hp}/${foe?.maxHp}`),
+      printCheck('snapshot keeps tera type as local id', mon?.teraType === 'fire', String(mon?.teraType)),
+    ];
+    results.push(printBlock('Terastallized Tera Blast lowercase teraType regression', checks));
+  }
+
+  {
     const {request, snapshot, mon} = await runBattle(
       makeMon(
         'Eevee',

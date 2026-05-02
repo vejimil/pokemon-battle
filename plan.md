@@ -14,6 +14,7 @@
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 | 16 | 더블에서 배틀 연출 위치가 조금 이상한 것 같은데, 확인해야함. | 수정 완료 | 아래 §16에 위치 조사와 보호계 연출 보정 기록 정리. |
 | 17 | ability bar 미표시 케이스(Forewarn/Disguise/Volt Absorb/Clear Body/Truant 등) | 수정 완료 | `server/showdown-engine.cjs`의 `normalizeEventsFromLine()`에서 `-activate ability:`, `-immune`/`-fail`/`cant`/`-block`/`-start`/`-end`/`-item`/`-curestatus`의 `[from] ability:` 태그를 잡아 `ability_show` 선행 emit. 아래 §17 참조. |
+| 18 | 테라스탈 상태 Tera Blast 사용 후 모든 턴 스킵 | 수정 완료 | 원인: UI의 lowercase `teraType`이 그대로 `@pkmn/sim`에 들어가 Tera Blast 동적 타입이 `fire`가 되고, 엔진 `runImmunity()`가 `Use runStatusImmunity for fire` 예외로 BattleStream을 종료. 서버 팀 입력만 `Fire` 같은 canonical type으로 정규화하고 snapshot/request는 기존 lowercase id 유지. 아래 §18 참조. |
 
 ---
 
@@ -161,3 +162,37 @@ Showdown은 흡수계 ability heal을 `|-heal|TARGET|HP/MAX|[from] ability: X|[o
 검증:
 - 인라인 smoke test 3케이스(저수 부분 HP+`[of]`, 풀피 무효, 흙먹기+다른 슬롯 공격자) — owner가 모두 heal target 측으로 정확히 잡힘.
 - `npm run verify:core` 9/9 회귀 통과.
+
+---
+
+## 18 Terastallized Tera Blast 턴 스킵 수정 (2026-05-02)
+
+### 원인
+- 재현: `teraType: 'fire'` 같은 lowercase 타입을 가진 포켓몬이 `move 1 terastallize`로 Tera Blast를 사용하면, Showdown 내부 `Tera Blast`의 `onModifyType()`이 `move.type = pokemon.teraType`을 수행한다.
+- 프로젝트 UI/스냅샷은 타입을 lowercase id(`fire`)로 관리하지만, `@pkmn/sim`의 타입 면역 판정은 정식 타입명(`Fire`)을 요구한다.
+- 결과적으로 `BattleActions.hitStepTypeImmunity()` → `Pokemon.runImmunity()`에서 `Use runStatusImmunity for fire` 예외가 발생했고, BattleStream queue가 error/ended 상태가 되어 이후 이벤트가 비어 보였다.
+- 브라우저 증상은 타임라인 문제가 아니라 엔진 스트림이 죽은 뒤 snapshot/events가 불완전해져, 연출 없이 즉시 command로 돌아오는 형태였다.
+
+### 수정
+- `server/showdown-engine.cjs`
+  - `canonicalShowdownTypeName()` 추가.
+  - 팀을 `@pkmn/sim`에 전달할 때만 `teraType`을 `Fire`/`Normal`/`Stellar` 같은 canonical type name으로 정규화.
+  - snapshot의 `mon.teraType`, request의 `canTerastallize`, request side pokemon의 `teraType`/`terastallized`는 기존 UI 규약대로 lowercase id로 유지.
+- `scripts/verify-stage22-battle-regressions.cjs`
+  - lowercase `teraType: 'fire'` + `Tera Blast` + `terastallize` 회귀 케이스 추가.
+
+### 검증
+- `node --check server/showdown-engine.cjs` 통과.
+- `node --check scripts/verify-stage22-battle-regressions.cjs` 통과.
+- 인라인 smoke:
+  - 수정 전: stream queue error `Use runStatusImmunity for fire`, events 비정상.
+  - 수정 후: `terastallize` → `move_use:Tera Blast` → `damage` → 상대 행동 → `turn_start` 정상 emit, queue error 없음.
+- `node scripts/verify-stage22-battle-regressions.cjs` 통과.
+- `npm run verify:core` 통과.
+
+### 브라우저 검증 포인트
+- 싱글에서 테라 타입이 불꽃/물/전기 등 lowercase UI id로 저장된 포켓몬에게 Tera Blast를 넣고, 테라스탈한 턴에 Tera Blast를 사용:
+  - 테라스탈 연출 → Tera Blast 기술 메시지/연출 → 데미지/효과 메시지 → 상대 행동 → 다음 command 순으로 진행되는지.
+  - 사용 직후 다음 턴에도 다른 기술/Protect/교체가 정상 연출되는지.
+- 테라스탈하지 않은 상태의 Tera Blast가 기존처럼 Normal/Special로 정상 동작하는지 회귀 확인.
+- 테라스탈 후 Tera Blast의 타입 아이콘/정보창은 테라 타입으로 보이고, command UI의 테라 타입 표기는 기존처럼 한국어 타입명으로 보이는지.

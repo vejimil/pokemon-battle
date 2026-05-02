@@ -324,6 +324,14 @@ function toId(text) {
   return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
+function canonicalShowdownTypeName(typeName = '', dex = Dex.mod ? Dex.mod('gen9') : Dex) {
+  const id = toId(typeName);
+  if (!id) return '';
+  const type = dex?.types?.get?.(id);
+  if (type?.exists && type.name) return type.name;
+  return String(typeName || '').trim();
+}
+
 function displayNameForPokemonProtocol(raw = '') {
   const parts = String(raw).split(': ');
   return parts.length > 1 ? parts.slice(1).join(': ') : raw;
@@ -1460,13 +1468,13 @@ class ShowdownLocalSinglesSession {
       const slot = `p${index + 1}`;
       const team = (player.team || []).map(mon => {
         const requiredTeraType = resolveRequiredTeraTypeForSpecies(mon?.species || '', dexForTeam);
-        const teraType = requiredTeraType || mon.teraType || undefined;
+        const teraType = canonicalShowdownTypeName(requiredTeraType || mon.teraType || '', dexForTeam) || undefined;
         const speciesData = dexForTeam?.species?.get?.(mon?.species || '');
         const hasGigantamaxForm = Boolean(speciesData?.exists && speciesData?.canGigantamax);
         const resolvedGigantamax = Boolean(mon?.gigantamax || hasGigantamaxForm);
         if (requiredTeraType) {
-          mon.teraType = requiredTeraType;
-          if (mon?.ui && typeof mon.ui === 'object') mon.ui.teraType = requiredTeraType;
+          mon.teraType = toId(requiredTeraType);
+          if (mon?.ui && typeof mon.ui === 'object') mon.ui.teraType = toId(requiredTeraType);
         }
         return {
           species: mon.species,
@@ -1560,7 +1568,7 @@ class ShowdownLocalSinglesSession {
             ivs: ui.ivs || {hp: 31, atk: 31, def: 31, spa: 31, spd: 31, spe: 31},
             item: dexItem?.exists ? dexItem.name : (ui.item || ''),
             ability: dexAbility?.exists ? dexAbility.name : (ui.ability || ''),
-            teraType: pokemon.teraType || ui.teraType || '',
+            teraType: toId(pokemon.teraType || ui.teraType || ''),
             moves: pokemon.baseMoveSlots.map(slot => battle.dex.moves.get(slot.id)?.name || slot.move),
             moveSlots: pokemon.moveSlots.map(slot => ({
               name: battle.dex.moves.get(slot.id)?.name || slot.move,
@@ -1622,6 +1630,12 @@ class ShowdownLocalSinglesSession {
       const rawRequest = this.requests[`p${playerIndex + 1}`] || null;
       const request = rawRequest ? {
         ...rawRequest,
+        active: Array.isArray(rawRequest.active)
+          ? rawRequest.active.map(activeRequest => ({
+            ...activeRequest,
+            canTerastallize: activeRequest?.canTerastallize ? toId(activeRequest.canTerastallize) : activeRequest?.canTerastallize,
+          }))
+          : rawRequest.active,
         side: rawRequest.side ? {
           ...rawRequest.side,
           pokemon: reorderArrayByTargetIndices(
@@ -1631,6 +1645,8 @@ class ShowdownLocalSinglesSession {
                 teamIndex: stableSlotsByEngineIndex[engineOrderIndex] ?? engineOrderIndex,
                 engineOrderIndex,
                 shiny: parseRequestPokemonShiny(entry?.details || ''),
+                teraType: toId(entry?.teraType || ''),
+                terastallized: toId(entry?.terastallized || ''),
               }))
               : [],
             stableSlotsByEngineIndex,
