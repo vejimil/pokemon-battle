@@ -13,6 +13,7 @@
 | 9 | 더블배틀 구현 — DB-9 회귀/검증 | 진행 중 | DB-1~DB-8.5, DB-10 완료. 남은 단계는 DB-9(회귀/검증)뿐. 아래 §DB-9 참조. |
 | 15 | 배틀 중 간헐 렉(내 포켓몬 1 출전 후 피격, 필드 연출 종료→배틀 필드 전환 사이) | 보류 | 더블배틀 우선; 본 항목은 후순위. |
 | 16 | 더블에서 배틀 연출 위치가 조금 이상한 것 같은데, 확인해야함. | 수정 완료 | 아래 §16에 위치 조사와 보호계 연출 보정 기록 정리. |
+| 17 | ability bar 미표시 케이스(Forewarn/Disguise/Volt Absorb/Clear Body/Truant 등) | 수정 완료 | `server/showdown-engine.cjs`의 `normalizeEventsFromLine()`에서 `-activate ability:`, `-immune`/`-fail`/`cant`/`-block`/`-start`/`-end`/`-item`/`-curestatus`의 `[from] ability:` 태그를 잡아 `ability_show` 선행 emit. 아래 §17 참조. |
 
 ---
 
@@ -79,3 +80,59 @@
   - `Protect`/`Detect`/`Obstruct`/`King's Shield`/`Burning Bulwark`/`Guard Split`의 방어막 그래픽 프레임만 중앙 기준으로 보정했다. 기존 USER/TARGET copy, 일반 USER-focus 그래픽, 다른 무브 오프셋은 건드리지 않는다.
   - 상대 포켓몬이 보호/가드 계열 self/ally-side 기술을 쓸 때 원본처럼 opponent variant를 고르도록 `Protect`/`Detect`/`King's Shield`/`Burning Bulwark`/`Obstruct`/`Spiky Shield`/`Baneful Bunker`/`Silk Trap`/`Wide Guard`/`Quick Guard`/`Mat Block`/`Crafty Shield`에만 제한 적용했다.
   - 확인: `node --check src/battle-presentation/battle-anim-player.js`, `node --check src/pokerogue-transplant-runtime/scene/battle-shell-scene.js`, `Protect` 보정 전후 좌표 산술 확인.
+
+• 조사해보니 정보 바 UI 자체 문제가 아니라, server/showdown-engine.cjs의 Showdown 프로토콜 → ability_show 이벤트 변환 지점이 맞는 원인입니다. UI는 ability_show만 오면 정상 표시합니다.
+
+  현재 표시되는 경로:
+
+  - server/showdown-engine.cjs:835 |-ability|... → ability_show
+  - server/showdown-engine.cjs:848 날씨 [from] ability: ... → ability_show
+  - server/showdown-engine.cjs:876 지형 [from] ability: ... → ability_show
+  - src/battle-presentation/timeline.js:2088 ability_show → 실제 ability bar 표시
+
+  빠지는 경로가 확실히 있습니다:
+
+  - |-activate|포켓몬|ability: Forewarn 같은 형식은 server/showdown-engine.cjs:938에서 그냥 effect_activate로만 변환됩니다. 그래서 Forewarn, Disguise, Cud Chew, Protosynthesis, Quark
+    Drive, Zero to Hero 같은 계열이 정보 바를 못 탑니다.
+  - |-immune|포켓몬|[from] ability: Water Absorb 같은 형식은 현재 immune 이벤트로만 변환되고 ability 정보가 버려집니다. Water Absorb, Flash Fire, Volt Absorb, Wonder Guard, Good as
+    Gold, Levitate류가 여기에 걸릴 수 있습니다.
+  - |-fail|포켓몬|unboost|[from] ability: Clear Body|...도 현재 move_fail로만 가서 Clear Body, Hyper Cutter, White Smoke, Big Pecks 같은 능력치 하락 방지 특성이 정보 바에 안 뜹니다.
+  //+ 게으름 같은 특성도 확인 바람.
+
+  로컬 엔진으로 확인한 예:
+  수정한다면 UI가 아니라 normalizeEventsFromLine() 쪽에서 고치는 게 맞습니다. -activate ability: X와 [from] ability: X가 붙은 -immune, -fail, -block, cant, 일부
+  -start/-end/-item/-curestatus 계열에서 ability_show를 선행 생성하되, 날씨/지형처럼 이미 생성되는 케이스는 중복 표시를 막는 방식이 안전합니다.
+
+---
+
+## 17 Ability bar 누락 수정 (2026-05-02)
+
+`server/showdown-engine.cjs`에 헬퍼 `extractAbilityShowInfo()` / `makeAbilityShowEvent()`를 추가하고 다음 핸들러에서 `ability_show` 이벤트를 선행 emit하도록 변경.
+
+- 직접 `ability: X` 패턴 (parts[3] 위치):
+  - `-activate` (Forewarn, Disguise, Cud Chew, Protosynthesis, Quark Drive, Zero to Hero, Lightning Rod 등)
+  - `cant` (Truant)
+  - `-start` / `-end` (Slow Start 등 비-substitute, 비-dynamax 케이스)
+- `[from] ability: X` (+ 선택적 `[of] IDENT`) 패턴:
+  - `-immune` (Volt Absorb, Water Absorb, Flash Fire, Levitate, Wonder Guard, Good as Gold 등)
+  - `-fail` (Clear Body, Hyper Cutter, White Smoke, Big Pecks, Damp 등)
+  - `-curestatus` (Hydration, Healer, Shed Skin 등)
+  - 신규 케이스: `-block`, `-item`, `-enditem` (Frisk, Symbiosis 등)
+- 기존 `-weather` / `-fieldstart` 처리는 그대로 유지 (중복 emit 없음).
+- `[of] IDENT`가 있으면 그쪽이 ability owner, 없으면 라인 주체(parts[2])가 owner. `-activate`의 직접 패턴은 항상 parts[2]가 owner (Forewarn의 [of]는 ability target이므로 사용하지 않음).
+
+### 검증
+- `node --check server/showdown-engine.cjs` / `node --check src/battle-presentation/timeline.js` 통과.
+- `npm run verify:core` 통과 (item-manifests, audit-language, ba20, stage22, passb).
+- 인라인 smoke test 15개 라인(직접/[from]/[of]/날씨/지형/no-ability) — 모두 의도대로 ability_show 선행 emit 및 owner side/slot 정확. 날씨/지형은 단일 emit만 유지(중복 없음).
+
+### 브라우저 검증 포인트
+- 싱글에서 다음 시나리오에 정보 바가 뜨는지:
+  - 미믹큐 첫 피격 → Disguise 변신 직후 ability bar.
+  - Volt Absorb / Water Absorb / Flash Fire 무효 → 무효 메시지 직전 ability bar.
+  - Clear Body / Hyper Cutter / Big Pecks 능력치 하락 차단 시 bar 표시.
+  - Slaking 턴 스킵 → Truant bar.
+  - Slow Start / Forewarn / Protosynthesis 첫 발동 시 bar.
+  - 비/햇볕/모래/일렉트릭 필드 등 특성발 날씨·지형 시작 시 bar (회귀 — 기존 동작 유지).
+- 더블에서 ally가 `[of]`로 emit되는 케이스(Damp가 ally의 자폭을 막을 때 등) ability bar가 owner 측 슬롯에 뜨는지 확인.
+- ability bar가 두 번 겹쳐 뜨지 않는지(특히 날씨/지형 특성 시작 시 단일 emit만 유지되는지).

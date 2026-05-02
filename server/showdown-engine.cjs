@@ -646,6 +646,47 @@ function parseFromTagForEvent(parts = [], startIndex = 4) {
   };
 }
 
+// Detects an ability reveal on a Showdown protocol line. Two patterns supported:
+//   1) parts[directAbilityIndex] starts with "ability: X" — owner is parts[2] (the line subject).
+//   2) Any [from] ability: X tag at or after startIndex — owner is [of] ident if present, else parts[2].
+// Returns {side, slot, ability} or null.
+function extractAbilityShowInfo(parts, {directAbilityIndex = -1, startIndex = 4} = {}) {
+  if (directAbilityIndex >= 0) {
+    const direct = String(parts[directAbilityIndex] || '').trim();
+    if (/^ability\s*:/i.test(direct)) {
+      const abilityName = direct.replace(/^ability\s*:\s*/i, '').trim();
+      if (abilityName && parts[2]) {
+        const id = parseIdentForEvent(parts[2]);
+        return {side: id.side, slot: id.slot, ability: abilityName};
+      }
+    }
+  }
+  const tail = parts.slice(startIndex);
+  const fromTag = tail.find(part => /^\[from\]\s*ability\s*:/i.test(String(part || '').trim()));
+  if (!fromTag) return null;
+  const abilityName = String(fromTag).trim().replace(/^\[from\]\s*ability\s*:\s*/i, '').trim();
+  if (!abilityName) return null;
+  const ofTag = tail.find(part => /^\[of\]/i.test(String(part || '').trim()));
+  const ident = ofTag
+    ? String(ofTag).trim().replace(/^\[of\]\s*/i, '').trim()
+    : (parts[2] || '');
+  if (!ident) return null;
+  const id = parseIdentForEvent(ident);
+  return {side: id.side, slot: id.slot, ability: abilityName};
+}
+
+function makeAbilityShowEvent(ctx, info) {
+  return {
+    type: 'ability_show',
+    turn: ctx.turn,
+    seq: ctx.seq++,
+    side: info.side,
+    slot: info.slot,
+    ability: info.ability,
+    passive: false,
+  };
+}
+
 /**
  * Convert structured events from Showdown protocol lines.
  * Returns an array of zero or more event objects.
@@ -738,7 +779,11 @@ function normalizeEventsFromLine(line, ctx) {
         }];
       }
       if (effectId !== 'dynamax') {
-        return [{type: 'raw_event', turn: ctx.turn, seq: ctx.seq++, tag, raw: line}];
+        const out = [];
+        const abilityInfo = extractAbilityShowInfo(parts, {directAbilityIndex: 3, startIndex: 4});
+        if (abilityInfo) out.push(makeAbilityShowEvent(ctx, abilityInfo));
+        out.push({type: 'raw_event', turn: ctx.turn, seq: ctx.seq++, tag, raw: line});
+        return out;
       }
       const id = parseIdentForEvent(parts[2]);
       const identKey = parts[2];
@@ -829,7 +874,11 @@ function normalizeEventsFromLine(line, ctx) {
     }
     case '-immune': {
       const id = parseIdentForEvent(parts[2]);
-      return [{type: 'immune', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}}];
+      const out = [];
+      const abilityInfo = extractAbilityShowInfo(parts, {startIndex: 3});
+      if (abilityInfo) out.push(makeAbilityShowEvent(ctx, abilityInfo));
+      out.push({type: 'immune', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}});
+      return out;
     }
 
     case '-ability': {
@@ -900,7 +949,11 @@ function normalizeEventsFromLine(line, ctx) {
     }
     case '-curestatus': {
       const id = parseIdentForEvent(parts[2]);
-      return [{type: 'status_cure', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, status: parts[3] || ''}];
+      const out = [];
+      const abilityInfo = extractAbilityShowInfo(parts, {startIndex: 4});
+      if (abilityInfo) out.push(makeAbilityShowEvent(ctx, abilityInfo));
+      out.push({type: 'status_cure', turn: ctx.turn, seq: ctx.seq++, target: {side: id.side, slot: id.slot}, status: parts[3] || ''});
+      return out;
     }
 
     case '-boost': {
@@ -925,14 +978,18 @@ function normalizeEventsFromLine(line, ctx) {
       // Move failed (e.g. Protect already used, no valid target, etc.)
       // parts[2] may be empty (field-level fail) or an ident (pokemon-level fail)
       const id = parts[2] ? parseIdentForEvent(parts[2]) : null;
-      return [{
+      const out = [];
+      const abilityInfo = extractAbilityShowInfo(parts, {startIndex: 3});
+      if (abilityInfo) out.push(makeAbilityShowEvent(ctx, abilityInfo));
+      out.push({
         type: 'move_fail',
         turn: ctx.turn,
         seq: ctx.seq++,
         actor: id ? {side: id.side, slot: id.slot} : null,
         reason: parts[3] || '',
         reasonId: normalizeProtocolEffectId(parts[3] || ''),
-      }];
+      });
+      return out;
     }
 
     case '-activate': {
@@ -955,14 +1012,18 @@ function normalizeEventsFromLine(line, ctx) {
           dondozo: ofId ? {side: ofId.side, slot: ofId.slot} : null,
         }];
       }
-      return [{
+      const out = [];
+      const abilityInfo = extractAbilityShowInfo(parts, {directAbilityIndex: 3, startIndex: 4});
+      if (abilityInfo) out.push(makeAbilityShowEvent(ctx, abilityInfo));
+      out.push({
         type: 'effect_activate',
         turn: ctx.turn,
         seq: ctx.seq++,
         target: {side: id.side, slot: id.slot},
         effect,
         effectId,
-      }];
+      });
+      return out;
     }
     case '-singleturn': {
       const id = parseIdentForEvent(parts[2]);
@@ -975,6 +1036,25 @@ function normalizeEventsFromLine(line, ctx) {
         effect,
         effectId: normalizeProtocolEffectId(effect),
       }];
+    }
+
+    case '-block': {
+      // |-block|POKEMON|EFFECT|MOVE|[of] OTHER  — may carry [from] ability: X
+      const out = [];
+      const abilityInfo = extractAbilityShowInfo(parts, {startIndex: 3});
+      if (abilityInfo) out.push(makeAbilityShowEvent(ctx, abilityInfo));
+      out.push({type: 'raw_event', turn: ctx.turn, seq: ctx.seq++, tag, raw: line});
+      return out;
+    }
+
+    case '-item':
+    case '-enditem': {
+      // |-item|POKEMON|ITEM|[from] ability: Frisk|[of] OTHER, or Symbiosis transfers, etc.
+      const out = [];
+      const abilityInfo = extractAbilityShowInfo(parts, {startIndex: 4});
+      if (abilityInfo) out.push(makeAbilityShowEvent(ctx, abilityInfo));
+      out.push({type: 'raw_event', turn: ctx.turn, seq: ctx.seq++, tag, raw: line});
+      return out;
     }
 
     case 'miss': {
@@ -1001,14 +1081,18 @@ function normalizeEventsFromLine(line, ctx) {
     }
     case 'cant': {
       const id = parseIdentForEvent(parts[2]);
-      return [{
+      const out = [];
+      const abilityInfo = extractAbilityShowInfo(parts, {directAbilityIndex: 3, startIndex: 4});
+      if (abilityInfo) out.push(makeAbilityShowEvent(ctx, abilityInfo));
+      out.push({
         type: 'cant_move',
         turn: ctx.turn,
         seq: ctx.seq++,
         actor: {side: id.side, slot: id.slot},
         reason: parts[3] || '',
         reasonId: normalizeProtocolEffectId(parts[3] || ''),
-      }];
+      });
+      return out;
     }
 
     case 'callback': {
