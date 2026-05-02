@@ -1000,6 +1000,15 @@ export class BattleTimelineExecutor {
         || next.type === 'effect_end'
       ) {
         if (!next.target?.side) continue;
+        // Absorption-style ability heal (Water Absorb / Volt Absorb / Earth Eater etc.) replaces
+        // damage with healing — treat as immunity so the move animation is skipped, just like
+        // the full-HP -immune path.
+        if (next.type === 'heal' && String(next.fromKind || '').toLowerCase() === 'ability') {
+          result.immune = true;
+          hadFailureSignal = true;
+          pushUniqueTarget(next.target, result.attemptedTargets, attemptedKeys);
+          continue;
+        }
         hadSuccessSignal = true;
         pushUniqueTarget(next.target, result.attemptedTargets, attemptedKeys);
         pushUniqueTarget(next.target, result.successfulTargets, successfulKeys);
@@ -1375,7 +1384,10 @@ export class BattleTimelineExecutor {
     }
 
     const reasonText = String(ev?.reason || '').trim();
-    if (reasonText && !/^(par|slp|frz|flinch|recharge)$/i.test(reasonText)) {
+    // Skip the "(ability: X)" / "(item: X)" / "(move: X)" parenthetical — the ability bar / item bar
+    // already conveys the source, so the redundant suffix only clutters the message.
+    const reasonHasTypedSource = /^(?:ability|item|move)\s*:/i.test(reasonText);
+    if (reasonText && !reasonHasTypedSource && !/^(par|slp|frz|flinch|recharge)$/i.test(reasonText)) {
       return this._isEnglishLocale()
         ? `${pokemonNameWithAffix} can't move (${reasonText}).`
         : `${pokemonNameWithAffix}은(는)\n움직일 수 없다 (${reasonText}).`;

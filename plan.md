@@ -136,3 +136,28 @@
   - 비/햇볕/모래/일렉트릭 필드 등 특성발 날씨·지형 시작 시 bar (회귀 — 기존 동작 유지).
 - 더블에서 ally가 `[of]`로 emit되는 케이스(Damp가 ally의 자폭을 막을 때 등) ability bar가 owner 측 슬롯에 뜨는지 확인.
 - ability bar가 두 번 겹쳐 뜨지 않는지(특히 날씨/지형 특성 시작 시 단일 emit만 유지되는지).
+
+### 17.1 후속 보정 (2026-05-02)
+1. Truant cant 메시지: `_cantMoveMessage`에서 `reason`이 `ability:`/`item:`/`move:`로 시작하면 괄호 내 표기를 생략하고 일반 "움직일 수 없다." 메시지로 통일. 어빌리티 바가 이미 같은 정보를 제공하므로 중복 표기 제거. (`src/battle-presentation/timeline.js` `_cantMoveMessage`)
+2. 흡수 특성(Water Absorb / Volt Absorb / Earth Eater 등) HP < full 케이스:
+   - showdown-engine `-heal` 핸들러에서 `fromKind === 'ability'`이면 `extractAbilityShowInfo()`로 ability_show를 선행 emit. 회복 자체는 그대로 emit.
+   - timeline `_scanMoveOutcome`에서 `next.type === 'heal' && fromKind === 'ability'`면 immune 처리 — `result.immune=true`, `hadFailureSignal=true`, success 카운트에서 제외 → 기존 immune 경로처럼 `skipAnimation=true`가 되어 기술 모션 생략.
+   - 결과: 풀피일 때(`-immune`)와 동일하게 기술 모션 생략 + 어빌리티 바 표시 + 회복 연출만 진행.
+
+### 17.1 검증 포인트
+- Slaking 턴 스킵 시 메시지가 "...은(는) 움직일 수 없다." 단독으로 뜨고 "(ability: Truant)" 꼬리표가 안 붙는지.
+- 라프라스/탱탱겔(저수)이 풀피가 아닐 때 물 기술을 맞으면: (a) 기술 모션이 안 나오고, (b) 어빌리티 바에 "저수"가 뜨고, (c) HP가 1/4 회복되는 트윈만 보이는지.
+- 풀피일 때(저수) 기존처럼 무효 메시지+어빌리티 바만 뜨는지 회귀 확인.
+- 동일 흐름이 전기흡수(전기 기술), 흙먹기(땅 기술)에서도 동일하게 동작하는지.
+- Recover/Sitrus Berry 등 일반 회복은 어빌리티 바를 띄우지 않는지(회귀).
+
+### 17.2 후속 보정 — heal `[of]` 의미 차이 (2026-05-02)
+Showdown은 흡수계 ability heal을 `|-heal|TARGET|HP/MAX|[from] ability: X|[of] ATTACKER` 형식으로 보내는데, 이때 `[of]`는 **흡수당한 기술의 시전자(공격자)**를 가리키며 ability owner가 아니다. (`-fail`/`-curestatus`의 `[of]`는 ability owner를 가리키는 것과 의미가 정반대.)
+
+이전 패치에서 `extractAbilityShowInfo()`로 `[of]`를 ability owner로 사용해 owner가 공격자로 잡혔다 (예: 인텔리레온이 선인왕에게 물 기술을 쓰면 어빌리티 바가 "인텔리레온의 저수"로 표시됨).
+
+수정: `-heal` 분기에서는 helper를 거치지 않고 heal target(parts[2])을 ability owner로 직접 지정. 흡수계 abilities는 heal 받는 쪽 = owner라는 불변식이 성립한다.
+
+검증:
+- 인라인 smoke test 3케이스(저수 부분 HP+`[of]`, 풀피 무효, 흙먹기+다른 슬롯 공격자) — owner가 모두 heal target 측으로 정확히 잡힘.
+- `npm run verify:core` 9/9 회귀 통과.

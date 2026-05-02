@@ -843,7 +843,25 @@ function normalizeEventsFromLine(line, ctx) {
           fromEffectId: fromMeta.fromEffectId,
         }];
       } else {
-        return [{
+        const out = [];
+        // Absorption-style abilities (Water Absorb, Volt Absorb, Earth Eater, etc.) heal in
+        // place of taking damage. Reveal the ability bar before the HP tick so the user sees
+        // why the move was nullified. Note: Showdown emits these as
+        //   |-heal|TARGET|HP/MAX|[from] ability: X|[of] ATTACKER
+        // where [of] points to the move source (attacker), NOT the ability owner —
+        // unlike -fail/-curestatus, where [of] is the ability owner. The ability owner
+        // here is always the heal target (parts[2]).
+        if (fromMeta.fromKind === 'ability') {
+          const abilityName = fromMeta.fromSource.replace(/^ability\s*:\s*/i, '').trim();
+          if (abilityName) {
+            out.push(makeAbilityShowEvent(ctx, {
+              side: id.side,
+              slot: id.slot,
+              ability: abilityName,
+            }));
+          }
+        }
+        out.push({
           type: 'heal',
           turn: ctx.turn,
           seq: ctx.seq++,
@@ -855,7 +873,8 @@ function normalizeEventsFromLine(line, ctx) {
           fromSource: fromMeta.fromSource,
           fromKind: fromMeta.fromKind,
           fromEffectId: fromMeta.fromEffectId,
-        }];
+        });
+        return out;
       }
     }
 
