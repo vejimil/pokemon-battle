@@ -196,3 +196,43 @@ Showdown은 흡수계 ability heal을 `|-heal|TARGET|HP/MAX|[from] ability: X|[o
   - 사용 직후 다음 턴에도 다른 기술/Protect/교체가 정상 연출되는지.
 - 테라스탈하지 않은 상태의 Tera Blast가 기존처럼 Normal/Special로 정상 동작하는지 회귀 확인.
 - 테라스탈 후 Tera Blast의 타입 아이콘/정보창은 테라 타입으로 보이고, command UI의 테라 타입 표기는 기존처럼 한국어 타입명으로 보이는지.
+
+---
+
+## 19 랜덤 배틀 필드 세트 로딩 (2026-05-02)
+
+### 수정
+- `assets/pokerogue/arenas`의 `*_bg.png`, `*_b.png`, `*_a.png` 세트를 기준으로 사용 가능한 arena id 목록을 런타임 상수에 추가.
+- 서버 배틀 세션 생성 시 arena id를 무작위로 선택해 snapshot의 `arenaId`에 포함하고, 클라이언트는 기존 battle state에 arena id를 보존하도록 연결.
+- Phaser battle shell은 `model.arena.id`를 보고 배경/bg, 상대 베이스/b, 플레이어 베이스/a 세 이미지를 같은 id 세트로 동적 로드/교체한다. 기본값은 기존 grass 유지.
+
+### 검증
+- `node --check` 대상 파일 통과: `server/showdown-engine.cjs`, `src/app.js`, `runtime/constants.js`, `runtime/controller.js`, `battle-shell-scene.js`.
+- `scripts/verify-stage22-battle-regressions.cjs`에 arena id가 snapshot에 포함되고 교체 턴 뒤에도 유지되는 회귀 케이스 추가.
+- `npm run verify:core` 통과.
+
+### 브라우저 검증 포인트
+- 새 배틀을 여러 번 시작했을 때 grass 외의 필드가 등장하는지.
+- 배경, 상대 베이스, 플레이어 베이스가 같은 arena id 세트로 맞춰져 보이는지.
+- 턴 진행/교체/폼체인지 후 필드가 grass로 되돌아가지 않고 유지되는지.
+
+## 20 교체 퇴장 이벤트/연출 분리 (2026-05-02)
+
+### 수정
+- 서버 이벤트 파서가 active slot을 추적하고, 일반 `switch` 라인에서 기존 active 포켓몬이 있으면 `switch_out` 이벤트를 `switch_in`보다 먼저 emit한다. 초기 등장과 `drag`는 recall 이벤트를 만들지 않는다.
+- timeline은 기존의 플레이어 측 `switch_in` 내부 추정 퇴장 코드를 제거하고, 명시적인 `switch_out` 이벤트에서 메시지 → 정보창 숨김 → 스프라이트 회수 → `switch_in` 메시지/등장 순서를 처리한다.
+- 교체 메시지는 `assets/pokerogue/locales/*/battle.json`의 `playerComeBack`, `trainerComeBack`, `playerGo`, `trainerGo` 키를 사용한다.
+- Phaser scene에 `switchOutBattler()`를 추가해 포켓볼 회수 SE와 함께 기존 스프라이트/그림자를 축소·페이드아웃하고 숨긴다.
+
+### 검증
+- `scripts/verify-stage22-battle-regressions.cjs`에 수동 교체 회귀 케이스 추가:
+  - 초기 등장에는 `switch_out` 없음.
+  - 수동 교체는 `switch_out:Pikachu` → `switch_in:Charizard` 순서.
+  - `switch_out`에 `fromBall: true`, `cause: "switch"` 포함.
+- `node scripts/verify-stage22-battle-regressions.cjs` 통과.
+- `npm run verify:core` 통과.
+
+### 브라우저 검증 포인트
+- 플레이어가 교체할 때 locale 메시지 기준으로 “돌아와, 00!” → 기존 스프라이트/정보창 숨김 → “가랏! ㅁㅁ!” → 새 스프라이트/정보창 표시 순서인지.
+- 상대가 교체할 때 `trainerComeBack` → 상대 스프라이트/정보창 숨김 → `trainerGo` → 새 상대 스프라이트/정보창 표시 순서인지.
+- 교체 후 이어지는 상대 행동, 상태이상/날씨/턴 종료 메시지가 스킵되지 않는지.

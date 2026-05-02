@@ -24,6 +24,7 @@ export const EVENT_TYPES = /** @type {const} */ ({
   ENGINE_ERROR:        'engine_error',
 
   // Field entry
+  SWITCH_OUT:          'switch_out',      // synthesized before tags: switch
   SWITCH_IN:           'switch_in',       // tags: switch, drag
 
   // Move
@@ -88,6 +89,7 @@ export const EVENT_TYPES = /** @type {const} */ ({
 export function isCoreEvent(type) {
   return [
     EVENT_TYPES.TURN_START, EVENT_TYPES.TURN_END,
+    EVENT_TYPES.SWITCH_OUT,
     EVENT_TYPES.SWITCH_IN,
     EVENT_TYPES.ABILITY_SHOW,
     EVENT_TYPES.WEATHER_START, EVENT_TYPES.WEATHER_TICK, EVENT_TYPES.WEATHER_END,

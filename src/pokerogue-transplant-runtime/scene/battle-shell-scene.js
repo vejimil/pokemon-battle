@@ -80,6 +80,14 @@ function isSubstituteSpriteId(spriteId = '') {
   return normalized === 'substitute' || normalized === 'substitute_back';
 }
 
+function normalizeArenaId(arenaId = '') {
+  return String(arenaId || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 function moveAnimSlug(moveName = '') {
   const rawSlug = String(moveName || '')
     .toLowerCase()
@@ -100,6 +108,9 @@ export function createBattleShellSceneClass(Phaser, env) {
       this._persistentTerrainBg = null;
       this._persistentTerrainId = '';
       this._bgTextureLoadPromises = new Map();
+      this._arenaTextureLoadPromises = new Map();
+      this._arenaLoadSerial = 0;
+      this._currentArenaId = 'grass';
       this._deferredTextureReleaseKeys = new Set();
       this._deferredTextureReleaseTimer = null;
       this.ui = null;
@@ -119,6 +130,7 @@ export function createBattleShellSceneClass(Phaser, env) {
         try { this._deferredTextureReleaseTimer?.remove?.(); this._deferredTextureReleaseTimer = null; } catch (_error) {}
         this._deferredTextureReleaseKeys?.clear?.();
         this._bgTextureLoadPromises?.clear?.();
+        this._arenaTextureLoadPromises?.clear?.();
       };
       this.runtimeEnv = {
         ...env,
@@ -226,6 +238,68 @@ export function createBattleShellSceneClass(Phaser, env) {
       this.arenaBg = this.add.image(0, 0, env.UI_ASSETS.arenaBg.key).setOrigin(0, 0).setDepth(0);
       this.arenaEnemyBase = this.add.image(ARENA_OFFSETS.enemy.x, ARENA_OFFSETS.enemy.y, env.UI_ASSETS.arenaEnemy.key).setOrigin(0, 0).setDepth(4);
       this.arenaPlayerBase = this.add.image(ARENA_OFFSETS.player.x, ARENA_OFFSETS.player.y, env.UI_ASSETS.arenaPlayer.key).setOrigin(0, 0).setDepth(5);
+    }
+
+    _arenaIds() {
+      return Array.isArray(env.ARENA_IDS) && env.ARENA_IDS.length ? env.ARENA_IDS : ['grass'];
+    }
+
+    _resolveArenaId(arenaId = '') {
+      const normalized = normalizeArenaId(arenaId);
+      return this._arenaIds().includes(normalized) ? normalized : 'grass';
+    }
+
+    _arenaTextureKey(arenaId = '', layer = '') {
+      return `pkb-arena/${this._resolveArenaId(arenaId)}/${layer}`;
+    }
+
+    _arenaTextureUrl(arenaId = '', layer = '') {
+      const id = this._resolveArenaId(arenaId);
+      if (layer === 'bg') return `./assets/pokerogue/arenas/${id}_bg.png`;
+      return `./assets/pokerogue/arenas/${id}_${layer}.png`;
+    }
+
+    _ensureImageTexture(key, url) {
+      if (!key || !url) return Promise.resolve(false);
+      if (this.textures.exists(key)) return Promise.resolve(true);
+      if (this._arenaTextureLoadPromises.has(key)) return this._arenaTextureLoadPromises.get(key);
+      const promise = new Promise(resolve => {
+        const image = new Image();
+        image.onload = () => {
+          try {
+            if (!this.textures.exists(key)) this.textures.addImage(key, image);
+            resolve(true);
+          } catch (_error) {
+            resolve(false);
+          }
+        };
+        image.onerror = () => resolve(false);
+        image.src = url;
+      }).finally(() => {
+        this._arenaTextureLoadPromises.delete(key);
+      });
+      this._arenaTextureLoadPromises.set(key, promise);
+      return promise;
+    }
+
+    async setArena(arenaId = '') {
+      const id = this._resolveArenaId(arenaId);
+      if (id === this._currentArenaId) return;
+      const serial = ++this._arenaLoadSerial;
+      const bgKey = this._arenaTextureKey(id, 'bg');
+      const enemyKey = this._arenaTextureKey(id, 'b');
+      const playerKey = this._arenaTextureKey(id, 'a');
+      const loaded = await Promise.all([
+        this._ensureImageTexture(bgKey, this._arenaTextureUrl(id, 'bg')),
+        this._ensureImageTexture(enemyKey, this._arenaTextureUrl(id, 'b')),
+        this._ensureImageTexture(playerKey, this._arenaTextureUrl(id, 'a')),
+      ]);
+      if (serial !== this._arenaLoadSerial || !loaded.every(Boolean)) return;
+      this.arenaBg?.setTexture?.(bgKey);
+      this.arenaEnemyBase?.setTexture?.(enemyKey);
+      this.arenaPlayerBase?.setTexture?.(playerKey);
+      this._currentArenaId = id;
+      this.layoutSafely();
     }
 
     createSpriteMount(name, slot = 0) {
@@ -934,6 +1008,8 @@ export function createBattleShellSceneClass(Phaser, env) {
 
     renderModel(model) {
       this.currentModel = model;
+      const arenaId = model?.arena?.id || model?.arenaId || '';
+      this.setArena(arenaId).catch?.(() => {});
       this.ui?.renderModel?.(model || {});
     }
 
@@ -1174,6 +1250,77 @@ export function createBattleShellSceneClass(Phaser, env) {
       spr.setVisible(shouldShow);
       spr.setAlpha(1);
       this._syncMountShadowVisibility(mount);
+      this._syncMountTeraFx(mount, 0);
+    }
+
+    async switchOutBattler(side, options = {}) {
+      const audioEnabled = options?.audioEnabled !== false;
+      const slot = Number(options?.slot) === 1 ? 1 : 0;
+      const mount = this._mountForBattleSideSlot(side, slot);
+      const spr = mount?.phaserSprite;
+      if (!spr || !spr.active) return;
+
+      this._applyMountMetricsSnapshot(mount);
+      const shadow = mount?.shadow;
+      this.tweens.killTweensOf(spr);
+      if (shadow) this.tweens.killTweensOf(shadow);
+
+      const pbKey = UI_ASSETS.pokeballAtlas.key;
+      const hasPokeball = this.textures.exists(pbKey);
+      const depth = Number.isFinite(spr.depth) ? spr.depth : 7;
+      const recallX = spr.x;
+      const recallY = spr.y - Math.max(14, (spr.displayHeight || 64) * 0.45);
+      const pokeball = hasPokeball
+        ? this.add.sprite(recallX, recallY, pbKey, 'pb')
+          .setOrigin(0.5, 0.625)
+          .setDepth(depth + 1)
+          .setScale(0.72)
+          .setAlpha(0)
+        : null;
+
+      if (audioEnabled) this.audio?.play?.('se/pb_rel');
+
+      const targetScaleX = spr.scaleX * 0.18;
+      const targetScaleY = spr.scaleY * 0.18;
+      const fades = [
+        this._runTween({
+          targets: spr,
+          duration: 260,
+          ease: 'Sine.easeIn',
+          alpha: 0,
+          scaleX: targetScaleX,
+          scaleY: targetScaleY,
+        }),
+      ];
+      if (shadow?.active && shadow.visible) {
+        fades.push(this._runTween({
+          targets: shadow,
+          duration: 220,
+          ease: 'Sine.easeIn',
+          alpha: 0,
+        }));
+      }
+      if (pokeball) {
+        fades.push(this._runTween({
+          targets: pokeball,
+          duration: 190,
+          ease: 'Sine.easeOut',
+          alpha: 1,
+          scaleX: 1,
+          scaleY: 1,
+          angle: 360,
+        }));
+      }
+
+      await Promise.all(fades);
+      if (pokeball?.active) pokeball.destroy();
+      if (!spr.active) return;
+
+      spr.setVisible(false);
+      spr.setAlpha(1);
+      this._applyMountMetricsSnapshot(mount);
+      if (shadow?.active) shadow.setAlpha(SHADOW_ALPHA).setVisible(false);
+      if (mount) mount.fainted = false;
       this._syncMountTeraFx(mount, 0);
     }
 

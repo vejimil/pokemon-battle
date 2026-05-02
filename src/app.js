@@ -8,6 +8,7 @@ import {Aliases} from './data/aliases.js';
 import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
 import {resolveItemIconUrl, applyPokerogueAtlasFrameToElement, POKEROGUE_ASSET_PATHS} from './pokerogue-assets.js';
 import {createPhaserBattleController} from './phaser-battle-controller.js';
+import {ARENA_IDS} from './pokerogue-transplant-runtime/runtime/constants.js';
 import {loadPokemonMetrics, getMetricsForSprite, DBK_DEFAULTS, calcDbkAnimationDelayMs} from './pokerogue-transplant-runtime/runtime/pokemon-metrics.js';
 import {BattleTimelineExecutor} from './battle-presentation/timeline.js';
 import {resolveFormChangePresentation} from './battle-presentation/form-change-presentation.js';
@@ -6373,6 +6374,27 @@ function cloneEngineBattleSnapshot(snapshot) {
     events: Array.isArray(snapshot.events) ? [...snapshot.events] : [],
   };
 }
+
+function normalizeBattleArenaId(arenaId = '') {
+  return String(arenaId || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function chooseRandomBattleArenaId() {
+  const ids = Array.isArray(ARENA_IDS) && ARENA_IDS.length ? ARENA_IDS : ['grass'];
+  return ids[Math.floor(Math.random() * ids.length)] || 'grass';
+}
+
+function ensureBattleArenaId(battle = null, previousBattle = state.battle) {
+  if (!battle || typeof battle !== 'object') return '';
+  const preferred = normalizeBattleArenaId(battle.arenaId || previousBattle?.arenaId || '');
+  battle.arenaId = ARENA_IDS.includes(preferred) ? preferred : chooseRandomBattleArenaId();
+  return battle.arenaId;
+}
+
 function isTurnDisplayLogEntry(entry) {
   const text = String(entry?.rawText || entry?.text || '').trim();
   return /^(?:턴\s*\d+\s*(?:\/\s*Turn\s*\d+)?|Turn\s*\d+)$/i.test(text);
@@ -6408,8 +6430,10 @@ function clearBattleFieldStateForBattleEnd(battle = null) {
   }
 }
 function adoptEngineBattleSnapshot(snapshot) {
+  const previousBattle = state.battle;
   const battle = ensureBattleUiState(cloneEngineBattleSnapshot(snapshot));
   if (!battle) return null;
+  ensureBattleArenaId(battle, previousBattle);
   clearBattleFieldStateForBattleEnd(battle);
   if (battle.winner) {
     [0, 1].forEach(player => {
@@ -9418,6 +9442,7 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
     : null;
   return {
     turn: battle.turn,
+    arena: { id: ensureBattleArenaId(battle) },
     perspective,
     language: state.language || 'ko',
     perspectiveOptions: lockedPerspective

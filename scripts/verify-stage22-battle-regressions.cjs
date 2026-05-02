@@ -361,6 +361,59 @@ function printBlock(title, checks) {
     results.push(printBlock('Mega Rayquaza special condition', checks));
   }
 
+  {
+    const service = new ShowdownEngineService();
+    const pikachu = makeMon(
+      'Pikachu',
+      '',
+      'Static',
+      ['Thunderbolt', 'Quick Attack', 'Protect', 'Growl'],
+      'Electric',
+      makeUi(0, 0, 'Pikachu', 'Pikachu', 'PIKACHU', {
+        ability: 'Static',
+        teraType: 'Electric',
+        types: ['electric'],
+      })
+    );
+    const charizard = makeMon(
+      'Charizard',
+      '',
+      'Blaze',
+      ['Flamethrower', 'Air Slash', 'Protect', 'Slash'],
+      'Fire',
+      makeUi(0, 1, 'Charizard', 'Charizard', 'CHARIZARD', {
+        ability: 'Blaze',
+        teraType: 'Fire',
+        types: ['fire', 'flying'],
+      })
+    );
+    let snapshot = await service.startSingles({
+      formatid: FORMAT,
+      players: [
+        {name: 'P1', team: [pikachu, charizard]},
+        {name: 'P2', team: [foeMon()]},
+      ],
+    });
+    const initialArenaId = snapshot.arenaId || '';
+    const initialEvents = snapshot.events || [];
+    snapshot = await service.chooseSingles(snapshot.id, {p1: 'switch 2', p2: 'move 1'});
+    const events = snapshot.events || [];
+    const switchOutIndex = events.findIndex(ev => ev?.type === 'switch_out' && ev.side === 'p1');
+    const switchInIndex = events.findIndex(ev => ev?.type === 'switch_in' && ev.side === 'p1' && toId(ev.species) === 'charizard');
+    const switchOut = events[switchOutIndex] || null;
+    const eventTypes = events.map(ev => `${ev.type}${ev.species ? `:${ev.species}` : ''}`).join(', ');
+    const checks = [
+      printCheck('initial summon has no switch_out event', !initialEvents.some(ev => ev?.type === 'switch_out'), initialEvents.map(ev => ev.type).join(', ')),
+      printCheck('battle snapshot includes an arena id', Boolean(initialArenaId), initialArenaId || 'missing'),
+      printCheck('arena id persists after the switch turn', snapshot.arenaId === initialArenaId, `${initialArenaId} -> ${snapshot.arenaId}`),
+      printCheck('manual switch emits switch_out for the recalled Pokémon', switchOutIndex >= 0 && toId(switchOut?.species) === 'pikachu', eventTypes),
+      printCheck('manual switch emits switch_in for the replacement Pokémon', switchInIndex >= 0, eventTypes),
+      printCheck('switch_out is ordered before replacement switch_in', switchOutIndex >= 0 && switchInIndex >= 0 && switchOutIndex < switchInIndex, eventTypes),
+      printCheck('switch_out uses Poké Ball recall metadata', switchOut?.fromBall === true && switchOut?.cause === 'switch', JSON.stringify(switchOut || null)),
+    ];
+    results.push(printBlock('Arena snapshot and explicit switch-out event flow', checks));
+  }
+
   const passed = results.every(Boolean);
   console.log(`\nOverall: ${passed ? 'PASS' : 'FAIL'}`);
   if (!passed) process.exitCode = 1;

@@ -67,6 +67,44 @@ const SNAPSHOT_FORM_SPRITE_OVERRIDES = Object.freeze({
   'Necrozma-Ultra': 'NECROZMA_3',
 });
 
+const BATTLE_ARENA_IDS = Object.freeze([
+  'abyss',
+  'badlands',
+  'beach',
+  'cave',
+  'construction_site',
+  'desert',
+  'dojo',
+  'end',
+  'factory',
+  'fairy_cave',
+  'forest',
+  'grass',
+  'graveyard',
+  'ice_cave',
+  'island',
+  'jungle',
+  'laboratory',
+  'lake',
+  'meadow',
+  'metropolis',
+  'mountain',
+  'plains',
+  'power_plant',
+  'ruins',
+  'sea',
+  'seabed',
+  'slum',
+  'snowy_forest',
+  'space',
+  'swamp',
+  'tall_grass',
+  'temple',
+  'town',
+  'volcano',
+  'wasteland',
+]);
+
 const RUNTIME_FUTURE_ABILITY_PATCHES = Object.freeze({
   dragonize: {
     isNonstandard: 'Future',
@@ -330,6 +368,18 @@ function canonicalShowdownTypeName(typeName = '', dex = Dex.mod ? Dex.mod('gen9'
   const type = dex?.types?.get?.(id);
   if (type?.exists && type.name) return type.name;
   return String(typeName || '').trim();
+}
+
+function normalizeArenaId(arenaId = '') {
+  return String(arenaId || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function chooseRandomBattleArenaId() {
+  return BATTLE_ARENA_IDS[Math.floor(Math.random() * BATTLE_ARENA_IDS.length)] || 'grass';
 }
 
 function displayNameForPokemonProtocol(raw = '') {
@@ -624,6 +674,44 @@ function parseDetailsSpeciesForEvent(token) {
   return String(token || '').split(',')[0].trim();
 }
 
+function activeSlotKey(side, slot = 0) {
+  const normalizedSide = side === 'p2' ? 'p2' : 'p1';
+  const numericSlot = Number(slot);
+  return `${normalizedSide}_${Number.isInteger(numericSlot) && numericSlot >= 0 ? numericSlot : 0}`;
+}
+
+function activeSlotMatches(entry = null, identRaw = '', species = '') {
+  if (!entry) return false;
+  return String(entry.identRaw || '') === String(identRaw || '')
+    && toId(entry.species || '') === toId(species || '');
+}
+
+function updateActiveSlotCondition(ctx, id, cond = {}) {
+  const activeBySlot = ctx?.activeBySlot;
+  if (!activeBySlot?.get) return;
+  const key = activeSlotKey(id?.side, id?.slot);
+  const active = activeBySlot.get(key);
+  if (!active) return;
+  if (Number.isFinite(cond.hp)) active.hp = cond.hp;
+  if (Number.isFinite(cond.maxHp) && cond.maxHp > 0) active.maxHp = cond.maxHp;
+  active.status = cond.status || '';
+  if (cond.status === 'fnt' || cond.hp <= 0) {
+    active.fainted = true;
+  } else if (cond.hp > 0) {
+    active.fainted = false;
+  }
+}
+
+function markActiveSlotFainted(ctx, id) {
+  const activeBySlot = ctx?.activeBySlot;
+  if (!activeBySlot?.get) return;
+  const active = activeBySlot.get(activeSlotKey(id?.side, id?.slot));
+  if (!active) return;
+  active.hp = 0;
+  active.status = 'fnt';
+  active.fainted = true;
+}
+
 function normalizeProtocolEffectId(raw = '') {
   const text = String(raw || '').trim();
   if (!text) return '';
@@ -706,11 +794,13 @@ function makeAbilityShowEvent(ctx, info) {
  *   ctx.pendingCrit   {Map<string, boolean>}
  *   ctx.pendingHitResult {Map<string, string>}
  *   ctx.pendingDynamax {Map<string, {kind:string,event:object}>}
+ *   ctx.activeBySlot  {Map<string, {side,slot,identRaw,species,hp,maxHp,status,fainted}>}
  */
 function normalizeEventsFromLine(line, ctx) {
   const parts = String(line || '').split('|');
   if (parts[0] !== '') return [];  // malformed
   const tag = parts[1] || '';
+  if (!ctx.activeBySlot) ctx.activeBySlot = new Map();
 
   switch (tag) {
     case 'turn': {
@@ -730,9 +820,34 @@ function normalizeEventsFromLine(line, ctx) {
       const id = parseIdentForEvent(parts[2]);
       const species = parseDetailsSpeciesForEvent(parts[3]);
       const cond = parseConditionForEvent(parts[4]);
+      const slotKey = activeSlotKey(id.side, id.slot);
+      const previous = ctx.activeBySlot.get(slotKey);
+      const out = [];
+      if (tag === 'switch' && previous && !previous.fainted && !activeSlotMatches(previous, parts[2], species)) {
+        out.push({
+          type: 'switch_out',
+          turn: ctx.turn,
+          seq: ctx.seq++,
+          side: previous.side || id.side,
+          slot: Number.isInteger(previous.slot) ? previous.slot : id.slot,
+          species: previous.species || displayNameForPokemonProtocol(previous.identRaw || ''),
+          cause: 'switch',
+          fromBall: true,
+        });
+      }
       // Seed hpCache so the first -damage can compute delta
       ctx.hpCache.set(parts[2], {hp: cond.hp, maxHp: cond.maxHp});
-      return [{
+      ctx.activeBySlot.set(slotKey, {
+        side: id.side,
+        slot: id.slot,
+        identRaw: parts[2],
+        species: species || displayNameForPokemonProtocol(parts[2] || ''),
+        hp: cond.hp,
+        maxHp: cond.maxHp,
+        status: cond.status,
+        fainted: cond.status === 'fnt' || cond.hp <= 0,
+      });
+      out.push({
         type: 'switch_in',
         turn: ctx.turn,
         seq: ctx.seq++,
@@ -744,7 +859,8 @@ function normalizeEventsFromLine(line, ctx) {
         status: cond.status,
         cause: tag === 'drag' ? 'drag' : 'switch',
         fromBall: tag === 'switch',
-      }];
+      });
+      return out;
     }
 
     case 'move': {
@@ -763,6 +879,7 @@ function normalizeEventsFromLine(line, ctx) {
 
     case 'faint': {
       const id = parseIdentForEvent(parts[2]);
+      markActiveSlotFainted(ctx, id);
       return [{
         type: 'faint',
         turn: ctx.turn,
@@ -820,6 +937,7 @@ function normalizeEventsFromLine(line, ctx) {
       const amount = Math.abs(prevHp - cond.hp);
       const isSilent = parts.slice(4).some(part => /^\[silent\]$/i.test(String(part || '').trim()));
       ctx.hpCache.set(identKey, {hp: cond.hp, maxHp: cond.maxHp});
+      updateActiveSlotCondition(ctx, id, cond);
       if (tag === '-heal' && isSilent) {
         const pendingDynamax = ctx.pendingDynamax.get(identKey);
         if (pendingDynamax?.event) {
@@ -1379,6 +1497,8 @@ class ShowdownLocalSinglesSession {
   constructor(payload = {}) {
     this.id = randomUUID();
     this.mode = payload.mode === 'doubles' ? 'doubles' : 'singles';
+    const requestedArenaId = normalizeArenaId(payload.arenaId || payload.arena?.id || '');
+    this.arenaId = BATTLE_ARENA_IDS.includes(requestedArenaId) ? requestedArenaId : chooseRandomBattleArenaId();
     const defaultFormat = this.mode === 'doubles'
       ? 'gen9doublescustomgame@@@+pokemontag:past,+pokemontag:future'
       : 'gen9customgame@@@+pokemontag:past,+pokemontag:future';
@@ -1394,7 +1514,15 @@ class ShowdownLocalSinglesSession {
     this.rawOutputs = [];
     // Event stream state (M1)
     this.eventsBuffer = [];
-    this._evtCtx = {turn: null, seq: 0, hpCache: new Map(), pendingCrit: new Map(), pendingHitResult: new Map(), pendingDynamax: new Map()};
+    this._evtCtx = {
+      turn: null,
+      seq: 0,
+      hpCache: new Map(),
+      pendingCrit: new Map(),
+      pendingHitResult: new Map(),
+      pendingDynamax: new Map(),
+      activeBySlot: new Map(),
+    };
   }
 
   write(line) {
@@ -1674,6 +1802,7 @@ class ShowdownLocalSinglesSession {
       id: this.id,
       engine: this.mode === 'doubles' ? 'showdown-local-doubles' : 'showdown-local-singles',
       mode: this.mode,
+      arenaId: this.arenaId || 'grass',
       turn: battle.turn,
       winner: battle.winner || null,
       players,

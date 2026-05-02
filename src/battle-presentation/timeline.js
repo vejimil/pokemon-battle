@@ -401,6 +401,11 @@ export class BattleTimelineExecutor {
     return ui.enemyInfo || null;
   }
 
+  _setInfoVisible(side, slot = 0, visible = true) {
+    const info = this._infoForSideSlot(side, slot);
+    info?.container?.setVisible?.(visible !== false);
+  }
+
   _delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
@@ -436,6 +441,7 @@ export class BattleTimelineExecutor {
       case 'callback_event':
       case 'battle_end':
         return 0;
+      case 'switch_out':
       case 'switch_in':
       case 'dynamax_start':
       case 'dynamax_end':
@@ -592,6 +598,7 @@ export class BattleTimelineExecutor {
         ev.type === 'move_use'
         || ev.type === 'damage'
         || ev.type === 'heal'
+        || ev.type === 'switch_out'
         || ev.type === 'faint'
         || ev.type === 'battle_end'
         || ev.type === 'callback_event'
@@ -616,21 +623,17 @@ export class BattleTimelineExecutor {
     if (side === this._currentPlayerSide()) {
       return this._t('battle', 'playerGo', { pokemonName }, `가라! ${pokemonName}!`);
     }
-    const trainerName = this._isEnglishLocale() ? 'Opponent' : '상대';
-    return this._t('battle', 'trainerGo', { trainerName, pokemonName }, `상대의 ${pokemonName} 등장!`);
+    const trainerName = this._sideName(side);
+    return this._t('battle', 'trainerGo', { trainerName, pokemonName }, `${trainerName}는 ${pokemonName}을 내보냈다!`);
   }
 
   _switchOutMessage(side, species) {
     const pokemonName = String(species || '???');
     if (side === this._currentPlayerSide()) {
-      return this._isEnglishLocale()
-        ? `Come back, ${pokemonName}!`
-        : `들어와! ${pokemonName}!`;
+      return this._t('battle', 'playerComeBack', { pokemonName }, `돌아와, ${pokemonName}!`);
     }
-    const trainerName = this._isEnglishLocale() ? 'Opponent' : '상대';
-    return this._isEnglishLocale()
-      ? `${trainerName} withdrew ${pokemonName}!`
-      : `${trainerName}는 ${pokemonName}을(를) 불러들였다!`;
+    const trainerName = this._sideName(side);
+    return this._t('battle', 'trainerComeBack', { trainerName, pokemonName }, `${trainerName}는 ${pokemonName}를 넣어버렸다!`);
   }
 
   _weatherStartMessage(weatherId, rawWeather) {
@@ -932,6 +935,7 @@ export class BattleTimelineExecutor {
       if ([
         'turn_start',
         'turn_end',
+        'switch_out',
         'switch_in',
         'faint',
         'battle_end',
@@ -960,6 +964,7 @@ export class BattleTimelineExecutor {
       if (!ev) continue;
       if (
         ev.type === 'move_use'
+        || ev.type === 'switch_out'
         || ev.type === 'switch_in'
         || ev.type === 'turn_start'
         || ev.type === 'turn_end'
@@ -1024,6 +1029,7 @@ export class BattleTimelineExecutor {
       if (!next) continue;
       if (
         next.type === 'move_use'
+        || next.type === 'switch_out'
         || next.type === 'switch_in'
         || next.type === 'turn_start'
         || next.type === 'turn_end'
@@ -1269,34 +1275,6 @@ export class BattleTimelineExecutor {
     const events = Array.isArray(batch.events) ? batch.events : [];
     if (!events.length) return;
     const side = events[0]?.side;
-    const previousEntries = events.map(ev => {
-      const slot = ev.slot ?? 0;
-      const previousSpecies = this._slotNameRaw(side, slot);
-      const previousInfo = this._slotInfoFor(side, slot) || null;
-      const shouldShowSwitchOut = Boolean(
-        side === this._currentPlayerSide()
-        && previousSpecies
-        && toId(previousSpecies)
-        && toId(previousSpecies) !== toId(ev.species || '')
-        && !previousInfo?.fainted
-      );
-      return {
-        slot,
-        shouldShowSwitchOut,
-        displayName: this._localizeMonName(previousSpecies) || previousSpecies,
-      };
-    });
-    const switchOutNames = previousEntries
-      .filter(entry => entry.shouldShowSwitchOut)
-      .map(entry => entry.displayName)
-      .filter(Boolean);
-    if (switchOutNames.length) {
-      await this._showMsg(this._switchOutBatchMessage(switchOutNames), { minMs: 520 });
-      previousEntries
-        .filter(entry => entry.shouldShowSwitchOut)
-        .forEach(entry => this._scene()?.setBattlerVisibility?.(side, false, { yOffset: 0, slot: entry.slot }));
-      await this._delay(120);
-    }
     const prepared = await Promise.all(events.map(async ev => {
       const slot = ev.slot ?? 0;
       const species = ev.species || this._slotNameRaw(side, slot) || '???';
@@ -1319,7 +1297,8 @@ export class BattleTimelineExecutor {
         switchPatch.statusLabel = ev.status === 'fnt' ? '' : ev.status;
       }
       this._applyInfoForSlot(side, slot, switchPatch);
-      return { slot, species, visual };
+      if (ev.fromBall) this._setInfoVisible(side, slot, false);
+      return { slot, species, visual, fromBall: !!ev.fromBall };
     }));
 
     await this._showMsg(this._switchInBatchMessage(side, events), { minMs: 520 });
@@ -1338,6 +1317,8 @@ export class BattleTimelineExecutor {
       this._playAudio('se/pb_rel');
       await this._delay(260);
     }
+
+    prepared.forEach(entry => this._setInfoVisible(side, entry.slot, true));
 
     prepared.forEach(entry => {
       const dexNum = speciesToDexNum(entry.species);
@@ -1814,27 +1795,31 @@ export class BattleTimelineExecutor {
         break;
       }
 
+      // ── Switch-out: recall current active battler before the replacement appears.
+      case 'switch_out': {
+        const side = ev.side;
+        const slot = ev.slot ?? 0;
+        const species = ev.species || this._slotNameRaw(side, slot) || '???';
+        const displaySpecies = this._localizeMonName(species) || species;
+
+        await this._showMsg(this._switchOutMessage(side, displaySpecies), { minMs: 520 });
+        this._setInfoVisible(side, slot, false);
+
+        const scene = this._scene();
+        if (scene?.switchOutBattler) {
+          await scene.switchOutBattler(side, { audioEnabled: this._audioEnabled, slot });
+        } else {
+          this._playAudio('se/pb_rel');
+          scene?.setBattlerVisibility?.(side, false, { yOffset: 0, slot });
+          await this._delay(160);
+        }
+        break;
+      }
+
       // ── BA-1 + BA-2: Pokémon switch-in ───────────────────────────────────
       case 'switch_in': {
         const side = ev.side;
         const slot = ev.slot ?? 0;
-        const previousSpecies = this._slotNameRaw(side, slot);
-        const previousDisplaySpecies = this._localizeMonName(previousSpecies) || previousSpecies;
-        const previousInfo = this._slotInfoFor(side, slot) || null;
-        const shouldShowSwitchOut = Boolean(
-          side === this._currentPlayerSide()
-          && ev.fromBall
-          && !context?.isInitialSummonSequence
-          && previousSpecies
-          && toId(previousSpecies)
-          && toId(previousSpecies) !== toId(ev.species || '')
-          && !previousInfo?.fainted
-        );
-        if (shouldShowSwitchOut) {
-          await this._showMsg(this._switchOutMessage(side, previousDisplaySpecies), { minMs: 520 });
-          this._scene()?.setBattlerVisibility?.(side, false, { yOffset: 0, slot });
-          await this._delay(120);
-        }
         // _slotNames always stores the raw English name for downstream event matching
         const species = ev.species || this._slotNameRaw(side, slot) || '???';
         this._slotNames.set(this._slotKey(side, slot), species);
@@ -1858,6 +1843,7 @@ export class BattleTimelineExecutor {
           switchPatch.statusLabel = ev.status === 'fnt' ? '' : ev.status;
         }
         this._applyInfoForSlot(side, slot, switchPatch);
+        if (ev.fromBall) this._setInfoVisible(side, slot, false);
 
         // BA-1: Show switch message
         const label = this._switchInMessage(side, displaySpecies);
@@ -1875,6 +1861,7 @@ export class BattleTimelineExecutor {
           this._playAudio('se/pb_rel');
           await this._delay(260);
         }
+        this._setInfoVisible(side, slot, true);
 
         // BA-2: play Pokémon cry via dex number → cry/<num>.m4a
         // Await the load so the cry plays even on first load (avoids 500ms timeout miss).

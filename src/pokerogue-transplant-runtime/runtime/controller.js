@@ -1,4 +1,4 @@
-import { LOGICAL_HEIGHT, LOGICAL_WIDTH, UI_ASSETS } from './constants.js';
+import { ARENA_IDS, LOGICAL_HEIGHT, LOGICAL_WIDTH, UI_ASSETS } from './constants.js';
 import { loadPhaserModule, TEXT_RENDER_SCALE } from './phaser-utils.js';
 import { createBattleShellSceneClass } from '../scene/battle-shell-scene.js';
 
@@ -101,7 +101,7 @@ export class TransplantBattleController {
         ]);
       } catch (_) { /* font loading is non-critical */ }
       const Phaser = await loadPhaserModule();
-      const sceneClass = createBattleShellSceneClass(Phaser, { LOGICAL_WIDTH, LOGICAL_HEIGHT, UI_ASSETS });
+      const sceneClass = createBattleShellSceneClass(Phaser, { ARENA_IDS, LOGICAL_WIDTH, LOGICAL_HEIGHT, UI_ASSETS });
       const scene = new sceneClass(this);
       const mountSize = measureMountSize(this.mount);
       this.lastMountSize = mountSize;
