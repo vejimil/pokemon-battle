@@ -3,7 +3,7 @@ import {KO_NAME_MAPS} from './i18n-ko-data.js';
 import {OFFICIAL_KO_SPECIES, OFFICIAL_KO_ITEMS} from './i18n-ko-official.js';
 import {OFFICIAL_KO_LOCALE_NAMES} from './i18n-ko-locales.js';
 import {probeShowdownLocalServer, startShowdownLocalSinglesBattle, submitShowdownLocalSinglesChoices, isShowdownLocalBattle, serializeChoiceForShowdown} from './engine/showdown-local-bridge.js';
-import {createOnlineRoom, joinOnlineRoom, fetchOnlineRoomState, syncOnlineRoomBuilder, setOnlineRoomReady, startOnlineRoomBattle, submitOnlineRoomChoice, forfeitOnlineRoomBattle, normalizeRoomId} from './engine/showdown-online-room-bridge.js';
+import {createOnlineRoom, joinOnlineRoom, fetchOnlineRoomState, syncOnlineRoomBuilder, setOnlineRoomReady, startOnlineRoomBattle, submitOnlineRoomSelection, cancelOnlineRoomSelection, submitOnlineRoomChoice, forfeitOnlineRoomBattle, normalizeRoomId} from './engine/showdown-online-room-bridge.js';
 import {Aliases} from './data/aliases.js';
 import {EXTERNALLY_VERIFIED_CURRENT_ITEMS_ABSENT_FROM_LOCAL_DATA, EXTERNALLY_VERIFIED_ITEM_KO_ALIASES} from './current-official-items.js';
 import {resolveItemIconUrl, applyPokerogueAtlasFrameToElement, POKEROGUE_ASSET_PATHS} from './pokerogue-assets.js';
@@ -47,6 +47,7 @@ const ONLINE_ROOM_POLL_WAIT_MS = 20000;
 const ONLINE_TEAM_SIZE_DEFAULT = 3;
 const ONLINE_TEAM_SIZE_MIN = 1;
 const ONLINE_TEAM_SIZE_MAX = 6;
+const ONLINE_BUILDER_SLOT_COUNT = 6;
 const ONLINE_BATTLE_RETURN_DELAY_MS = 3000;
 const ONLINE_BUILDER_AUTOSYNC_DEBOUNCE_MS = 480;
 const MOBILE_INPUT_REPEAT_MS = 120;
@@ -1369,10 +1370,18 @@ const state = {
   online: {
     enabled: isOnlineProfile(),
     teamSize: ONLINE_TEAM_SIZE_DEFAULT,
+    builderSlotCount: ONLINE_BUILDER_SLOT_COUNT,
     mode: 'singles',
     roomId: '',
     token: '',
     side: '',
+    phase: 'lobby',
+    startRequested: {p1: false, p2: false},
+    selection: {
+      p1: {picks: [], submitted: false, submittedAt: 0},
+      p2: {picks: [], submitted: false, submittedAt: 0},
+    },
+    selectionDraft: [],
     joined: {p1: false, p2: false},
     joinInputOpen: false,
     createConfigOpen: false,
@@ -1410,6 +1419,7 @@ const mobileInputRepeatTimers = new Map();
 let strongestMoveAnimationByTypeCache = null;
 let strongestMoveAnimationByTypeCacheKey = '';
 const rosterDragState = {player: -1, slot: -1};
+const selectionDragState = {source: '', slot: -1, entry: -1};
 const battleLocaleManager = createBattleLocaleManager({
   language: 'ko',
   namespaces: ['battle', 'ability-trigger', 'move-trigger', 'weather', 'terrain', 'arena-tag', 'battler-tags', 'status-effect', 'pokemon-info', 'target-select-ui-handler'],
@@ -2017,6 +2027,21 @@ function hasOnlineBothPlayersJoined() {
   return getOnlineJoinedPlayerCount() >= 2;
 }
 
+function getOnlinePhase() {
+  if (!isOnlineProfile()) return 'building';
+  const phase = String(state.online?.phase || '').toLowerCase();
+  if (['lobby', 'building', 'preview', 'selecting', 'battle'].includes(phase)) return phase;
+  if (state.online?.battleStarted) return 'battle';
+  if (!hasOnlineBothPlayersJoined()) return 'lobby';
+  if (state.online?.ready?.p1 && state.online?.ready?.p2) return 'preview';
+  return 'building';
+}
+
+function isOnlineTeamPreviewPhase() {
+  const phase = getOnlinePhase();
+  return phase === 'preview' || phase === 'selecting';
+}
+
 function isOnlineBuilderUnlocked() {
   if (!isOnlineProfile()) return true;
   return Boolean(isOnlineRoomJoined());
@@ -2024,7 +2049,7 @@ function isOnlineBuilderUnlocked() {
 
 function isOnlineBattleInProgress() {
   if (!isOnlineProfile()) return false;
-  return Boolean(state.online?.battleStarted || state.online?.returningToBuilder);
+  return Boolean(state.online?.battleStarted || state.online?.returningToBuilder || getOnlinePhase() === 'battle');
 }
 
 function isOnlineLocalReady() {
@@ -2036,6 +2061,7 @@ function isOnlineLocalReady() {
 
 function shouldHideOnlineOpponentRoster() {
   if (!isOnlineProfile() || !isOnlineBuilderUnlocked()) return false;
+  if (isOnlineTeamPreviewPhase() || getOnlinePhase() === 'battle') return false;
   if (!UI_TUNING.online.hideOpponentRosterUntilLocalReady) return false;
   if (!isOnlineRoomJoined()) return false;
   return !isOnlineLocalReady();
@@ -2056,7 +2082,8 @@ function ensureOnlineSelectedPlayer() {
   const lockedPlayer = getOnlineLockedPlayerIndex();
   if (!Number.isInteger(lockedPlayer)) return;
   if (state.selected.player !== lockedPlayer) state.selected.player = lockedPlayer;
-  if (!Number.isInteger(state.selected.slot) || state.selected.slot < 0 || state.selected.slot >= state.teamSize) {
+  const slotCount = getBuilderSlotCount();
+  if (!Number.isInteger(state.selected.slot) || state.selected.slot < 0 || state.selected.slot >= slotCount) {
     state.selected.slot = 0;
   }
 }
@@ -2073,6 +2100,7 @@ function renderOnlineRoomPanel() {
   const localSide = state.online.side || 'p1';
   const localSideReady = joined ? Boolean(state.online.ready?.[localSide]) : false;
   const bothPlayersJoined = hasOnlineBothPlayersJoined();
+  const phase = getOnlinePhase();
   const roomLabel = state.online.roomId || '-';
   const onlineTeamSize = normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
 
@@ -2143,7 +2171,7 @@ function renderOnlineRoomPanel() {
   }
   if (els.onlineSyncBuilderBtn) els.onlineSyncBuilderBtn.disabled = !joined || state.online.syncingBuilder;
   if (els.onlineReadyBtn) {
-    els.onlineReadyBtn.disabled = !joined || !bothPlayersJoined || state.online.syncingBuilder;
+    els.onlineReadyBtn.disabled = !joined || !bothPlayersJoined || state.online.syncingBuilder || phase === 'selecting' || phase === 'battle';
     els.onlineReadyBtn.textContent = localSideReady
       ? lang('준비 취소', 'Unready')
       : lang('준비 완료', 'Ready');
@@ -2155,6 +2183,7 @@ function renderOnlineRoomPanel() {
   if (els.startBattleBtn && !els.setupPanel?.hidden) {
     const runtime = getOnlineRoomRuntimeDescriptor();
     const hasErrors = Array.isArray(state.builderErrors) && state.builderErrors.length > 0;
+    els.startBattleBtn.textContent = lang('선출 시작', 'Start selection');
     els.startBattleBtn.disabled = hasErrors || !runtime.startAllowed;
   }
 
@@ -2180,6 +2209,8 @@ function renderOnlineRoomPanel() {
       lines.push(`P1 ${p1Name} ${state.online.ready?.p1 ? '✅' : '⌛'} · P2 ${p2Name} ${state.online.ready?.p2 ? '✅' : '⌛'}`);
       if (state.online.connected) lines.push(lang('연결 정상', 'Connected'));
       else if (state.online.lastError) lines.push(lang(`연결 문제: ${state.online.lastError}`, `Connection issue: ${state.online.lastError}`));
+      if (phase === 'preview') lines.push(lang('팀 프리뷰', 'Team preview'));
+      if (phase === 'selecting') lines.push(lang('출전 멤버 선출 중', 'Selecting entries'));
       if (state.online.battleStarted) lines.push(lang('배틀 진행 중', 'Battle running'));
       if (state.online.returningToBuilder) lines.push(lang('배틀 종료 · 잠시 후 빌더로 복귀', 'Battle finished · Returning to builder shortly'));
     }
@@ -2225,6 +2256,7 @@ function markOnlineBuilderAutoSyncSyncedWithLocal() {
 function isOnlineBuilderAutoSyncEligible() {
   if (!isOnlineProfile() || !isOnlineRoomJoined()) return false;
   if (isOnlineBattleInProgress()) return false;
+  if (getOnlinePhase() !== 'building' && getOnlinePhase() !== 'lobby') return false;
   const side = state.online.side;
   if (side !== 'p1' && side !== 'p2') return false;
   if (state.online.syncingBuilder) return false;
@@ -2274,7 +2306,15 @@ function scheduleOnlineBuilderAutoSync() {
 
 function shouldApplyOnlineBuilderState(roomState = null) {
   const eventName = String(roomState?.lastEvent || '');
-  return eventName === 'room-created' || eventName === 'room-joined' || eventName === 'builder-sync';
+  const phase = String(roomState?.phase || '').toLowerCase();
+  return eventName === 'room-created'
+    || eventName === 'room-joined'
+    || eventName === 'builder-sync'
+    || eventName === 'ready-updated'
+    || eventName === 'start-request-updated'
+    || eventName === 'selection-started'
+    || phase === 'preview'
+    || phase === 'selecting';
 }
 
 async function applyOnlineBuilderFromRoomState(roomState, {preserveLocal = true} = {}) {
@@ -2285,8 +2325,9 @@ async function applyOnlineBuilderFromRoomState(roomState, {preserveLocal = true}
   state.online.mode = remoteMode;
   state.mode = remoteMode;
   rebuildTeamSize();
+  const slotCount = Number(roomState?.settings?.builderSlotCount || getBuilderSlotCount()) || getBuilderSlotCount();
   const remoteNames = [p1.name || 'Player 1', p2.name || 'Player 2'];
-  const remoteTeams = [0, 1].map(player => Array.from({length: state.teamSize}, (_, slot) => {
+  const remoteTeams = [0, 1].map(player => Array.from({length: slotCount}, (_, slot) => {
     const sourceMon = (player === 0 ? p1.team : p2.team)?.[slot] || {};
     return Object.assign(createEmptyMon(), sourceMon);
   }));
@@ -2302,13 +2343,13 @@ async function applyOnlineBuilderFromRoomState(roomState, {preserveLocal = true}
     nextNames = [...remoteNames];
     nextTeams = [...remoteTeams];
     nextNames[localPlayer] = localCurrentName;
-    nextTeams[localPlayer] = Array.from({length: state.teamSize}, (_, slot) =>
+    nextTeams[localPlayer] = Array.from({length: slotCount}, (_, slot) =>
       Object.assign(createEmptyMon(), localCurrentTeam[slot] || {})
     );
     nextNames[opponentPlayer] = remoteNames[opponentPlayer] || state.playerNames?.[opponentPlayer] || (opponentPlayer === 1 ? 'Player 2' : 'Player 1');
   }
   state.playerNames = nextNames;
-  state.teams = [0, 1].map(player => Array.from({length: state.teamSize}, (_, slot) => (
+  state.teams = [0, 1].map(player => Array.from({length: slotCount}, (_, slot) => (
     Object.assign(createEmptyMon(), nextTeams[player]?.[slot] || {})
   )));
   ensureOnlineSelectedPlayer();
@@ -2364,6 +2405,46 @@ function scheduleOnlineRoomPoll(delayMs = 0) {
   }, Math.max(0, Number(delayMs) || 0));
 }
 
+function normalizeOnlineSelectionEntry(entry = null) {
+  return {
+    picks: Array.isArray(entry?.picks) ? entry.picks.map(Number).filter(Number.isInteger) : [],
+    submitted: Boolean(entry?.submitted),
+    submittedAt: Number(entry?.submittedAt || 0),
+  };
+}
+
+function getOnlineLocalSelectionEntry() {
+  const side = state.online?.side === 'p2' ? 'p2' : 'p1';
+  return normalizeOnlineSelectionEntry(state.online?.selection?.[side]);
+}
+
+function createEmptySelectionDraft() {
+  return Array.from({length: normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT)}, () => null);
+}
+
+function isValidSelectionDraft(draft = state.online.selectionDraft) {
+  const teamSize = normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
+  if (!Array.isArray(draft) || draft.length !== teamSize) return false;
+  const used = draft.filter(Number.isInteger);
+  return used.length === new Set(used).size && used.every(index => index >= 0 && index < getBuilderSlotCount());
+}
+
+function initializeSelectionDraftFromOwnSelection({force = false} = {}) {
+  const teamSize = normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
+  const localSelection = getOnlineLocalSelectionEntry();
+  const serverPicks = localSelection.picks.filter(index => index >= 0 && index < getBuilderSlotCount()).slice(0, teamSize);
+  const shouldAdopt = force
+    || localSelection.submitted
+    || !isValidSelectionDraft(state.online.selectionDraft)
+    || getOnlinePhase() !== 'selecting';
+  if (!shouldAdopt) return;
+  const nextDraft = createEmptySelectionDraft();
+  serverPicks.forEach((slot, index) => {
+    if (index < nextDraft.length) nextDraft[index] = slot;
+  });
+  state.online.selectionDraft = nextDraft;
+}
+
 async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {}) {
   if (!roomState || !isOnlineProfile()) return;
 
@@ -2374,6 +2455,7 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   };
   const previousBattleStarted = Boolean(state.online.battleStarted);
   const previousTeamSize = Number(state.teamSize || ONLINE_TEAM_SIZE_DEFAULT);
+  const previousPhase = getOnlinePhase();
   const previousRevision = Number(state.online.revision || 0);
   const nextRevision = Number(roomState.revision || state.online.revision || 0);
   const revisionChanged = nextRevision !== previousRevision;
@@ -2388,6 +2470,17 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   );
 
   state.online.teamSize = nextOnlineTeamSize;
+  state.online.builderSlotCount = Number(roomState.settings?.builderSlotCount || ONLINE_BUILDER_SLOT_COUNT) || ONLINE_BUILDER_SLOT_COUNT;
+  const nextPhase = String(roomState.phase || '').toLowerCase() || (roomState.battle?.started ? 'battle' : (p1Joined && p2Joined ? 'building' : 'lobby'));
+  state.online.phase = ['lobby', 'building', 'preview', 'selecting', 'battle'].includes(nextPhase) ? nextPhase : 'building';
+  state.online.startRequested = {
+    p1: Boolean(roomState.startRequested?.p1),
+    p2: Boolean(roomState.startRequested?.p2),
+  };
+  state.online.selection = {
+    p1: normalizeOnlineSelectionEntry(roomState.selection?.p1),
+    p2: normalizeOnlineSelectionEntry(roomState.selection?.p2),
+  };
   const nextOnlineMode = roomState?.settings?.mode === 'doubles' ? 'doubles' : 'singles';
   const modeChanged = state.online.mode !== nextOnlineMode || state.mode !== nextOnlineMode;
   state.online.mode = nextOnlineMode;
@@ -2415,6 +2508,10 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
     p2: Boolean(roomState.ready?.p2),
   };
   state.online.battleStarted = Boolean(roomState.battle?.started && !snapshot?.winner);
+  if (snapshot?.winner && state.online.phase === 'battle') state.online.phase = 'building';
+  if (previousPhase !== state.online.phase || state.online.phase === 'preview' || state.online.phase === 'selecting') {
+    initializeSelectionDraftFromOwnSelection({force: previousPhase !== state.online.phase});
+  }
 
   if (applyBuilder && revisionChanged && shouldApplyOnlineBuilderState(roomState)) {
     state.online.lastBuilderRevision = nextRevision;
@@ -2517,15 +2614,17 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   const builderUnlockChanged = previousBuilderUnlocked !== isOnlineBuilderUnlocked();
   const battleStartedChanged = previousBattleStarted !== Boolean(state.online.battleStarted);
   const teamSizeChanged = previousTeamSize !== Number(state.teamSize || previousTeamSize);
+  const phaseChanged = previousPhase !== getOnlinePhase();
   const readyChanged = previousReady.p1 !== Boolean(state.online.ready?.p1)
     || previousReady.p2 !== Boolean(state.online.ready?.p2);
 
-  const requiresLayoutRefresh = builderUnlockChanged || battleStartedChanged || teamSizeChanged;
+  const requiresLayoutRefresh = builderUnlockChanged || battleStartedChanged || teamSizeChanged || phaseChanged;
   if (requiresLayoutRefresh) {
     renderAll();
     if (applyBuilder) return;
   } else {
     renderOnlineRoomPanel();
+    renderSelectionPanel();
     syncRuntimeModeUi();
   }
   if (!applyBuilder && isOnlineBuilderUnlocked() && !isOnlineBattleInProgress() && (builderUnlockChanged || readyChanged || teamSizeChanged)) {
@@ -2539,6 +2638,7 @@ async function pollOnlineRoomStateOnce() {
   try {
     const response = await fetchOnlineRoomState({
       roomId: state.online.roomId,
+      token: state.online.token,
       since: state.online.revision || 0,
       waitMs: ONLINE_ROOM_POLL_WAIT_MS,
     });
@@ -2666,6 +2766,13 @@ async function createOnlineRoomFlow() {
   state.online.token = result.token || '';
   state.online.joinInputOpen = false;
   state.online.revision = 0;
+  state.online.phase = 'lobby';
+  state.online.startRequested = {p1: false, p2: false};
+  state.online.selection = {
+    p1: {picks: [], submitted: false, submittedAt: 0},
+    p2: {picks: [], submitted: false, submittedAt: 0},
+  };
+  state.online.selectionDraft = createEmptySelectionDraft();
   state.online.lastSnapshotSig = '';
   state.online.lastSnapshotRevision = -1;
   state.online.connected = true;
@@ -2696,6 +2803,13 @@ async function joinOnlineRoomFlow() {
   state.online.token = result.token || '';
   state.online.joinInputOpen = false;
   state.online.revision = 0;
+  state.online.phase = 'building';
+  state.online.startRequested = {p1: false, p2: false};
+  state.online.selection = {
+    p1: {picks: [], submitted: false, submittedAt: 0},
+    p2: {picks: [], submitted: false, submittedAt: 0},
+  };
+  state.online.selectionDraft = createEmptySelectionDraft();
   state.online.lastSnapshotSig = '';
   state.online.lastSnapshotRevision = -1;
   state.online.connected = true;
@@ -2743,15 +2857,50 @@ async function toggleOnlineReadyFlow() {
   await applyOnlineRoomState(response.state, {applyBuilder: false});
 }
 
-async function startOnlineBattleFlow() {
+async function startOnlineBattleFlow({requested = true} = {}) {
   if (!isOnlineRoomJoined()) throw new Error('Room is not joined.');
   clearOnlineBattleReturnTimer();
   clearOnlineBuilderAutoSyncTimer();
   const response = await startOnlineRoomBattle({
     roomId: state.online.roomId,
     token: state.online.token,
+    requested,
   });
   await applyOnlineRoomState(response.state, {applyBuilder: false});
+}
+
+function getSelectionDraftPicksOrThrow() {
+  const teamSize = normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
+  const draft = Array.isArray(state.online.selectionDraft) ? state.online.selectionDraft : [];
+  const picks = draft.slice(0, teamSize).map(value => Number(value));
+  if (picks.length !== teamSize || !picks.every(Number.isInteger)) {
+    throw new Error(lang(`출전 슬롯 ${teamSize}칸을 모두 채워주세요.`, `Fill all ${teamSize} entry slots.`));
+  }
+  if (new Set(picks).size !== picks.length) {
+    throw new Error(lang('같은 포켓몬을 중복 선출할 수 없습니다.', 'You cannot select the same Pokémon twice.'));
+  }
+  return picks;
+}
+
+async function submitOnlineSelectionFlow() {
+  if (!isOnlineRoomJoined()) throw new Error('Room is not joined.');
+  const picks = getSelectionDraftPicksOrThrow();
+  const response = await submitOnlineRoomSelection({
+    roomId: state.online.roomId,
+    token: state.online.token,
+    picks,
+  });
+  await applyOnlineRoomState(response.state, {applyBuilder: false});
+}
+
+async function cancelOnlineSelectionFlow() {
+  if (!isOnlineRoomJoined()) throw new Error('Room is not joined.');
+  const response = await cancelOnlineRoomSelection({
+    roomId: state.online.roomId,
+    token: state.online.token,
+  });
+  await applyOnlineRoomState(response.state, {applyBuilder: false});
+  initializeSelectionDraftFromOwnSelection({force: true});
 }
 
 function wireOnlineRoomEvents() {
@@ -2886,6 +3035,7 @@ function getOnlineRoomRuntimeDescriptor() {
   const bothReady = Boolean(state.online.ready?.p1 && state.online.ready?.p2);
   const connected = Boolean(state.online.connected);
   const battleActive = isOnlineBattleInProgress();
+  const phase = getOnlinePhase();
   const roomId = state.online.roomId || '';
   const isDoubles = (state.online?.mode || state.mode) === 'doubles';
   const readyDetail = isDoubles
@@ -2897,8 +3047,12 @@ function getOnlineRoomRuntimeDescriptor() {
       ? lang('두 번째 플레이어가 참가하면 준비 버튼이 열립니다.', 'The ready button unlocks once the second player joins.')
       : battleActive
       ? lang('배틀이 진행 중입니다.', 'Battle is running.')
+      : phase === 'preview'
+      ? lang('상대 팀을 확인한 뒤 배틀 시작을 누르면 출전 선택으로 넘어갑니다.', 'Review the opponent team, then press Battle Start to select entries.')
+      : phase === 'selecting'
+      ? lang('출전 멤버와 순서를 확정한 뒤 완료를 누르세요.', 'Choose entries and order, then submit.')
       : !bothReady
-      ? lang('양쪽 플레이어가 모두 Ready 상태여야 시작할 수 있습니다.', 'Both players must be ready before the battle can start.')
+      ? lang('양쪽 플레이어가 모두 준비 완료 상태여야 시작할 수 있습니다.', 'Both players must be ready before the battle can start.')
       : !connected
         ? lang('방 연결 상태를 확인한 뒤 다시 시도하세요.', 'Check room connectivity before starting.')
         : readyDetail;
@@ -2911,6 +3065,10 @@ function getOnlineRoomRuntimeDescriptor() {
         ? lang('인원 대기', 'Waiting player')
         : battleActive
           ? lang('배틀 중', 'In battle')
+        : phase === 'selecting'
+          ? lang('선출 중', 'Selecting')
+        : phase === 'preview'
+          ? lang('팀 프리뷰', 'Preview')
         : bothReady
           ? lang('준비 완료', 'Ready')
           : lang('대기 중', 'Waiting'),
@@ -2920,12 +3078,12 @@ function getOnlineRoomRuntimeDescriptor() {
         ? 'wait'
         : battleActive
           ? 'warning'
-        : (bothReady ? 'ready' : 'warning'),
+        : (phase === 'preview' || phase === 'selecting' || bothReady ? 'ready' : 'warning'),
     heroLabel: roomId
       ? `${lang('온라인', 'Online')} · ${roomId} · ${isDoubles ? lang('더블', 'Doubles') : lang('싱글', 'Singles')}`
       : `${lang('온라인', 'Online')} · ${isDoubles ? lang('더블', 'Doubles') : lang('싱글', 'Singles')}`,
     detail,
-    startAllowed: Boolean(joined && bothPlayersJoined && bothReady && connected && !battleActive),
+    startAllowed: Boolean(joined && bothPlayersJoined && bothReady && connected && !battleActive && phase === 'preview'),
     startBlockedReason: detail,
     startMessage: lang('온라인 배틀 시작!', 'Online battle started!'),
   };
@@ -4411,7 +4569,7 @@ function createEmptyMon() {
   };
 }
 function resetTeams() {
-  state.teams = [0,1].map(() => Array.from({length: state.teamSize}, () => createEmptyMon()));
+  state.teams = [0,1].map(() => Array.from({length: getBuilderSlotCount()}, () => createEmptyMon()));
   state.selected = {player: 0, slot: 0};
 }
 
@@ -4422,13 +4580,20 @@ function getConfiguredTeamSize() {
   return state.mode === 'singles' ? 3 : 4;
 }
 
+function getBuilderSlotCount() {
+  if (isOnlineProfile()) return ONLINE_BUILDER_SLOT_COUNT;
+  return getConfiguredTeamSize();
+}
+
 function rebuildTeamSize() {
   state.teamSize = getConfiguredTeamSize();
+  const slotCount = getBuilderSlotCount();
+  if (isOnlineProfile()) state.online.builderSlotCount = slotCount;
   state.teams = [0,1].map(p => {
     const prev = state.teams[p] || [];
-    return Array.from({length: state.teamSize}, (_, i) => prev[i] ? prev[i] : createEmptyMon());
+    return Array.from({length: slotCount}, (_, i) => prev[i] ? prev[i] : createEmptyMon());
   });
-  if (state.selected.slot >= state.teamSize) state.selected.slot = state.teamSize - 1;
+  if (state.selected.slot >= slotCount) state.selected.slot = slotCount - 1;
 }
 function natureMultiplier(natureName, stat) {
   const n = natures[natureName] || natures.Hardy;
@@ -4542,7 +4707,15 @@ function loadSavedState() {
       state.online.token = '';
       state.online.side = '';
       state.online.teamSize = normalizeOnlineTeamSize(online.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
+      state.online.builderSlotCount = ONLINE_BUILDER_SLOT_COUNT;
       state.online.mode = online.mode === 'doubles' ? 'doubles' : 'singles';
+      state.online.phase = 'lobby';
+      state.online.startRequested = {p1: false, p2: false};
+      state.online.selection = {
+        p1: {picks: [], submitted: false, submittedAt: 0},
+        p2: {picks: [], submitted: false, submittedAt: 0},
+      };
+      state.online.selectionDraft = [];
       state.online.joined = {p1: false, p2: false};
       state.online.joinInputOpen = false;
       state.online.createConfigOpen = false;
@@ -5306,6 +5479,18 @@ function bindElements() {
     builderWarnings: document.getElementById('builder-warnings'),
     validationSummary: document.getElementById('validation-summary'),
     startBattleBtn: document.getElementById('start-battle-btn'),
+    selectionPanel: document.getElementById('selection-panel'),
+    selectionStatus: document.getElementById('selection-status'),
+    selectionOpponentStatus: document.getElementById('selection-opponent-status'),
+    selectionCountNote: document.getElementById('selection-count-note'),
+    selectionOpponentTray: document.getElementById('selection-opponent-tray'),
+    selectionEntrySlots: document.getElementById('selection-entry-slots'),
+    selectionMyTray: document.getElementById('selection-my-tray'),
+    selectionHelper: document.getElementById('selection-helper'),
+    selectionReadyCancelBtn: document.getElementById('selection-ready-cancel-btn'),
+    selectionStartBtn: document.getElementById('selection-start-btn'),
+    selectionRedoBtn: document.getElementById('selection-redo-btn'),
+    selectionSubmitBtn: document.getElementById('selection-submit-btn'),
     copyPrevBtn: document.getElementById('copy-prev-btn'),
     randomizeSlotBtn: document.getElementById('randomize-slot-btn'),
     exportTeamsBtn: document.getElementById('export-teams-btn'),
@@ -5650,12 +5835,342 @@ function renderRoster() {
       container.appendChild(button);
     });
   });
-  els.teamSizeNote.textContent = state.language === 'ko'
-    ? `각 플레이어는 포켓몬 ${state.teamSize}마리를 만든다.`
-    : `Each player builds ${state.teamSize} Pokémon.`;
+  const builderSlotCount = getBuilderSlotCount();
+  els.teamSizeNote.textContent = isOnlineProfile()
+    ? (state.language === 'ko'
+      ? `배틀 시작 후 ${state.teamSize}마리를 선출한다.`
+      : `Build all 6 Pokémon, then choose ${state.teamSize} before battle.`)
+    : (state.language === 'ko'
+      ? `각 플레이어는 포켓몬 ${builderSlotCount}마리를 만든다.`
+      : `Each player builds ${builderSlotCount} Pokémon.`);
   els.heroModeLabel.textContent = state.mode === 'singles'
     ? (state.language === 'ko' ? `싱글 · ${state.teamSize}마리` : `Singles · ${state.teamSize} Pokémon`)
-    : lang('더블 · 4마리', 'Doubles · 4 Pokémon');
+    : (isOnlineProfile()
+      ? (state.language === 'ko' ? `더블 · ${state.teamSize}마리` : `Doubles · ${state.teamSize} Pokémon`)
+      : lang('더블 · 4마리', 'Doubles · 4 Pokémon'));
+}
+
+function getOnlineSideIdForPlayer(player) {
+  return player === 1 ? 'p2' : 'p1';
+}
+
+function getSelectionMonTitle(mon, fallback = '') {
+  return mon?.nickname?.trim()
+    || displaySpeciesName(mon?.data?.name || mon?.displaySpecies || mon?.formSpecies || mon?.species || mon?.baseSpecies || '')
+    || fallback;
+}
+
+function getSelectionMonSpecies(mon, fallback = '') {
+  return displaySpeciesName(mon?.data?.name || mon?.displaySpecies || mon?.formSpecies || mon?.species || mon?.baseSpecies || '') || fallback;
+}
+
+function buildSelectionMonCard(mon, slot, {mine = false, used = false, disabled = false, submitted = false, hideDetails = false} = {}) {
+  const card = document.createElement(mine ? 'button' : 'div');
+  if (mine) card.type = 'button';
+  card.className = `selection-mon-card${mine ? ' mine' : ' opponent'}${used ? ' used' : ''}${disabled ? ' disabled' : ''}`;
+  card.dataset.slot = String(slot);
+  const sprite = document.createElement('div');
+  sprite.className = 'selection-mon-sprite';
+  renderAnimatedSprite(sprite, {spriteId: mon?.spriteId, facing: 'front', shiny: mon?.shiny, size: 'small'});
+  const meta = document.createElement('div');
+  meta.className = 'selection-mon-meta';
+  const title = getSelectionMonTitle(mon, lang(`슬롯 ${slot + 1}`, `Slot ${slot + 1}`));
+  const species = getSelectionMonSpecies(mon, title);
+  const level = Number(mon?.level || 100);
+  const ability = !hideDetails && mon?.ability ? displayAbilityName(mon.ability) : '';
+  const typeText = !hideDetails && Array.isArray(mon?.data?.types) && mon.data.types.length
+    ? mon.data.types.map(displayType).join(' / ')
+    : '';
+  const subParts = [
+    mon?.nickname?.trim() ? species : '',
+    lang(`Lv.${level}`, `Lv.${level}`),
+    typeText,
+    ability,
+  ].filter(Boolean);
+  meta.innerHTML = `<div class="selection-mon-name">${title}</div><div class="selection-mon-sub">${subParts.join(' · ')}</div>`;
+  if (mine && mon?.item) {
+    const badge = document.createElement('div');
+    badge.className = 'selection-item-badge item-mini-badge';
+    renderItemIconPreview(badge, mon.item, {label: displayItemName(mon.item), hideWhenMissing: false});
+    meta.appendChild(badge);
+  }
+  card.appendChild(sprite);
+  card.appendChild(meta);
+  if (mine && !disabled && !submitted) {
+    card.draggable = true;
+    card.addEventListener('dragstart', event => {
+      selectionDragState.source = 'tray';
+      selectionDragState.slot = slot;
+      selectionDragState.entry = -1;
+      card.classList.add('dragging');
+      if (event?.dataTransfer) {
+        event.dataTransfer.effectAllowed = 'move';
+        event.dataTransfer.setData('text/plain', `tray:${slot}`);
+      }
+    });
+    card.addEventListener('dragend', () => {
+      selectionDragState.source = '';
+      selectionDragState.slot = -1;
+      selectionDragState.entry = -1;
+      card.classList.remove('dragging');
+    });
+  }
+  return card;
+}
+
+function assignSelectionDraftSlot(sourceSlot, targetEntry = null) {
+  const teamSize = normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
+  const source = Number(sourceSlot);
+  if (!Number.isInteger(source) || source < 0 || source >= getBuilderSlotCount()) return false;
+  const draft = isValidSelectionDraft(state.online.selectionDraft)
+    ? [...state.online.selectionDraft]
+    : createEmptySelectionDraft();
+  let entry = Number.isInteger(targetEntry) ? targetEntry : draft.findIndex(value => !Number.isInteger(value));
+  if (entry < 0 || entry >= teamSize) return false;
+  const existingIndex = draft.findIndex(value => value === source);
+  if (existingIndex >= 0 && existingIndex !== entry) draft[existingIndex] = null;
+  draft[entry] = source;
+  state.online.selectionDraft = draft;
+  return true;
+}
+
+function swapSelectionDraftEntries(fromEntry, toEntry) {
+  const draft = isValidSelectionDraft(state.online.selectionDraft)
+    ? [...state.online.selectionDraft]
+    : createEmptySelectionDraft();
+  const from = Number(fromEntry);
+  const to = Number(toEntry);
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= draft.length || to >= draft.length || from === to) return false;
+  [draft[from], draft[to]] = [draft[to], draft[from]];
+  state.online.selectionDraft = draft;
+  return true;
+}
+
+function clearSelectionDraftEntry(entryIndex) {
+  const draft = isValidSelectionDraft(state.online.selectionDraft)
+    ? [...state.online.selectionDraft]
+    : createEmptySelectionDraft();
+  const entry = Number(entryIndex);
+  if (!Number.isInteger(entry) || entry < 0 || entry >= draft.length) return false;
+  draft[entry] = null;
+  state.online.selectionDraft = draft;
+  return true;
+}
+
+function renderSelectionPanel() {
+  if (!els.selectionPanel) return;
+  const visible = isOnlineProfile() && isOnlineRoomJoined() && isOnlineTeamPreviewPhase();
+  els.selectionPanel.hidden = !visible;
+  if (!visible) return;
+
+  initializeSelectionDraftFromOwnSelection();
+  const phase = getOnlinePhase();
+  const localPlayer = getOnlineLocalPlayerIndex();
+  const opponentPlayer = localPlayer === 0 ? 1 : 0;
+  const localSide = getOnlineSideIdForPlayer(localPlayer);
+  const opponentSide = getOnlineSideIdForPlayer(opponentPlayer);
+  const localSelection = normalizeOnlineSelectionEntry(state.online.selection?.[localSide]);
+  const opponentSelection = normalizeOnlineSelectionEntry(state.online.selection?.[opponentSide]);
+  const localSubmitted = Boolean(localSelection.submitted);
+  const opponentSubmitted = Boolean(opponentSelection.submitted);
+  const localStartRequested = Boolean(state.online.startRequested?.[localSide]);
+  const teamSize = normalizeOnlineTeamSize(state.online?.teamSize, ONLINE_TEAM_SIZE_DEFAULT);
+  const draft = isValidSelectionDraft(state.online.selectionDraft)
+    ? state.online.selectionDraft
+    : createEmptySelectionDraft();
+  const filledCount = draft.filter(Number.isInteger).length;
+  const canEdit = phase === 'selecting' && !localSubmitted;
+  const canSubmit = canEdit && filledCount === teamSize;
+
+  if (els.selectionStatus) {
+    els.selectionStatus.textContent = phase === 'preview'
+      ? lang('상대 포켓몬을 확인한 뒤 배틀 시작을 누르세요.', 'Review the opponent team, then press Battle Start. Opponent items are hidden.')
+      : localSubmitted
+        ? (opponentSubmitted ? lang('양쪽 완료. 배틀을 시작합니다.', 'Both submitted. Starting battle.') : lang('내 선출 완료. 상대를 기다리는 중입니다.', 'Selection submitted. Waiting for opponent.'))
+        : lang('선택한 순서가 실제 출전 순서가 됩니다.', 'The chosen order becomes the battle entry order.');
+  }
+  if (els.selectionOpponentStatus) {
+    els.selectionOpponentStatus.textContent = phase === 'preview'
+      ? lang('상대 대기 중', 'Opponent waiting')
+      : opponentSubmitted
+        ? lang('상대 완료', 'Opponent submitted')
+        : lang('상대 선출 중', 'Opponent selecting');
+  }
+  if (els.selectionCountNote) {
+    els.selectionCountNote.textContent = `${filledCount} / ${teamSize}`;
+  }
+  if (els.selectionHelper) {
+    els.selectionHelper.textContent = phase === 'preview'
+      ? lang('양쪽 모두 배틀 시작을 누르면 선출 단계로 넘어갑니다.', 'Selection opens once both players press Battle Start.')
+      : localSubmitted
+        ? lang('되돌리기를 누르면 모든 슬롯이 초기화됩니다.', 'Use Re-select to edit only your own picks.')
+        : lang('내 포켓몬을 클릭하거나 드래그해서 슬롯에 배치하고, 슬롯끼리 드래그해 순서를 바꾸세요.', 'Click or drag your Pokémon into slots, and drag slots to reorder.');
+  }
+
+  if (els.selectionOpponentTray) {
+    els.selectionOpponentTray.innerHTML = '';
+    const opponentTeam = state.teams?.[opponentPlayer] || [];
+    Array.from({length: ONLINE_BUILDER_SLOT_COUNT}, (_, slot) => opponentTeam[slot] || createEmptyMon())
+      .forEach((mon, slot) => {
+        els.selectionOpponentTray.appendChild(buildSelectionMonCard(mon, slot, {mine: false, hideDetails: true}));
+      });
+  }
+
+  if (els.selectionEntrySlots) {
+    els.selectionEntrySlots.innerHTML = '';
+    draft.forEach((sourceSlot, entryIndex) => {
+      const slotEl = document.createElement('button');
+      slotEl.type = 'button';
+      slotEl.className = `selection-entry-slot${Number.isInteger(sourceSlot) ? ' filled' : ' empty'}${canEdit ? ' editable' : ' locked'}`;
+      slotEl.dataset.entry = String(entryIndex);
+      slotEl.innerHTML = `<span class="selection-entry-order">${entryIndex + 1}</span>`;
+      if (Number.isInteger(sourceSlot)) {
+        const mon = state.teams?.[localPlayer]?.[sourceSlot] || createEmptyMon();
+        const mini = document.createElement('div');
+        mini.className = 'selection-entry-mini';
+        const sprite = document.createElement('div');
+        sprite.className = 'selection-entry-sprite';
+        renderAnimatedSprite(sprite, {spriteId: mon.spriteId, facing: 'front', shiny: mon.shiny, size: 'small'});
+        const name = document.createElement('span');
+        name.textContent = getSelectionMonTitle(mon, lang(`슬롯 ${sourceSlot + 1}`, `Slot ${sourceSlot + 1}`));
+        mini.appendChild(sprite);
+        mini.appendChild(name);
+        slotEl.appendChild(mini);
+        if (canEdit) {
+          const remove = document.createElement('span');
+          remove.className = 'selection-entry-remove';
+          remove.textContent = '×';
+          slotEl.appendChild(remove);
+        }
+      } else {
+        const empty = document.createElement('span');
+        empty.className = 'selection-entry-empty';
+        empty.textContent = phase === 'selecting' ? lang('여기에 드롭', 'Drop here') : lang('대기', 'Waiting');
+        slotEl.appendChild(empty);
+      }
+      if (canEdit) {
+        slotEl.draggable = Number.isInteger(sourceSlot);
+        slotEl.addEventListener('click', () => {
+          if (Number.isInteger(sourceSlot)) {
+            clearSelectionDraftEntry(entryIndex);
+            renderSelectionPanel();
+          }
+        });
+        slotEl.addEventListener('dragstart', event => {
+          if (!Number.isInteger(sourceSlot)) return;
+          selectionDragState.source = 'entry';
+          selectionDragState.slot = sourceSlot;
+          selectionDragState.entry = entryIndex;
+          slotEl.classList.add('dragging');
+          if (event?.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', `entry:${entryIndex}`);
+          }
+        });
+        slotEl.addEventListener('dragover', event => {
+          if (!selectionDragState.source) return;
+          event.preventDefault();
+          slotEl.classList.add('drop-target');
+          if (event?.dataTransfer) event.dataTransfer.dropEffect = 'move';
+        });
+        slotEl.addEventListener('dragleave', () => slotEl.classList.remove('drop-target'));
+        slotEl.addEventListener('drop', event => {
+          if (!selectionDragState.source) return;
+          event.preventDefault();
+          if (selectionDragState.source === 'entry') swapSelectionDraftEntries(selectionDragState.entry, entryIndex);
+          else assignSelectionDraftSlot(selectionDragState.slot, entryIndex);
+          selectionDragState.source = '';
+          selectionDragState.slot = -1;
+          selectionDragState.entry = -1;
+          renderSelectionPanel();
+        });
+        slotEl.addEventListener('dragend', () => {
+          selectionDragState.source = '';
+          selectionDragState.slot = -1;
+          selectionDragState.entry = -1;
+          renderSelectionPanel();
+        });
+      }
+      els.selectionEntrySlots.appendChild(slotEl);
+    });
+  }
+
+  if (els.selectionMyTray) {
+    els.selectionMyTray.innerHTML = '';
+    const usedSlots = new Set(draft.filter(Number.isInteger));
+    const myTeam = state.teams?.[localPlayer] || [];
+    Array.from({length: ONLINE_BUILDER_SLOT_COUNT}, (_, slot) => myTeam[slot] || createEmptyMon())
+      .forEach((mon, slot) => {
+        const used = usedSlots.has(slot);
+        const card = buildSelectionMonCard(mon, slot, {
+          mine: true,
+          used,
+          disabled: !canEdit || used,
+          submitted: localSubmitted,
+        });
+        card.addEventListener('click', () => {
+          if (!canEdit || used) return;
+          if (assignSelectionDraftSlot(slot)) renderSelectionPanel();
+        });
+        els.selectionMyTray.appendChild(card);
+      });
+  }
+
+  if (els.selectionReadyCancelBtn) {
+    els.selectionReadyCancelBtn.hidden = phase !== 'preview';
+    els.selectionReadyCancelBtn.disabled = phase !== 'preview';
+    els.selectionReadyCancelBtn.onclick = () => {
+      toggleOnlineReadyFlow().catch(error => {
+        state.online.connected = false;
+        state.online.lastError = error?.message || String(error);
+        renderOnlineRoomPanel();
+      });
+    };
+  }
+  if (els.selectionStartBtn) {
+    els.selectionStartBtn.hidden = phase !== 'preview';
+    els.selectionStartBtn.disabled = phase !== 'preview' || !state.online.ready?.p1 || !state.online.ready?.p2;
+    els.selectionStartBtn.textContent = localStartRequested
+      ? lang('시작 요청 취소', 'Cancel Start')
+      : lang('배틀 시작', 'Start selection');
+    els.selectionStartBtn.onclick = () => {
+      startOnlineBattleFlow({requested: !localStartRequested}).catch(error => {
+        state.online.connected = false;
+        state.online.lastError = error?.message || String(error);
+        renderOnlineRoomPanel();
+        renderSelectionPanel();
+      });
+    };
+  }
+  if (els.selectionRedoBtn) {
+    els.selectionRedoBtn.hidden = phase !== 'selecting';
+    els.selectionRedoBtn.disabled = phase !== 'selecting';
+    els.selectionRedoBtn.onclick = () => {
+      if (localSubmitted) {
+        cancelOnlineSelectionFlow().catch(error => {
+          state.online.connected = false;
+          state.online.lastError = error?.message || String(error);
+          renderOnlineRoomPanel();
+          renderSelectionPanel();
+        });
+      } else {
+        state.online.selectionDraft = createEmptySelectionDraft();
+        renderSelectionPanel();
+      }
+    };
+  }
+  if (els.selectionSubmitBtn) {
+    els.selectionSubmitBtn.hidden = phase !== 'selecting';
+    els.selectionSubmitBtn.disabled = !canSubmit;
+    els.selectionSubmitBtn.onclick = () => {
+      submitOnlineSelectionFlow().catch(error => {
+        state.online.connected = false;
+        state.online.lastError = error?.message || String(error);
+        renderOnlineRoomPanel();
+        renderSelectionPanel();
+      });
+    };
+  }
 }
 function implementedAbilityNote(name) {
   if (!slugify(name)) return lang('포켓몬을 선택하면 특성을 고를 수 있습니다.', "Select one of the Pokémon's native abilities.");
@@ -5948,7 +6463,9 @@ async function rehydrateTeams() {
 async function renderValidation() {
   const allErrors = [];
   const allWarnings = [];
+  const onlineLockedPlayer = isOnlineProfile() && isOnlineRoomJoined() ? getOnlineLockedPlayerIndex() : null;
   for (const [playerIndex, team] of state.teams.entries()) {
+    if (Number.isInteger(onlineLockedPlayer) && playerIndex !== onlineLockedPlayer) continue;
     for (const [slotIndex, mon] of team.entries()) {
       const result = await validateMon(mon, playerIndex, slotIndex);
       allErrors.push(...result.errors);
@@ -5981,7 +6498,7 @@ async function renderValidation() {
     }
     if (runtimeBlocked) {
       els.validationSummary.textContent = lang(
-        `팀은 유효하지만 현재 모드는 아직 시작할 수 없습니다. ${runtime.startBlockedReason}`,
+        `팀은 유효하지만 배틀은 아직 시작할 수 없습니다. ${runtime.startBlockedReason}`,
         `Teams are valid, but this mode is not available yet. ${runtime.startBlockedReason}`
       );
       els.startBattleBtn.disabled = true;
@@ -6186,7 +6703,15 @@ function wireEditorEvents() {
       state.online.token = '';
       state.online.side = '';
       state.online.teamSize = ONLINE_TEAM_SIZE_DEFAULT;
+      state.online.builderSlotCount = ONLINE_BUILDER_SLOT_COUNT;
       state.online.mode = 'singles';
+      state.online.phase = 'lobby';
+      state.online.startRequested = {p1: false, p2: false};
+      state.online.selection = {
+        p1: {picks: [], submitted: false, submittedAt: 0},
+        p2: {picks: [], submitted: false, submittedAt: 0},
+      };
+      state.online.selectionDraft = [];
       state.online.joined = {p1: false, p2: false};
       state.online.joinInputOpen = false;
       state.online.createConfigOpen = false;
@@ -10170,7 +10695,7 @@ function renderAll() {
 
   const showSetupPanel = !isOnlineProfile()
     ? true
-    : (isOnlineBuilderUnlocked() && !isOnlineBattleInProgress());
+    : (isOnlineBuilderUnlocked() && !isOnlineBattleInProgress() && !isOnlineTeamPreviewPhase());
   if (els.setupPanel) els.setupPanel.hidden = !showSetupPanel;
 
   if (showSetupPanel) {
@@ -10185,6 +10710,7 @@ function renderAll() {
   }
 
   renderOnlineRoomPanel();
+  renderSelectionPanel();
   syncRuntimeModeUi();
   if (state.battle) renderBattle();
   else if (els.battlePanel) els.battlePanel.classList.add('hidden');

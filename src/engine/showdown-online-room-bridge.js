@@ -43,11 +43,12 @@ export async function joinOnlineRoom({roomId = '', name = '', builder = null, te
   };
 }
 
-export async function fetchOnlineRoomState({roomId = '', since = 0, waitMs = 0} = {}) {
+export async function fetchOnlineRoomState({roomId = '', since = 0, waitMs = 0, token = ''} = {}) {
   const normalizedRoomId = normalizeRoomId(roomId);
   const search = new URLSearchParams();
   if (Number.isFinite(Number(since))) search.set('since', String(Number(since) || 0));
   if (Number.isFinite(Number(waitMs))) search.set('waitMs', String(Math.max(0, Number(waitMs) || 0)));
+  if (String(token || '').trim()) search.set('token', String(token || '').trim());
   const data = await requestJson(`/api/rooms/${encodeURIComponent(normalizedRoomId)}/state?${search.toString()}`, {
     method: 'GET',
   });
@@ -81,13 +82,38 @@ export async function setOnlineRoomReady({roomId = '', token = '', ready = false
   };
 }
 
-export async function startOnlineRoomBattle({roomId = '', token = ''} = {}) {
+export async function startOnlineRoomBattle({roomId = '', token = '', requested = true} = {}) {
   const normalizedRoomId = normalizeRoomId(roomId);
   const data = await requestJson(`/api/rooms/${encodeURIComponent(normalizedRoomId)}/start-battle`, {
+    method: 'POST',
+    body: JSON.stringify({token, requested: Boolean(requested)}),
+  });
+  return {
+    side: String(data.side || ''),
+    state: data.state || null,
+  };
+}
+
+export async function submitOnlineRoomSelection({roomId = '', token = '', picks = []} = {}) {
+  const normalizedRoomId = normalizeRoomId(roomId);
+  const data = await requestJson(`/api/rooms/${encodeURIComponent(normalizedRoomId)}/submit-selection`, {
+    method: 'POST',
+    body: JSON.stringify({token, picks}),
+  });
+  return {
+    side: String(data.side || ''),
+    state: data.state || null,
+  };
+}
+
+export async function cancelOnlineRoomSelection({roomId = '', token = ''} = {}) {
+  const normalizedRoomId = normalizeRoomId(roomId);
+  const data = await requestJson(`/api/rooms/${encodeURIComponent(normalizedRoomId)}/cancel-selection`, {
     method: 'POST',
     body: JSON.stringify({token}),
   });
   return {
+    side: String(data.side || ''),
     state: data.state || null,
   };
 }

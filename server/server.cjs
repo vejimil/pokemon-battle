@@ -188,7 +188,8 @@ const server = http.createServer(async (req, res) => {
       const roomId = roomStateMatch[1];
       const since = Number(requestUrl.searchParams.get('since') || 0);
       const waitMs = Number(requestUrl.searchParams.get('waitMs') || 0);
-      const result = await onlineRooms.getState({roomId, since, waitMs});
+      const token = requestUrl.searchParams.get('token') || req.headers['x-room-token'] || '';
+      const result = await onlineRooms.getState({roomId, since, waitMs, token});
       sendJson(res, 200, {ok: true, ...result});
       return;
     }
@@ -224,6 +225,32 @@ const server = http.createServer(async (req, res) => {
       const roomId = roomStartBattleMatch[1];
       const body = await readJson(req);
       const result = await onlineRooms.startBattle({
+        roomId,
+        token: body.token,
+        requested: body.requested ?? true,
+      });
+      sendJson(res, 200, {ok: true, ...result});
+      return;
+    }
+
+    const roomSubmitSelectionMatch = /^\/api\/rooms\/([^/]+)\/submit-selection$/i.exec(pathname);
+    if (req.method === 'POST' && roomSubmitSelectionMatch) {
+      const roomId = roomSubmitSelectionMatch[1];
+      const body = await readJson(req);
+      const result = await onlineRooms.submitSelection({
+        roomId,
+        token: body.token,
+        picks: body.picks,
+      });
+      sendJson(res, 200, {ok: true, ...result});
+      return;
+    }
+
+    const roomCancelSelectionMatch = /^\/api\/rooms\/([^/]+)\/cancel-selection$/i.exec(pathname);
+    if (req.method === 'POST' && roomCancelSelectionMatch) {
+      const roomId = roomCancelSelectionMatch[1];
+      const body = await readJson(req);
+      const result = onlineRooms.cancelSelection({
         roomId,
         token: body.token,
       });

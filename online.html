@@ -283,10 +283,56 @@
                 <div id="validation-summary" class="validation-summary" data-i18n="validation_summary_default">두 팀을 모두 완성하면 배틀을 시작할 수 있습니다.</div>
                 <div class="inline-actions">
                   <button id="online-ready-btn" class="ghost-btn" type="button">준비 완료</button>
-                  <button id="start-battle-btn" class="primary-btn" type="button" disabled data-i18n="start_battle_btn">배틀 시작</button>
+                  <button id="start-battle-btn" class="primary-btn" type="button" disabled data-i18n="start_battle_btn">선출 시작</button>
                 </div>
               </div>
             </section>
+          </div>
+        </section>
+
+        <section id="selection-panel" class="panel selection-panel" hidden>
+          <div class="panel-header">
+            <div>
+              <h2>팀 프리뷰</h2>
+              <p id="selection-status" class="small-note">상대 팀을 확인하세요.</p>
+            </div>
+            <div class="inline-actions">
+              <button id="selection-ready-cancel-btn" class="ghost-btn" type="button">준비 취소</button>
+              <button id="selection-start-btn" class="primary-btn" type="button">배틀 시작</button>
+            </div>
+          </div>
+
+          <div class="selection-layout">
+            <section class="selection-block">
+              <div class="section-head">
+                <h3>상대 포켓몬</h3>
+                <span id="selection-opponent-status" class="small-note">상대 대기 중</span>
+              </div>
+              <div id="selection-opponent-tray" class="selection-tray opponent"></div>
+            </section>
+
+            <section class="selection-block selection-entry-block">
+              <div class="section-head">
+                <h3>팀</h3>
+                <span id="selection-count-note" class="small-note">0 / 3</span>
+              </div>
+              <div id="selection-entry-slots" class="selection-entry-slots"></div>
+            </section>
+
+            <section class="selection-block">
+              <div class="section-head">
+                <h3>내 포켓몬</h3>
+              </div>
+              <div id="selection-my-tray" class="selection-tray mine"></div>
+            </section>
+          </div>
+
+          <div class="builder-footer selection-footer">
+            <div id="selection-helper" class="validation-summary">내 포켓몬을 클릭하거나 드래그해서 팀을 구성하세요.</div>
+            <div class="inline-actions">
+              <button id="selection-redo-btn" class="ghost-btn" type="button">되돌리기</button>
+              <button id="selection-submit-btn" class="primary-btn" type="button">완료!</button>
+            </div>
           </div>
         </section>
 
