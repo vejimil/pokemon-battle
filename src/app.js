@@ -9134,11 +9134,21 @@ function buildPhaserPartyWindowModel(battle, player) {
   const inputLocked = isBattleInputLocked(battle);
   const options = getEngineSwitchOptions(player, activeIndex, battle);
   const optionMap = new Map(options.map(({mon, index}) => [index, mon]));
-  const activeSet = new Set(getBattleActiveIndices(player, battle));
+  const activeOrder = getBattleActiveIndices(player, battle);
+  const activeSet = new Set(activeOrder);
   const partyTeam = (side?.team || []).slice(0, 6);
   const slotCount = partyTeam.length;
   const battlerCount = Math.max(state.mode === 'doubles' ? 2 : 1, activeSet.size || 0);
   const currentChoice = getEngineDraftChoice(player, activeIndex, battle);
+  const displayIndexes = [];
+  const displayIndexSet = new Set();
+  const addDisplayIndex = index => {
+    if (!Number.isInteger(index) || index < 0 || index >= partyTeam.length || displayIndexSet.has(index)) return;
+    displayIndexSet.add(index);
+    displayIndexes.push(index);
+  };
+  activeOrder.forEach(addDisplayIndex);
+  for (let index = 0; index < partyTeam.length; index += 1) addDisplayIndex(index);
   return {
     mode: 'party',
     fieldIndex: requestSlot,
@@ -9148,7 +9158,8 @@ function buildPhaserPartyWindowModel(battle, player) {
       : lang('교체할 포켓몬을 선택하세요.', 'Choose the Pokémon to switch in.'),
     slotCount,
     battlerCount,
-    partyOptions: partyTeam.map((mon, index) => {
+    partyOptions: displayIndexes.map(index => {
+      const mon = partyTeam[index];
       if (!mon) {
         return null;
       }
