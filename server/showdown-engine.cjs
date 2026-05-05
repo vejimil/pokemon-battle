@@ -686,6 +686,103 @@ function activeSlotMatches(entry = null, identRaw = '', species = '') {
     && toId(entry.species || '') === toId(species || '');
 }
 
+function eventSlotIdentRaw(identRaw = '', side = 'p1', slot = 0) {
+  const normalizedSide = side === 'p2' ? 'p2' : 'p1';
+  const numericSlot = Number(slot);
+  const normalizedSlot = Number.isInteger(numericSlot) && numericSlot >= 0 ? numericSlot : 0;
+  const letter = String.fromCharCode(97 + normalizedSlot);
+  const match = /^(p[12])([a-z])?(:.*)$/i.exec(String(identRaw || ''));
+  if (!match) return identRaw;
+  return `${normalizedSide}${letter}${match[3]}`;
+}
+
+function activeEntryMatchesIdent(entry = null, identRaw = '') {
+  if (!entry) return false;
+  const identName = displayNameForPokemonProtocol(identRaw || '');
+  return String(entry.identRaw || '') === String(identRaw || '')
+    || toId(displayNameForPokemonProtocol(entry.identRaw || '')) === toId(identName)
+    || toId(entry.species || '') === toId(identName);
+}
+
+function retargetSwappedHpCache(
+  ctx,
+  sourceIdentBefore = '',
+  sourceIdentAfter = '',
+  sourceHpBefore = undefined,
+  targetIdentBefore = '',
+  targetIdentAfter = '',
+  targetHpBefore = undefined,
+) {
+  const hpCache = ctx?.hpCache;
+  if (!hpCache?.set) return;
+  if (sourceIdentBefore && sourceIdentBefore !== sourceIdentAfter) hpCache.delete(sourceIdentBefore);
+  if (targetIdentBefore && targetIdentBefore !== targetIdentAfter) hpCache.delete(targetIdentBefore);
+  if (sourceHpBefore !== undefined && sourceIdentAfter) hpCache.set(sourceIdentAfter, sourceHpBefore);
+  if (targetHpBefore !== undefined && targetIdentAfter) hpCache.set(targetIdentAfter, targetHpBefore);
+}
+
+function swapActiveSlots(ctx, side = 'p1', fromSlot = 0, toSlot = 0, identRaw = '') {
+  const activeBySlot = ctx?.activeBySlot;
+  if (!activeBySlot?.get || fromSlot === toSlot) return;
+
+  let sourceSlot = fromSlot;
+  let sourceKey = activeSlotKey(side, sourceSlot);
+  let targetKey = activeSlotKey(side, toSlot);
+  let source = activeBySlot.get(sourceKey);
+  let target = activeBySlot.get(targetKey);
+
+  if (!activeEntryMatchesIdent(source, identRaw)) {
+    const located = [...activeBySlot.entries()].find(([_key, entry]) => (
+      entry?.side === side && activeEntryMatchesIdent(entry, identRaw)
+    ));
+    if (!located) return;
+    source = located[1];
+    sourceSlot = Number.isInteger(source?.slot) ? source.slot : fromSlot;
+    if (sourceSlot === toSlot) return;
+    sourceKey = activeSlotKey(side, sourceSlot);
+    targetKey = activeSlotKey(side, toSlot);
+    target = activeBySlot.get(targetKey);
+  }
+
+  const sourceIdentBefore = source?.identRaw || '';
+  const targetIdentBefore = target?.identRaw || '';
+  const sourceHpBefore = sourceIdentBefore ? ctx.hpCache?.get?.(sourceIdentBefore) : undefined;
+  const targetHpBefore = targetIdentBefore ? ctx.hpCache?.get?.(targetIdentBefore) : undefined;
+  const sourceIdentAfter = source ? eventSlotIdentRaw(source.identRaw, side, toSlot) : '';
+  const targetIdentAfter = target ? eventSlotIdentRaw(target.identRaw, side, sourceSlot) : '';
+
+  if (target) {
+    activeBySlot.set(sourceKey, {
+      ...target,
+      side,
+      slot: sourceSlot,
+      identRaw: targetIdentAfter,
+    });
+  } else {
+    activeBySlot.delete(sourceKey);
+  }
+  if (source) {
+    activeBySlot.set(targetKey, {
+      ...source,
+      side,
+      slot: toSlot,
+      identRaw: sourceIdentAfter,
+    });
+  } else {
+    activeBySlot.delete(targetKey);
+  }
+
+  retargetSwappedHpCache(
+    ctx,
+    sourceIdentBefore,
+    sourceIdentAfter,
+    sourceHpBefore,
+    targetIdentBefore,
+    targetIdentAfter,
+    targetHpBefore,
+  );
+}
+
 function updateActiveSlotCondition(ctx, id, cond = {}) {
   const activeBySlot = ctx?.activeBySlot;
   if (!activeBySlot?.get) return;
@@ -1318,6 +1415,7 @@ function normalizeEventsFromLine(line, ctx) {
     case 'swap': {
       const id = parseIdentForEvent(parts[2]);
       const toPos = Number(parts[3]) || 0;
+      swapActiveSlots(ctx, id.side, id.slot, toPos, parts[2]);
       return [{
         type: 'position_swap',
         turn: ctx.turn,

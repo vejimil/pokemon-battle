@@ -414,6 +414,102 @@ function printBlock(title, checks) {
     results.push(printBlock('Arena snapshot and explicit switch-out event flow', checks));
   }
 
+  {
+    const service = new ShowdownEngineService();
+    const indeedee = makeMon(
+      'Indeedee-F',
+      '',
+      'Psychic Surge',
+      ['Ally Switch', 'Protect', 'Helping Hand', 'Psybeam'],
+      'Psychic',
+      makeUi(0, 0, 'Indeedee-F', 'Indeedee', 'INDEEDEE_F', {
+        ability: 'Psychic Surge',
+        teraType: 'Psychic',
+        types: ['psychic', 'normal'],
+      })
+    );
+    const cinderace = makeMon(
+      'Cinderace',
+      '',
+      'Blaze',
+      ['Protect', 'Quick Attack', 'Double Kick', 'Ember'],
+      'Fire',
+      makeUi(0, 1, 'Cinderace', 'Cinderace', 'CINDERACE', {
+        ability: 'Blaze',
+        teraType: 'Fire',
+        types: ['fire'],
+      })
+    );
+    const pikachu = makeMon(
+      'Pikachu',
+      '',
+      'Static',
+      ['Thunderbolt', 'Protect', 'Quick Attack', 'Growl'],
+      'Electric',
+      makeUi(0, 2, 'Pikachu', 'Pikachu', 'PIKACHU', {
+        ability: 'Static',
+        teraType: 'Electric',
+        types: ['electric'],
+      })
+    );
+    const bulbasaur = foeMon({
+      species: 'Bulbasaur',
+      ability: 'Overgrow',
+      moves: ['Protect', 'Tackle', 'Growl', 'Vine Whip'],
+      ui: makeUi(1, 0, 'Bulbasaur', 'Bulbasaur', 'BULBASAUR', {
+        ability: 'Overgrow',
+        teraType: 'Grass',
+        types: ['grass', 'poison'],
+      }),
+    });
+    const charmander = foeMon({
+      species: 'Charmander',
+      ability: 'Blaze',
+      moves: ['Protect', 'Scratch', 'Growl', 'Ember'],
+      teraType: 'Fire',
+      types: ['fire'],
+      ui: makeUi(1, 1, 'Charmander', 'Charmander', 'CHARMANDER', {
+        ability: 'Blaze',
+        teraType: 'Fire',
+        types: ['fire'],
+      }),
+    });
+    const squirtle = foeMon({
+      species: 'Squirtle',
+      ability: 'Torrent',
+      moves: ['Protect', 'Tackle', 'Tail Whip', 'Water Gun'],
+      teraType: 'Water',
+      types: ['water'],
+      ui: makeUi(1, 2, 'Squirtle', 'Squirtle', 'SQUIRTLE', {
+        ability: 'Torrent',
+        teraType: 'Water',
+        types: ['water'],
+      }),
+    });
+
+    let snapshot = await service.startBattle({
+      mode: 'doubles',
+      players: [
+        {name: 'P1', team: [indeedee, cinderace, pikachu]},
+        {name: 'P2', team: [bulbasaur, charmander, squirtle]},
+      ],
+    });
+    snapshot = await service.chooseBattle(snapshot.id, {p1: 'move 1, move 1', p2: 'move 1, move 1'});
+    const activeAfterSwap = snapshot.players?.[0]?.active || [];
+    const swapEvent = (snapshot.events || []).find(ev => ev?.type === 'position_swap' && ev.side === 'p1');
+    snapshot = await service.chooseBattle(snapshot.id, {p1: 'move 1, switch 3', p2: 'move 1, move 1'});
+    const events = snapshot.events || [];
+    const switchOut = events.find(ev => ev?.type === 'switch_out' && ev.side === 'p1') || null;
+    const eventTypes = events.map(ev => `${ev.type}${ev.species ? `:${ev.species}` : ''}`).join(', ');
+    const checks = [
+      printCheck('Ally Switch emits a position_swap event', Boolean(swapEvent), JSON.stringify(swapEvent || null)),
+      printCheck('active order reflects Ally Switch before next turn', activeAfterSwap[0] === 1 && activeAfterSwap[1] === 0, JSON.stringify(activeAfterSwap)),
+      printCheck('post-Ally Switch switch_out recalls the selected slot Pokémon', toId(switchOut?.species) === 'indeedeef', eventTypes),
+      printCheck('post-Ally Switch switch_out keeps the swapped slot index', switchOut?.slot === 1, JSON.stringify(switchOut || null)),
+    ];
+    results.push(printBlock('Ally Switch followed by manual switch recalls the correct Pokémon', checks));
+  }
+
   const passed = results.every(Boolean);
   console.log(`\nOverall: ${passed ? 'PASS' : 'FAIL'}`);
   if (!passed) process.exitCode = 1;
