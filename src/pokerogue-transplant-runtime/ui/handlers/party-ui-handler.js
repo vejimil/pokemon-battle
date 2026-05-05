@@ -455,11 +455,11 @@ export class PartyUiHandler extends UiHandler {
 
     this.infoContainer = scene.add.container(65, -173).setVisible(false).setName('party-info-popup');
     this.infoBg = addWindow(this.ui, 0, 0, 194, 118).setOrigin(0, 0);
-    this.infoBody = addTextObject(this.ui, 8, 8, '', 'PARTY', {
+    this.infoBody = addTextObject(this.ui, 8, 6, '', 'PARTY', {
       wordWrap: { width: 178, useAdvancedWrap: true },
       lineSpacing: 1,
     }).setOrigin(0, 0);
-    this.infoHint = addTextObject(this.ui, 8, 106, '', 'PARTY').setOrigin(0, 0);
+    this.infoHint = addTextObject(this.ui, 8, 100, '', 'PARTY').setOrigin(0, 0);
     this.infoContainer.add([this.infoBg, this.infoBody, this.infoHint]);
 
     // slotYs: index 0 = main slot, index 1-5 = bench
