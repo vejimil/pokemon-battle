@@ -95,7 +95,7 @@ function hasCompleteBuilderMon(mon = null) {
   const ability = String(mon.ability || '').trim();
   const moves = Array.isArray(mon.moves) ? mon.moves.filter(move => String(move || '').trim()) : [];
   const level = Number(mon.level || 0);
-  return Boolean(species && ability && moves.length === 4 && Number.isFinite(level) && level >= 1 && level <= 100);
+  return Boolean(species && ability && moves.length >= 1 && moves.length <= 4 && Number.isFinite(level) && level >= 1 && level <= 100);
 }
 
 class OnlineRoomService {

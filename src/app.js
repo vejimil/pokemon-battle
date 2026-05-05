@@ -3259,7 +3259,7 @@ const UI_STRINGS = Object.freeze({
     ability_note_default: '포켓몬을 선택하면 특성 목록이 표시됩니다.',
     item_note_default: '지닌 도구가 없습니다.',
     moves_title: '기술',
-    moves_note: '기술은 정확히 4개 선택해야 합니다.',
+    moves_note: '기술은 1~4개 선택할 수 있습니다.',
     move1_label: '기술 1',
     move2_label: '기술 2',
     move3_label: '기술 3',
@@ -3328,7 +3328,7 @@ const UI_STRINGS = Object.freeze({
     ability_note_default: 'Select a species to load its ability list.',
     item_note_default: 'No held item selected.',
     moves_title: 'Moves',
-    moves_note: 'Pick exactly four moves.',
+    moves_note: 'Pick 1 to 4 moves.',
     move1_label: 'Move 1',
     move2_label: 'Move 2',
     move3_label: 'Move 3',
@@ -6402,7 +6402,7 @@ async function validateMon(mon, playerIndex, slotIndex) {
   }
 
   const chosenMoves = mon.moves.filter(Boolean);
-  if (chosenMoves.length !== 4) errors.push(`${prefix}: 기술은 정확히 4개여야 합니다. / pick exactly four moves.`);
+  if (!chosenMoves.length || chosenMoves.length > 4) errors.push(`${prefix}: 기술은 1~4개여야 합니다. / pick 1 to 4 moves.`);
   const moveIds = chosenMoves.map(toId);
   if (new Set(moveIds).size !== moveIds.length) errors.push(`${prefix}: 중복 기술은 허용되지 않습니다. / duplicate moves are not allowed.`);
   const learnsetIds = new Set(mon.data?.learnset || []);
