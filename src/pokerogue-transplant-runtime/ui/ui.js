@@ -30,7 +30,7 @@ const DOUBLES_INFO_GLOBAL_OFFSET = Object.freeze({
 // Doubles BattleInfo anchor positions (logical pixels).
 // Keep these values centralized so visual tuning is a one-line edit.
 const DOUBLES_INFO_POS = Object.freeze({
-  enemy: { x: 144, slot0Y: 64, slot1Y: 39 },
+  enemy: { x: 144, slot0Y: 51, slot1Y: 26 },
   // Player mini info now follows enemy-like slot spacing (17px).
   player: { x: 320, slot0Y: 96, slot1Y: 121 },
 });

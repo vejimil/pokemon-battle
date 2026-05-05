@@ -472,3 +472,36 @@ Status: **개선 필요 항목 코드 반영 완료, 수동 검증 진행 필요
 ### 검증 요약
 - 정적 문법 검사(`node --check`) 다수 파일 통과.
 - 회귀 스크립트 `npm run verify:stage22` 통과(Overall PASS).
+
+---
+
+## 13) Plan 이관 요약 (2026-05-05)
+
+`plan.md`를 코드 안정화 전용 진행 문서로 교체하면서, 기존 활성 계획과 2026-05-01~2026-05-02 완료 기록을 아래에 이관함.
+
+### 기존 활성 항목
+- 9: 더블배틀 구현은 DB-1~DB-8.5, DB-10 완료 상태였고, 남은 작업은 DB-9 회귀/검증뿐이었다.
+- 15: 배틀 중 간헐 렉은 보류 상태였다. 재현 구간은 `player1` 포켓몬 1 출전 후 피격/필드 연출 종료에서 배틀 필드 전환 사이이며, 점검 후보는 `timeline.js` 지연 체인, `battle-shell-scene.js` 필드/배경 로딩, `battle-anim-player.js` 프레임 루프/cleanup이었다.
+- 16: 더블 배틀 연출 위치 확인은 수정 완료 상태였다. 슬롯 base 좌표, `playMoveAnim()` endpoint 산출, `timeline._scanMoveOutcome()` 타깃 선택 규칙, 보호계 연출 보정 결과를 기록했다.
+- 17: ability bar 미표시 케이스는 수정 완료 상태였다. `server/showdown-engine.cjs`의 Showdown protocol 변환에서 `-activate`, `-immune`, `-fail`, `cant`, `-block`, `-start`, `-end`, `-item`, `-curestatus`, ability 기반 `-heal`에 `ability_show`를 선행 emit하도록 정리했다.
+- 18: 테라스탈 상태의 Tera Blast 사용 후 턴 스킵은 수정 완료 상태였다. 서버 팀 입력에만 `teraType` canonical type name을 전달하고, snapshot/request는 기존 lowercase UI id를 유지하도록 정리했다.
+- 19: 랜덤 배틀 필드 세트 로딩은 완료 상태였다. `assets/pokerogue/arenas`의 arena 세트를 런타임 상수/서버 snapshot/Phaser battle shell에 연결했다.
+- 20: 교체 퇴장 이벤트/연출 분리는 완료 상태였다. 서버가 `switch_out`을 명시 emit하고, timeline/scene이 퇴장 메시지와 포켓볼 회수 연출을 `switch_in`과 분리해 처리하도록 정리했다.
+
+### DB-9 회귀/검증 계획
+- 정적 검증: 변경 파일별 `node --check`.
+- 회귀 묶음: `npm run verify:core`.
+- 더블 smoke 후보:
+  - 더블 포맷 시작 후 양쪽 단일 무브로 정상 turn 진행 확인.
+  - 타깃 카테고리별 직렬화 테스트(`single-opponent`, `adjacentAlly`, `alladjacentfoes`, `all`, `self`).
+  - `playMoveAnim`의 user/target 슬롯 좌표 스냅샷 회귀.
+- 수동 검증 후보:
+  - 더블에서 보호 슬롯만 데미지 0 처리.
+  - Helping Hand 등 ally target 기술의 자기 슬롯 disabled 확인.
+  - 다이맥스/테라/메가/Z가 사이드 내 한 슬롯에서만 토글되는지 확인.
+  - 한쪽만 기절한 forceSwitch가 정상 슬롯에만 표시되는지 확인.
+
+### 완료 항목 검증 요약
+- 17/18/19/20 관련 `node --check` 대상 파일 통과 기록 있음.
+- `npm run verify:core` 통과 기록 있음.
+- 주요 브라우저 검증 포인트는 ability bar 중복/누락, Tera Blast 턴 진행, arena 세트 유지, 교체 퇴장/등장 순서였다.
