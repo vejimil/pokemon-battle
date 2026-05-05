@@ -89,16 +89,16 @@ Scope: `online.html` (온라인 프로필) 흐름만. `index.html`(local) 흐름
 |---|---|---|---|---|---|
 | `lobby` | 한쪽만 입장 | ✅ (자기) | ❌ | — | 상대 입장 대기 |
 | `building` | 둘 다 입장, 6마리 빌드 중 | ✅ (자기) | ❌ (현재 정책 유지) | — | Ready 토글 |
-| `preview` | 양쪽 Ready 완료, 출전 선택 직전 | ❌ | ✅ (전체 6마리) | ❌ (가림) | "배틀 시작" 클릭 → 선택 모드로 / **Ready 취소(=building 복귀) 가능** |
-| `selecting` | 양쪽이 출전 N마리/순서 선택 중 | ❌ | ✅ (전체 6마리) | ❌ (가림) | 자기 선출 진행 (상대 picks 내용은 비공개), 완료 제출, 본인 한정 선택 취소 가능 |
+| `preview` | 양쪽 Ready 완료, 출전 선택 직전 | ❌ | ✅ (전체 6마리) | ❌ (가림) | 양쪽 "배틀 시작" 클릭 토글 → 둘 다 누르면 selecting / **Ready 취소(=building 복귀) 가능** |
+| `selecting` | 양쪽이 출전 N마리/순서 선택 중 | ❌ | ✅ (전체 6마리) | ❌ (가림) | 자기 선출 진행 (상대 picks 내용은 비공개), 완료 제출, 본인 한정 선택 취소 가능. **building 복귀 불가** |
 | `battle` | 엔진 세션 진행 중 | ❌ | ✅ (엔진 노출 규칙) | (엔진 규칙) | 턴 입력 |
 
 전이:
 - `lobby` → `building`: 두 번째 플레이어 join
 - `building` → `preview`: 양쪽 Ready=true (현재의 즉시 배틀 시작 대신 preview로 진입)
 - `preview` → `building`: **어느 한쪽이라도 Ready 취소(setReady false)** → 즉시 building 복귀 (현재 빌더 화면에서 누르던 "준비 취소"와 동일한 UX 유지)
-- `preview` → `selecting`: **둘 중 한 명이라도 "배틀 시작" 클릭** → 룸이 selecting로 잠금
-- `selecting` → `building`: **어느 한쪽이라도 Ready 취소** → selection 양쪽 리셋 + building 복귀 (선출 도중에도 마음 바꿀 수 있어야 함)
+- `preview` → `selecting`: **양쪽 모두 "배틀 시작" 클릭** → 룸이 selecting로 잠금 (Ready와 동일한 양측 합의 토글)
+- `selecting` → `(no exit)`: **selecting 진입 후엔 building 복귀 불가**. 본인 한정 picks 재편집(선출 다시)만 허용
 - `selecting` → `battle`: 양쪽 선출 제출(완료!) → 서버가 엔진 startBattle 호출
 - `battle` → `building`: 배틀 종료 후 기존 `scheduleOnlineBattleReturnToBuilder` 흐름 재사용 (Ready/선출 리셋)
 
@@ -180,13 +180,16 @@ state.online.lastSelectionRev // 룸 revision 추적
 
 변경:
 - `POST /api/rooms/:roomId/start-battle`
-  - 의미 변경: **엔진 세션을 곧장 만들지 않고** phase=preview→selecting 으로 전이만 시킨다
-  - 양쪽 ready 검사 유지
+  - 의미 변경: **엔진 세션을 곧장 만들지 않고** 본인 측 `startRequested=true` 토글만 한다
+  - 양쪽 모두 startRequested=true가 되는 시점에 phase=preview→selecting 전이
+  - body에 `{token, requested:boolean}` (생략 시 true). false면 본인 한정 토글 해제 (preview 상태 유지)
+  - 양쪽 ready 검사는 유지
   - 실제 엔진 startBattle은 selection submit 완료 시점으로 이동
 - `setReady(true)` 시
   - 기존 동작 외에, 양쪽 모두 true가 되는 시점에 phase를 `building`→`preview`로 전이
 - `setReady(false)` 시
-  - phase가 preview/selecting이면 `selection` 리셋하고 phase=building 복귀
+  - phase가 preview면 `selection`/`startRequested` 리셋하고 phase=building 복귀
+  - phase가 selecting/battle이면 거절 (409) — 이미 선출 단계 진입 후엔 후퇴 불가
 - `getState`
   - 위 4-4의 viewer 마스킹 로직 추가
 
@@ -232,8 +235,9 @@ state.online.lastSelectionRev // 룸 revision 추적
        - 카드 표시: 스프라이트, 종족/별명, 레벨, 도구, 특성 (자기 정보는 모두 노출)
   - 푸터 버튼:
     - **"완료!"** — 슬롯 N개가 모두 차고 phase=selecting 일 때만 활성. 누르면 `submit-selection` 호출.
-    - **"선출 다시"** — 본인 한정 picks 리셋 (제출 후엔 `cancel-selection` → 슬롯 다시 편집 가능)
-    - **"준비 취소"** — preview/selecting 어디서든 가능. setReady(false) 호출 → 양쪽 모두 building 복귀
+    - **"선출 다시"** — 본인 한정 picks 리셋 (제출 후엔 `cancel-selection` → 슬롯 다시 편집 가능). picks 자체는 유지하되 submitted=false로 되돌림.
+    - **"준비 취소"** — **preview에서만** 노출/가능 (selecting에서는 진입 후 후퇴 불가). setReady(false) 호출 → 양쪽 모두 building 복귀
+    - **"배틀 시작"** — phase=preview에서 본인 토글. 양쪽 모두 누르면 selecting로 전이.
   - 상태 표시:
     - "내 출전 N마리 중 k개 채움"
     - "상대 선출 중..." / "상대 완료, 내 선출 대기" / "양쪽 완료 — 곧 배틀 시작"

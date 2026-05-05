@@ -9142,9 +9142,9 @@ function buildPhaserPartyWindowModel(battle, player) {
   return {
     mode: 'party',
     fieldIndex: requestSlot,
-    title: `${side?.name || `P${player + 1}`} · ${forced ? lang('강제 교체', 'Forced switch') : lang('교체', 'Switch')}`,
+    title: `${side?.name || `P${player + 1}`} · ${forced ? lang('교체', 'Switch') : lang('교체', 'Switch')}`,
     subtitle: forced
-      ? lang('엔진이 교체를 요구하고 있습니다.', 'The engine requires a replacement.')
+      ? lang('교체할 포켓몬을 선택하세요.', 'Choose the Pokémon to switch in.')
       : lang('교체할 포켓몬을 선택하세요.', 'Choose the Pokémon to switch in.'),
     slotCount,
     battlerCount,

@@ -426,7 +426,7 @@ export class PartyUiHandler extends UiHandler {
     this.partyBg = scene.add.image(0, 0, env.UI_ASSETS.partyBg.key).setOrigin(0, 1);
 
     this.partyMessageBox = addWindow(this.ui, 1, -1, 262, 30).setOrigin(0, 1).setName('window-party-msg-box');
-    this.message = addTextObject(this.ui, 10, -23, '', 'WINDOW', {
+    this.message = addTextObject(this.ui, 8, -4, '', 'PARTY', {
       wordWrap: { width: 244, useAdvancedWrap: true },
       lineSpacing: 1,
     }).setOrigin(0, 1).setName('text-party-msg');
@@ -442,7 +442,7 @@ export class PartyUiHandler extends UiHandler {
     this.cancelPb = env.textureExists(scene, env.UI_ASSETS.partyPbAtlas.key, 'party_pb')
       ? scene.add.image(274, -16, env.UI_ASSETS.partyPbAtlas.key, 'party_pb').setOrigin(0.5, 0.5)
       : null;
-    this.cancelLabel = addTextObject(this.ui, 281, -23, t(this.ui, '취소', 'Cancel'), 'PARTY').setOrigin(0, 0);
+    this.cancelLabel = addTextObject(this.ui, 272, -22, t(this.ui, '취소', 'Cancel'), 'PARTY').setOrigin(0, 0);
     // Zone covers the cancel bg area: x=291, y=-24 (top), w=52, h=16
     this.cancelZone = scene.add.rectangle(291, -24, 52, 16, 0xffffff, 0.001).setOrigin(0, 0);
 
@@ -577,7 +577,7 @@ export class PartyUiHandler extends UiHandler {
     this.optionsBg.height = panelHeight;
     this.optionsBg.setVisible(true);
     this.optionsContainer.setVisible(true);
-    this.optionsCursorObj.setVisible(true);
+    this.optionsCursorObj.setVisible(false);
 
     this.optionsItems.forEach((item, index) => {
       const rowY = -panelHeight + 2 + index * rowHeight;
@@ -637,7 +637,7 @@ export class PartyUiHandler extends UiHandler {
     const panelHeight = Number(this.optionsBg?.height || 0);
     const rowHeight = 16;
     const rowY = -panelHeight + 2 + this.optionsCursor * rowHeight;
-    this.optionsCursorObj?.setPosition(-114, rowY + 1).setVisible(true);
+    this.optionsCursorObj?.setPosition(-114, rowY + 1).setVisible(false);
     this.optionsItems.forEach((item, index) => {
       item.labelObj?.setColor(index === this.optionsCursor ? '#fff6b0' : '#f8f8f8');
     });
@@ -725,7 +725,7 @@ export class PartyUiHandler extends UiHandler {
     if (force) this.cursor = nextIndex;
     this.applyCursorSelection(previousCursor, nextIndex);
     const cursorPos = this.getCursorPosition(nextIndex);
-    this.cursorObj.setVisible(Boolean(cursorPos));
+    this.cursorObj.setVisible(false);
     if (cursorPos) this.cursorObj.setPosition(cursorPos.x, cursorPos.y);
     return changed;
   }
