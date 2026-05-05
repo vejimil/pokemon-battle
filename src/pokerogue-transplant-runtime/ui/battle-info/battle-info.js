@@ -483,7 +483,7 @@ export class AbilityBar {
     this.left = scene.add.image(0, 0, env.UI_ASSETS.abilityBarLeft.key).setOrigin(0, 0);
     this.right = scene.add.image(0, 0, env.UI_ASSETS.abilityBarRight.key).setOrigin(0, 0);
     // Text at x=15 (textPadding), y=3 matching PokeRogue's layout
-    this.text = addTextObject(this.ui, 15, 3, '', 'BATTLE_INFO_SMALL', {
+    this.text = addTextObject(this.ui, 15, 9, '', 'BATTLE_INFO_SMALL', {
       wordWrap: { width: 100, useAdvancedWrap: true },
     }).setOrigin(0, 0);
     this.container.add([this.left, this.right, this.text]);
@@ -499,7 +499,7 @@ export class AbilityBar {
     // PokeRogue: enemy bar right side (x=202=320-118), player bar left side (x=0)
     // y=64 = fieldUI y=180 + baseY(-116)
     const logicalX = isEnemy ? 202 : 0;
-    const logicalY = 64;
+    const logicalY = isEnemy ? 22 : 64;
     this.left.setVisible(!isEnemy);
     this.right.setVisible(isEnemy);
     this.container.setPosition(logicalX, logicalY);

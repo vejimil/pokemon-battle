@@ -10,6 +10,10 @@
 - 생성 데이터(`src/data/*`, `src/i18n-ko-locales.js`, `src/i18n-ko-official.js`)는 직접 리팩터링하지 않는다. 필요 시 생성 스크립트나 참조 계층만 정리한다.
 
 ## 현재 상태 요약
+- 2026-05-05 사전 핫픽스 완료:
+  - 배틀 시작 intro 동안 `switch_in` 대상 정보창도 스프라이트처럼 pre-hide 처리해, 포켓몬이 실제로 등장한 뒤 정보창이 보이도록 수정.
+  - `end` arena의 `end_a`/`end_b`를 원본 PokeRogue처럼 atlas animation(12fps loop)으로 로드하도록 수정.
+  - 특성 창 위치 조절 지점 확인: `src/pokerogue-transplant-runtime/ui/battle-info/battle-info.js`의 `AbilityBar.update()`.
 - 핵심 앱은 `src/app.js`(약 10.2k lines)가 팀 빌더, 온라인 룸, 엔진 요청/선택, DOM fallback UI, Phaser 모델 생성, 모바일 입력까지 함께 담당한다.
 - 배틀 연출 경로는 `server/showdown-engine.cjs` → `src/battle-presentation/timeline.js` → `src/pokerogue-transplant-runtime/scene/battle-shell-scene.js` → UI handler 계층으로 이어진다.
 - 대형 수동 작성 파일은 `styles.css`(약 3.5k), `timeline.js`(약 2.7k), `battle-shell-scene.js`(약 2.2k), `showdown-engine.cjs`(약 1.9k), `battle-anim-player.js`(약 0.85k), `pkb-battle-ui-adapter.js`(약 0.83k)다.

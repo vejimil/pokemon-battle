@@ -344,8 +344,8 @@ export class TransplantBattleUI {
       if (!info) return;
       const slotModel = enemyInfoModels[slot];
       if (slotModel) {
-        info.container?.setVisible?.(true);
         info.update(slotModel);
+        info.container?.setVisible?.(slotModel.visible !== false);
       } else {
         info.container?.setVisible?.(false);
       }
@@ -354,8 +354,8 @@ export class TransplantBattleUI {
       if (!info) return;
       const slotModel = playerInfoModels[slot];
       if (slotModel) {
-        info.container?.setVisible?.(true);
         info.update(slotModel);
+        info.container?.setVisible?.(slotModel.visible !== false);
       } else {
         info.container?.setVisible?.(false);
       }

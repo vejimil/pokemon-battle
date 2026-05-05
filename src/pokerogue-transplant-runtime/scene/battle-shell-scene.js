@@ -236,8 +236,8 @@ export function createBattleShellSceneClass(Phaser, env) {
 
     createArenaLayers() {
       this.arenaBg = this.add.image(0, 0, env.UI_ASSETS.arenaBg.key).setOrigin(0, 0).setDepth(0);
-      this.arenaEnemyBase = this.add.image(ARENA_OFFSETS.enemy.x, ARENA_OFFSETS.enemy.y, env.UI_ASSETS.arenaEnemy.key).setOrigin(0, 0).setDepth(4);
-      this.arenaPlayerBase = this.add.image(ARENA_OFFSETS.player.x, ARENA_OFFSETS.player.y, env.UI_ASSETS.arenaPlayer.key).setOrigin(0, 0).setDepth(5);
+      this.arenaEnemyBase = this.add.sprite(ARENA_OFFSETS.enemy.x, ARENA_OFFSETS.enemy.y, env.UI_ASSETS.arenaEnemy.key).setOrigin(0, 0).setDepth(4);
+      this.arenaPlayerBase = this.add.sprite(ARENA_OFFSETS.player.x, ARENA_OFFSETS.player.y, env.UI_ASSETS.arenaPlayer.key).setOrigin(0, 0).setDepth(5);
     }
 
     _arenaIds() {
@@ -257,6 +257,16 @@ export function createBattleShellSceneClass(Phaser, env) {
       const id = this._resolveArenaId(arenaId);
       if (layer === 'bg') return `./assets/pokerogue/arenas/${id}_bg.png`;
       return `./assets/pokerogue/arenas/${id}_${layer}.png`;
+    }
+
+    _arenaAtlasUrl(arenaId = '', layer = '') {
+      const id = this._resolveArenaId(arenaId);
+      return `./assets/pokerogue/arenas/${id}_${layer}.json`;
+    }
+
+    _isAnimatedArenaLayer(arenaId = '', layer = '') {
+      const id = this._resolveArenaId(arenaId);
+      return id === 'end' && (layer === 'a' || layer === 'b');
     }
 
     _ensureImageTexture(key, url) {
@@ -282,6 +292,70 @@ export function createBattleShellSceneClass(Phaser, env) {
       return promise;
     }
 
+    _ensureAtlasTexture(key, imageUrl, jsonUrl) {
+      if (!key || !imageUrl || !jsonUrl) return Promise.resolve(false);
+      if (this.textures.exists(key)) return Promise.resolve(true);
+      if (this._arenaTextureLoadPromises.has(key)) return this._arenaTextureLoadPromises.get(key);
+      const loadImage = () => new Promise(resolve => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => resolve(null);
+        image.src = imageUrl;
+      });
+      const promise = Promise.all([
+        loadImage(),
+        fetch(jsonUrl).then(response => response.ok ? response.json() : null).catch(() => null),
+      ]).then(([image, data]) => {
+        if (!image || !data) return false;
+        try {
+          if (!this.textures.exists(key)) this.textures.addAtlas(key, image, data);
+          return this.textures.exists(key);
+        } catch (_error) {
+          return false;
+        }
+      }).finally(() => {
+        this._arenaTextureLoadPromises.delete(key);
+      });
+      this._arenaTextureLoadPromises.set(key, promise);
+      return promise;
+    }
+
+    _ensureArenaLayerTexture(arenaId = '', layer = '') {
+      const key = this._arenaTextureKey(arenaId, layer);
+      const imageUrl = this._arenaTextureUrl(arenaId, layer);
+      return this._isAnimatedArenaLayer(arenaId, layer)
+        ? this._ensureAtlasTexture(key, imageUrl, this._arenaAtlasUrl(arenaId, layer))
+        : this._ensureImageTexture(key, imageUrl);
+    }
+
+    _applyArenaBaseTexture(sprite, key, { animated = false } = {}) {
+      if (!sprite || !key || !this.textures.exists(key)) return;
+      if (!animated) {
+        sprite.stop?.();
+        sprite.setTexture(key);
+        return;
+      }
+      const firstFrame = this.textures.getFrame(key, '0001.png') ? '0001.png' : undefined;
+      sprite.setTexture(key, firstFrame);
+      const animKey = `${key}/loop`;
+      if (!this.anims.exists(animKey)) {
+        const frameTotal = this.textures.get(key)?.frameTotal || 0;
+        const frames = this.anims.generateFrameNames(key, {
+          zeroPad: 4,
+          suffix: '.png',
+          start: 1,
+          end: Math.max(frameTotal - 1, 1),
+        });
+        this.anims.create({
+          key: animKey,
+          frames,
+          frameRate: 12,
+          repeat: -1,
+        });
+      }
+      sprite.play(animKey, true);
+    }
+
     async setArena(arenaId = '') {
       const id = this._resolveArenaId(arenaId);
       if (id === this._currentArenaId) return;
@@ -291,13 +365,13 @@ export function createBattleShellSceneClass(Phaser, env) {
       const playerKey = this._arenaTextureKey(id, 'a');
       const loaded = await Promise.all([
         this._ensureImageTexture(bgKey, this._arenaTextureUrl(id, 'bg')),
-        this._ensureImageTexture(enemyKey, this._arenaTextureUrl(id, 'b')),
-        this._ensureImageTexture(playerKey, this._arenaTextureUrl(id, 'a')),
+        this._ensureArenaLayerTexture(id, 'b'),
+        this._ensureArenaLayerTexture(id, 'a'),
       ]);
       if (serial !== this._arenaLoadSerial || !loaded.every(Boolean)) return;
       this.arenaBg?.setTexture?.(bgKey);
-      this.arenaEnemyBase?.setTexture?.(enemyKey);
-      this.arenaPlayerBase?.setTexture?.(playerKey);
+      this._applyArenaBaseTexture(this.arenaEnemyBase, enemyKey, { animated: this._isAnimatedArenaLayer(id, 'b') });
+      this._applyArenaBaseTexture(this.arenaPlayerBase, playerKey, { animated: this._isAnimatedArenaLayer(id, 'a') });
       this._currentArenaId = id;
       this.layoutSafely();
     }

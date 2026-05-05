@@ -9007,14 +9007,28 @@ function buildBattleInfoModel(player, battle = state.battle) {
   return buildBattleInfoModelFromMon(mon, player);
 }
 
+function shouldPreHideBattleInfo(sideId, slot = 0, battle = state.battle) {
+  const ui = getBattleUiState(battle);
+  const preHideEntries = Array.isArray(ui?.preHideSwitchInSides) ? ui.preHideSwitchInSides : [];
+  const normalizedSlot = Number(slot) === 1 ? 1 : 0;
+  return preHideEntries.includes(sideId) || preHideEntries.includes(`${sideId}:${normalizedSlot}`);
+}
+
+function applyBattleInfoPreHide(model, sideId, slot = 0, battle = state.battle) {
+  if (!model) return model;
+  return shouldPreHideBattleInfo(sideId, slot, battle)
+    ? { ...model, visible: false }
+    : model;
+}
+
 // Doubles: build a slot-indexed info-model array.  Slot 0 mirrors the legacy
 // single info model; slot 1 is built only when the side has a second active mon.
-function buildBattleInfosBySlot(player, activeMons, battle = state.battle) {
+function buildBattleInfosBySlot(player, activeMons, battle = state.battle, sideId = getEngineSideId(player)) {
   const compact = battle?.mode === 'doubles';
-  const compactModel = model => model ? { ...model, compact } : model;
+  const compactModel = (model, slot = 0) => model ? applyBattleInfoPreHide({ ...model, compact }, sideId, slot, battle) : model;
   const slot0 = compactModel(buildBattleInfoModelFromMon(activeMons[0] || null, player));
   const slot1Mon = activeMons[1] || null;
-  const slot1 = slot1Mon ? compactModel(buildBattleInfoModelFromMon(slot1Mon, player)) : null;
+  const slot1 = slot1Mon ? compactModel(buildBattleInfoModelFromMon(slot1Mon, player), 1) : null;
   return [slot0, slot1];
 }
 
@@ -9412,8 +9426,10 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
   else if (mode === 'fight') stateWindow = buildPhaserFightWindowModel(battle, perspective);
   else if (mode === 'party') stateWindow = buildPhaserPartyWindowModel(battle, perspective);
   else if (mode === 'target') stateWindow = buildPhaserTargetWindowModel(battle, perspective);
-  const enemyInfo = buildBattleInfoModel(enemyPlayer, battle);
-  const playerInfo = buildBattleInfoModel(allyPlayer, battle);
+  const enemySideId = getEngineSideId(enemyPlayer);
+  const playerSideId = getEngineSideId(allyPlayer);
+  const enemyInfo = applyBattleInfoPreHide(buildBattleInfoModel(enemyPlayer, battle), enemySideId, 0, battle);
+  const playerInfo = applyBattleInfoPreHide(buildBattleInfoModel(allyPlayer, battle), playerSideId, 0, battle);
   const enemyActive = getActiveMons(enemyPlayer, battle);
   const playerActive = getActiveMons(allyPlayer, battle);
   const enemyMon = enemyActive[0] || null;
@@ -9435,10 +9451,10 @@ function buildPkbPokerogueUiModel(battle, forcedPerspective = null) {
     ? buildSpriteModelsForSide(allyPlayer, perspective, playerActive, playerInfo, battle, 'player')
     : null;
   const enemyInfosBySlot = isDoubles
-    ? buildBattleInfosBySlot(enemyPlayer, enemyActive, battle)
+    ? buildBattleInfosBySlot(enemyPlayer, enemyActive, battle, enemySideId)
     : null;
   const playerInfosBySlot = isDoubles
-    ? buildBattleInfosBySlot(allyPlayer, playerActive, battle)
+    ? buildBattleInfosBySlot(allyPlayer, playerActive, battle, playerSideId)
     : null;
   return {
     turn: battle.turn,
