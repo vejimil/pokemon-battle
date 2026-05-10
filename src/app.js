@@ -1406,6 +1406,7 @@ const state = {
     battleStarted: false,
     returningToBuilder: false,
     returnToBuilderTimer: null,
+    adoptingWinnerSnapshot: false,
   },
 };
 
@@ -2565,29 +2566,39 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
         && Array.isArray(adoptedBattle?.events)
         && adoptedBattle.events.length
       );
-      if (shouldPlayTimeline) {
-        try {
-          await playTimelineAcrossActiveViews(adoptedBattle.events, {
-            onComplete: () => {
-              resetBattleUiModesFromRequests(state.battle);
-              clearBattleUiInitialSwitchPreHide(state.battle);
-              clearTimelineSpriteOverrides();
-              renderBattle();
-            },
-            initialNames,
-            initialSlotInfo,
-            preHideSwitchInSides: initialBattleSnapshot,
-          });
-        } catch (error) {
-          console.warn('[OnlineBattle] timeline play failed:', error);
+      // Block any concurrent applyOnlineRoomState path from scheduling the
+      // return-to-builder timer while this winning snapshot's timeline still
+      // plays. Without this guard, the loser (who submits last and races a
+      // poll-driven applyOnlineRoomState) sees the screen go off mid-turn.
+      const hasWinner = Boolean(snapshot?.winner);
+      if (hasWinner) state.online.adoptingWinnerSnapshot = true;
+      try {
+        if (shouldPlayTimeline) {
+          try {
+            await playTimelineAcrossActiveViews(adoptedBattle.events, {
+              onComplete: () => {
+                resetBattleUiModesFromRequests(state.battle);
+                clearBattleUiInitialSwitchPreHide(state.battle);
+                clearTimelineSpriteOverrides();
+                renderBattle();
+              },
+              initialNames,
+              initialSlotInfo,
+              preHideSwitchInSides: initialBattleSnapshot,
+            });
+          } catch (error) {
+            console.warn('[OnlineBattle] timeline play failed:', error);
+            clearBattleUiInitialSwitchPreHide(state.battle);
+            clearTimelineSpriteOverrides();
+            renderBattle();
+          }
+        } else {
           clearBattleUiInitialSwitchPreHide(state.battle);
           clearTimelineSpriteOverrides();
           renderBattle();
         }
-      } else {
-        clearBattleUiInitialSwitchPreHide(state.battle);
-        clearTimelineSpriteOverrides();
-        renderBattle();
+      } finally {
+        if (hasWinner) state.online.adoptingWinnerSnapshot = false;
       }
     } else {
       if (snapshotChanged) state.online.lastSnapshotSig = signature;
@@ -2596,10 +2607,17 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   }
 
   if (snapshot?.winner && state.battle) {
-    if (!state.online.returningToBuilder || !state.online.returnToBuilderTimer) {
+    // Skip when another applyOnlineRoomState invocation is currently mid-adoption
+    // (still awaiting the timeline) for this same winning snapshot — it will
+    // schedule once its timeline finishes. Without this guard the side that
+    // submitted last races a concurrent poll-driven call which would start the
+    // 3s timer at the start of the final turn and cut the losing screen.
+    if (!state.online.returningToBuilder
+      && !state.online.returnToBuilderTimer
+      && !state.online.adoptingWinnerSnapshot) {
       scheduleOnlineBattleReturnToBuilder();
     }
-  } else if (state.online.returningToBuilder || state.online.returnToBuilderTimer) {
+  } else if (!snapshot?.winner && (state.online.returningToBuilder || state.online.returnToBuilderTimer)) {
     clearOnlineBattleReturnTimer();
   }
   if (isOnlineBuilderAutoSyncEligible()) {
@@ -4725,7 +4743,8 @@ function loadSavedState() {
     }
     rebuildTeamSize();
     if (Array.isArray(parsed.teams)) {
-      state.teams = [0,1].map(player => Array.from({length: state.teamSize}, (_, slot) => {
+      const slotCount = getBuilderSlotCount();
+      state.teams = [0,1].map(player => Array.from({length: slotCount}, (_, slot) => {
         const mon = createEmptyMon();
         return Object.assign(mon, parsed.teams[player]?.[slot] || {});
       }));
