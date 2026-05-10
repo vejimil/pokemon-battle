@@ -1394,6 +1394,8 @@ const state = {
     lastSnapshotSig: '',
     lastSnapshotRevision: -1,
     lastSnapshotTurn: -1,
+    serverPendingChoiceBySide: {p1: false, p2: false},
+    choiceSubmitInFlightBySide: {p1: '', p2: ''},
     submittedChoiceTurnBySide: {p1: -1, p2: -1},
     lastSubmittedChoiceBySide: {p1: '', p2: ''},
     ready: {p1: false, p2: false},
@@ -2446,13 +2448,85 @@ function initializeSelectionDraftFromOwnSelection({force = false} = {}) {
   state.online.selectionDraft = nextDraft;
 }
 
+function ensureOnlineChoiceSubmitState() {
+  state.online.serverPendingChoiceBySide = state.online.serverPendingChoiceBySide && typeof state.online.serverPendingChoiceBySide === 'object'
+    ? state.online.serverPendingChoiceBySide
+    : {p1: false, p2: false};
+  state.online.choiceSubmitInFlightBySide = state.online.choiceSubmitInFlightBySide && typeof state.online.choiceSubmitInFlightBySide === 'object'
+    ? state.online.choiceSubmitInFlightBySide
+    : {p1: '', p2: ''};
+  state.online.submittedChoiceTurnBySide = state.online.submittedChoiceTurnBySide && typeof state.online.submittedChoiceTurnBySide === 'object'
+    ? state.online.submittedChoiceTurnBySide
+    : {p1: -1, p2: -1};
+  state.online.lastSubmittedChoiceBySide = state.online.lastSubmittedChoiceBySide && typeof state.online.lastSubmittedChoiceBySide === 'object'
+    ? state.online.lastSubmittedChoiceBySide
+    : {p1: '', p2: ''};
+  ['p1', 'p2'].forEach(sideId => {
+    state.online.serverPendingChoiceBySide[sideId] = Boolean(state.online.serverPendingChoiceBySide[sideId]);
+    state.online.choiceSubmitInFlightBySide[sideId] = String(state.online.choiceSubmitInFlightBySide[sideId] || '');
+    state.online.submittedChoiceTurnBySide[sideId] = Number.isFinite(Number(state.online.submittedChoiceTurnBySide[sideId]))
+      ? Number(state.online.submittedChoiceTurnBySide[sideId])
+      : -1;
+    state.online.lastSubmittedChoiceBySide[sideId] = String(state.online.lastSubmittedChoiceBySide[sideId] || '');
+  });
+}
+
+function resetOnlineChoiceSubmitState() {
+  state.online.serverPendingChoiceBySide = {p1: false, p2: false};
+  state.online.choiceSubmitInFlightBySide = {p1: '', p2: ''};
+  state.online.submittedChoiceTurnBySide = {p1: -1, p2: -1};
+  state.online.lastSubmittedChoiceBySide = {p1: '', p2: ''};
+}
+
+function makeOnlineChoiceSubmitKey(turn, serialized) {
+  return `${Number(turn) || 0}|${String(serialized || '')}`;
+}
+
+function isOnlineLocalChoiceSide(sideId) {
+  return isOnlineProfile()
+    && isOnlineRoomJoined()
+    && String(state.online?.side || '').toLowerCase() === String(sideId || '').toLowerCase();
+}
+
+function isOnlineChoiceSubmitInFlightForSide(sideId, battle = state.battle) {
+  ensureOnlineChoiceSubmitState();
+  const currentTurn = Number(battle?.turn || 0);
+  const key = String(state.online.choiceSubmitInFlightBySide?.[sideId] || '');
+  return Boolean(key && key.startsWith(`${currentTurn}|`));
+}
+
+function isOnlineChoiceServerAcceptedForSide(sideId, battle = state.battle) {
+  ensureOnlineChoiceSubmitState();
+  return Boolean(state.online.serverPendingChoiceBySide?.[sideId]);
+}
+
+function getBattleMessageModePrompt(player, battle = state.battle, {inputLocked = false} = {}) {
+  if (inputLocked) return '';
+  const sideId = getEngineSideId(player);
+  if (isOnlineLocalChoiceSide(sideId)) {
+    if (isOnlineChoiceSubmitInFlightForSide(sideId, battle)) {
+      return lang('선택을 서버에 제출하는 중...', 'Submitting your choice...');
+    }
+    if (isOnlineChoiceServerAcceptedForSide(sideId, battle)) {
+      return lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn...");
+    }
+    return lang('행동을 선택하세요.', 'Choose an action.');
+  }
+  return lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn...");
+}
+
 async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {}) {
   if (!roomState || !isOnlineProfile()) return;
+  ensureOnlineChoiceSubmitState();
 
   const previousBuilderUnlocked = isOnlineBuilderUnlocked();
   const previousReady = {
     p1: Boolean(state.online.ready?.p1),
     p2: Boolean(state.online.ready?.p2),
+  };
+  const previousServerPendingChoice = {
+    p1: Boolean(state.online.serverPendingChoiceBySide?.p1),
+    p2: Boolean(state.online.serverPendingChoiceBySide?.p2),
   };
   const previousBattleStarted = Boolean(state.online.battleStarted);
   const previousTeamSize = Number(state.teamSize || ONLINE_TEAM_SIZE_DEFAULT);
@@ -2508,6 +2582,15 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
     p1: Boolean(roomState.ready?.p1),
     p2: Boolean(roomState.ready?.p2),
   };
+  state.online.serverPendingChoiceBySide = {
+    p1: Boolean(roomState.battle?.pendingChoices?.p1),
+    p2: Boolean(roomState.battle?.pendingChoices?.p2),
+  };
+  ['p1', 'p2'].forEach(sideId => {
+    if (state.online.serverPendingChoiceBySide[sideId]) {
+      state.online.choiceSubmitInFlightBySide[sideId] = '';
+    }
+  });
   state.online.battleStarted = Boolean(roomState.battle?.started && !snapshot?.winner);
   if (snapshot?.winner && state.online.phase === 'battle') state.online.phase = 'building';
   if (previousPhase !== state.online.phase || state.online.phase === 'preview' || state.online.phase === 'selecting') {
@@ -2545,6 +2628,7 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
       state.online.lastSnapshotSig = signature;
       state.online.lastSnapshotRevision = nextRevision;
       state.online.lastSnapshotTurn = Number(snapshot.turn || 0);
+      state.online.choiceSubmitInFlightBySide = {p1: '', p2: ''};
       state.online.submittedChoiceTurnBySide = {p1: -1, p2: -1};
       state.online.lastSubmittedChoiceBySide = {p1: '', p2: ''};
       const adoptedBattle = adoptEngineBattleSnapshot(snapshot);
@@ -2635,6 +2719,8 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
   const phaseChanged = previousPhase !== getOnlinePhase();
   const readyChanged = previousReady.p1 !== Boolean(state.online.ready?.p1)
     || previousReady.p2 !== Boolean(state.online.ready?.p2);
+  const serverPendingChoiceChanged = previousServerPendingChoice.p1 !== Boolean(state.online.serverPendingChoiceBySide?.p1)
+    || previousServerPendingChoice.p2 !== Boolean(state.online.serverPendingChoiceBySide?.p2);
 
   const requiresLayoutRefresh = builderUnlockChanged || battleStartedChanged || teamSizeChanged || phaseChanged;
   if (requiresLayoutRefresh) {
@@ -2644,6 +2730,9 @@ async function applyOnlineRoomState(roomState = null, {applyBuilder = false} = {
     renderOnlineRoomPanel();
     renderSelectionPanel();
     syncRuntimeModeUi();
+  }
+  if (serverPendingChoiceChanged && state.battle && !isBattleInputLocked(state.battle)) {
+    renderBattle();
   }
   if (!applyBuilder && isOnlineBuilderUnlocked() && !isOnlineBattleInProgress() && (builderUnlockChanged || readyChanged || teamSizeChanged)) {
     await renderValidation();
@@ -2675,6 +2764,7 @@ async function pollOnlineRoomStateOnce() {
 
 async function submitOnlineChoiceIfPossible(player, battle = state.battle) {
   if (!isOnlineRoomJoined() || !isShowdownLocalBattle(battle)) return;
+  ensureOnlineChoiceSubmitState();
   const sideId = getEngineSideId(player);
   if (state.online.side && sideId !== state.online.side) return;
   const request = getEngineRequestForPlayer(player, battle);
@@ -2699,13 +2789,11 @@ async function submitOnlineChoiceIfPossible(player, battle = state.battle) {
   const serialized = serializedParts.join(', ');
 
   const currentTurn = Number(battle.turn || 0);
-  if (state.online.submittedChoiceTurnBySide[sideId] === currentTurn
-    && state.online.lastSubmittedChoiceBySide[sideId] === serialized) {
-    return;
-  }
-
-  state.online.submittedChoiceTurnBySide[sideId] = currentTurn;
-  state.online.lastSubmittedChoiceBySide[sideId] = serialized;
+  const submitKey = makeOnlineChoiceSubmitKey(currentTurn, serialized);
+  if (isOnlineChoiceServerAcceptedForSide(sideId, battle)) return;
+  if (state.online.choiceSubmitInFlightBySide[sideId] === submitKey) return;
+  state.online.choiceSubmitInFlightBySide[sideId] = submitKey;
+  renderBattle();
 
   try {
     const response = await submitOnlineRoomChoice({
@@ -2713,11 +2801,21 @@ async function submitOnlineChoiceIfPossible(player, battle = state.battle) {
       token: state.online.token,
       choice: serialized,
     });
+    if (state.online.choiceSubmitInFlightBySide[sideId] === submitKey) {
+      state.online.choiceSubmitInFlightBySide[sideId] = '';
+    }
+    state.online.submittedChoiceTurnBySide[sideId] = currentTurn;
+    state.online.lastSubmittedChoiceBySide[sideId] = serialized;
     await applyOnlineRoomState(response.state, {applyBuilder: false});
+    renderBattle();
   } catch (error) {
+    if (state.online.choiceSubmitInFlightBySide[sideId] === submitKey) {
+      state.online.choiceSubmitInFlightBySide[sideId] = '';
+    }
     state.online.connected = false;
     state.online.lastError = error?.message || String(error);
     renderOnlineRoomPanel();
+    renderBattle();
   }
 }
 
@@ -2793,6 +2891,7 @@ async function createOnlineRoomFlow() {
   state.online.selectionDraft = createEmptySelectionDraft();
   state.online.lastSnapshotSig = '';
   state.online.lastSnapshotRevision = -1;
+  resetOnlineChoiceSubmitState();
   state.online.connected = true;
   state.online.lastError = '';
   if (els.onlineRoomIdInput) els.onlineRoomIdInput.value = state.online.roomId;
@@ -2830,6 +2929,7 @@ async function joinOnlineRoomFlow() {
   state.online.selectionDraft = createEmptySelectionDraft();
   state.online.lastSnapshotSig = '';
   state.online.lastSnapshotRevision = -1;
+  resetOnlineChoiceSubmitState();
   state.online.connected = true;
   state.online.lastError = '';
   if (els.onlineRoomIdInput) els.onlineRoomIdInput.value = state.online.roomId;
@@ -6747,8 +6847,7 @@ function wireEditorEvents() {
       state.online.ready = {p1: false, p2: false};
       state.online.players = {p1: 'Player 1', p2: 'Player 2'};
       state.online.lastBuilderRevision = 0;
-      state.online.submittedChoiceTurnBySide = {p1: -1, p2: -1};
-      state.online.lastSubmittedChoiceBySide = {p1: '', p2: ''};
+      resetOnlineChoiceSubmitState();
       if (els.onlineRoomNameInput) els.onlineRoomNameInput.value = '';
       if (els.onlineRoomIdInput) els.onlineRoomIdInput.value = '';
       if (els.onlineRoomTeamSizeSelect) els.onlineRoomTeamSizeSelect.value = String(ONLINE_TEAM_SIZE_DEFAULT);
@@ -7931,6 +8030,13 @@ function getEngineTurnChipState(player, battle = state.battle) {
   const request = getEngineRequestForPlayer(player, battle);
   if (!request) return {done: false, text: lang('요청 대기', 'Awaiting request')};
   if (request.wait) return {done: true, text: lang('대기 중', 'Waiting')};
+  const sideId = getEngineSideId(player);
+  if (isOnlineLocalChoiceSide(sideId)) {
+    if (isOnlineChoiceSubmitInFlightForSide(sideId, battle)) return {done: true, text: lang('제출 중', 'Submitting')};
+    if (isPlayerReady(player, battle) && !isOnlineChoiceServerAcceptedForSide(sideId, battle)) {
+      return {done: false, text: lang('선택 확인', 'Confirm choice')};
+    }
+  }
   if (isEngineForceSwitchRequest(request)) {
     return isPlayerReady(player, battle)
       ? {done: true, text: lang('교체 확정', 'Switch locked')}
@@ -8512,21 +8618,25 @@ function syncBattleUiState(battle = state.battle) {
     const context = getBattleUiActionContext(player, battle);
     const current = slotModes[context.requestSlot] || ui.modeByPlayer[player] || defaultMode;
     const sideId = getEngineSideId(player);
-    const localSubmittedThisTurn = isOnlineRoomJoined()
-      && state.online?.side === sideId
-      && state.online?.submittedChoiceTurnBySide?.[sideId] === Number(battle.turn || 0);
+    const onlineLocalSide = isOnlineLocalChoiceSide(sideId);
+    const localSubmitInFlight = onlineLocalSide && isOnlineChoiceSubmitInFlightForSide(sideId, battle);
+    const localServerAccepted = onlineLocalSide && isOnlineChoiceServerAcceptedForSide(sideId, battle);
+    const localReadyShouldLock = isPlayerReady(player, battle)
+      && (!onlineLocalSide || localSubmitInFlight || localServerAccepted);
     if (battle.winner || !request || request.wait || request.teamPreview) {
       ui.modeByPlayer[player] = 'message';
       return;
     }
-    if (isPlayerReady(player, battle) || localSubmittedThisTurn) {
+    if (localReadyShouldLock || localSubmitInFlight || localServerAccepted) {
       actionSlots.forEach((_activeIndex, requestSlot) => {
         slotModes[requestSlot] = 'message';
       });
       ui.modeByPlayer[player] = 'message';
       return;
     }
-    if (current === 'message' && isEngineActionableRequest(request) && !isPlayerReady(player, battle) && !localSubmittedThisTurn) {
+    if (current === 'message'
+      && isEngineActionableRequest(request)
+      && (!isPlayerReady(player, battle) || (onlineLocalSide && !localSubmitInFlight && !localServerAccepted))) {
       slotModes[context.requestSlot] = defaultMode;
       ui.modeByPlayer[player] = defaultMode;
       return;
@@ -8730,21 +8840,21 @@ function renderBattleMessagesWindow(battle, player) {
                   : currentMode === 'target'
                     ? lang('대상을 선택하세요.', 'Choose a target.')
                     : currentMode === 'message'
-                    ? (inputLocked ? '' : lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn..."))
+                    ? getBattleMessageModePrompt(player, battle, {inputLocked})
                     : lang('행동을 선택하세요.', 'Choose an action.');
   const messageLines = getOnlineVisibleBattleLogLines(battle, {limit: 2})
     .map(line => localizeText(line.rawText || line.text || '').trim())
     .filter(Boolean);
-  // BA-21: waiting for opponent — waiting message takes priority over battle.log lines
-  const waitingForOpponent = !inputLocked && !battle.winner && currentMode === 'message' && Boolean(request);
-  const usePromptAsPrimary = currentMode === 'command' || waitingForOpponent || !messageLines.length;
+  // BA-21: committed/submitting message mode takes priority over battle.log lines.
+  const messageModeActive = !inputLocked && !battle.winner && currentMode === 'message' && Boolean(request);
+  const usePromptAsPrimary = currentMode === 'command' || messageModeActive || !messageLines.length;
   const primaryText = usePromptAsPrimary ? promptText : messageLines[0];
-  const secondaryText = waitingForOpponent
+  const secondaryText = messageModeActive
     ? ''
     : usePromptAsPrimary
       ? (messageLines[0] || '')
       : (messageLines[1] || (inputLocked ? '' : (promptText !== primaryText ? promptText : '')));
-  const showPromptIcon = !inputLocked && !battle.winner && !waitingForOpponent && Boolean(request) && !request.wait;
+  const showPromptIcon = !inputLocked && !battle.winner && !messageModeActive && Boolean(request) && !request.wait;
   els.battleMessageWindow.innerHTML = `
     <div class="pkbattle-message-stack ${currentMode === 'command' ? 'is-command' : ''}">
       <div class="pkbattle-message-primary">${primaryText}</div>
@@ -9485,17 +9595,17 @@ function buildBattleMessageModel(battle, player) {
                 : currentMode === 'target'
                   ? lang('대상을 선택하세요.', 'Choose a target.')
                   : currentMode === 'message'
-                    ? (inputLocked ? '' : lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn..."))
+                    ? getBattleMessageModePrompt(player, battle, {inputLocked})
                     : lang('행동을 선택하세요.', 'Choose an action.');
   const messageLines = getOnlineVisibleBattleLogLines(battle, {limit: 2})
     .map(line => localizeText(line.rawText || line.text || '').trim())
     .filter(Boolean);
   const interactiveMode = !inputLocked && !battle.winner && !request?.wait && ['command', 'fight', 'party', 'target'].includes(currentMode);
-  // BA-21: player committed and waiting for opponent — waiting message takes priority over battle.log lines
-  const waitingForOpponent = !inputLocked && !battle.winner && currentMode === 'message' && Boolean(request);
-  const usePromptAsPrimary = interactiveMode || waitingForOpponent || !messageLines.length;
+  // BA-21: player committed/submitting — message-mode prompt takes priority over battle.log lines.
+  const messageModeActive = !inputLocked && !battle.winner && currentMode === 'message' && Boolean(request);
+  const usePromptAsPrimary = interactiveMode || messageModeActive || !messageLines.length;
   const primaryText = usePromptAsPrimary ? promptText : messageLines[0];
-  const secondaryText = (interactiveMode || waitingForOpponent)
+  const secondaryText = (interactiveMode || messageModeActive)
     ? ''
     : usePromptAsPrimary
       ? (messageLines[0] || '')
@@ -9503,7 +9613,7 @@ function buildBattleMessageModel(battle, player) {
   return {
     primary: primaryText,
     secondary: secondaryText,
-    showPrompt: !inputLocked && !interactiveMode && !waitingForOpponent && !battle.winner && Boolean(messageLines.length || (request?.wait && promptText)),
+    showPrompt: !inputLocked && !interactiveMode && !messageModeActive && !battle.winner && Boolean(messageLines.length || (request?.wait && promptText)),
   };
 }
 
@@ -9814,7 +9924,7 @@ function buildPhaserMessageWindowModel(battle, player) {
       : inputLocked
         ? (latestLine || lang('배틀 메시지 재생 중...', 'Playing battle messages...'))
       : request
-        ? lang('상대의 턴을 기다리는 중...', "Waiting for opponent's turn...")
+        ? getBattleMessageModePrompt(player, battle, {inputLocked})
         : lang('엔진 요청을 기다리는 중입니다.', 'Waiting for an engine request.'),
   };
 }
