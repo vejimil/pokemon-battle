@@ -90,17 +90,41 @@ server/server.cjs  (2줄 패치: single.html 프로필 주입 허용)
 
 **검증**: `single.html` 접속 시 빌더 한 팀만 보이고 콘솔에 프로필 `single` 출력.
 
-### Phase 1 — 무작위 합법 팀 생성 (`random-team.js`)
-- `generateRandomTeam(size)` → 빌더 Mon 배열 반환.
-- 각 Mon:
-  - 종족: 덱스에서 무작위 (전설/금지 종족 필터는 기존 `speciesFilter` 류 재사용).
-  - 기술: 해당 종족 `learnsets`에서 합법 4개 무작위 (`(N)` 미구현 기술 제외).
-  - 특성: 종족의 합법 특성 중 무작위.
-  - 도구: 흔한 도구 풀(`commonItems`)에서 무작위.
-  - 성격: 무작위 / 레벨 100 고정 / EV 0·IV 31 (보정 없음).
+### Phase 1 — 상대 팀 생성 (`random-team.js`)
+
+> **각주 ① 답** — "PokeRogue에 예시 팀이 있나? 무작위 기술이면 막 기술만 들고 나오지 않나?"
+>
+> PokeRogue 원본에는 **무브셋까지 짜인 고정 NPC 팀이 없다.** 있는 것은 두 가지뿐:
+> - `signatureSpecies`(`data/balance/signature-species.ts`, 106줄) — 체육관 관장·사천왕·
+>   챔피언별 **종족 풀**. 예: `BROCK: [ONIX, GEODUDE, [OMANYTE, KABUTO], AERODACTYL]`.
+>   종족 ID 배열일 뿐, **기술·도구·특성은 없다.**
+> - 일반 트레이너용 등급별 `speciesPools`(common~ultra rare).
+>
+> 즉 PokeRogue도 **기술은 매 배틀 생성**한다 — `ai-moveset-gen.ts`의 `generateMoveset`
+> (`AI.md` §5). 따라서 "무작위 기술 = 막 기술" 문제의 해법은 **무작위로 뽑지 않는 것**이고,
+> PokeRogue의 **가중 무브셋 생성을 포팅**하는 것이 정답이다.
+
+구현 (`generateRandomTeam(size)` → 빌더 Mon 배열):
+
+- **종족 선택**: 순수 무작위 대신 `signatureSpecies`를 합친 큐레이션 풀(또는 BST 하한
+  필터)에서 추첨 → 종족 자체가 약체로 빠지는 것 방지. 트레이너 config 전체가 아니라
+  **종족 ID 배열만** 쓰므로 이식이 가볍고, "매 배틀 무작위 팀" 성격도 유지된다.
+- **무브셋**: `ai-moveset-gen.ts`의 `generateMoveset` 가중 로직 포팅 (`AI.md` §5):
+  - 레벨업/(TM)/(알) 기술에 가중치 부여, 위력 기반 보정.
+  - **시그니처 기술**(`FORCED_SIGNATURE_MOVES`, `signature-moves.ts`) 확률적 강제.
+  - **자속(STAB) 데미지 기술 1개 강제** → 항상 쓸 만한 메인 무기 보장.
+  - 무의미·중복 기술 제거 (조건 못 맞추는 날씨기 등).
+  → 무작위지만 "STAB + 적정 위력"이 보장돼 막 기술 문제 해소.
+- 특성/도구: 합법 범위 무작위 (도구는 `commonItems` 풀). 성격 무작위.
+- 레벨 100 / EV 0·IV 31 (보정 없음).
 - 출력이 빌더 Mon 포맷이므로 `buildShowdownPayloadMon`이 그대로 소화.
 
-**검증**: 생성 팀을 엔진에 넣어 배틀이 오류 없이 시작되는지 (`/api/battle/start` 200).
+> 1차 단순화 옵션: 무브셋 생성 포팅이 부담되면, **종족만 큐레이션 풀에서 뽑고
+> 기술은 "위력 ≥ 일정값 + STAB 우선" 가중 추첨**으로 시작해도 막 기술은 충분히 걸러진다.
+> `generateMoveset` 완전 포팅은 그 다음 단계.
+
+**검증**: 생성 팀을 엔진에 넣어 배틀이 오류 없이 시작되는지 (`/api/battle/start` 200),
+생성된 무브셋에 STAB 데미지 기술이 1개 이상 포함되는지.
 
 ### Phase 2 — AI 두뇌 (`ai-trainer.js`, PokeRogue 포팅)
 `AI.md` §1의 로직을 Showdown 스냅샷 + 로컬 덱스 위에 이식.
@@ -125,8 +149,17 @@ server/server.cjs  (2줄 패치: single.html 프로필 주입 허용)
 4. **타겟 선택** (`getNextTargets`) — 싱글이면 자명, 더블 확장 대비만.
 5. **테라 판정** — 간단 휴리스틱: 1턴차에 STAB·매치업이 개선되면 `tera:true`.
 
-> **스코핑 주의**: PokeRogue의 UBS/TBS(이익 점수)는 수백 개 기술 attribute 클래스의
-> 오버라이드에서 나온다. 전량 포팅은 비현실적 → **기술 효과 휴리스틱 테이블**로 근사한다
+> **각주 ② 답 — UBS/TBS 전량 포팅이 비현실적인 이유**:
+> 이익 점수는 설정 테이블이 아니라 **코드**다. 기술 효과는 `data/moves/move.ts`(12,584줄)
+> 안의 **210개 `MoveAttr` 서브클래스**로 구현되고, 그중 ~44곳이 `getUserBenefitScore`/
+> `getTargetBenefitScore`를 제각각 오버라이드한다. 각 오버라이드는 단순 상수가 아니라
+> `globalScene`·`arena`·`BattlerTag`·특성 attr·날씨 등 **PokeRogue 런타임을 직접 호출**하는
+> 실제 로직이라, 점수를 그대로 쓰려면 그 런타임까지 함께 포팅해야 한다.
+> 게다가 이 프로젝트의 기술은 Showdown move 객체라 PokeRogue의 attr 합성 구조와 1:1
+> 대응이 없어, 사실상 기술 효과 로직을 하나하나 재구현하는 셈이 된다 (PokeRogue도 attr를
+> 계속 추가·변경 중인 움직이는 표적).
+> → 점수 산정 **골격**(매치업·KO 우선·`SMART` 룰렛)은 충실히 포팅하되, 개별 기술의 효과
+> 가치는 카테고리/효과 키 기반의 **간결한 휴리스틱 테이블**로 근사한다
 > (예: 랭크업기 +, 상태이상기 +, 자버프 2랭크↑ ×1.25 등 — `AI.md` §1·§5 참고).
 > 1차 구현은 "위력×효과×STAB + KO우선 + 매치업 교체"만으로도 충분히 그럴듯하다.
 > 효과 보너스는 점진 확장.
@@ -202,6 +235,8 @@ export function getRunState(): {streak, best, phase};
 | `getMoveQueue`(차지/재충전) | `request`의 잠금 기술 = `getForcedChoiceFromRequestSlot` 활용 |
 | `trainer.getNextSummonIndex` | `chooseSwitchIndex` (벤치 매치업 최고) |
 | `TeraAIMode` | 1차: 간단 휴리스틱, 추후 정식 룰 |
+| `generateMoveset`(`ai-moveset-gen.ts`) | `random-team.js`의 가중 무브셋 생성 (Phase 1) |
+| `signatureSpecies` / `FORCED_SIGNATURE_MOVES` | 상대 종족 큐레이션 풀 / 시그니처 기술 강제 |
 
 ---
 
@@ -223,7 +258,7 @@ export function getRunState(): {streak, best, phase};
 ## 7) 작업 순서 요약 (체크리스트)
 
 - [ ] Phase 0: `single.html` + `server.cjs` 2줄 패치 + 프로필 통과 확인
-- [ ] Phase 1: `random-team.js` — 무작위 합법 팀, 엔진 시작 성공
+- [ ] Phase 1: `random-team.js` — 큐레이션 종족 풀 + 가중 무브셋 생성(STAB 보장), 엔진 시작 성공
 - [ ] Phase 2: `ai-trainer.js` — 매치업/기술 점수/교체, `pendingChoices.p2` 기록
 - [ ] Phase 3: `run-controller.js` — 무한 루프 상태머신, 완전 회복, 연승 집계
 - [ ] Phase 4: 연승 HUD + 배틀 종료 오버레이
